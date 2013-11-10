@@ -13,6 +13,8 @@ namespace Vydejna.Domain
         private bool _aktivni;
         private List<object> _changes = new List<object>();
 
+        public Guid Id { get { return _id; } }
+
         protected void AddToHistory(object ev, bool fromHistory)
         {
             if (!fromHistory)
@@ -63,7 +65,7 @@ namespace Vydejna.Domain
             return naradi;
         }
 
-        public static Naradi LoadFrom(List<object> udalosti)
+        public static Naradi LoadFrom(IList<object> udalosti)
         {
             var naradi = new Naradi();
             foreach (var ev in udalosti)
