@@ -61,7 +61,9 @@
     <Compile Include="SerializingOnlineQueryTest.cs" />
     <Compile Include="SeznamNaradiTests\DefinovatNaradiViewModelTest.cs" />
     <Compile Include="SeznamNaradiTests\DefinovatNaradiValidatorTest.cs" />
+    <Compile Include="SeznamNaradiTests\ProcesDefiniceNaradiTest.cs" />
     <Compile Include="SeznamNaradiTests\SeznamNaradiServiceTest_Naradi.cs" />
+    <Compile Include="SeznamNaradiTests\SeznamNaradiServiceTest_Unikatnost.cs" />
     <Compile Include="SeznamNaradiTests\SeznamNaradiViewModelTest.cs" />
     <Compile Include="UnitTestingTaskScheduler.cs" />
   </ItemGroup>

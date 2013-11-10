@@ -87,7 +87,8 @@ namespace Vydejna.Tests.SeznamNaradiTests
         {
             var idNaradi = Guid.NewGuid();
             NastavitNaradi(idNaradi,
-                new DefinovanoNaradiEvent { NaradiId = idNaradi, Vykres = "5555", Rozmer = "0000", Druh = "" }
+                new DefinovanoNaradiEvent { NaradiId = idNaradi, Vykres = "5555", Rozmer = "0000", Druh = "" },
+                new DeaktivovanoNaradiEvent { NaradiId = idNaradi }
                 );
             var svc = VytvoritService();
             svc.Handle(new AktivovatNaradiCommand { NaradiId = idNaradi });
@@ -101,6 +102,18 @@ namespace Vydejna.Tests.SeznamNaradiTests
         {
             var svc = VytvoritService();
             svc.Handle(new AktivovatNaradiCommand { NaradiId = Guid.NewGuid() });
+            ZadneDalsiUdalosti();
+        }
+
+        [TestMethod]
+        public void AktivovatAktivniNaradi()
+        {
+            var idNaradi = Guid.NewGuid();
+            NastavitNaradi(idNaradi,
+                new DefinovanoNaradiEvent { NaradiId = idNaradi, Vykres = "5555", Rozmer = "0000", Druh = "" }
+                );
+            var svc = VytvoritService();
+            svc.Handle(new AktivovatNaradiCommand { NaradiId = idNaradi });
             ZadneDalsiUdalosti();
         }
 
@@ -123,6 +136,19 @@ namespace Vydejna.Tests.SeznamNaradiTests
         {
             var svc = VytvoritService();
             svc.Handle(new DeaktivovatNaradiCommand { NaradiId = Guid.NewGuid() });
+            ZadneDalsiUdalosti();
+        }
+
+        [TestMethod]
+        public void DeaktivovatNeaktivniNaradi()
+        {
+            var idNaradi = Guid.NewGuid();
+            NastavitNaradi(idNaradi,
+                new DefinovanoNaradiEvent { NaradiId = idNaradi, Vykres = "5555", Rozmer = "0000", Druh = "" },
+                new DeaktivovanoNaradiEvent { NaradiId = idNaradi }
+                );
+            var svc = VytvoritService();
+            svc.Handle(new DeaktivovatNaradiCommand { NaradiId = idNaradi });
             ZadneDalsiUdalosti();
         }
 

@@ -42,6 +42,7 @@
   <ItemGroup>
     <Compile Include="Naradi.cs" />
     <Compile Include="NaradiRepository.cs" />
+    <Compile Include="ProcesDefiniceNaradi.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="SeznamNaradiService.cs" />
     <Compile Include="UnikatnostNaradi.cs" />

@@ -10,7 +10,7 @@ namespace Vydejna.Domain
     public class Naradi
     {
         private Guid _id;
-
+        private bool _aktivni;
         private List<object> _changes = new List<object>();
 
         protected void AddToHistory(object ev, bool fromHistory)
@@ -21,28 +21,33 @@ namespace Vydejna.Domain
 
         public void Aktivovat()
         {
-            ApplyChange(new AktivovanoNaradiEvent { NaradiId = _id });
+            if (!_aktivni)
+                ApplyChange(new AktivovanoNaradiEvent { NaradiId = _id });
         }
 
         public void Deaktivovat()
         {
-            ApplyChange(new DeaktivovanoNaradiEvent { NaradiId = _id });
+            if (_aktivni)
+                ApplyChange(new DeaktivovanoNaradiEvent { NaradiId = _id });
         }
 
         private void ApplyChange(DefinovanoNaradiEvent ev, bool fromHistory = false)
         {
             AddToHistory(ev, fromHistory);
             _id = ev.NaradiId;
+            _aktivni = true;
         }
 
         private void ApplyChange(AktivovanoNaradiEvent ev, bool fromHistory = false)
         {
             AddToHistory(ev, fromHistory);
+            _aktivni = true;
         }
 
         private void ApplyChange(DeaktivovanoNaradiEvent ev, bool fromHistory = false)
         {
             AddToHistory(ev, fromHistory);
+            _aktivni = false;
         }
 
         public static Naradi Definovat(Guid id, string vykres, string rozmer, string druh)
