@@ -65,6 +65,19 @@ namespace Vydejna.Web
     public interface IRequestRouterConfiguration
     {
         void To(IRoutedHttpHandler handler);
+        void To<TParameters>(
+            Func<IRequestParameters, IPostData, TParameters> parameters,
+            Func<TParameters, IResponse> process,
+            Func<IResponseContext<TParameters>, IFinalResponse> output
+            );
+    }
+
+    public interface IResponseContext<TParameters>
+    {
+        IRequestParameters OriginalParameters { get; }
+        IPostData PostData { get; }
+        TParameters Parameters { get; }
+        IResponse Response { get; }
     }
 
     public interface IRoutedHttpHandler
@@ -83,6 +96,7 @@ namespace Vydejna.Web
     {
         ResponseType Type { get; }
         ICollection<RequestParameterRaw> Headers { get; }
+        ICollection<RequestParameterRaw> OutputParameters { get; }
         object ValueToSerialize { get; }
         Exception Exception { get; }
         int StatusCode { get; }
