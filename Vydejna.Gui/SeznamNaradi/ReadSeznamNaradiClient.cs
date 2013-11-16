@@ -5,7 +5,7 @@ using System.Text;
 using Vydejna.Contracts;
 using System.Threading.Tasks;
 
-namespace Vydejna.Gui
+namespace Vydejna.Gui.SeznamNaradi
 {
     public class ReadSeznamNaradiClient : IReadSeznamNaradi
     {

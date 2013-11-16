@@ -3,13 +3,14 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
-             xmlns:l="clr-namespace:Vydejna.Gui"
-             xmlns:Themes="clr-namespace:Microsoft.Windows.Themes;assembly=PresentationFramework.Aero" x:Class="Vydejna.Gui.SeznamNaradiView"
+             xmlns:l="clr-namespace:Vydejna.Gui.SeznamNaradi"
+             xmlns:c="clr-namespace:Vydejna.Gui.Common"
+             xmlns:Themes="clr-namespace:Microsoft.Windows.Themes;assembly=PresentationFramework.Aero" x:Class="Vydejna.Gui.SeznamNaradi.SeznamNaradiView"
              mc:Ignorable="d" d:DataContext="{x:Static l:SeznamNaradiViewModel.DesignerVM}"
              d:DesignHeight="600" d:DesignWidth="700">
     <UserControl.Resources>
-        <l:BooleanVisibilityConverter x:Key="VisibleConverter" />
-        <l:BooleanVisibilityConverter x:Key="InvisibleConverter" Inverted="True" />
+        <c:BooleanVisibilityConverter x:Key="VisibleConverter" />
+        <c:BooleanVisibilityConverter x:Key="InvisibleConverter" Inverted="True" />
         <DataTemplate DataType="l:TypNaradiViewModel" x:Key="CheckboxGridCell">
             <Grid Width="16" Height="16">
                 <Path Data="M 1,4.5 L 2,12 6,12 14,3 14,1 5,7.5 3,3 Z" Stroke="Black" Fill="Green" Visibility="{Binding Aktivni, Converter={StaticResource VisibleConverter}}" />

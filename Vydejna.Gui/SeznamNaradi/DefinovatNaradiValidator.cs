@@ -4,8 +4,9 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Vydejna.Contracts;
+using Vydejna.Gui.Common;
 
-namespace Vydejna.Gui
+namespace Vydejna.Gui.SeznamNaradi
 {
     public interface IDefinovatNaradiValidator
     {

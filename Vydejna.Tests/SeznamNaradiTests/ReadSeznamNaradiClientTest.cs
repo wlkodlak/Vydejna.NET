@@ -10,6 +10,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Moq;
 using ServiceStack.Text;
 using Vydejna.Tests.HttpTests;
+using Vydejna.Gui.SeznamNaradi;
 
 namespace Vydejna.Tests.SeznamNaradiTests
 {

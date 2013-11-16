@@ -6,8 +6,9 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using Vydejna.Contracts;
+using Vydejna.Gui.Common;
 
-namespace Vydejna.Gui
+namespace Vydejna.Gui.SeznamNaradi
 {
     public class DefinovatNaradiViewModel : ViewModelBase
         , IHandle<UiMessages.ValidovanoDefinovatNaradi>

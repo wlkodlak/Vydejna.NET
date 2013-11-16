@@ -5,10 +5,12 @@ using System.Text;
 using System.Threading.Tasks;
 using Moq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using Vydejna.Gui;
+using Vydejna.Gui.Common;
+using Vydejna.Gui.SeznamNaradi;
 using Vydejna.Contracts;
 using System.Collections.ObjectModel;
 using System.Windows.Input;
+using Vydejna.Gui.Shell;
 
 namespace Vydejna.Tests.SeznamNaradiTests
 {

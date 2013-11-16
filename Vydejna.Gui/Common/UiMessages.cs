@@ -5,7 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Vydejna.Contracts;
 
-namespace Vydejna.Gui
+namespace Vydejna.Gui.Common
 {
     public static class UiMessages
     {

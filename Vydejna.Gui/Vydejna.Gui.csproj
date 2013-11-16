@@ -61,23 +61,23 @@
       <DependentUpon>App.xaml</DependentUpon>
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="BooleanVisibilityConverter.cs" />
-    <Compile Include="DefinovatNaradiValidator.cs" />
-    <Compile Include="DefinovatNaradiViewModel.cs" />
-    <Compile Include="EventAggregator.cs" />
-    <Compile Include="MainWindow.xaml.cs">
+    <Compile Include="Common\BooleanVisibilityConverter.cs" />
+    <Compile Include="SeznamNaradi\DefinovatNaradiValidator.cs" />
+    <Compile Include="SeznamNaradi\DefinovatNaradiViewModel.cs" />
+    <Compile Include="Common\EventAggregator.cs" />
+    <Compile Include="Shell\MainWindow.xaml.cs">
       <DependentUpon>MainWindow.xaml</DependentUpon>
     </Compile>
-    <Compile Include="ReadSeznamNaradiClient.cs" />
-    <Compile Include="SerializingOnlineQuery.cs" />
-    <Compile Include="SeznamNaradiView.xaml.cs">
+    <Compile Include="SeznamNaradi\ReadSeznamNaradiClient.cs" />
+    <Compile Include="Common\SerializingOnlineQuery.cs" />
+    <Compile Include="SeznamNaradi\SeznamNaradiView.xaml.cs">
       <DependentUpon>SeznamNaradiView.xaml</DependentUpon>
     </Compile>
-    <Compile Include="SeznamNaradiViewModel.cs" />
-    <Compile Include="ShellViewModel.cs" />
-    <Compile Include="SimpleCommand.cs" />
-    <Compile Include="UiMessages.cs" />
-    <Compile Include="ViewModelBase.cs" />
+    <Compile Include="SeznamNaradi\SeznamNaradiViewModel.cs" />
+    <Compile Include="Shell\ShellViewModel.cs" />
+    <Compile Include="Common\SimpleCommand.cs" />
+    <Compile Include="Common\UiMessages.cs" />
+    <Compile Include="Common\ViewModelBase.cs" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Properties\AssemblyInfo.cs">
@@ -114,11 +114,11 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
-    <Page Include="MainWindow.xaml">
+    <Page Include="Shell\MainWindow.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
-    <Page Include="SeznamNaradiView.xaml">
+    <Page Include="SeznamNaradi\SeznamNaradiView.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>

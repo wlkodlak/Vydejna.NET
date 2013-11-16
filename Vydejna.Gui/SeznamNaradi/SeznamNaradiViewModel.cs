@@ -7,8 +7,10 @@ using System.Threading.Tasks;
 using System.Windows.Data;
 using System.Windows.Input;
 using Vydejna.Contracts;
+using Vydejna.Gui.Common;
+using Vydejna.Gui.Shell;
 
-namespace Vydejna.Gui
+namespace Vydejna.Gui.SeznamNaradi
 {
     public class SeznamNaradiViewModel
         : IHandle<UiMessages.SeznamNaradiOtevren>

@@ -10,16 +10,17 @@ using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Navigation;
 using System.Windows.Shapes;
 
-namespace Vydejna.Gui
+namespace Vydejna.Gui.SeznamNaradi
 {
     /// <summary>
-    /// Interaction logic for MainWindow.xaml
+    /// Interaction logic for SeznamNaradiView.xaml
     /// </summary>
-    public partial class MainWindow : Window
+    public partial class SeznamNaradiView : UserControl
     {
-        public MainWindow()
+        public SeznamNaradiView()
         {
             InitializeComponent();
         }

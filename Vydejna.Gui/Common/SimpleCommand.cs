@@ -5,7 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Input;
 
-namespace Vydejna.Gui
+namespace Vydejna.Gui.Common
 {
     public class SimpleCommand : ICommand
     {

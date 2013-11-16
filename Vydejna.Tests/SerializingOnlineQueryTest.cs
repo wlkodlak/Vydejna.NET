@@ -5,6 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Vydejna.Gui;
+using Vydejna.Gui.Common;
 
 namespace Vydejna.Tests
 {
