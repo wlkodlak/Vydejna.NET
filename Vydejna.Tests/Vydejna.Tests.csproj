@@ -39,6 +39,9 @@
       <HintPath>..\packages\Moq.4.0.10827\lib\NET40\Moq.dll</HintPath>
     </Reference>
     <Reference Include="PresentationFramework" />
+    <Reference Include="ServiceStack.Text">
+      <HintPath>..\packages\ServiceStack.Text.3.9.70\lib\net35\ServiceStack.Text.dll</HintPath>
+    </Reference>
     <Reference Include="System" />
     <Reference Include="WindowsBase" />
   </ItemGroup>
@@ -55,6 +58,8 @@
     </Otherwise>
   </Choose>
   <ItemGroup>
+    <Compile Include="HttpTests\ParametrizedUrlTest.cs" />
+    <Compile Include="HttpTests\RestClientTest.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="PropertyChangedWatcher.cs" />
     <Compile Include="PropertyErrorWatcher.cs" />
@@ -62,6 +67,7 @@
     <Compile Include="SeznamNaradiTests\DefinovatNaradiViewModelTest.cs" />
     <Compile Include="SeznamNaradiTests\DefinovatNaradiValidatorTest.cs" />
     <Compile Include="SeznamNaradiTests\ProcesDefiniceNaradiTest.cs" />
+    <Compile Include="SeznamNaradiTests\ReadSeznamNaradiClientTest.cs" />
     <Compile Include="SeznamNaradiTests\SeznamNaradiServiceTest_Naradi.cs" />
     <Compile Include="SeznamNaradiTests\SeznamNaradiServiceTest_Unikatnost.cs" />
     <Compile Include="SeznamNaradiTests\SeznamNaradiViewModelTest.cs" />

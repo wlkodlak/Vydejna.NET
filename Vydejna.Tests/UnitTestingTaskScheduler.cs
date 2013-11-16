@@ -37,8 +37,23 @@ namespace Vydejna.Tests
         {
             var scheduler = new UnitTestingTaskScheduler();
             var factory = new TaskFactory(scheduler._cancel.Token, TaskCreationOptions.None, TaskContinuationOptions.None, scheduler);
-            var testTask = factory.StartNew(() => test(scheduler));
+            var testTask = factory.StartNew(new TestTask(test, scheduler).Do);
             testTask.GetAwaiter().GetResult();
+        }
+
+        private class TestTask
+        {
+            public Action<UnitTestingTaskScheduler> test;
+            public UnitTestingTaskScheduler scheduler;
+            public TestTask(Action<UnitTestingTaskScheduler> test, UnitTestingTaskScheduler scheduler)
+            {
+                this.test = test;
+                this.scheduler = scheduler;
+            }
+            public void Do()
+            {
+                test(scheduler);
+            }
         }
 
         public void TryToCompleteTasks(int timeout)
