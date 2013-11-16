@@ -49,7 +49,35 @@ namespace Vydejna.Tests.SeznamNaradiTests
                 Assert.AreEqual(responseDto.SeznamNaradi[i].Druh, returnedDto.SeznamNaradi[i].Druh, "SeznamNaradi[{0}].Druh", i);
                 Assert.AreEqual(responseDto.SeznamNaradi[i].Aktivni, returnedDto.SeznamNaradi[i].Aktivni, "SeznamNaradi[{0}].Aktivni", i);
             }
+        }
 
+        [TestMethod]
+        public void ZiskatUnikatnostNaradi()
+        {
+            var responseDto = new OvereniUnikatnostiDto()
+            {
+                Vykres = "578-5577-25",
+                Rozmer = "450x20x20",
+                Existuje = true
+            };
+
+            var tester = new RestClientTester();
+            tester.ExpectedMethod = "GET";
+            tester.ExpectedUrl = "http://localhost:4472/OveritUnikatnost?vykres=578-5577-25&rozmer=450x20x20";
+            tester.PreparedResponse = new HttpClientResponseBuilder()
+                .WithHeader("Content-Type", "application/json")
+                .WithStatus(200)
+                .WithStringPayload(JsonSerializer.SerializeToString(responseDto))
+                .Build();
+
+            var svc = new ReadSeznamNaradiClient("http://localhost:4472/", tester.HttpClient);
+            var returnedDto = tester.RunTest(() => svc.OveritUnikatnost("578-5577-25", "450x20x20"));
+            CollectionAssert.AreEqual(new byte[0], tester.Request.Body, "Body");
+
+            Assert.IsNotNull(returnedDto, "No response returned");
+            Assert.AreEqual("578-5577-25", returnedDto.Vykres, "Vykres");
+            Assert.AreEqual("450x20x20", returnedDto.Rozmer, "Rozmer");
+            Assert.AreEqual(true, returnedDto.Existuje, "Existuje");
         }
 
 

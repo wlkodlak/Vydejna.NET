@@ -27,9 +27,13 @@ namespace Vydejna.Gui
             return result.GetPayload<SeznamNaradiDto>();
         }
 
-        public Task<OvereniUnikatnostiDto> OveritUnikatnost(string vykres, string rozmer)
+        public async Task<OvereniUnikatnostiDto> OveritUnikatnost(string vykres, string rozmer)
         {
-            throw new NotImplementedException();
+            var json = new RestClientJson(_url + "OveritUnikatnost", _client)
+                .AddParameter("vykres", vykres)
+                .AddParameter("rozmer", rozmer);
+            var result = await json.Execute();
+            return result.GetPayload<OvereniUnikatnostiDto>();
         }
     }
 }
