@@ -72,7 +72,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
 
             public void Save(UnikatnostNaradi unikatnost)
             {
-                var udalosti = unikatnost.GetChanges();
+                var udalosti = (unikatnost as IEventSourcedAggregate).GetChanges();
                 _parent._udalosti.AddRange(udalosti);
             }
         }

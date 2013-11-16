@@ -13,60 +13,26 @@ namespace Vydejna.Domain
         void Save(Naradi naradi);
     }
 
-    public class NaradiRepositoryInMemory : INaradiRepository
+    public class NaradiRepositoryInMemory : EventSourcedRepository<Naradi>, INaradiRepository
     {
-        private Dictionary<Guid, List<object>> _data = new Dictionary<Guid, List<object>>();
-        private IBus _bus;
-
-        public NaradiRepositoryInMemory(IBus bus)
+        public NaradiRepositoryInMemory(IEventStore store, string prefix, IEventSourcedSerializer serializer)
+            : base(store, prefix, serializer)
         {
-            _bus = bus;
         }
 
-        public Naradi Get(Guid id)
+        protected override Naradi CreateAggregate()
         {
-            var events = GetDataFor(id);
-            if (events != null)
-                return Naradi.LoadFrom(events);
-            else
-                return null;
+            return new Naradi();
         }
 
-        public void Save(Naradi naradi)
+        Naradi INaradiRepository.Get(Guid id)
         {
-            var id = naradi.Id;
-            var newEvents = naradi.GetChanges();
-            AddData(id, newEvents);
-            _bus.Publish(newEvents);
+            return Get(id).GetAwaiter().GetResult();
         }
 
-        public void Clear()
+        void INaradiRepository.Save(Naradi naradi)
         {
-            _data.Clear();
-        }
-
-        public void AddData(Guid id, IList<object> newEvents)
-        {
-            List<object> events;
-            if (!_data.TryGetValue(id, out events))
-                _data[id] = events = new List<object>();
-            events.AddRange(newEvents);
-        }
-
-        public IList<object> GetDataFor(Guid id)
-        {
-            List<object> events;
-            if (!_data.TryGetValue(id, out events))
-                return null;
-            else if (events.Count == 0)
-                return null;
-            else
-                return events;
-        }
-
-        public IList<Guid> GetGuids()
-        {
-            return _data.Keys.ToList();
+            Save(naradi).GetAwaiter().GetResult();
         }
     }
 }

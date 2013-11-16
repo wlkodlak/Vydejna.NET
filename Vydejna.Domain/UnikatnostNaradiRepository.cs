@@ -13,42 +13,28 @@ namespace Vydejna.Domain
         void Save(UnikatnostNaradi unikatnost);
     }
 
-    public class UnikatnostNaradiRepositoryInMemory : IUnikatnostNaradiRepository
+    public class UnikatnostNaradiRepositoryInMemory : EventSourcedRepository<UnikatnostNaradi>, IUnikatnostNaradiRepository
     {
-        private IBus  _bus;
-        private List<object> _data;
+        private static readonly Guid _id = new Guid("341FA50E-E1E9-4C9B-AC89-AFED9ADDA843");
 
-        public UnikatnostNaradiRepositoryInMemory(IBus bus)
+        public UnikatnostNaradiRepositoryInMemory(IEventStore store, string prefix, IEventSourcedSerializer serializer)
+            : base(store, prefix, serializer)
         {
-            _bus = bus;
-            _data = new List<object>();
         }
 
-        public UnikatnostNaradi Get()
+        protected override UnikatnostNaradi CreateAggregate()
         {
-            return UnikatnostNaradi.LoadFrom(_data);
+            return new UnikatnostNaradi();
         }
 
-        public void Save(UnikatnostNaradi unikatnost)
+        UnikatnostNaradi IUnikatnostNaradiRepository.Get()
         {
-            var newEvents = unikatnost.GetChanges();
-            _data.AddRange(newEvents);
-            _bus.Publish(newEvents);
+            return Get(_id).GetAwaiter().GetResult();
         }
 
-        public void Clear()
+        void IUnikatnostNaradiRepository.Save(UnikatnostNaradi unikatnost)
         {
-            _data.Clear();
-        }
-
-        public void AddData(IList<object> newEvents)
-        {
-            _data.AddRange(newEvents);
-        }
-
-        public IList<object> GetData()
-        {
-            return _data;
+            Save(unikatnost).GetAwaiter().GetResult();
         }
     }
 }

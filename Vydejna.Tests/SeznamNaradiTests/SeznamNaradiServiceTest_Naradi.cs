@@ -77,7 +77,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
 
             public void Save(Naradi naradi)
             {
-                var udalosti = naradi.GetChanges();
+                var udalosti = (naradi as IEventSourcedAggregate).GetChanges();
                 _parent._udalosti.AddRange(udalosti);
             }
         }

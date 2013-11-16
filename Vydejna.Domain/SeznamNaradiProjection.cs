@@ -3,7 +3,10 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Threading;
 using Vydejna.Contracts;
+using System.Xml.Linq;
+using System.Xml;
 
 namespace Vydejna.Domain
 {
@@ -11,82 +14,177 @@ namespace Vydejna.Domain
         , IHandle<DefinovanoNaradiEvent>
         , IHandle<AktivovanoNaradiEvent>
         , IHandle<DeaktivovanoNaradiEvent>
+        , IHandle<SystemEvents.SystemShutdown>
     {
-        private List<TypNaradiDto> _data = new List<TypNaradiDto>();
+        private IDocumentStore _store;
+        private string _documentName;
+        private bool _dirty;
+        private UpdateLock _lock = new UpdateLock();
+        private List<Item> _data = new List<Item>();
         private HashSet<string> _existujici = new HashSet<string>();
-        private Dictionary<Guid, TypNaradiDto> _indexId = new Dictionary<Guid, TypNaradiDto>();
+        private Dictionary<Guid, Item> _indexId = new Dictionary<Guid, Item>();
+        private ItemComparer _razeni = new ItemComparer();
+
+        private class Item
+        {
+            public TypNaradiDto Dto;
+        }
+
+        public SeznamNaradiProjection(IDocumentStore store, string documentName)
+        {
+            _store = store;
+            _documentName = documentName;
+            NacistData();
+        }
+
+        private void NacistData()
+        {
+            var doc = _store.GetDocument(_documentName).GetAwaiter().GetResult();
+            if (string.IsNullOrEmpty(doc))
+                return;
+            var xml = XDocument.Parse(doc);
+            foreach (var xmlNaradi in xml.Element("SeznamNaradi").Elements("Naradi"))
+            {
+                var dto = new TypNaradiDto(
+                    (Guid)xmlNaradi.Attribute("Id"),
+                    (string)xmlNaradi.Attribute("Vykres"),
+                    (string)xmlNaradi.Attribute("Rozmer"),
+                    (string)xmlNaradi.Attribute("Druh"),
+                    (bool)xmlNaradi.Attribute("Aktivni")
+                    );
+                var item = new Item { Dto = dto };
+                _data.Add(item);
+                _indexId[dto.Id] = item;
+                _existujici.Add(KlicUnikatnosti(dto.Vykres, dto.Rozmer));
+            }
+            _data.Sort(_razeni);
+        }
+
+        private void UlozitData()
+        {
+            using (_lock.Update())
+            {
+                if (!_dirty)
+                    return;
+                var builder = new StringBuilder();
+                using (var writer = XmlWriter.Create(new System.IO.StringWriter(builder)))
+                {
+                    writer.WriteStartElement("SeznamNaradi");
+                    foreach (var item in _data)
+                    {
+                        var dto = item.Dto;
+                        writer.WriteStartElement("Naradi");
+                        writer.WriteAttributeString("Id", dto.Id.ToString());
+                        writer.WriteAttributeString("Vykres", dto.Vykres);
+                        writer.WriteAttributeString("Rozmer", dto.Rozmer);
+                        writer.WriteAttributeString("Druh", dto.Druh);
+                        writer.WriteAttributeString("Aktivni", dto.Aktivni ? "true" : "false");
+                        writer.WriteEndElement();
+                    }
+                    writer.WriteEndElement();
+                }
+                _store.SaveDocument(_documentName, builder.ToString()).GetAwaiter().GetResult();
+                _dirty = false;
+            }
+        }
 
         public Task<SeznamNaradiDto> NacistSeznamNaradi(int offset, int maxPocet)
         {
-            var filtrovano = _data.Skip(offset).Take(maxPocet);
-            var dto = new SeznamNaradiDto() { Offset = offset, PocetCelkem = _data.Count };
-            dto.SeznamNaradi.AddRange(filtrovano);
-            var task = new TaskCompletionSource<SeznamNaradiDto>();
-            task.SetResult(dto);
-            return task.Task;
+            using (_lock.Read())
+            {
+                var filtrovano = _data.Skip(offset).Take(maxPocet).Select(i => i.Dto);
+                var dto = new SeznamNaradiDto() { Offset = offset, PocetCelkem = _data.Count };
+                dto.SeznamNaradi.AddRange(filtrovano);
+                return TaskResult.GetCompletedTask(dto);
+            }
         }
 
         public Task<OvereniUnikatnostiDto> OveritUnikatnost(string vykres, string rozmer)
         {
-            var existuje = _existujici.Contains(KlicUnikatnosti(vykres, rozmer));
-            var dto = new OvereniUnikatnostiDto() { Vykres = vykres, Rozmer = rozmer, Existuje = existuje };
-            var task = new TaskCompletionSource<OvereniUnikatnostiDto>();
-            task.SetResult(dto);
-            return task.Task;
+            using (_lock.Read())
+            {
+                var existuje = _existujici.Contains(KlicUnikatnosti(vykres, rozmer));
+                var dto = new OvereniUnikatnostiDto() { Vykres = vykres, Rozmer = rozmer, Existuje = existuje };
+                return TaskResult.GetCompletedTask(dto);
+            }
         }
 
-        private string KlicUnikatnosti(string vykres, string rozmer)
+        private static string KlicUnikatnosti(string vykres, string rozmer)
         {
             return string.Format("{0}:::{1}", vykres, rozmer);
         }
 
         public void Handle(DefinovanoNaradiEvent message)
         {
-            var dto = new TypNaradiDto(message.NaradiId, message.Vykres, message.Rozmer, message.Druh, true);
-            PridatNaradi(new[] { dto });
+            using (_lock.Update())
+            {
+                var dto = new TypNaradiDto(message.NaradiId, message.Vykres, message.Rozmer, message.Druh, true);
+                var item = new Item { Dto = dto };
+                int index = _data.BinarySearch(item, _razeni);
+                if (index < 0)
+                {
+                    _lock.Write();
+                    _data.Insert(~index, item);
+                    _existujici.Add(KlicUnikatnosti(dto.Vykres, dto.Rozmer));
+                    _indexId[dto.Id] = item;
+                    _dirty = true;
+                }
+            }
         }
 
         public void Handle(AktivovanoNaradiEvent message)
         {
-            _indexId[message.NaradiId].Aktivni = true;
+            using (_lock.Update())
+            {
+                var item = _indexId[message.NaradiId];
+                if (item.Dto.Aktivni)
+                    return;
+                var newDto = Clone(item.Dto);
+                newDto.Aktivni = true;
+                _lock.Write();
+                item.Dto = newDto;
+                _dirty = true;
+            }
         }
 
         public void Handle(DeaktivovanoNaradiEvent message)
         {
-            _indexId[message.NaradiId].Aktivni = false;
-        }
-
-        public void Clear()
-        {
-            _data.Clear();
-        }
-
-        public void PridatNaradi(IList<TypNaradiDto> dtos)
-        {
-            _data.AddRange(dtos);
-            _data.Sort(Razeni);
-            foreach (var dto in dtos)
+            using (_lock.Update())
             {
-                _existujici.Add(KlicUnikatnosti(dto.Vykres, dto.Rozmer));
-                _indexId[dto.Id] = dto;
+                var item = _indexId[message.NaradiId];
+                if (!item.Dto.Aktivni)
+                    return;
+                var newDto = Clone(item.Dto);
+                newDto.Aktivni = false;
+                _lock.Write();
+                item.Dto = newDto; 
+                _dirty = true;
             }
         }
 
-        private int Razeni(TypNaradiDto x, TypNaradiDto y)
+        public void Handle(SystemEvents.SystemShutdown message)
         {
-            var comparer = StringComparer.OrdinalIgnoreCase;
-            var vykres = comparer.Compare(x.Vykres, y.Vykres);
-            if (vykres != 0)
-                return vykres;
-            var rozmer = comparer.Compare(x.Rozmer, y.Rozmer);
-            if (rozmer != 0)
-                return rozmer;
-            return 0;
+            UlozitData();
         }
 
-        public IList<TypNaradiDto> ZiskatVsechno()
+        private TypNaradiDto Clone(TypNaradiDto old)
         {
-            return _data;
+            return new TypNaradiDto(old.Id, old.Vykres, old.Rozmer, old.Druh, old.Aktivni);
+        }
+
+        private class ItemComparer : IComparer<Item>
+        {
+            public int Compare(Item x, Item y)
+            {
+                var comparer = StringComparer.OrdinalIgnoreCase;
+                var vykres = comparer.Compare(x.Dto.Vykres, y.Dto.Vykres);
+                if (vykres != 0)
+                    return vykres;
+                var rozmer = comparer.Compare(x.Dto.Rozmer, y.Dto.Rozmer);
+                if (rozmer != 0)
+                    return rozmer;
+                return 0;
+            }
         }
     }
 }

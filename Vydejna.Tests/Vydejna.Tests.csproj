@@ -68,6 +68,7 @@
     <Compile Include="SeznamNaradiTests\DefinovatNaradiValidatorTest.cs" />
     <Compile Include="SeznamNaradiTests\ProcesDefiniceNaradiTest.cs" />
     <Compile Include="SeznamNaradiTests\ReadSeznamNaradiClientTest.cs" />
+    <Compile Include="SeznamNaradiTests\SeznamNaradiProjectionTest.cs" />
     <Compile Include="SeznamNaradiTests\SeznamNaradiServiceTest_Naradi.cs" />
     <Compile Include="SeznamNaradiTests\SeznamNaradiServiceTest_Unikatnost.cs" />
     <Compile Include="SeznamNaradiTests\SeznamNaradiViewModelTest.cs" />

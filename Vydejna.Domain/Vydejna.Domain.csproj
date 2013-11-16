@@ -41,6 +41,9 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Bus.cs" />
+    <Compile Include="DocumentStore.cs" />
+    <Compile Include="EventSourced.cs" />
+    <Compile Include="EventStore.cs" />
     <Compile Include="Naradi.cs" />
     <Compile Include="NaradiRepository.cs" />
     <Compile Include="ProcesDefiniceNaradi.cs" />

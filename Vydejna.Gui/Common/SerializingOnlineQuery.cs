@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Vydejna.Contracts;
 
 namespace Vydejna.Gui.Common
 {
@@ -49,9 +50,7 @@ namespace Vydejna.Gui.Common
                 _reportFunc(state);
                 if (finishTask != null)
                     finishTask.Task.SetResult(null);
-                var task = new TaskCompletionSource<object>();
-                task.SetResult(null);
-                return task.Task;
+                return TaskResult.GetCompletedTask();
             }
             else
             {

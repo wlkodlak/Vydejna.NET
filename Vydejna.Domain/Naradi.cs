@@ -7,48 +7,38 @@ using Vydejna.Contracts;
 
 namespace Vydejna.Domain
 {
-    public class Naradi
+    public class Naradi : EventSourcedAggregate
     {
-        private Guid _id;
         private bool _aktivni;
-        private List<object> _changes = new List<object>();
-
-        public Guid Id { get { return _id; } }
-
-        protected void AddToHistory(object ev, bool fromHistory)
-        {
-            if (!fromHistory)
-                _changes.Add(ev);
-        }
 
         public void Aktivovat()
         {
             if (!_aktivni)
-                ApplyChange(new AktivovanoNaradiEvent { NaradiId = _id });
+                ApplyChange(new AktivovanoNaradiEvent { NaradiId = Id });
         }
 
         public void Deaktivovat()
         {
             if (_aktivni)
-                ApplyChange(new DeaktivovanoNaradiEvent { NaradiId = _id });
+                ApplyChange(new DeaktivovanoNaradiEvent { NaradiId = Id });
         }
 
-        private void ApplyChange(DefinovanoNaradiEvent ev, bool fromHistory = false)
+        private void ApplyChange(DefinovanoNaradiEvent ev)
         {
-            AddToHistory(ev, fromHistory);
-            _id = ev.NaradiId;
+            RecordChange(ev);
+            Id = ev.NaradiId;
             _aktivni = true;
         }
 
-        private void ApplyChange(AktivovanoNaradiEvent ev, bool fromHistory = false)
+        private void ApplyChange(AktivovanoNaradiEvent ev)
         {
-            AddToHistory(ev, fromHistory);
+            RecordChange(ev);
             _aktivni = true;
         }
 
-        private void ApplyChange(DeaktivovanoNaradiEvent ev, bool fromHistory = false)
+        private void ApplyChange(DeaktivovanoNaradiEvent ev)
         {
-            AddToHistory(ev, fromHistory);
+            RecordChange(ev);
             _aktivni = false;
         }
 
@@ -68,14 +58,14 @@ namespace Vydejna.Domain
         public static Naradi LoadFrom(IList<object> udalosti)
         {
             var naradi = new Naradi();
-            foreach (var ev in udalosti)
-                naradi.ApplyChange((dynamic)ev, true);
+            var aggregate = naradi as IEventSourcedAggregate;
+            aggregate.LoadFromEvents(udalosti);
             return naradi;
         }
 
-        public IList<object> GetChanges()
+        protected override void DispatchEvent(object evt)
         {
-            return _changes;
+            ApplyChange((dynamic)evt);
         }
     }
 }
