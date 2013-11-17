@@ -19,17 +19,17 @@ namespace Vydejna.Domain
             _readSvc = readSvc;
         }
 
-        public object AktivovatNaradi(AktivovatNaradiCommand cmd)
+        public Task<object> AktivovatNaradi(AktivovatNaradiCommand cmd)
         {
             return HandleCommand(_writeSvc, cmd);
         }
 
-        public object DeaktivovatNaradi(DeaktivovatNaradiCommand cmd)
+        public Task<object> DeaktivovatNaradi(DeaktivovatNaradiCommand cmd)
         {
             return HandleCommand(_writeSvc, cmd);
         }
 
-        public object DefinovatNaradi(DefinovatNaradiCommand cmd)
+        public Task<object> DefinovatNaradi(DefinovatNaradiCommand cmd)
         {
             return HandleCommand(_writeSvc, cmd);
         }

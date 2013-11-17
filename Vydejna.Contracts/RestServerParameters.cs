@@ -57,6 +57,8 @@ namespace Vydejna.Contracts
             return new HttpServerRequestRoute(name, value);
         }
 
+        public System.IO.Stream PostDataStream { get; set; }
+        public object PostDataObject { get; set; }
     }
 
     public class HttpServerRequestParameter
@@ -198,6 +200,7 @@ namespace Vydejna.Contracts
         public int StatusCode { get; set; }
         public HttpServerHeaders Headers { get; private set; }
         public byte[] RawBody { get; set; }
+        public System.IO.Stream StreamBody { get; set; }
         public object ObjectBody { get; set; }
     }
 
@@ -249,16 +252,23 @@ namespace Vydejna.Contracts
             return this;
         }
 
+        public HttpServerResponseBuilder WithRawBody(System.IO.Stream stream)
+        {
+            _response.StreamBody = stream;
+            return this;
+        }
+
         public HttpServerResponseBuilder WithBody(object body)
         {
             _response.ObjectBody = body;
             return this;
         }
 
-        public  HttpServerResponse Build()
+        public HttpServerResponse Build()
         {
             return _response;
         }
+
     }
 
     public class HttpServerHeader

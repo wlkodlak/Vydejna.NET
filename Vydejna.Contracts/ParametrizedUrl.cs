@@ -247,6 +247,11 @@ namespace Vydejna.Contracts
             var parts = new Uri(url).AbsolutePath.Split('/');
             return parts.Skip(1).ToArray();
         }
+
+        public static IEnumerable<RequestParameter> ParseQueryString(string url)
+        {
+            yield break;
+        }
     }
 
     public class ParametrizedUrlMatch : IEnumerable<RequestParameter>

@@ -45,6 +45,10 @@
   <ItemGroup>
     <Compile Include="ContractTypes.cs" />
     <Compile Include="HttpClient.cs" />
+    <Compile Include="HttpInput.cs" />
+    <Compile Include="HttpOutput.cs" />
+    <Compile Include="HttpRouter.cs" />
+    <Compile Include="HttpServer.cs" />
     <Compile Include="IHandle.cs" />
     <Compile Include="ParametrizedUrl.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
