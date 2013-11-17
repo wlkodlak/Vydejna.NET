@@ -52,9 +52,21 @@ namespace Vydejna.Contracts
                 while (!_cancel.IsCancellationRequested)
                 {
                     var task = ProcessRequest(_listener.GetContext());
+                    task.ContinueWith(EatExceptions, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
                 }
             }
             catch (HttpListenerException)
+            {
+            }
+        }
+
+        private void EatExceptions(Task task)
+        {
+            try
+            {
+                task.GetAwaiter().GetResult();
+            }
+            catch
             {
             }
         }

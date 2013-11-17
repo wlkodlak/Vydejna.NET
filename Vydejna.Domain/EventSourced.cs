@@ -158,15 +158,22 @@ namespace Vydejna.Domain
 
     public class EventSourcedJsonSerializer : IEventSourcedSerializer
     {
+        private ITypeMapper _mapper;
+
+        public EventSourcedJsonSerializer(ITypeMapper mapper)
+        {
+            _mapper = mapper;
+        }
+
         public object Deserialize(EventStoreEvent evt)
         {
-            return JsonSerializer.DeserializeFromString(evt.Body, ContractTypes.GetType(evt.Type));
+            return JsonSerializer.DeserializeFromString(evt.Body, _mapper.GetType(evt.Type));
         }
 
         public void Serialize(object evt, EventStoreEvent stored)
         {
             var type = evt.GetType();
-            stored.Type = ContractTypes.GetType(type);
+            stored.Type = _mapper.GetName(type);
             stored.Body = JsonSerializer.SerializeToString(evt, type);
         }
     }
