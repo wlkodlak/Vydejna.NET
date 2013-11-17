@@ -73,6 +73,13 @@ namespace Vydejna.Domain
         {
             return !(a == b);
         }
+        public void Verify(int streamVersion, string stream = null)
+        {
+            if (IsNonexistent && streamVersion != 0)
+                throw new InvalidOperationException(string.Format("Stream {0} is in version {1}, it was not supposed to exist.", stream ?? "", streamVersion));
+            else if (IsNumbered && Version != streamVersion)
+                throw new InvalidOperationException(string.Format("Stream {0} is in version {1}, expecting {2}", stream ?? "", streamVersion, Version));
+        }
     }
     public class EventStoreEvent
     {
@@ -190,11 +197,7 @@ namespace Vydejna.Domain
             {
                 int streamVersion;
                 _versions.TryGetValue(stream, out streamVersion);
-
-                if (expectedVersion.IsNonexistent && streamVersion != 0)
-                    throw new InvalidOperationException(string.Format("Stream {0} is in version {1}, it was not supposed to exist.", stream, streamVersion));
-                else if (expectedVersion.IsNumbered && expectedVersion.Version != streamVersion)
-                    throw new InvalidOperationException(string.Format("Stream {0} is in version {1}, expecting {2}", stream, streamVersion, expectedVersion.Version));
+                expectedVersion.Verify(streamVersion, stream);
 
                 var newEvents = events.ToList();
                 var token = _events.Count;
