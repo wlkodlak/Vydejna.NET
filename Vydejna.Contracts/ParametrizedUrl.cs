@@ -17,6 +17,9 @@ namespace Vydejna.Contracts
         private interface IPart
         {
             void CompleteUrl(StringBuilder builder, ILookup<string, string> pathParameters);
+            void Match(string urlPart, ParametrizedUrlMatch result, bool updateScore);
+            void BuildRegex(StringBuilder pattern);
+            bool HasRegexGroup { get; }
         }
 
         private class FixedPart : IPart
@@ -31,6 +34,24 @@ namespace Vydejna.Contracts
             public void CompleteUrl(StringBuilder builder, ILookup<string, string> pathParameters)
             {
                 builder.Append(_value);
+            }
+
+            public void Match(string urlPart, ParametrizedUrlMatch result, bool updateScore)
+            {
+                if (urlPart != _value)
+                    result.Fail();
+                else if (updateScore)
+                    result.UpdateScore(3);
+            }
+
+            public void BuildRegex(StringBuilder pattern)
+            {
+                pattern.Append(Regex.Escape(_value));
+            }
+
+            public bool HasRegexGroup
+            {
+                get { return false; }
             }
         }
 
@@ -47,21 +68,76 @@ namespace Vydejna.Contracts
             {
                 builder.Append(pathParameters[_name].Single());
             }
+
+
+            public void Match(string urlPart, ParametrizedUrlMatch result, bool updateScore)
+            {
+                result.AddParameter(_name, urlPart);
+                if (updateScore)
+                    result.UpdateScore(string.IsNullOrEmpty(urlPart) ? 0 : 1);
+            }
+
+            public void BuildRegex(StringBuilder pattern)
+            {
+                pattern.Append("(.*)");
+            }
+
+            public bool HasRegexGroup
+            {
+                get { return true; }
+            }
         }
 
         private class CompositePart : IPart
         {
             private List<IPart> subParts;
+            private Regex _regex;
 
             public CompositePart(List<IPart> subParts)
             {
                 this.subParts = subParts;
+                var pattern = new StringBuilder();
+                pattern.Append("^");
+                foreach (var part in subParts)
+                    part.BuildRegex(pattern);
+                pattern.Append("$");
+                this._regex = new Regex(pattern.ToString(), RegexOptions.Compiled);
             }
 
             public void CompleteUrl(StringBuilder builder, ILookup<string, string> pathParameters)
             {
                 foreach (var part in subParts)
                     part.CompleteUrl(builder, pathParameters);
+            }
+
+            public void Match(string urlPart, ParametrizedUrlMatch result, bool updateScore)
+            {
+                var match = _regex.Match(urlPart);
+                if (!match.Success)
+                    result.Fail();
+                else
+                {
+                    result.UpdateScore(2);
+                    int groupIndex = 1;
+                    foreach (var part in subParts)
+                    {
+                        if (part.HasRegexGroup)
+                        {
+                            part.Match(match.Groups[groupIndex].Value, result, false);
+                            groupIndex++;
+                        }
+                    }
+                }
+            }
+
+            public void BuildRegex(StringBuilder pattern)
+            {
+                throw new NotSupportedException();
+            }
+
+            public bool HasRegexGroup
+            {
+                get { return false; }
             }
         }
 
@@ -148,6 +224,76 @@ namespace Vydejna.Contracts
                     builder.Append(Uri.EscapeDataString(parameter.Value));
                 }
             }
+        }
+
+        public ParametrizedUrlMatch Match(string[] url)
+        {
+            var result = new ParametrizedUrlMatch();
+            int cnt = Math.Max(url.Length, _parts.Count);
+            for (int i = 0; i < cnt && result.Success; i++)
+            {
+                if (i < _parts.Count)
+                    _parts[i].Match(i < url.Length ? url[i] : string.Empty, result, true);
+                else if (!string.IsNullOrEmpty(url[i]))
+                    result.Fail();
+                else if (i != (cnt - 1))
+                    result.Fail();
+            }
+            return result;
+        }
+
+        public static string[] UrlForMatching(string url)
+        {
+            var parts = new Uri(url).AbsolutePath.Split('/');
+            return parts.Skip(1).ToArray();
+        }
+    }
+
+    public class ParametrizedUrlMatch : IEnumerable<RequestParameter>
+    {
+        private int _score;
+        private List<RequestParameter> _parameters;
+
+        public ParametrizedUrlMatch()
+        {
+            _parameters = new List<RequestParameter>();
+        }
+
+        public bool Success { get { return _score >= 0; } }
+        public int Score { get { return _score; } }
+        public int Count { get { return _parameters.Count; } }
+
+        public void AddParameter(string name, string value)
+        {
+            if (_score < 0)
+                return;
+            _parameters.Add(new RequestParameter(RequestParameterType.Path, name, value));
+        }
+        public void UpdateScore(int value)
+        {
+            if (_score < 0)
+                return;
+            _score = GetScoreUpdate(_score, value);
+        }
+        public static int GetScoreUpdate(int score, int value)
+        {
+            return score * 10 + value;
+        }
+        public ParametrizedUrlMatch Fail()
+        {
+            _parameters.Clear();
+            _score = -1;
+            return this;
+        }
+
+        public IEnumerator<RequestParameter> GetEnumerator()
+        {
+            return _parameters.GetEnumerator();
+        }
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator()
+        {
+            return GetEnumerator();
         }
     }
 }
