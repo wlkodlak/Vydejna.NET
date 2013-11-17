@@ -1,4 +1,5 @@
-﻿using System;
+﻿using ServiceStack.Text;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -153,5 +154,32 @@ namespace Vydejna.Domain
             await _store.AddToStream(StreamNameForId(aggregate.Id), serialized, expectedVersion);
             aggregate.CommitChanges(serialized.Last().StreamVersion);
         }
+    }
+
+    public class EventSourcedJsonSerializer : IEventSourcedSerializer
+    {
+        public object Deserialize(EventStoreEvent evt)
+        {
+            return JsonSerializer.DeserializeFromString(evt.Body, ContractTypes.GetType(evt.Type));
+        }
+
+        public void Serialize(object evt, EventStoreEvent stored)
+        {
+            var type = evt.GetType();
+            stored.Type = ContractTypes.GetType(type);
+            stored.Body = JsonSerializer.SerializeToString(evt, type);
+        }
+    }
+
+    [Serializable]
+    public class ValidationException : Exception
+    {
+        public ValidationException() { }
+        public ValidationException(string message) : base(message) { }
+        public ValidationException(string message, Exception inner) : base(message, inner) { }
+        protected ValidationException(
+          System.Runtime.Serialization.SerializationInfo info,
+          System.Runtime.Serialization.StreamingContext context)
+            : base(info, context) { }
     }
 }
