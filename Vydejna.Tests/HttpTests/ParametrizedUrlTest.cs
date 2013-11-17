@@ -170,5 +170,31 @@ namespace Vydejna.Tests.HttpTests
             return result;
         }
 
+
+        [TestMethod]
+        public void ParseQueryString_Basic()
+        {
+            var parsed = ParametrizedUrl.ParseQueryString("http://localhost/action?param1=58&param2=true&p=hello_world").ToList();
+            Assert.AreEqual(3, parsed.Count, "Count");
+            var expected = new[] { "param1", "58", "param2", "true", "p", "hello_world" };
+            for (int i = 0; i < 3; i++)
+            {
+                Assert.AreEqual(expected[i * 2], parsed[i].Name, "Name {0}", i);
+                Assert.AreEqual(expected[i * 2 + 1], parsed[i].Value, "Value {0}", i);
+            }
+        }
+
+        [TestMethod]
+        public void ParseQueryString_SpecialCharacters()
+        {
+            var parsed = ParametrizedUrl.ParseQueryString("http://localhost/action?spaces=hello+world&empty=&percents=%23+%2F=%3D%3F").ToList();
+            Assert.AreEqual(3, parsed.Count, "Count");
+            var expected = new[] { "spaces", "hello world", "empty", "", "percents", "# /==?" };
+            for (int i = 0; i < 3; i++)
+            {
+                Assert.AreEqual(expected[i * 2], parsed[i].Name, "Name {0}", i);
+                Assert.AreEqual(expected[i * 2 + 1], parsed[i].Value, "Value {0}", i);
+            }
+        }
     }
 }

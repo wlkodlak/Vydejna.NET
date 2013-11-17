@@ -250,7 +250,19 @@ namespace Vydejna.Contracts
 
         public static IEnumerable<RequestParameter> ParseQueryString(string url)
         {
-            yield break;
+            var parameters = new Uri(url).Query.TrimStart('?').Split('&');
+            foreach (var parameter in parameters)
+            {
+                var parts = parameter.Split(new[] { '=' }, 2);
+                var name = parts[0];
+                var value = UnescapeUri(parts[1]);
+                yield return new RequestParameter(RequestParameterType.QueryString, name, value);
+            }
+        }
+
+        private static string UnescapeUri(string s)
+        {
+            return Uri.UnescapeDataString(s.Replace('+', ' '));
         }
     }
 
