@@ -99,6 +99,7 @@ namespace Vydejna.Domain
 
     public interface IEventSourcedSerializer
     {
+        bool HandlesFormat(string format);
         object Deserialize(EventStoreEvent evt);
         void Serialize(object evt, EventStoreEvent stored);
     }
@@ -174,7 +175,13 @@ namespace Vydejna.Domain
         {
             var type = evt.GetType();
             stored.Type = _mapper.GetName(type);
+            stored.Format = "json";
             stored.Body = JsonSerializer.SerializeToString(evt, type);
+        }
+
+        public bool HandlesFormat(string format)
+        {
+            return format == "json";
         }
     }
 

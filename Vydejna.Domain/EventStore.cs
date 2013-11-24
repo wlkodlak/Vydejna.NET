@@ -15,6 +15,11 @@ namespace Vydejna.Domain
         Task LoadBodies(IList<EventStoreEvent> events);
     }
 
+    public interface IEventStoreWaitable : IEventStore
+    {
+        Task WaitForEvents(EventStoreToken token, int timeout = 0);
+    }
+
     public class EventStoreVersion
     {
         private int _version;
@@ -87,14 +92,18 @@ namespace Vydejna.Domain
         public string StreamName { get; set; }
         public int StreamVersion { get; set; }
         public string Type { get; set; }
+        public string Format { get; set; }
         public string Body { get; set; }
     }
     public class EventStoreToken
     {
-        private static EventStoreToken _initial = new EventStoreToken { _token = string.Empty };
+        private static EventStoreToken _initial = new EventStoreToken { _token = string.Empty, _mode = 1 };
+        private static EventStoreToken _current = new EventStoreToken { _token = string.Empty, _mode = 2 };
         public static EventStoreToken Initial { get { return _initial; } }
+        public static EventStoreToken Current { get { return _current; } }
 
         private string _token;
+        private int _mode;
 
         private EventStoreToken()
         {
@@ -102,12 +111,15 @@ namespace Vydejna.Domain
         public EventStoreToken(string token)
         {
             _token = token ?? string.Empty;
+            _mode = string.IsNullOrEmpty(_token) ? 1 : 0;
         }
-        public bool IsInitial { get { return string.IsNullOrEmpty(_token); } }
+        public bool IsInitial { get { return _mode == 1; } }
+        public bool IsCurrent { get { return _mode == 2; } }
+
         public override bool Equals(object obj)
         {
             var oth = obj as EventStoreToken;
-            return oth != null && _token.Equals(oth._token, StringComparison.Ordinal);
+            return oth != null && _token.Equals(oth._token, StringComparison.Ordinal) && _mode == oth._mode;
         }
         public override int GetHashCode()
         {
@@ -178,6 +190,49 @@ namespace Vydejna.Domain
             get { return _events; }
         }
     }
+    public class EventStoreWaitable : IEventStoreWaitable
+    {
+        private IEventStore _store;
+        private IEventStoreWaitable _waitable;
+        private ITime _time;
+          
+        public EventStoreWaitable(IEventStore store, ITime time)
+        {
+            _store = store;
+            _waitable = store as IEventStoreWaitable;
+            _time = time;
+        }
+
+        public Task WaitForEvents(EventStoreToken token, int timeout = 0)
+        {
+            if (_waitable != null)
+                return _waitable.WaitForEvents(token, timeout);
+            else if (timeout <= 0)
+                return _time.Delay(200);
+            else
+                return _time.Delay(Math.Min(200, timeout));
+        }
+
+        public Task AddToStream(string stream, IEnumerable<EventStoreEvent> events, EventStoreVersion expectedVersion)
+        {
+            return _store.AddToStream(stream, events, expectedVersion);
+        }
+
+        public Task<IEventStoreStream> ReadStream(string stream, int minVersion = 0, int maxCount = int.MaxValue, bool loadBody = true)
+        {
+            return _store.ReadStream(stream, minVersion, maxCount, loadBody);
+        }
+
+        public Task<IEventStoreCollection> GetAllEvents(EventStoreToken token, int maxCount = int.MaxValue, bool loadBody = false)
+        {
+            return _store.GetAllEvents(token, maxCount, loadBody);
+        }
+
+        public Task LoadBodies(IList<EventStoreEvent> events)
+        {
+            return _store.LoadBodies(events);
+        }
+    }
 
     public class EventStoreInMemory : IEventStore
     {
@@ -236,7 +291,7 @@ namespace Vydejna.Domain
                 var result = Enumerable.Empty<EventStoreEvent>();
                 var next = token;
                 var more = false;
-                int skip = token.IsInitial ? 0 : int.Parse(token.ToString());
+                int skip = token.IsInitial ? 0 : token.IsCurrent ? _events.Count : int.Parse(token.ToString());
 
                 if (_events.Count == 0)
                     token = EventStoreToken.Initial;
@@ -249,6 +304,8 @@ namespace Vydejna.Domain
                     next = result.Last().Token;
                     more = (skip + list.Count) < _events.Count;
                 }
+                else
+                    next = _events.Last().Token;
 
                 return TaskResult.GetCompletedTask<IEventStoreCollection>(new EventStoreCollection(result, next, more));
             }

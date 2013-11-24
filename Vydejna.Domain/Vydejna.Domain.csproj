@@ -46,7 +46,9 @@
   <ItemGroup>
     <Compile Include="Bus.cs" />
     <Compile Include="DocumentStore.cs" />
+    <Compile Include="EventConsumer.cs" />
     <Compile Include="EventSourced.cs" />
+    <Compile Include="EventStreamingIndividual.cs" />
     <Compile Include="EventStore.cs" />
     <Compile Include="Naradi.cs" />
     <Compile Include="NaradiRepository.cs" />
@@ -56,6 +58,7 @@
     <Compile Include="SeznamNaradiRest.cs" />
     <Compile Include="SeznamNaradiService.cs" />
     <Compile Include="EventStoreSql.cs" />
+    <Compile Include="Time.cs" />
     <Compile Include="UnikatnostNaradi.cs" />
     <Compile Include="UnikatnostNaradiRepository.cs" />
   </ItemGroup>

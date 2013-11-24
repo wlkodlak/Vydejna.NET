@@ -247,6 +247,8 @@ namespace Vydejna.Domain
             var conn = await _config.GetConnection();
             try
             {
+                if (token.IsCurrent)
+                    return new EventStoreCollection(Enumerable.Empty<EventStoreEvent>(), await GetCurrentToken(conn), false);
                 var id = token.IsInitial ? 0 : int.Parse(token.ToString());
                 if (maxCount < int.MaxValue)
                     maxCount++;
@@ -261,6 +263,24 @@ namespace Vydejna.Domain
             finally
             {
                 _config.ReleaseConnection(conn);
+            }
+        }
+
+        private async Task<EventStoreToken> GetCurrentToken(SqlConnection conn)
+        {
+            using (var cmd = conn.CreateCommand())
+            {
+                var results = new List<EventStoreEvent>();
+                cmd.CommandText = "SELECT TOP 1 id FROM eventstore_events ORDER BY id DESC";
+                using (var reader = await cmd.ExecuteReaderAsync(System.Data.CommandBehavior.SingleRow))
+                {
+                    if (!reader.Read())
+                        return EventStoreToken.Initial;
+                    else if (reader.IsDBNull(0))
+                        return EventStoreToken.Initial;
+                    else
+                        return new EventStoreToken(reader.GetInt32(0).ToString());
+                }
             }
         }
 

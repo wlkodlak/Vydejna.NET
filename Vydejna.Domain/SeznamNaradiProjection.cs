@@ -10,11 +10,35 @@ using System.Xml;
 
 namespace Vydejna.Domain
 {
+    public class SeznamNaradiProxy : IReadSeznamNaradi
+    {
+        private SeznamNaradiProjection _instance;
+        public SeznamNaradiProxy(SeznamNaradiProjection instance)
+        {
+            _instance = instance;
+            instance.AssignProxy(this);
+        }
+
+        public void ReassignInstance(SeznamNaradiProjection instance)
+        {
+            _instance = instance;
+        }
+
+        public Task<SeznamNaradiDto> NacistSeznamNaradi(int offset, int maxPocet)
+        {
+            return _instance.NacistSeznamNaradi(offset, maxPocet);
+        }
+
+        public Task<OvereniUnikatnostiDto> OveritUnikatnost(string vykres, string rozmer)
+        {
+            return _instance.OveritUnikatnost(vykres, rozmer);
+        }
+    }
+
     public class SeznamNaradiProjection : IReadSeznamNaradi
         , IHandle<DefinovanoNaradiEvent>
         , IHandle<AktivovanoNaradiEvent>
         , IHandle<DeaktivovanoNaradiEvent>
-        , IHandle<SystemEvents.SystemShutdown>
     {
         private IDocumentStore _store;
         private string _documentName;
@@ -24,6 +48,7 @@ namespace Vydejna.Domain
         private HashSet<string> _existujici = new HashSet<string>();
         private Dictionary<Guid, Item> _indexId = new Dictionary<Guid, Item>();
         private ItemComparer _razeni = new ItemComparer();
+        private SeznamNaradiProxy _proxy;
 
         private class Item
         {
@@ -34,12 +59,17 @@ namespace Vydejna.Domain
         {
             _store = store;
             _documentName = documentName;
-            NacistData();
+            NacistData().GetAwaiter().GetResult();
         }
 
-        private void NacistData()
+        public void AssignProxy(SeznamNaradiProxy proxy)
         {
-            var doc = _store.GetDocument(_documentName).GetAwaiter().GetResult();
+            _proxy = proxy;
+        }
+
+        private async Task NacistData()
+        {
+            var doc = await _store.GetDocument(_documentName);
             if (string.IsNullOrEmpty(doc))
                 return;
             var xml = XDocument.Parse(doc);
@@ -60,7 +90,7 @@ namespace Vydejna.Domain
             _data.Sort(_razeni);
         }
 
-        private void UlozitData()
+        private async Task UlozitData()
         {
             using (_lock.Update())
             {
@@ -83,7 +113,7 @@ namespace Vydejna.Domain
                     }
                     writer.WriteEndElement();
                 }
-                _store.SaveDocument(_documentName, builder.ToString()).GetAwaiter().GetResult();
+                await _store.SaveDocument(_documentName, builder.ToString());
                 _dirty = false;
             }
         }
@@ -162,9 +192,9 @@ namespace Vydejna.Domain
             }
         }
 
-        public void Handle(SystemEvents.SystemShutdown message)
+        public Task HandleShutdown()
         {
-            UlozitData();
+            return UlozitData();
         }
 
         private TypNaradiDto Clone(TypNaradiDto old)
