@@ -15,11 +15,14 @@ namespace Vydejna.Domain
 
     public class UnikatnostNaradiRepositoryInMemory : EventSourcedRepository<UnikatnostNaradi>, IUnikatnostNaradiRepository
     {
-        private static readonly Guid _id = new Guid("341FA50E-E1E9-4C9B-AC89-AFED9ADDA843");
-
         public UnikatnostNaradiRepositoryInMemory(IEventStore store, string prefix, IEventSourcedSerializer serializer)
             : base(store, prefix, serializer)
         {
+        }
+
+        protected override string StreamNameForId(Guid id)
+        {
+            return Prefix;
         }
 
         protected override UnikatnostNaradi CreateAggregate()
@@ -29,7 +32,7 @@ namespace Vydejna.Domain
 
         UnikatnostNaradi IUnikatnostNaradiRepository.Get()
         {
-            return Get(_id).GetAwaiter().GetResult();
+            return Get(Guid.Empty).GetAwaiter().GetResult();
         }
 
         void IUnikatnostNaradiRepository.Save(UnikatnostNaradi unikatnost)
