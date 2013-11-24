@@ -1,6 +1,8 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Express 2012 for Windows Desktop
+# Visual Studio Express 2013 for Windows Desktop
+VisualStudioVersion = 12.0.21005.1
+MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Vydejna.Tests", "Vydejna.Tests\Vydejna.Tests.csproj", "{EA10FEAB-7ECF-4F76-93F8-64E0AD3E8699}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Vydejna.Domain", "Vydejna.Domain\Vydejna.Domain.csproj", "{E7F219E1-6D36-496C-A78E-318AE2B374B1}"
@@ -8,6 +10,13 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Vydejna.Contracts", "Vydejna.Contracts\Vydejna.Contracts.csproj", "{1179AF67-E0AE-4345-B454-0CB396587270}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Vydejna.Gui", "Vydejna.Gui\Vydejna.Gui.csproj", "{BFC8555C-D36E-4DAE-A79F-909C68378E8A}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = ".nuget", ".nuget", "{D99F529F-18CF-425F-8EC2-4F32691A545F}"
+	ProjectSection(SolutionItems) = preProject
+		.nuget\NuGet.Config = .nuget\NuGet.Config
+		.nuget\NuGet.exe = .nuget\NuGet.exe
+		.nuget\NuGet.targets = .nuget\NuGet.targets
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

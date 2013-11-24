@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -291,7 +291,7 @@ namespace Vydejna.Domain
                 var result = Enumerable.Empty<EventStoreEvent>();
                 var next = token;
                 var more = false;
-                int skip = token.IsInitial ? 0 : token.IsCurrent ? _events.Count : int.Parse(token.ToString());
+                int skip = token.IsInitial ? 0 : token.IsCurrent ? _events.Count : int.Parse(token.ToString()) + 1;
 
                 if (_events.Count == 0)
                     token = EventStoreToken.Initial;
