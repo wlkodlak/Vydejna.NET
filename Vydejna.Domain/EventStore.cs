@@ -236,7 +236,7 @@ namespace Vydejna.Domain
                 var result = Enumerable.Empty<EventStoreEvent>();
                 var next = token;
                 var more = false;
-                int skip = token.IsInitial ? 0 : int.Parse(token.ToString());
+                int skip = token.IsInitial ? 0 : int.Parse(token.ToString()) + 1;
 
                 if (_events.Count == 0)
                     token = EventStoreToken.Initial;

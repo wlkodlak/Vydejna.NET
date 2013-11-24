@@ -123,6 +123,8 @@ namespace Vydejna.Domain
         public async Task<T> Get(Guid id)
         {
             var storedEvents = await _store.ReadStream(StreamNameForId(id), 0, int.MaxValue, true);
+            if (storedEvents.StreamVersion == 0)
+                return null;
             var deserialized = storedEvents.Events.Select(_serializer.Deserialize).ToList();
             var aggregate = CreateAggregate();
             aggregate.LoadFromEvents(deserialized);
@@ -130,10 +132,12 @@ namespace Vydejna.Domain
             return aggregate;
         }
 
-        private string StreamNameForId(Guid id)
+        protected string Prefix { get { return _prefix; } }
+
+        protected virtual string StreamNameForId(Guid id)
         {
             return new StringBuilder(64)
-                .Append(_prefix)
+                .Append(Prefix)
                 .Append('_')
                 .Append(id.ToString("N").ToLowerInvariant())
                 .ToString();
@@ -149,6 +153,7 @@ namespace Vydejna.Domain
             {
                 var stored = new EventStoreEvent();
                 _serializer.Serialize(evt, stored);
+                serialized.Add(stored);
             }
             var expectedVersion = aggregate.OriginalVersion == 0 ? EventStoreVersion.EmptyStream : EventStoreVersion.Number(aggregate.OriginalVersion);
             await _store.AddToStream(StreamNameForId(aggregate.Id), serialized, expectedVersion);
