@@ -61,7 +61,6 @@
   </Choose>
   <ItemGroup>
     <Compile Include="EventSourcedTests\EventStoreInMemoryTests.cs" />
-    <Compile Include="EventSourcedTests\GenericRepositoryTests.cs" />
     <Compile Include="HttpTests\ParametrizedUrlTest.cs" />
     <Compile Include="HttpTests\RestClientTest.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

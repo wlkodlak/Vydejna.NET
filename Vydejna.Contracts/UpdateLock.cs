@@ -82,6 +82,77 @@ namespace Vydejna.Contracts
                 Dispose(false);
             }
         }
+    }
 
+    public class AsyncLock
+    {
+        private object _lock;
+        private bool _locked;
+        private Queue<TaskCompletionSource<IDisposable>> _queue;
+
+        public AsyncLock()
+        {
+            _locked = false;
+            _lock = new object();
+            _queue = new Queue<TaskCompletionSource<IDisposable>>();
+        }
+
+        public Task<IDisposable> Lock()
+        {
+            lock (_lock)
+            {
+                if (_locked)
+                {
+                    var tcs = new TaskCompletionSource<IDisposable>();
+                    _queue.Enqueue(tcs);
+                    return tcs.Task;
+                }
+                else
+                {
+                    _locked = true;
+                    return Task.FromResult<IDisposable>(new DisposeLock(this));
+                }
+            }
+        }
+
+        private void Unlock()
+        {
+            TaskCompletionSource<IDisposable> tcs = null;
+            lock (_lock)
+            {
+                if (_queue.Count == 0)
+                    _locked = false;
+                else
+                    tcs = _queue.Dequeue();
+            }
+            if (tcs != null)
+                tcs.SetResult(new DisposeLock(this));
+        }
+
+        private class DisposeLock : IDisposable
+        {
+            private AsyncLock _lock;
+            public DisposeLock(AsyncLock asyncLock)
+            {
+                _lock = asyncLock;
+            }
+            public void Dispose()
+            {
+                GC.SuppressFinalize(this);
+                Dispose(true);
+            }
+            private void Dispose(bool disposing)
+            {
+                if (_lock != null)
+                {
+                    _lock.Unlock();
+                    _lock = null;
+                }
+            }
+            ~DisposeLock()
+            {
+                Dispose(false);
+            }
+        }
     }
 }

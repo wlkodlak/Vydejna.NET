@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Vydejna.Contracts;
 
 namespace Vydejna.Domain
 {
@@ -53,10 +54,27 @@ namespace Vydejna.Domain
         Task BuildNewInstance(string instanceName, string nodeName, string version, string minimalReader);
         Task Upgrade(string instanceName, string newVersion);
         Task UpdateStatus(string instanceName, ProjectionStatus status);
-        EventStoreToken GetToken(string instanceName);
+        Task<EventStoreToken> GetToken(string instanceName);
         Task SetToken(string instanceName, EventStoreToken token);
         Task<IEnumerable<ProjectionInstanceMetadata>> GetAllMetadata();
         Task<ProjectionInstanceMetadata> GetInstanceMetadata(string instanceName);
+        IDisposable RegisterForChanges(string instanceName, IHandle<ProjectionMetadataChanged> handler);
+    }
+
+    public class ProjectionMetadataChanged
+    {
+        public string InstanceName { get; private set; }
+        public ProjectionStatus Status { get; private set; }
+        public ProjectionInstanceMetadata Metadata { get; private set; }
+        public object LocalObject { get; private set; }
+
+        public ProjectionMetadataChanged(ProjectionInstanceMetadata metadata, object localObject)
+        {
+            this.InstanceName = metadata.Name;
+            this.Status = metadata.Status;
+            this.Metadata = metadata;
+            this.LocalObject = localObject;
+        }
     }
 
     public class ProjectionInstanceMetadata
@@ -65,13 +83,15 @@ namespace Vydejna.Domain
         public string Version { get; private set; }
         public string MinimalReader { get; private set; }
         public string CurrentNode { get; private set; }
+        public ProjectionStatus Status { get; private set; }
         
-        public ProjectionInstanceMetadata(string name, string version, string minimalReader, string currentNode)
+        public ProjectionInstanceMetadata(string name, string version, string minimalReader, string currentNode, ProjectionStatus status)
         {
             this.Name = name;
             this.Version = version;
             this.MinimalReader = minimalReader;
             this.CurrentNode = currentNode;
+            this.Status = status;
         }
     }
 
@@ -85,24 +105,24 @@ namespace Vydejna.Domain
         Inactive
     }
 
-    public interface IEventHandlerMetadataManager
+    public interface IProjectionMetadataManager
     {
         Task<IProjectionMetadata> GetProjection(string projectionName);
         Task<IEventsConsumerMetadata> GetHandler(string handlerName);
     }
 
-    public interface IEventConsumerManager : IEventHandlerMetadataManager, IEventStreaming
+    public interface IEventConsumerManager : IProjectionMetadataManager, IEventStreaming
     {
         object Deserialize(EventStoreEvent evt);
     }
 
     public class EventsConsumerManager : IEventConsumerManager
     {
-        private IEventHandlerMetadataManager _metadata;
+        private IProjectionMetadataManager _metadata;
         private IEventStreaming _events;
         private IEventSourcedSerializer _serializer;
         
-        public EventsConsumerManager(IEventHandlerMetadataManager metadata, IEventStreaming events, IEventSourcedSerializer serializer)
+        public EventsConsumerManager(IProjectionMetadataManager metadata, IEventStreaming events, IEventSourcedSerializer serializer)
         {
             _metadata = metadata;
             _events = events;
