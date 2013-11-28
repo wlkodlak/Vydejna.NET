@@ -15,14 +15,19 @@ namespace Vydejna.Contracts
     {
         public static Task<T> GetCompletedTask<T>(T result)
         {
-            var tcs = new TaskCompletionSource<T>();
-            tcs.SetResult(result);
-            return tcs.Task;
+            return Task.FromResult<T>(result);
         }
 
         public static Task GetCompletedTask()
         {
-            return GetCompletedTask<object>(null);
+            return Task.FromResult<object>(null);
+        }
+
+        public static Task<T> GetFailedTask<T>(Exception exception)
+        {
+            var tcs = new TaskCompletionSource<T>();
+            tcs.SetException(exception);
+            return tcs.Task;
         }
     }
 }

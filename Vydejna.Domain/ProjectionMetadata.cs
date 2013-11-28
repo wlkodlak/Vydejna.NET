@@ -175,7 +175,7 @@ namespace Vydejna.Domain
                 {
                     foreach (var registration in _changes)
                     {
-                        if (registration.InstanceName.Equals(evt.InstanceName, StringComparison.Ordinal))
+                        if (registration.HandlesInstance(evt.InstanceName))
                             registration.Invoke(evt);
                     }
                 }
@@ -331,6 +331,11 @@ namespace Vydejna.Domain
             public void Invoke(ProjectionMetadataChanged evt)
             {
                 _handler.Handle(evt);
+            }
+
+            public bool HandlesInstance(string instanceName)
+            {
+                return _instanceName == null || _instanceName.Equals(instanceName, StringComparison.Ordinal);
             }
 
             public void Dispose()

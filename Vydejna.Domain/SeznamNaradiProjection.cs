@@ -10,66 +10,121 @@ using System.Xml;
 
 namespace Vydejna.Domain
 {
-    public class SeznamNaradiProxy : IReadSeznamNaradi
+    public class SeznamNaradiProxy : ProjectionProxy<SeznamNaradiReader>, IReadSeznamNaradi
     {
-        private SeznamNaradiProjection _instance;
-        public SeznamNaradiProxy(SeznamNaradiProjection instance)
+        public SeznamNaradiProxy(IProjectionMetadataManager mgr)
+            : base(mgr, "SeznamNaradi")
         {
-            _instance = instance;
-            instance.AssignProxy(this);
-        }
-
-        public void ReassignInstance(SeznamNaradiProjection instance)
-        {
-            _instance = instance;
         }
 
         public Task<SeznamNaradiDto> NacistSeznamNaradi(int offset, int maxPocet)
         {
-            return _instance.NacistSeznamNaradi(offset, maxPocet);
+            return Reader.NacistSeznamNaradi(offset, maxPocet);
         }
 
         public Task<OvereniUnikatnostiDto> OveritUnikatnost(string vykres, string rozmer)
         {
-            return _instance.OveritUnikatnost(vykres, rozmer);
+            return Reader.OveritUnikatnost(vykres, rozmer);
         }
     }
 
-    public class SeznamNaradiProjection : IReadSeznamNaradi
+    public class SeznamNaradiReader : IReadSeznamNaradi, IProjectionReader
+    {
+        private string _usedInstance = null;
+        private Dictionary<string, IReadSeznamNaradi> _projections;
+        private IReadSeznamNaradi _activeProjection;
+
+        public SeznamNaradiReader()
+        {
+            _activeProjection = new SeznamNaradiDisabledProjection();
+            _projections = new Dictionary<string, IReadSeznamNaradi>();
+        }
+
+        public void Register(string instanceName, IReadSeznamNaradi projection)
+        {
+            _projections[instanceName] = projection;
+            if (string.Equals(_usedInstance, instanceName, StringComparison.Ordinal))
+                _activeProjection = projection;
+        }
+
+        public Task<SeznamNaradiDto> NacistSeznamNaradi(int offset, int maxPocet)
+        {
+            return _activeProjection.NacistSeznamNaradi(offset, maxPocet);
+        }
+
+        public Task<OvereniUnikatnostiDto> OveritUnikatnost(string vykres, string rozmer)
+        {
+            return _activeProjection.OveritUnikatnost(vykres, rozmer);
+        }
+
+        public string GetVersion()
+        {
+            return "1.0";
+        }
+
+        public string GetProjectionName()
+        {
+            return "SeznamNaradi";
+        }
+
+        public ProjectionReadability GetReadability(string minimalReaderVersion, string storedVersion)
+        {
+            return ProjectionUtils.CheckReaderVersion(minimalReaderVersion, GetVersion(), storedVersion, "0.0");
+        }
+
+        public void UseInstance(string instanceName)
+        {
+            _usedInstance = instanceName;
+            if (instanceName == null)
+                _activeProjection = new SeznamNaradiDisabledProjection();
+            else if (!_projections.TryGetValue(instanceName, out _activeProjection))
+                _activeProjection = new SeznamNaradiDisabledProjection();
+        }
+
+        private class SeznamNaradiDisabledProjection : IReadSeznamNaradi
+        {
+            public Task<SeznamNaradiDto> NacistSeznamNaradi(int offset, int maxPocet)
+            {
+                return TaskResult.GetFailedTask<SeznamNaradiDto>(new NotSupportedException("IReadSeznamNaradi.NacistSeznamNaradi has no handler"));
+            }
+
+            public Task<OvereniUnikatnostiDto> OveritUnikatnost(string vykres, string rozmer)
+            {
+                return TaskResult.GetFailedTask<OvereniUnikatnostiDto>(new NotSupportedException("IReadSeznamNaradi.NacistSeznamNaradi has no handler"));
+            }
+        }
+    }
+
+    public class SeznamNaradiProjection : IReadSeznamNaradi, IProjection
         , IHandle<DefinovanoNaradiEvent>
         , IHandle<AktivovanoNaradiEvent>
         , IHandle<DeaktivovanoNaradiEvent>
     {
         private IDocumentStore _store;
-        private string _documentName;
+        private string _documentBaseName;
+        private string _documentFullName;
         private bool _dirty;
         private UpdateLock _lock = new UpdateLock();
         private List<Item> _data = new List<Item>();
         private HashSet<string> _existujici = new HashSet<string>();
         private Dictionary<Guid, Item> _indexId = new Dictionary<Guid, Item>();
         private ItemComparer _razeni = new ItemComparer();
-        private SeznamNaradiProxy _proxy;
 
         private class Item
         {
             public TypNaradiDto Dto;
         }
 
-        public SeznamNaradiProjection(IDocumentStore store, string documentName)
+        public SeznamNaradiProjection(IDocumentStore store, string documentBaseName)
         {
             _store = store;
-            _documentName = documentName;
+            _documentBaseName = documentBaseName;
             NacistData().GetAwaiter().GetResult();
-        }
-
-        public void AssignProxy(SeznamNaradiProxy proxy)
-        {
-            _proxy = proxy;
         }
 
         private async Task NacistData()
         {
-            var doc = await _store.GetDocument(_documentName);
+            var doc = await _store.GetDocument(_documentBaseName);
             if (string.IsNullOrEmpty(doc))
                 return;
             var xml = XDocument.Parse(doc);
@@ -113,7 +168,7 @@ namespace Vydejna.Domain
                     }
                     writer.WriteEndElement();
                 }
-                await _store.SaveDocument(_documentName, builder.ToString());
+                await _store.SaveDocument(_documentBaseName, builder.ToString());
                 _dirty = false;
             }
         }
@@ -192,11 +247,6 @@ namespace Vydejna.Domain
             }
         }
 
-        public Task HandleShutdown()
-        {
-            return UlozitData();
-        }
-
         private TypNaradiDto Clone(TypNaradiDto old)
         {
             return new TypNaradiDto(old.Id, old.Vykres, old.Rozmer, old.Druh, old.Aktivni);
@@ -215,6 +265,86 @@ namespace Vydejna.Domain
                     return rozmer;
                 return 0;
             }
+        }
+
+        private const string ProjectionVersion = "1.0";
+        private IProjectionProcess _processServices;
+
+        ProjectionRebuildType IProjection.NeedsRebuild(string storedVersion)
+        {
+            return ProjectionUtils.CheckWriterVersion(storedVersion, ProjectionVersion);
+        }
+
+        string IProjection.GetVersion()
+        {
+            return ProjectionVersion;
+        }
+
+        int IProjection.EventsBulkSize()
+        {
+            return 1000;
+        }
+
+        Task IProjection.StartRebuild(bool continuation)
+        {
+            if (!continuation)
+            {
+                _dirty = true;
+                _data.Clear();
+                _existujici.Clear();
+                _indexId.Clear();
+            }
+            return TaskResult.GetCompletedTask();
+        }
+
+        Task IProjection.PartialCommit()
+        {
+            return UlozitData();
+        }
+
+        Task IProjection.CommitRebuild()
+        {
+            return UlozitData();
+        }
+
+        Task IProjection.StopRebuild()
+        {
+            return UlozitData();
+        }
+
+        bool IProjection.SupportsProcessServices()
+        {
+            return true;
+        }
+
+        void IProjection.SetProcessServices(IProjectionProcess process)
+        {
+            _processServices = process;
+        }
+
+        string IEventConsumer.GetConsumerName()
+        {
+            return "SeznamNaradi";
+        }
+
+        async Task IEventConsumer.HandleShutdown()
+        {
+            await UlozitData();
+            await _processServices.CommitProjectionProgress();
+        }
+
+        string IProjection.GenerateInstanceName(string masterName)
+        {
+            if (string.IsNullOrEmpty(masterName) || masterName == "B")
+                return "A";
+            else
+                return "B";
+        }
+
+        Task IProjection.SetInstanceName(string instanceName)
+        {
+            _documentFullName = _documentBaseName + instanceName;
+            return NacistData();
         }
     }
 }
