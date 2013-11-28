@@ -14,16 +14,30 @@ namespace Vydejna.Tests.SeznamNaradiTests
     public class SeznamNaradiProjectionTest
     {
         private DocumentStoreInMemory _store;
+        private IProjectionProcess _process;
+
+        private class FakeProjectionProcess : IProjectionProcess
+        {
+            public Task CommitProjectionProgress()
+            {
+                return TaskResult.GetCompletedTask();
+            }
+        }
 
         [TestInitialize]
         public void Initialize()
         {
             _store = new DocumentStoreInMemory();
+            _process = new FakeProjectionProcess();
         }
 
-        private SeznamNaradiProjection VytvoritProjection()
+        private SeznamNaradiProjection VytvoritProjection(string instanceName = "A")
         {
-            return new SeznamNaradiProjection(_store, "SeznamNaradi");
+            var projekce = new SeznamNaradiProjection(_store, "SeznamNaradi");
+            var iprojection = projekce as IProjection;
+            iprojection.SetInstanceName(instanceName).GetAwaiter().GetResult();
+            iprojection.SetProcessServices(_process);
+            return projekce;
         }
 
         private static SeznamNaradiDto ZiskatVsechnoNaradi(SeznamNaradiProjection proj)
@@ -144,6 +158,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             proj.Handle(new DeaktivovanoNaradiEvent() { NaradiId = Id(571) });
             proj.Handle(new DeaktivovanoNaradiEvent() { NaradiId = Id(140) });
             proj.Handle(new AktivovanoNaradiEvent() { NaradiId = Id(140) });
+            ProjectionShutdown(proj);
             SafeHandle(proj, new SystemEvents.SystemShutdown());
 
             var proj2 = VytvoritProjection();
@@ -155,7 +170,43 @@ namespace Vydejna.Tests.SeznamNaradiTests
             AssertGuidCollectionsEqual(aktivniOcekavane, aktivniGuid, "Aktivni");
         }
 
+        [TestMethod]
+        public void ParalelniProjekce()
+        {
+            var proj1 = VytvoritProjection("A");
+            proj1.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(101), Vykres = "Vykres-01-55824", Rozmer = "o 150", Druh = "" });
+            proj1.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(571), Vykres = "Vykres-02-37214", Rozmer = "o 4.2", Druh = "" });
+            proj1.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(140), Vykres = "Vykres-12-37512", Rozmer = "o 100", Druh = "" });
+            proj1.Handle(new DeaktivovanoNaradiEvent() { NaradiId = Id(101) });
+            proj1.Handle(new DeaktivovanoNaradiEvent() { NaradiId = Id(140) });
+            proj1.Handle(new AktivovanoNaradiEvent() { NaradiId = Id(140) });
+            ProjectionShutdown(proj1);
 
+            var proj2 = VytvoritProjection("B");
+            proj2.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(101), Vykres = "Vykres-01-55824", Rozmer = "o 150", Druh = "" });
+            proj2.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(571), Vykres = "Vykres-02-37214", Rozmer = "o 4.2", Druh = "" });
+            proj2.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(140), Vykres = "Vykres-12-37512", Rozmer = "o 100", Druh = "" });
+            proj2.Handle(new DeaktivovanoNaradiEvent() { NaradiId = Id(101) });
+            proj2.Handle(new DeaktivovanoNaradiEvent() { NaradiId = Id(140) });
+            proj2.Handle(new AktivovanoNaradiEvent() { NaradiId = Id(140) });
+            proj2.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(124), Vykres = "Vykres-05-11624", Rozmer = "20x20", Druh = "" });
+            proj2.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(335), Vykres = "Vykres-11-72184", Rozmer = "170x3", Druh = "" });
+            proj2.Handle(new DeaktivovanoNaradiEvent() { NaradiId = Id(571) });
+            ProjectionShutdown(proj2);
+
+            var aktivni1Expect = new Guid[] { Id(571), Id(140)  };
+            var aktivni1Real = ZiskatVsechnoNaradi(proj1).SeznamNaradi.Where(n => n.Aktivni).Select(n => n.Id).ToArray();
+            AssertGuidCollectionsEqual(aktivni1Expect, aktivni1Real, "Aktivni1");
+
+            var aktivni2Expect = new Guid[] { Id(124), Id(335), Id(140) };
+            var aktivni2Real = ZiskatVsechnoNaradi(proj2).SeznamNaradi.Where(n => n.Aktivni).Select(n => n.Id).ToArray();
+            AssertGuidCollectionsEqual(aktivni2Expect, aktivni2Real, "Aktivni2");
+        }
+
+        private void ProjectionShutdown(IProjection projection)
+        {
+            projection.HandleShutdown().GetAwaiter().GetResult();
+        }
 
         private void SafeHandle<T>(object proj, T evt)
         {

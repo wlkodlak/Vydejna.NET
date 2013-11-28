@@ -119,12 +119,11 @@ namespace Vydejna.Domain
         {
             _store = store;
             _documentBaseName = documentBaseName;
-            NacistData().GetAwaiter().GetResult();
         }
 
         private async Task NacistData()
         {
-            var doc = await _store.GetDocument(_documentBaseName);
+            var doc = await _store.GetDocument(_documentFullName);
             if (string.IsNullOrEmpty(doc))
                 return;
             var xml = XDocument.Parse(doc);
@@ -168,7 +167,7 @@ namespace Vydejna.Domain
                     }
                     writer.WriteEndElement();
                 }
-                await _store.SaveDocument(_documentBaseName, builder.ToString());
+                await _store.SaveDocument(_documentFullName, builder.ToString());
                 _dirty = false;
             }
         }
