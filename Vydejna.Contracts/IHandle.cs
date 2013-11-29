@@ -11,6 +11,11 @@ namespace Vydejna.Contracts
         void Handle(T message);
     }
 
+    public interface IHandleRegistration<T>
+    {
+        void ReplaceWith(IHandle<T> handler);
+    }
+
     public static class TaskResult
     {
         public static Task<T> GetCompletedTask<T>(T result)

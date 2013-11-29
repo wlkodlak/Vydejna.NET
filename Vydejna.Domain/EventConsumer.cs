@@ -36,6 +36,7 @@ namespace Vydejna.Domain
     {
         ProjectionRebuildType NeedsRebuild(string storedVersion);
         string GetVersion();
+        string GetMinimalReader();
         int EventsBulkSize();
         string GenerateInstanceName(string masterName);
         Task SetInstanceName(string instanceName);

@@ -345,5 +345,10 @@ namespace Vydejna.Domain
             _documentFullName = _documentBaseName + instanceName;
             return NacistData();
         }
+
+        public string GetMinimalReader()
+        {
+            return "1.0";
+        }
     }
 }
