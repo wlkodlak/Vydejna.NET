@@ -12,9 +12,9 @@ namespace Vydejna.Domain
     {
         NoRebuild,
         Initial,
-        //Upgrade,
+        Upgrade,
         NewRebuild,
-        //ContinueRebuild
+        ContinueRebuild
     }
 
     public enum ProjectionReadability
@@ -159,6 +159,13 @@ namespace Vydejna.Domain
                 oth != null && Name == oth.Name && 
                 Version == oth.Version && MinimalReader == oth.MinimalReader && 
                 CurrentNode == oth.CurrentNode && Status == oth.Status;
+        }
+
+        public override string ToString()
+        {
+            return string.Format(
+                "Instance {0} version {1} (reader {2}): {3}",
+                Name, Version, MinimalReader, Status);
         }
     }
 
