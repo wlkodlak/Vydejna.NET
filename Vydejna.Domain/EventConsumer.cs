@@ -12,7 +12,7 @@ namespace Vydejna.Domain
     {
         NoRebuild,
         Initial,
-        Upgrade,
+        ContinueInitial,
         NewRebuild,
         ContinueRebuild
     }

@@ -73,7 +73,7 @@ namespace Vydejna.Domain
         }
     }
 
-    public class ProjectionProcess : IHandle<ProjectionMetadataChanged>
+    public class ProjectionProcess : IHandle<ProjectionMetadataChanged>, IProjectionProcess
     {
         private string _instanceName;
         private IEventStreaming _streamer;
@@ -87,6 +87,12 @@ namespace Vydejna.Domain
         private CancellationTokenSource _cancel;
         private bool _isRebuilder;
         private bool _isReplaced;
+        private IEnumerable<ProjectionInstanceMetadata> _allMetadata;
+        private ProjectionInstanceMetadata _runningMetadata;
+        private ProjectionInstanceMetadata _rebuildMetadata;
+        private ProjectionRebuildType _rebuildType;
+        private bool _isInRebuildMode;
+        private bool _isInBatchMode;
 
         public ProjectionProcess(IEventStreaming streamer, IProjectionMetadataManager metadataManager, IEventSourcedSerializer serializer)
         {
@@ -119,123 +125,102 @@ namespace Vydejna.Domain
             return _handlers.Register(handler);
         }
 
-        public Task Start()
+        public async Task Start()
         {
+            await LoadMetadata();
+            DetectRebuildType();
+
             if (!_isRebuilder)
-                return StartAsMaster();
+                await InitializeAsMaster();
+            else if (!await InitializeAsRebuilder())
+                return;
+            
+            await Run();
+        }
+
+        private async Task LoadMetadata()
+        {
+            _metadata = await _metadataManager.GetProjection(_projection.GetConsumerName());
+            _allMetadata = await _metadata.GetAllMetadata();
+            _runningMetadata = _allMetadata.FirstOrDefault(m => m.Status == ProjectionStatus.Running);
+            _rebuildMetadata = _allMetadata.FirstOrDefault(m => m.Status == ProjectionStatus.NewBuild);
+        }
+
+        private void DetectRebuildType()
+        {
+            if (_runningMetadata == null)
+            {
+                if (_rebuildMetadata == null)
+                {
+                    _rebuildType = ProjectionRebuildType.Initial;
+                    _instanceName = _isRebuilder ? null : _projection.GenerateInstanceName(null);
+                }
+                else
+                {
+                    _rebuildType = _projection.NeedsRebuild(_rebuildMetadata.Version);
+                    _instanceName = _isRebuilder ? null : _rebuildMetadata.Name;
+                    if (_rebuildType == ProjectionRebuildType.NoRebuild)
+                        _rebuildType = ProjectionRebuildType.ContinueInitial;
+                    else
+                        _rebuildType = ProjectionRebuildType.Initial;
+                }
+            }
             else
-                return StartAsRebuilder();
+            {
+                _rebuildType = _projection.NeedsRebuild(_runningMetadata.Version);
+                if (_rebuildType == ProjectionRebuildType.NoRebuild)
+                    _instanceName = _isRebuilder ? null : _runningMetadata.Name;
+                else if (_rebuildMetadata == null)
+                    _instanceName = _isRebuilder ? _projection.GenerateInstanceName(_runningMetadata.Name) : _runningMetadata.Name;
+                else
+                {
+                    _instanceName = _isRebuilder ? _rebuildMetadata.Name : _runningMetadata.Name;
+                    _rebuildType = _projection.NeedsRebuild(_rebuildMetadata.Version);
+                    if (_rebuildType == ProjectionRebuildType.NoRebuild)
+                        _rebuildType = ProjectionRebuildType.ContinueRebuild;
+                }
+            }
         }
 
-        public async Task StartAsMaster()
+        private async Task InitializeAsMaster()
         {
-            _metadata = await _metadataManager.GetProjection(_projection.GetConsumerName());
-            var allMetadata = await _metadata.GetAllMetadata();
-
-            var rebuildMode = false;
-            var metadata = allMetadata.FirstOrDefault(m => m.Status == ProjectionStatus.Running);
-            if (metadata == null)
+            _currentToken = _rebuildType == ProjectionRebuildType.Initial ? EventStoreToken.Initial : await _metadata.GetToken(_instanceName);
+            if (_rebuildType == ProjectionRebuildType.Initial)
             {
-                metadata = allMetadata.FirstOrDefault(m => m.Status == ProjectionStatus.NewBuild);
-                rebuildMode = true;
-            }
-
-            if (metadata == null)
-            {
-                _instanceName = _projection.GenerateInstanceName(null);
-                _currentToken = EventStoreToken.Initial;
-                await _metadata.BuildNewInstance(_instanceName, null, _projection.GetVersion(), _projection.GetMinimalReader());
-                await _projection.StartRebuild(false);
-                rebuildMode = true;
-            }
-            else if (_projection.NeedsRebuild(metadata.Version) != ProjectionRebuildType.NoRebuild)
-            {
-                _instanceName = metadata.Name;
-                _currentToken = EventStoreToken.Initial;
                 await _metadata.BuildNewInstance(_instanceName, null, _projection.GetVersion(), _projection.GetMinimalReader());
                 await _projection.StartRebuild(false);
             }
-            else 
-            {
-                _instanceName = metadata.Name;
-                _currentToken = await _metadata.GetToken(_instanceName);
-                if (rebuildMode)
-                    await _projection.StartRebuild(true);
-            }
+            else if (_rebuildType == ProjectionRebuildType.ContinueInitial)
+                await _projection.StartRebuild(true);
             _metadata.RegisterForChanges(_instanceName, this);
-
-            _openedEventStream = _streamer.GetStreamer(_handlers.HandledTypes(), _currentToken, rebuildMode);
-
-            while (!_cancel.IsCancellationRequested && !_isReplaced)
-            {
-                try
-                {
-                    var storedEvent = await _openedEventStream.GetNextEvent(_cancel.Token);
-                    if (storedEvent != null)
-                    {
-                        var objectEvent = _serializer.Deserialize(storedEvent);
-                        _handlers.Handle(null, objectEvent);
-                        _currentToken = storedEvent.Token;
-                    }
-                    else if (rebuildMode)
-                    {
-                        await _projection.CommitRebuild();
-                        await _metadata.UpdateStatus(_instanceName, ProjectionStatus.Running);
-                        await _metadata.SetToken(_instanceName, _currentToken);
-                        rebuildMode = false;
-                    }
-                }
-                catch (TaskCanceledException)
-                {
-                    break;
-                }
-            }
-
-            await _metadata.SetToken(_instanceName, _currentToken);
+            _isInRebuildMode = _rebuildType == ProjectionRebuildType.Initial || _rebuildType == ProjectionRebuildType.ContinueInitial;
+            _openedEventStream = _streamer.GetStreamer(_handlers.HandledTypes(), _currentToken, _isInRebuildMode);
         }
 
-        public async Task StartAsRebuilder()
+        private async Task<bool> InitializeAsRebuilder()
         {
-            _metadata = await _metadataManager.GetProjection(_projection.GetConsumerName());
-            var allMetadata = await _metadata.GetAllMetadata();
-
-            var runningMetadata = allMetadata.FirstOrDefault(m => m.Status == ProjectionStatus.Running);
-            var rebuildMetadata = allMetadata.FirstOrDefault(m => m.Status == ProjectionStatus.NewBuild);
-            var rebuildMode = false;
-
-            if (runningMetadata == null)
-                return;
-
-            if (_projection.NeedsRebuild(runningMetadata.Version) == ProjectionRebuildType.NoRebuild)
-                return;
-
-            if (rebuildMetadata == null)
+            if (_rebuildType == ProjectionRebuildType.NewRebuild)
             {
-                _instanceName = _projection.GenerateInstanceName(runningMetadata.Name);
                 _currentToken = EventStoreToken.Initial;
                 await _metadata.BuildNewInstance(_instanceName, null, _projection.GetVersion(), _projection.GetMinimalReader());
                 await _projection.StartRebuild(false);
-                rebuildMode = true;
             }
-            else if (_projection.NeedsRebuild(rebuildMetadata.Version) == ProjectionRebuildType.NoRebuild)
+            else if (_rebuildType == ProjectionRebuildType.ContinueRebuild)
             {
-                _instanceName = rebuildMetadata.Name;
                 _currentToken = await _metadata.GetToken(_instanceName);
                 await _projection.StartRebuild(true);
-                rebuildMode = true;
             }
             else
-            {
-                _instanceName = _projection.GenerateInstanceName(runningMetadata.Name);
-                _currentToken = EventStoreToken.Initial;
-                await _metadata.BuildNewInstance(_instanceName, null, _projection.GetVersion(), _projection.GetMinimalReader());
-                await _projection.StartRebuild(false);
-                rebuildMode = true;
-            }
-
+                return false;
             _metadata.RegisterForChanges(_instanceName, this);
-            _openedEventStream = _streamer.GetStreamer(_handlers.HandledTypes(), _currentToken, rebuildMode);
+            _isInRebuildMode = true;
+            _openedEventStream = _streamer.GetStreamer(_handlers.HandledTypes(), _currentToken, true);
+            return true;
+        }
 
+        private async Task Run()
+        {
+            var supportsBatchMode = _projection.SupportsProcessServices();
             while (!_cancel.IsCancellationRequested && !_isReplaced)
             {
                 try
@@ -243,16 +228,29 @@ namespace Vydejna.Domain
                     var storedEvent = await _openedEventStream.GetNextEvent(_cancel.Token);
                     if (storedEvent != null)
                     {
+                        if (!_isInRebuildMode && !_isInBatchMode && supportsBatchMode)
+                        {
+                            _projection.SetProcessServices(this);
+                            _isInBatchMode = true;
+                        }
+
                         var objectEvent = _serializer.Deserialize(storedEvent);
                         _handlers.Handle(null, objectEvent);
                         _currentToken = storedEvent.Token;
+
+                        if (!_isInBatchMode && !_isInRebuildMode)
+                            await _metadata.SetToken(_instanceName, _currentToken);
+                        else
+                            System.Diagnostics.Debug.WriteLine("Skipping SetToken({0})", _currentToken);
                     }
-                    else if (rebuildMode)
+                    else if (_isInRebuildMode)
                     {
                         await _projection.CommitRebuild();
                         await _metadata.UpdateStatus(_instanceName, ProjectionStatus.Running);
                         await _metadata.SetToken(_instanceName, _currentToken);
-                        await _metadata.UpdateStatus(runningMetadata.Name, ProjectionStatus.Legacy);
+                        if (_isRebuilder)
+                            await _metadata.UpdateStatus(_runningMetadata.Name, ProjectionStatus.Legacy);
+                        _isInRebuildMode = false;
                     }
                 }
                 catch (TaskCanceledException)
@@ -260,8 +258,7 @@ namespace Vydejna.Domain
                     break;
                 }
             }
-
-            await _metadata.SetToken(_instanceName, _currentToken);
+            await _projection.HandleShutdown();
         }
 
         void IHandle<ProjectionMetadataChanged>.Handle(ProjectionMetadataChanged msg)
@@ -290,6 +287,11 @@ namespace Vydejna.Domain
         public void Stop()
         {
             _cancel.Cancel();
+        }
+
+        public Task CommitProjectionProgress()
+        {
+            return _metadata.SetToken(_instanceName, _currentToken);
         }
     }
 }
