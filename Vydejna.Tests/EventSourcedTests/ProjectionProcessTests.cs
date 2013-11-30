@@ -44,6 +44,61 @@ namespace Vydejna.Tests.EventSourcedTests
             AddEvent("TestEvent1", "e3");
             AddEventPause();
             AddEvent("TestEvent1", "e4");
+
+            var process = new ProjectionProcess(_streamer, _metadataMgr.Object, new TestSerializer());
+            process.Setup(_projection).AsMaster();
+            process.Register<TestEvent1>(_projection);
+            process.Register<TestEvent2>(_projection);
+            var task = process.Start();
+            _eventStoreWaits.Wait(1000);
+            process.Stop();
+            task.GetAwaiter().GetResult();
+
+            var expectedProjection = "1: e1\r\n2: e2\r\n1: e3\r\n1: e4\r\n";
+            var metadata = _metadata.GetInstanceMetadata("A").Result;
+            var token = _metadata.GetToken("A").Result.ToString();
+            Assert.AreEqual(expectedProjection, _projection.Contents.ToString());
+            Assert.AreEqual("1.2", metadata.Version);
+            Assert.AreEqual(ProjectionStatus.Running, metadata.Status);
+            Assert.AreEqual("00000004", token);
+        }
+
+        [TestMethod]
+        public void InitialBuild_AsRebuilder()
+        {
+            AddEvent("TestEvent1", "e1");
+            AddEvent("TestEvent2", "e2");
+            AddEvent("TestEvent1", "e3");
+            AddEventPause();
+            AddEvent("TestEvent1", "e4");
+            var process = new ProjectionProcess(
+                new Mock<IEventStreaming>(MockBehavior.Strict).Object,
+                _metadataMgr.Object, new TestSerializer());
+            process.Setup(_projection).AsRebuilder();
+            process.Register<TestEvent1>(_projection);
+            process.Register<TestEvent2>(_projection);
+            var timeout = new Timer(o => process.Stop(), null, 1000, Timeout.Infinite);
+            var task = process.Start();
+            task.GetAwaiter().GetResult();
+            timeout.Dispose();
+            var metadata = _metadata.GetInstanceMetadata("A").Result;
+            Assert.AreEqual("", _projection.Contents.ToString());
+            Assert.IsNull(metadata);
+        }
+
+        [TestMethod]
+        public void ContinueInitial_AsMaster()
+        {
+            AddEvent("TestEvent1", "e1");
+            AddEvent("TestEvent2", "e2");
+            AddEvent("TestEvent1", "e3");
+            AddEventPause();
+            AddEvent("TestEvent1", "e4");
+
+            _metadata.SetToken("B", _events[1].Token);
+            _metadata.SetMetadata(new ProjectionInstanceMetadata("B", "1.2", "1.0", null, ProjectionStatus.NewBuild));
+            _projection.Contents.Append("1: e1\r\n2: e2\r\n");
+
             var process = new ProjectionProcess(_streamer, _metadataMgr.Object, new TestSerializer());
             process.Setup(_projection).AsMaster();
             process.Register<TestEvent1>(_projection);
@@ -53,12 +108,41 @@ namespace Vydejna.Tests.EventSourcedTests
             process.Stop();
             task.GetAwaiter().GetResult();
             var expectedProjection = "1: e1\r\n2: e2\r\n1: e3\r\n1: e4\r\n";
-            var metadata = _metadata.GetInstanceMetadata("A").Result;
-            var token = _metadata.GetToken("A").Result.ToString();
+            var metadata = _metadata.GetInstanceMetadata("B").Result;
+            var token = _metadata.GetToken("B").Result.ToString();
+            Assert.IsFalse(_projection.WasRebuilt);
             Assert.AreEqual(expectedProjection, _projection.Contents.ToString());
             Assert.AreEqual("1.2", metadata.Version);
             Assert.AreEqual(ProjectionStatus.Running, metadata.Status);
             Assert.AreEqual("00000004", token);
+        }
+
+        [TestMethod]
+        public void ContinueInitial_AsRebuilder()
+        {
+            AddEvent("TestEvent1", "e1");
+            AddEvent("TestEvent2", "e2");
+            AddEvent("TestEvent1", "e3");
+            AddEventPause();
+            AddEvent("TestEvent1", "e4");
+
+            _metadata.SetToken("B", _events[1].Token);
+            var originalContents = "1: e1\r\n2: e2\r\n";
+            var originalMetadata = new ProjectionInstanceMetadata("B", "1.2", "1.0", null, ProjectionStatus.NewBuild);
+            _metadata.SetMetadata(originalMetadata);
+            _projection.Contents.Append(originalContents);
+
+            var process = new ProjectionProcess(_streamer, _metadataMgr.Object, new TestSerializer());
+            process.Setup(_projection).AsRebuilder();
+            process.Register<TestEvent1>(_projection);
+            process.Register<TestEvent2>(_projection);
+            var timeout = new Timer(o => process.Stop(), null, 1000, Timeout.Infinite);
+            var task = process.Start();
+            task.GetAwaiter().GetResult();
+            timeout.Dispose();
+            var metadata = _metadata.GetInstanceMetadata("B").Result;
+            Assert.AreEqual(originalContents, _projection.Contents.ToString());
+            Assert.AreEqual(originalMetadata, metadata);
         }
 
         private Task WaitForExit(CancellationToken token)
@@ -122,6 +206,7 @@ namespace Vydejna.Tests.EventSourcedTests
 
             private static string abc = "ABCDEFGH";
             private IProjectionProcess _process;
+            public bool WasRebuilt;
 
             public string GenerateInstanceName(string masterName)
             {
@@ -139,7 +224,10 @@ namespace Vydejna.Tests.EventSourcedTests
             public Task StartRebuild(bool continuation)
             {
                 if (!continuation)
+                {
                     Contents.Clear();
+                    WasRebuilt = true;
+                }
                 InRebuildMode = true;
                 return TaskResult.GetCompletedTask();
             }
@@ -205,8 +293,7 @@ namespace Vydejna.Tests.EventSourcedTests
             public IEventStreamingInstance GetStreamer(IEnumerable<Type> filter, EventStoreToken token, bool rebuildMode)
             {
                 var typeNames = new HashSet<string>(filter.Select(t => t.Name));
-                var filtered = _events.Where(e => e == null || typeNames.Contains(e.Type));
-                return new TestStream(filtered.GetEnumerator(), _waitForExit);
+                return new TestStream(_events.GetEnumerator(), _waitForExit, typeNames, token);
             }
         }
 
@@ -214,17 +301,36 @@ namespace Vydejna.Tests.EventSourcedTests
         {
             private IEnumerator<EventStoreEvent> _events;
             private Func<CancellationToken, Task> _waitForExit;
-            public TestStream(IEnumerator<EventStoreEvent> events, Func<CancellationToken, Task> waitForExit)
+            private HashSet<string> _types;
+            private EventStoreToken _token;
+            private bool _wasTokenFound;
+            public TestStream(IEnumerator<EventStoreEvent> events, Func<CancellationToken, Task> waitForExit, HashSet<string> types, EventStoreToken token)
             {
                 _events = events;
                 _waitForExit = waitForExit;
+                _types = types;
+                _token = token;
+                _wasTokenFound = token == EventStoreToken.Initial;
             }
-            public Task<EventStoreEvent> GetNextEvent(CancellationToken token)
+            public Task<EventStoreEvent> GetNextEvent(CancellationToken cancel)
             {
-                if (_events.MoveNext())
+                while (_events.MoveNext())
+                {
+                    cancel.ThrowIfCancellationRequested();
+                    if (_events.Current == null)
+                        return TaskResult.GetCompletedTask(_events.Current);
+                    if (!_wasTokenFound)
+                    {
+                        if (_token == _events.Current.Token)
+                            _wasTokenFound = true;
+                        continue;
+                    }
+                    if (!_types.Contains(_events.Current.Type))
+                        continue;
                     return TaskResult.GetCompletedTask(_events.Current);
-                else
-                    return _waitForExit(token).ContinueWith<EventStoreEvent>(t => { t.GetAwaiter().GetResult(); return null; });
+                }
+                return _waitForExit(cancel).ContinueWith<EventStoreEvent>(t => { t.GetAwaiter().GetResult(); return null; });
+
             }
         }
 
@@ -302,6 +408,11 @@ namespace Vydejna.Tests.EventSourcedTests
                 public TestMetadata metadata;
                 public Tuple<string, IHandle<ProjectionMetadataChanged>> tuple;
                 public void Dispose() { metadata._changes.Remove(tuple); }
+            }
+
+            public void SetMetadata(ProjectionInstanceMetadata metadata)
+            {
+                _metadata[metadata.Name] = metadata;
             }
         }
 

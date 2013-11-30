@@ -146,6 +146,20 @@ namespace Vydejna.Domain
             this.CurrentNode = currentNode;
             this.Status = status;
         }
+
+        public override int GetHashCode()
+        {
+            return Name.GetHashCode();
+        }
+
+        public override bool Equals(object obj)
+        {
+            var oth = obj as ProjectionInstanceMetadata;
+            return 
+                oth != null && Name == oth.Name && 
+                Version == oth.Version && MinimalReader == oth.MinimalReader && 
+                CurrentNode == oth.CurrentNode && Status == oth.Status;
+        }
     }
 
     public enum ProjectionStatus

@@ -85,6 +85,7 @@ namespace Vydejna.Domain
         private EventStoreToken _currentToken;
         private IEventStreamingInstance _openedEventStream;
         private CancellationTokenSource _cancel;
+        private bool _isRebuilder;
 
         public ProjectionProcess(IEventStreaming streamer, IProjectionMetadataManager metadataManager, IEventSourcedSerializer serializer)
         {
@@ -106,6 +107,12 @@ namespace Vydejna.Domain
             return this;
         }
 
+        public ProjectionProcess AsRebuilder()
+        {
+            _isRebuilder = true;
+            return this;
+        }
+
         public IHandleRegistration<T> Register<T>(IHandle<T> handler)
         {
             return _handlers.Register(handler);
@@ -113,13 +120,30 @@ namespace Vydejna.Domain
 
         public async Task Start()
         {
+            if (_isRebuilder)
+                return;
+
             _metadata = await _metadataManager.GetProjection(_projection.GetConsumerName());
             var allMetadata = await _metadata.GetAllMetadata();
-            _instanceName = _projection.GenerateInstanceName(null);
-            await _metadata.BuildNewInstance(_instanceName, null, _projection.GetVersion(), _projection.GetMinimalReader());
-            await _projection.StartRebuild(false);
 
-            _currentToken = EventStoreToken.Initial;
+            var metadata = allMetadata.FirstOrDefault(m => m.Status == ProjectionStatus.Running);
+            metadata = metadata ?? allMetadata.FirstOrDefault(m => m.Status == ProjectionStatus.NewBuild);
+
+            if (metadata == null)
+            {
+                _instanceName = _projection.GenerateInstanceName(null);
+                _currentToken = EventStoreToken.Initial;
+                await _metadata.BuildNewInstance(_instanceName, null, _projection.GetVersion(), _projection.GetMinimalReader());
+                await _projection.StartRebuild(false);
+            }
+            else
+            {
+                _instanceName = metadata.Name;
+                _currentToken = await _metadata.GetToken(_instanceName);
+                await _metadata.BuildNewInstance(_instanceName, null, _projection.GetVersion(), _projection.GetMinimalReader());
+                await _projection.StartRebuild(true);
+            }
+
             _openedEventStream = _streamer.GetStreamer(_handlers.HandledTypes(), _currentToken, true);
 
             while (!_cancel.IsCancellationRequested)
