@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Vydejna.Contracts;
 
@@ -66,7 +67,7 @@ namespace Vydejna.Domain
 
     public interface IEventStreamingInstance
     {
-        Task<EventStoreEvent> GetNextEvent();
+        Task<EventStoreEvent> GetNextEvent(CancellationToken token);
     }
 
     public interface IEventsConsumerMetadata

@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Vydejna.Domain
@@ -9,7 +10,7 @@ namespace Vydejna.Domain
     public interface ITime
     {
         DateTime GetTime();
-        Task Delay(int milliseconds);
+        Task Delay(int milliseconds, CancellationToken cancel);
     }
 
     public class RealTime : ITime
@@ -19,9 +20,9 @@ namespace Vydejna.Domain
             return DateTime.Now;
         }
 
-        public Task Delay(int milliseconds)
+        public Task Delay(int milliseconds, CancellationToken cancel)
         {
-            return Task.Delay(milliseconds);
+            return Task.Delay(milliseconds, cancel);
         }
     }
 
@@ -35,6 +36,7 @@ namespace Vydejna.Domain
         {
             public DateTime Time;
             public TaskCompletionSource<object> TaskCompletion;
+            public bool Cancelled;
 
             public DelayedTask(DateTime time)
             {
@@ -55,11 +57,11 @@ namespace Vydejna.Domain
             lock (_lock)
             {
                 _now = now;
-                launch = _delayedTasks.Where(t => t.Time <= _now).ToList();
-                _delayedTasks.RemoveAll(t => t.Time <= _now);
+                launch = _delayedTasks.Where(t => t.Time <= _now && !t.Cancelled).ToList();
+                _delayedTasks.RemoveAll(t => t.Time <= _now || t.Cancelled);
             }
             foreach (var task in launch)
-                task.TaskCompletion.SetResult(null);
+                task.TaskCompletion.TrySetResult(null);
         }
 
         public DateTime GetTime()
@@ -67,7 +69,7 @@ namespace Vydejna.Domain
             return _now;
         }
 
-        public Task Delay(int milliseconds)
+        public Task Delay(int milliseconds, CancellationToken cancel)
         {
             if (milliseconds <= 0)
                 return Task.FromResult<object>(null);
@@ -79,6 +81,7 @@ namespace Vydejna.Domain
                     _delayedTasks.Insert(~index, task);
                 else
                     _delayedTasks.Insert(index, task);
+                cancel.Register(() => { task.Cancelled = true; task.TaskCompletion.TrySetCanceled(); });
                 return task.TaskCompletion.Task;
             }
         }

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Vydejna.Contracts;
 
@@ -83,6 +84,7 @@ namespace Vydejna.Domain
         private IEventSourcedSerializer _serializer;
         private EventStoreToken _currentToken;
         private IEventStreamingInstance _openedEventStream;
+        private CancellationTokenSource _cancel;
 
         public ProjectionProcess(IEventStreaming streamer, IProjectionMetadataManager metadataManager, IEventSourcedSerializer serializer)
         {
@@ -90,6 +92,7 @@ namespace Vydejna.Domain
             _metadataManager = metadataManager;
             _serializer = serializer;
             _handlers = new ProjectionProcessHandlers();
+            _cancel = new CancellationTokenSource();
         }
 
         public ProjectionProcess Setup(IProjection projection)
@@ -108,7 +111,7 @@ namespace Vydejna.Domain
             return _handlers.Register(handler);
         }
 
-        public async Task Initialize()
+        public async Task Start()
         {
             _metadata = await _metadataManager.GetProjection(_projection.GetConsumerName());
             var allMetadata = await _metadata.GetAllMetadata();
@@ -118,23 +121,37 @@ namespace Vydejna.Domain
 
             _currentToken = EventStoreToken.Initial;
             _openedEventStream = _streamer.GetStreamer(_handlers.HandledTypes(), _currentToken, true);
+
+            while (!_cancel.IsCancellationRequested)
+            {
+                try
+                {
+                    var storedEvent = await _openedEventStream.GetNextEvent(_cancel.Token);
+                    if (storedEvent == null)
+                    {
+                        await _projection.CommitRebuild();
+                        await _metadata.UpdateStatus(_instanceName, ProjectionStatus.Running);
+                        await _metadata.SetToken(_instanceName, _currentToken);
+                    }
+                    else
+                    {
+                        var objectEvent = _serializer.Deserialize(storedEvent);
+                        _handlers.Handle(null, objectEvent);
+                        _currentToken = storedEvent.Token;
+                    }
+                }
+                catch (TaskCanceledException)
+                {
+                    break;
+                }
+            }
+
+            await _metadata.SetToken(_instanceName, _currentToken);
         }
 
-        public async Task Step()
+        public void Stop()
         {
-            var storedEvent = await _openedEventStream.GetNextEvent();
-            if (storedEvent == null)
-            {
-                await _projection.CommitRebuild();
-                await _metadata.UpdateStatus(_instanceName, ProjectionStatus.Running);
-                await _metadata.SetToken(_instanceName, _currentToken);
-            }
-            else
-            {
-                var objectEvent = _serializer.Deserialize(storedEvent);
-                _handlers.Handle(null, objectEvent);
-                _currentToken = storedEvent.Token;
-            }
+            _cancel.Cancel();
         }
     }
 }

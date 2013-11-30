@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Vydejna.Contracts;
 
@@ -17,7 +18,7 @@ namespace Vydejna.Domain
 
     public interface IEventStoreWaitable : IEventStore
     {
-        Task WaitForEvents(EventStoreToken token, int timeout = 0);
+        Task WaitForEvents(EventStoreToken token, CancellationToken cancel, int timeout = 0);
     }
 
     public class EventStoreVersion
@@ -203,14 +204,14 @@ namespace Vydejna.Domain
             _time = time;
         }
 
-        public Task WaitForEvents(EventStoreToken token, int timeout = 0)
+        public Task WaitForEvents(EventStoreToken token, CancellationToken cancel, int timeout = 0)
         {
             if (_waitable != null)
-                return _waitable.WaitForEvents(token, timeout);
+                return _waitable.WaitForEvents(token, cancel, timeout);
             else if (timeout <= 0)
-                return _time.Delay(200);
+                return _time.Delay(200, cancel);
             else
-                return _time.Delay(Math.Min(200, timeout));
+                return _time.Delay(Math.Min(200, timeout), cancel);
         }
 
         public Task AddToStream(string stream, IEnumerable<EventStoreEvent> events, EventStoreVersion expectedVersion)

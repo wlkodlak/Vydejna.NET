@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Vydejna.Contracts;
 
@@ -50,10 +51,11 @@ namespace Vydejna.Domain
                 _readyEvents = new Queue<EventStoreEvent>();
             }
 
-            public async Task<EventStoreEvent> GetNextEvent()
+            public async Task<EventStoreEvent> GetNextEvent(CancellationToken cancel)
             {
                 while (true)
                 {
+                    cancel.ThrowIfCancellationRequested();
                     if (_readyEvents.Count > 0)
                         return _readyEvents.Dequeue();
                     var collection = await _store.GetAllEvents(_token, 100, false);
@@ -71,7 +73,7 @@ namespace Vydejna.Domain
                     }
                     else
                     {
-                        await _store.WaitForEvents(_token);
+                        await _store.WaitForEvents(_token, cancel);
                     }
                 }
             }

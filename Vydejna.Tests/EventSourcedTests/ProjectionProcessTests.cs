@@ -7,6 +7,7 @@ using Moq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Vydejna.Contracts;
 using Vydejna.Domain;
+using System.Threading;
 
 namespace Vydejna.Tests.EventSourcedTests
 {
@@ -19,43 +20,53 @@ namespace Vydejna.Tests.EventSourcedTests
         private TestStreamer _streamer;
         private TestMetadata _metadata;
         private List<EventStoreEvent> _events;
+        private ManualResetEventSlim _eventStoreWaits;
 
         [TestInitialize]
         public void Initialize()
         {
             _events = new List<EventStoreEvent>();
-            _streamer = new TestStreamer(_events);
+            _streamer = new TestStreamer(_events, WaitForExit);
             _metadataMgr = new Mock<IProjectionMetadataManager>();
             _allMetadata = new List<ProjectionInstanceMetadata>();
             _projection = new TestProjection();
             _metadata = new TestMetadata(_allMetadata);
+            _eventStoreWaits = new ManualResetEventSlim();
 
             _metadataMgr.Setup(m => m.GetProjection("TestProjection")).Returns(() => TaskResult.GetCompletedTask<IProjectionMetadata>(_metadata));
         }
 
         [TestMethod]
-        public void InitialBuild()
+        public void InitialBuild_AsMaster()
         {
             AddEvent("TestEvent1", "e1");
             AddEvent("TestEvent2", "e2");
             AddEvent("TestEvent1", "e3");
-            AddNullEvent();
+            AddEventPause();
+            AddEvent("TestEvent1", "e4");
             var process = new ProjectionProcess(_streamer, _metadataMgr.Object, new TestSerializer());
             process.Setup(_projection).AsMaster();
             process.Register<TestEvent1>(_projection);
             process.Register<TestEvent2>(_projection);
-            process.Initialize().GetAwaiter().GetResult();
-            for (int i = 0; i < 4; i++)
-            {
-                process.Step().GetAwaiter().GetResult();
-            }
-            var expectedProjection = "1: e1\r\n2: e2\r\n1: e3\r\n";
+            var task = process.Start();
+            _eventStoreWaits.Wait(1000);
+            process.Stop();
+            task.GetAwaiter().GetResult();
+            var expectedProjection = "1: e1\r\n2: e2\r\n1: e3\r\n1: e4\r\n";
             var metadata = _metadata.GetInstanceMetadata("A").Result;
-            var token = _metadata.GetToken("A").Result;
+            var token = _metadata.GetToken("A").Result.ToString();
             Assert.AreEqual(expectedProjection, _projection.Contents.ToString());
             Assert.AreEqual("1.2", metadata.Version);
             Assert.AreEqual(ProjectionStatus.Running, metadata.Status);
-            Assert.AreEqual("00000002", token.ToString());
+            Assert.AreEqual("00000004", token);
+        }
+
+        private Task WaitForExit(CancellationToken token)
+        {
+            var tcs = new TaskCompletionSource<object>();
+            token.Register(() => tcs.SetCanceled());
+            _eventStoreWaits.Set();
+            return tcs.Task;
         }
 
         private void AddEvent(string typeName, string data)
@@ -70,7 +81,7 @@ namespace Vydejna.Tests.EventSourcedTests
             _events.Add(evt);
         }
 
-        private void AddNullEvent()
+        private void AddEventPause()
         {
             _events.Add(null);
         }
@@ -78,6 +89,7 @@ namespace Vydejna.Tests.EventSourcedTests
         private class TestProjection : IProjection, IHandle<TestEvent1>, IHandle<TestEvent2>
         {
             public StringBuilder Contents = new StringBuilder();
+            public bool InRebuildMode;
 
             public void Handle(TestEvent1 evt)
             {
@@ -128,6 +140,7 @@ namespace Vydejna.Tests.EventSourcedTests
             {
                 if (!continuation)
                     Contents.Clear();
+                InRebuildMode = true;
                 return TaskResult.GetCompletedTask();
             }
 
@@ -138,11 +151,13 @@ namespace Vydejna.Tests.EventSourcedTests
 
             public Task CommitRebuild()
             {
+                InRebuildMode = false;
                 return TaskResult.GetCompletedTask();
             }
 
             public Task StopRebuild()
             {
+                InRebuildMode = false;
                 return TaskResult.GetCompletedTask();
             }
 
@@ -163,6 +178,8 @@ namespace Vydejna.Tests.EventSourcedTests
 
             public Task HandleShutdown()
             {
+                if (_process != null)
+                    _process.CommitProjectionProgress();
                 return TaskResult.GetCompletedTask();
             }
         }
@@ -179,31 +196,35 @@ namespace Vydejna.Tests.EventSourcedTests
         private class TestStreamer : IEventStreaming
         {
             private IEnumerable<EventStoreEvent> _events;
-            public TestStreamer(IEnumerable<EventStoreEvent> events)
+            private Func<CancellationToken, Task> _waitForExit;
+            public TestStreamer(IEnumerable<EventStoreEvent> events, Func<CancellationToken, Task> waitForExit)
             {
-                _events = events;
+                _events = events ?? new EventStoreEvent[0];
+                _waitForExit = waitForExit ?? (c => TaskResult.GetCompletedTask());
             }
             public IEventStreamingInstance GetStreamer(IEnumerable<Type> filter, EventStoreToken token, bool rebuildMode)
             {
                 var typeNames = new HashSet<string>(filter.Select(t => t.Name));
                 var filtered = _events.Where(e => e == null || typeNames.Contains(e.Type));
-                return new TestStream(filtered.GetEnumerator());
+                return new TestStream(filtered.GetEnumerator(), _waitForExit);
             }
         }
 
         private class TestStream : IEventStreamingInstance
         {
             private IEnumerator<EventStoreEvent> _events;
-            public TestStream(IEnumerator<EventStoreEvent> events)
+            private Func<CancellationToken, Task> _waitForExit;
+            public TestStream(IEnumerator<EventStoreEvent> events, Func<CancellationToken, Task> waitForExit)
             {
                 _events = events;
+                _waitForExit = waitForExit;
             }
-            public Task<EventStoreEvent> GetNextEvent()
+            public Task<EventStoreEvent> GetNextEvent(CancellationToken token)
             {
                 if (_events.MoveNext())
                     return TaskResult.GetCompletedTask(_events.Current);
                 else
-                    return TaskResult.GetCompletedTask<EventStoreEvent>(null);
+                    return _waitForExit(token).ContinueWith<EventStoreEvent>(t => { t.GetAwaiter().GetResult(); return null; });
             }
         }
 
