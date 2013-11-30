@@ -136,12 +136,19 @@ namespace Vydejna.Domain
                 await _metadata.BuildNewInstance(_instanceName, null, _projection.GetVersion(), _projection.GetMinimalReader());
                 await _projection.StartRebuild(false);
             }
-            else
+            else if (_projection.NeedsRebuild(metadata.Version) == ProjectionRebuildType.NoRebuild)
             {
                 _instanceName = metadata.Name;
                 _currentToken = await _metadata.GetToken(_instanceName);
                 await _metadata.BuildNewInstance(_instanceName, null, _projection.GetVersion(), _projection.GetMinimalReader());
                 await _projection.StartRebuild(true);
+            }
+            else
+            {
+                _instanceName = metadata.Name;
+                _currentToken = EventStoreToken.Initial;
+                await _metadata.BuildNewInstance(_instanceName, null, _projection.GetVersion(), _projection.GetMinimalReader());
+                await _projection.StartRebuild(false);
             }
 
             _openedEventStream = _streamer.GetStreamer(_handlers.HandledTypes(), _currentToken, true);

@@ -39,12 +39,133 @@ namespace Vydejna.Tests.EventSourcedTests
         [TestMethod]
         public void InitialBuild_AsMaster()
         {
-            AddEvent("TestEvent1", "e1");
-            AddEvent("TestEvent2", "e2");
-            AddEvent("TestEvent1", "e3");
-            AddEventPause();
-            AddEvent("TestEvent1", "e4");
+            SetupEventStore();
+            RunAsMaster();
+            ExpectContents("1: e1\r\n2: e2\r\n1: e3\r\n1: e4\r\n");
+            ExpectMetadata(new ProjectionInstanceMetadata("A", "1.2", "1.0", null, ProjectionStatus.Running));
+            ExpectLastToken("A");
+        }
 
+        [TestMethod]
+        public void InitialBuild_AsRebuilder()
+        {
+            SetupEventStore();
+            RunAsIdleRebuilder();
+            ExpectNoMetadata("A");
+            ExpectContents("");
+        }
+
+        [TestMethod]
+        public void ContinueInitial_AsMaster()
+        {
+            SetupEventStore();
+            _metadata.SetToken("B", _events[1].Token);
+            _metadata.SetMetadata(new ProjectionInstanceMetadata("B", "1.2", "1.0", null, ProjectionStatus.NewBuild));
+            _projection.Contents.Append("1: e1\r\n2: e2\r\n");
+            RunAsMaster();
+            ExpectRebuild(false);
+            ExpectContents("1: e1\r\n2: e2\r\n1: e3\r\n1: e4\r\n");
+            ExpectLastToken("B");
+            ExpectMetadata(new ProjectionInstanceMetadata("B", "1.2", "1.0", null, ProjectionStatus.Running));
+        }
+
+        [TestMethod]
+        public void ContinueInitial_AsRebuilder()
+        {
+            SetupEventStore();
+
+            var originalToken = _events[1].Token;
+            var originalContents = "1: e1\r\n2: e2\r\n";
+            var originalMetadata = new ProjectionInstanceMetadata("B", "1.2", "1.0", null, ProjectionStatus.NewBuild);
+            _metadata.SetToken("B", originalToken);
+            _metadata.SetMetadata(originalMetadata);
+            _projection.Contents.Append(originalContents);
+
+            RunAsIdleRebuilder();
+            ExpectMetadata(originalMetadata);
+            ExpectContents(originalContents);
+            ExpectToken("B", originalToken);
+        }
+
+        [TestMethod]
+        public void RebuildInitial_AsMaster()
+        {
+            SetupEventStore();
+            _metadata.SetToken("B", _events[1].Token);
+            _metadata.SetMetadata(new ProjectionInstanceMetadata("B", "1.0", "1.0", null, ProjectionStatus.NewBuild));
+            _projection.Contents.Append("1: e1\r\n2: e2\r\n");
+            RunAsMaster();
+            ExpectRebuild(true);
+            ExpectContents("1: e1\r\n2: e2\r\n1: e3\r\n1: e4\r\n");
+            ExpectLastToken("B");
+            ExpectMetadata(new ProjectionInstanceMetadata("B", "1.2", "1.0", null, ProjectionStatus.Running));
+        }
+
+        [TestMethod]
+        public void RebuildInitial_AsRebuilder()
+        {
+            SetupEventStore();
+
+            var originalToken = _events[1].Token;
+            var originalContents = "1: e1\r\n2: e2\r\n";
+            var originalMetadata = new ProjectionInstanceMetadata("B", "1.0", "1.0", null, ProjectionStatus.NewBuild);
+            _metadata.SetToken("B", originalToken);
+            _metadata.SetMetadata(originalMetadata);
+            _projection.Contents.Append(originalContents);
+
+            RunAsIdleRebuilder();
+            ExpectMetadata(originalMetadata);
+            ExpectContents(originalContents);
+            ExpectToken("B", originalToken);
+        }
+
+
+
+
+
+        
+        private void ExpectLastToken(string instanceName)
+        {
+            var actualToken = _metadata.GetToken(instanceName).Result.ToString();
+            var expectedToken = _events.Where(e => e != null && e.Type != "TestEventX").Select(e => e.Token.ToString()).LastOrDefault();
+            Assert.AreEqual(expectedToken, actualToken, "Token for {0}", instanceName);
+        }
+
+        private void ExpectToken(string instanceName, EventStoreToken token)
+        {
+            var actualToken = _metadata.GetToken(instanceName).Result;
+            if (token == null)
+                Assert.IsNull(actualToken, "Token for {0}", instanceName);
+            else if (actualToken == null)
+                Assert.AreEqual(token.ToString(), null, "Token for {0}", instanceName);
+            else
+                Assert.AreEqual(token.ToString(), actualToken.ToString(), "Token for {0}", instanceName);
+        }
+
+        private void ExpectMetadata(ProjectionInstanceMetadata expectedMetadata)
+        {
+            var actualMetadata = _metadata.GetInstanceMetadata(expectedMetadata.Name).Result;
+            Assert.AreEqual(expectedMetadata, actualMetadata, "Metadata for {0}", expectedMetadata.Name);
+        }
+
+        private void ExpectNoMetadata(string instanceName)
+        {
+            var actualMetadata = _metadata.GetInstanceMetadata(instanceName).Result;
+            Assert.IsNull(actualMetadata, "Metadata for {0} should not exist", instanceName);
+        }
+
+        private void ExpectContents(string expectedProjection)
+        {
+            Assert.AreEqual(expectedProjection, _projection.Contents.ToString(), "Contents");
+        }
+
+        private void ExpectRebuild(bool expectedRebuild)
+        {
+            Assert.AreEqual(expectedRebuild, _projection.WasRebuilt, "Was rebuilt");
+        }
+
+        private void RunAsMaster()
+        {
             var process = new ProjectionProcess(_streamer, _metadataMgr.Object, new TestSerializer());
             process.Setup(_projection).AsMaster();
             process.Register<TestEvent1>(_projection);
@@ -53,24 +174,20 @@ namespace Vydejna.Tests.EventSourcedTests
             _eventStoreWaits.Wait(1000);
             process.Stop();
             task.GetAwaiter().GetResult();
-
-            var expectedProjection = "1: e1\r\n2: e2\r\n1: e3\r\n1: e4\r\n";
-            var metadata = _metadata.GetInstanceMetadata("A").Result;
-            var token = _metadata.GetToken("A").Result.ToString();
-            Assert.AreEqual(expectedProjection, _projection.Contents.ToString());
-            Assert.AreEqual("1.2", metadata.Version);
-            Assert.AreEqual(ProjectionStatus.Running, metadata.Status);
-            Assert.AreEqual("00000004", token);
         }
 
-        [TestMethod]
-        public void InitialBuild_AsRebuilder()
+        private void SetupEventStore()
         {
             AddEvent("TestEvent1", "e1");
             AddEvent("TestEvent2", "e2");
+            AddEvent("TestEventX", "");
             AddEvent("TestEvent1", "e3");
             AddEventPause();
             AddEvent("TestEvent1", "e4");
+        }
+
+        private void RunAsIdleRebuilder()
+        {
             var process = new ProjectionProcess(
                 new Mock<IEventStreaming>(MockBehavior.Strict).Object,
                 _metadataMgr.Object, new TestSerializer());
@@ -81,68 +198,6 @@ namespace Vydejna.Tests.EventSourcedTests
             var task = process.Start();
             task.GetAwaiter().GetResult();
             timeout.Dispose();
-            var metadata = _metadata.GetInstanceMetadata("A").Result;
-            Assert.AreEqual("", _projection.Contents.ToString());
-            Assert.IsNull(metadata);
-        }
-
-        [TestMethod]
-        public void ContinueInitial_AsMaster()
-        {
-            AddEvent("TestEvent1", "e1");
-            AddEvent("TestEvent2", "e2");
-            AddEvent("TestEvent1", "e3");
-            AddEventPause();
-            AddEvent("TestEvent1", "e4");
-
-            _metadata.SetToken("B", _events[1].Token);
-            _metadata.SetMetadata(new ProjectionInstanceMetadata("B", "1.2", "1.0", null, ProjectionStatus.NewBuild));
-            _projection.Contents.Append("1: e1\r\n2: e2\r\n");
-
-            var process = new ProjectionProcess(_streamer, _metadataMgr.Object, new TestSerializer());
-            process.Setup(_projection).AsMaster();
-            process.Register<TestEvent1>(_projection);
-            process.Register<TestEvent2>(_projection);
-            var task = process.Start();
-            _eventStoreWaits.Wait(1000);
-            process.Stop();
-            task.GetAwaiter().GetResult();
-            var expectedProjection = "1: e1\r\n2: e2\r\n1: e3\r\n1: e4\r\n";
-            var metadata = _metadata.GetInstanceMetadata("B").Result;
-            var token = _metadata.GetToken("B").Result.ToString();
-            Assert.IsFalse(_projection.WasRebuilt);
-            Assert.AreEqual(expectedProjection, _projection.Contents.ToString());
-            Assert.AreEqual("1.2", metadata.Version);
-            Assert.AreEqual(ProjectionStatus.Running, metadata.Status);
-            Assert.AreEqual("00000004", token);
-        }
-
-        [TestMethod]
-        public void ContinueInitial_AsRebuilder()
-        {
-            AddEvent("TestEvent1", "e1");
-            AddEvent("TestEvent2", "e2");
-            AddEvent("TestEvent1", "e3");
-            AddEventPause();
-            AddEvent("TestEvent1", "e4");
-
-            _metadata.SetToken("B", _events[1].Token);
-            var originalContents = "1: e1\r\n2: e2\r\n";
-            var originalMetadata = new ProjectionInstanceMetadata("B", "1.2", "1.0", null, ProjectionStatus.NewBuild);
-            _metadata.SetMetadata(originalMetadata);
-            _projection.Contents.Append(originalContents);
-
-            var process = new ProjectionProcess(_streamer, _metadataMgr.Object, new TestSerializer());
-            process.Setup(_projection).AsRebuilder();
-            process.Register<TestEvent1>(_projection);
-            process.Register<TestEvent2>(_projection);
-            var timeout = new Timer(o => process.Stop(), null, 1000, Timeout.Infinite);
-            var task = process.Start();
-            task.GetAwaiter().GetResult();
-            timeout.Dispose();
-            var metadata = _metadata.GetInstanceMetadata("B").Result;
-            Assert.AreEqual(originalContents, _projection.Contents.ToString());
-            Assert.AreEqual(originalMetadata, metadata);
         }
 
         private Task WaitForExit(CancellationToken token)
@@ -186,7 +241,7 @@ namespace Vydejna.Tests.EventSourcedTests
 
             public ProjectionRebuildType NeedsRebuild(string storedVersion)
             {
-                return ProjectionRebuildType.Initial;
+                return ProjectionUtils.CheckWriterVersion(storedVersion, GetVersion());
             }
 
             public string GetVersion()

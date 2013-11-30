@@ -12,9 +12,9 @@ namespace Vydejna.Domain
     {
         NoRebuild,
         Initial,
-        Upgrade,
+        //Upgrade,
         NewRebuild,
-        ContinueRebuild
+        //ContinueRebuild
     }
 
     public enum ProjectionReadability
