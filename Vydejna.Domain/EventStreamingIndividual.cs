@@ -60,14 +60,9 @@ namespace Vydejna.Domain
                         usable.ForEach(_readyEvents.Enqueue);
                     }
                     else if (_rebuildMode)
-                    {
-                        _rebuildMode = false;
                         return null;
-                    }
                     else
-                    {
                         await _store.WaitForEvents(_token, cancel);
-                    }
                 }
             }
         }

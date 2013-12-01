@@ -93,6 +93,92 @@ namespace Vydejna.Tests.EventSourcedTests
                 stream.GetNextEvent(_cancel.Token).GetAwaiter().GetResult();
             var rebuildStopEvent = stream.GetNextEvent(_cancel.Token).GetAwaiter().GetResult();
             Assert.IsNull(rebuildStopEvent);
+            rebuildStopEvent = stream.GetNextEvent(_cancel.Token).GetAwaiter().GetResult();
+            Assert.IsNull(rebuildStopEvent);
+        }
+
+        [TestMethod]
+        public void WaitingForNewEventsWaitsAfterAllNewEventsAreProcessed()
+        {
+            int phase = 0;
+            var received = new List<EventStoreEvent>();
+            _store.AddEvent("TestEvent1", "Body1");
+            _store.AddEvent("TestEvent2", "Body2");
+            _store.AddEvent("TestEvent1", "Body3");
+            _cancel.CancelAfter(1000);
+            _store.OnWait(() =>
+                {
+                    if (phase == 0)
+                    {
+                        _store.AddEvent("TestEvent2", "Body4");
+                        _store.AddEvent("TestEvent2", "Body5");
+                        phase = 1;
+                    }
+                    else if (phase == 1)
+                    {
+                        _store.AddEvent("TestEvent1", "Body6");
+                        phase = 2;
+                    }
+                    else if (phase == 2)
+                    {
+                        phase = 3;
+                        _cancel.Cancel();
+                    }
+                });
+            var stream = _streamer.GetStreamer(AllEventTypes(), EventStoreToken.Initial, false);
+            try{
+                for (int i = 0; i < 7; i++)
+                    received.Add(stream.GetNextEvent(_cancel.Token).GetAwaiter().GetResult());
+                Assert.Fail("Expected cancellation");
+            }
+            catch (TaskCanceledException)
+            {
+            }
+            Assert.AreEqual(
+                "Body1, Body2, Body3, Body4, Body5, Body6",
+                string.Join(", ", received.Select(e => e.Body)),
+                "[ALL].Body");
+            Assert.AreEqual(3, phase, "Phase");
+        }
+
+        [TestMethod]
+        public void StartWithPassedToken()
+        {
+            int phase = 0;
+            var received = new List<EventStoreEvent>();
+            _store.AddEvent("TestEvent1", "Body1");
+            _store.AddEvent("TestEvent2", "Body2");
+            _store.AddEvent("TestEvent1", "Body3");
+            _cancel.CancelAfter(1000);
+            _store.OnWait(() =>
+            {
+                if (phase == 0)
+                {
+                    _store.AddEvent("TestEvent2", "Body4");
+                    _store.AddEvent("TestEvent2", "Body5");
+                    phase = 1;
+                }
+                else if (phase == 1)
+                {
+                    phase = 2;
+                    _cancel.Cancel();
+                }
+            });
+            var stream = _streamer.GetStreamer(AllEventTypes(), _store.TokenFor(e => e.Body == "Body2"), false);
+            try
+            {
+                for (int i = 0; i < 7; i++)
+                    received.Add(stream.GetNextEvent(_cancel.Token).GetAwaiter().GetResult());
+                Assert.Fail("Expected cancellation");
+            }
+            catch (TaskCanceledException)
+            {
+            }
+            Assert.AreEqual(
+                "Body3, Body4, Body5",
+                string.Join(", ", received.Select(e => e.Body)),
+                "[ALL].Body");
+            Assert.AreEqual(2, phase, "Phase");
         }
 
         private IEnumerable<Type> AllEventTypes()
@@ -143,6 +229,11 @@ namespace Vydejna.Tests.EventSourcedTests
                 if (_onWait != null)
                     _onWait();
                 return tcs.Task;
+            }
+
+            public EventStoreToken TokenFor(Func<EventStoreEvent, bool> evt)
+            {
+                return AllEvents.Values.Where(evt).Select(e => e.Token).FirstOrDefault();
             }
 
             public void OnWait(Action action)

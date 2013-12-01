@@ -184,6 +184,7 @@ namespace Vydejna.Domain
 
         private async Task InitializeAsMaster()
         {
+            await _projection.SetInstanceName(_instanceName);
             _currentToken = _rebuildType == ProjectionRebuildType.Initial ? EventStoreToken.Initial : await _metadata.GetToken(_instanceName);
             if (_rebuildType == ProjectionRebuildType.Initial)
             {
@@ -199,6 +200,7 @@ namespace Vydejna.Domain
 
         private async Task<bool> InitializeAsRebuilder()
         {
+            await _projection.SetInstanceName(_instanceName);
             if (_rebuildType == ProjectionRebuildType.NewRebuild)
             {
                 _currentToken = EventStoreToken.Initial;
@@ -250,6 +252,7 @@ namespace Vydejna.Domain
                         await _metadata.SetToken(_instanceName, _currentToken);
                         if (_isRebuilder)
                             await _metadata.UpdateStatus(_runningMetadata.Name, ProjectionStatus.Legacy);
+                        _openedEventStream = _streamer.GetStreamer(_handlers.HandledTypes(), _currentToken, false);
                         _isInRebuildMode = false;
                     }
                 }

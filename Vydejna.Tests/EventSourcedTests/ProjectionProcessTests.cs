@@ -45,6 +45,7 @@ namespace Vydejna.Tests.EventSourcedTests
             ExpectContents("1: e1\r\n2: e2\r\n1: e3\r\n1: e4\r\n");
             ExpectMetadata(new ProjectionInstanceMetadata("A", "1.2", "1.0", null, ProjectionStatus.Running));
             ExpectLastToken("A");
+            ExpectInstance("A");
         }
 
         [TestMethod]
@@ -68,6 +69,7 @@ namespace Vydejna.Tests.EventSourcedTests
             ExpectContents("1: e1\r\n2: e2\r\n1: e3\r\n1: e4\r\n");
             ExpectLastToken("B");
             ExpectMetadata(new ProjectionInstanceMetadata("B", "1.2", "1.0", null, ProjectionStatus.Running));
+            ExpectInstance("B");
         }
 
         [TestMethod]
@@ -100,6 +102,7 @@ namespace Vydejna.Tests.EventSourcedTests
             ExpectContents("1: e1\r\n2: e2\r\n1: e3\r\n1: e4\r\n");
             ExpectLastToken("B");
             ExpectMetadata(new ProjectionInstanceMetadata("B", "1.2", "1.0", null, ProjectionStatus.Running));
+            ExpectInstance("B");
         }
 
         [TestMethod]
@@ -132,6 +135,7 @@ namespace Vydejna.Tests.EventSourcedTests
             ExpectContents("1: e1\r\n2: e2\r\n1: e3\r\n1: e4\r\n");
             ExpectLastToken("B");
             ExpectMetadata(new ProjectionInstanceMetadata("B", "1.2", "1.0", null, ProjectionStatus.Running));
+            ExpectInstance("B");
         }
 
         [TestMethod]
@@ -171,6 +175,7 @@ namespace Vydejna.Tests.EventSourcedTests
             ExpectContents("1: e1\r\n2: e2\r\n1: e3\r\n1: e4\r\n");
             ExpectMetadata(new ProjectionInstanceMetadata("B", "1.2", "1.0", null, ProjectionStatus.Legacy));
             ExpectToken("B", _events.Where(e => e != null && e.Body == "e4").Select(e => e.Token).Single());
+            ExpectInstance("B");
         }
 
         [TestMethod]
@@ -195,6 +200,7 @@ namespace Vydejna.Tests.EventSourcedTests
             ExpectContents("1: e1\r\n2: e2\r\n1: e3\r\n1: e4\r\n");
             ExpectMetadata(new ProjectionInstanceMetadata("B", "1.2", "1.0", null, ProjectionStatus.Legacy));
             ExpectToken("B", _events.Where(e => e != null && e.Body == "e4").Select(e => e.Token).Single());
+            ExpectInstance("B");
         }
 
         [TestMethod]
@@ -215,6 +221,7 @@ namespace Vydejna.Tests.EventSourcedTests
             ExpectLastToken("D");
             ExpectMetadata(new ProjectionInstanceMetadata("D", "1.2", "1.0", null, ProjectionStatus.Running));
             ExpectMetadata(new ProjectionInstanceMetadata("C", "1.1", "1.0", null, ProjectionStatus.Legacy));
+            ExpectInstance("D");
         }
 
         [TestMethod]
@@ -238,6 +245,7 @@ namespace Vydejna.Tests.EventSourcedTests
             ExpectLastToken("D");
             ExpectMetadata(new ProjectionInstanceMetadata("D", "1.2", "1.0", null, ProjectionStatus.Running));
             ExpectMetadata(new ProjectionInstanceMetadata("C", "1.1", "1.0", null, ProjectionStatus.Legacy));
+            ExpectInstance("D");
         }
 
         [TestMethod]
@@ -261,6 +269,7 @@ namespace Vydejna.Tests.EventSourcedTests
             ExpectLastToken("D");
             ExpectMetadata(new ProjectionInstanceMetadata("D", "1.2", "1.0", null, ProjectionStatus.Running));
             ExpectMetadata(new ProjectionInstanceMetadata("C", "1.0", "1.0", null, ProjectionStatus.Legacy));
+            ExpectInstance("D");
         }
 
         [TestMethod]
@@ -281,6 +290,7 @@ namespace Vydejna.Tests.EventSourcedTests
             ExpectContents("1: e1\r\n2: e2\r\n1: e3\r\n1: e4\r\n");
             ExpectMetadata(new ProjectionInstanceMetadata("D", "1.2", "1.0", null, ProjectionStatus.CancelledBuild));
             ExpectToken("D", _events.Where(e => e != null && e.Body == "e4").Select(e => e.Token).Single());
+            ExpectInstance("D");
         }
 
 
@@ -342,6 +352,11 @@ namespace Vydejna.Tests.EventSourcedTests
             Assert.AreEqual(expectedRebuildContinued, _projection.WasInRebuildMode, "Rebuild started or continued");
         }
 
+        private void ExpectInstance(string instanceName)
+        {
+            Assert.AreEqual(instanceName, _projection.InstanceName, "Instance name");
+        }
+
         private void RunAsMaster()
         {
             RunAsMasterContinuable();
@@ -355,11 +370,7 @@ namespace Vydejna.Tests.EventSourcedTests
             _process.Register<TestEvent1>(_projection);
             _process.Register<TestEvent2>(_projection);
             _processTask = _process.Start();
-            _eventStoreWaits.Wait(1000);
-        }
-
-        private void RunAsMasterContinue()
-        {
+            _processTask.ContinueWith(t => _eventStoreWaits.Set(), TaskContinuationOptions.OnlyOnFaulted);
             _eventStoreWaits.Wait(1000);
         }
 
@@ -390,6 +401,7 @@ namespace Vydejna.Tests.EventSourcedTests
             _process.Register<TestEvent1>(_projection);
             _process.Register<TestEvent2>(_projection);
             _processTask = _process.Start();
+            _processTask.ContinueWith(t => _eventStoreWaits.Set(), TaskContinuationOptions.OnlyOnFaulted);
             _eventStoreWaits.Wait(1000);
         }
 
@@ -483,6 +495,7 @@ namespace Vydejna.Tests.EventSourcedTests
             private IProjectionProcess _process;
             public bool WasRebuilt;
             public bool WasInRebuildMode;
+            public string InstanceName;
 
             public string GenerateInstanceName(string masterName)
             {
@@ -494,6 +507,7 @@ namespace Vydejna.Tests.EventSourcedTests
 
             public Task SetInstanceName(string instanceName)
             {
+                InstanceName = instanceName;
                 return TaskResult.GetCompletedTask();
             }
 
@@ -570,7 +584,7 @@ namespace Vydejna.Tests.EventSourcedTests
             public IEventStreamingInstance GetStreamer(IEnumerable<Type> filter, EventStoreToken token, bool rebuildMode)
             {
                 var typeNames = new HashSet<string>(filter.Select(t => t.Name));
-                return new TestStream(_events, _waitForExit, typeNames, token);
+                return new TestStream(_events, _waitForExit, typeNames, token, rebuildMode);
             }
         }
 
@@ -583,16 +597,20 @@ namespace Vydejna.Tests.EventSourcedTests
             private bool _wasTokenFound;
             private int _position;
             private EventStoreEvent _current;
+            private bool _readerInRebuild;
+            private bool _eventInRebuild;
 
-            public TestStream(IList<EventStoreEvent> events, Func<CancellationToken, Task> waitForExit, HashSet<string> types, EventStoreToken token)
+            public TestStream(IList<EventStoreEvent> events, Func<CancellationToken, Task> waitForExit, HashSet<string> types, EventStoreToken token, bool rebuildMode)
             {
                 _position = 0;
                 _events = events;
                 _waitForExit = waitForExit;
                 _types = types;
                 _token = token;
+                _readerInRebuild = rebuildMode;
                 _wasTokenFound = token == EventStoreToken.Initial;
                 _current = null;
+                _eventInRebuild = true;
             }
 
             private bool MoveNext()
@@ -608,14 +626,19 @@ namespace Vydejna.Tests.EventSourcedTests
             {
                 while (true)
                 {
+                    cancel.ThrowIfCancellationRequested();
+                    if (!_eventInRebuild && _readerInRebuild)
+                        throw new InvalidOperationException("GetNextEvent called after it returned null");
                     if (!MoveNext())
                     {
                         await _waitForExit(cancel);
                         continue;
                     }
-                    cancel.ThrowIfCancellationRequested();
                     if (_current == null)
+                    {
+                        _eventInRebuild = false;
                         return _current;
+                    }
                     if (!_wasTokenFound)
                     {
                         if (_token == _current.Token)
