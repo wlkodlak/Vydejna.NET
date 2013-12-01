@@ -17,7 +17,7 @@ namespace Vydejna.Tests.EventSourcedTests
         private class TestEvent1 { }
         private class TestEvent2 { }
 
-        private IEventStoreWaitable _store;
+        private TestStore _store;
         private TypeMapper _typeMapper;
         private EventStreamingIndividual _streamer;
         private CancellationTokenSource _cancel;
@@ -50,6 +50,51 @@ namespace Vydejna.Tests.EventSourcedTests
             }
         }
 
+        [TestMethod]
+        public void FiltersEvents()
+        {
+            _store.AddEvent("TestEvent1", "Body1");
+            _store.AddEvent("TestEvent2", "Body2");
+            _store.AddEvent("TestEvent3", "Body3");
+            _store.AddEvent("TestEvent2", "Body4");
+            _store.AddEvent("TestEvent1", "Body5");
+            _store.AddEvent("TestEvent2", "Body6");
+            _store.AddEvent("TestEvent2", "Body7");
+            var stream = _streamer.GetStreamer(AllEventTypes(), EventStoreToken.Initial, false);
+            var token = EventStoreToken.Initial;
+            var receivedEvents = new List<string>();
+            _store.OnWait(() => _cancel.Cancel());
+            try
+            {
+                while (true)
+                {
+                    var task = stream.GetNextEvent(_cancel.Token);
+                    var evt = task.GetAwaiter().GetResult();
+                    receivedEvents.Add(evt.Body);
+                }
+            }
+            catch (TaskCanceledException)
+            {
+            }
+            Assert.AreEqual(
+                "Body1, Body2, Body4, Body5, Body6, Body7",
+                string.Join(", ", receivedEvents));
+        }
+
+        [TestMethod]
+        public void SendsNullInsteadOfWaitingInRebuildMode()
+        {
+            _store.AddEvent("TestEvent1", "Body1");
+            _store.AddEvent("TestEvent2", "Body2");
+            _store.AddEvent("TestEvent1", "Body3");
+            _cancel.CancelAfter(1000);
+            var stream = _streamer.GetStreamer(AllEventTypes(), EventStoreToken.Initial, true);
+            for (int i = 0; i < 3; i++)
+                stream.GetNextEvent(_cancel.Token).GetAwaiter().GetResult();
+            var rebuildStopEvent = stream.GetNextEvent(_cancel.Token).GetAwaiter().GetResult();
+            Assert.IsNull(rebuildStopEvent);
+        }
+
         private IEnumerable<Type> AllEventTypes()
         {
             yield return typeof(TestEvent1);
@@ -60,6 +105,7 @@ namespace Vydejna.Tests.EventSourcedTests
         {
             public SortedList<string, EventStoreEvent> AllEvents = new SortedList<string, EventStoreEvent>();
             private TaskCompletionSource<object> _waiting = null;
+            private Action _onWait = null;
 
             public void AddEvent(string type, string body)
             {
@@ -94,7 +140,14 @@ namespace Vydejna.Tests.EventSourcedTests
                 var tcs = new TaskCompletionSource<object>();
                 cancel.Register(() => tcs.TrySetCanceled());
                 _waiting = tcs;
+                if (_onWait != null)
+                    _onWait();
                 return tcs.Task;
+            }
+
+            public void OnWait(Action action)
+            {
+                _onWait = action;
             }
 
             public Task AddToStream(string stream, IEnumerable<EventStoreEvent> events, EventStoreVersion expectedVersion)
