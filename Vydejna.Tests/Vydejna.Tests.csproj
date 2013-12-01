@@ -65,6 +65,8 @@
     <Compile Include="EventSourcedTests\GenericRepositoryTests.cs" />
     <Compile Include="EventSourcedTests\ProjectionMetadataTests.cs" />
     <Compile Include="EventSourcedTests\ProjectionProcessTests.cs" />
+    <Compile Include="EventSourcedTests\ProjectionProxyTests.cs" />
+    <Compile Include="HttpTests\MissingTests.cs" />
     <Compile Include="HttpTests\ParametrizedUrlTest.cs" />
     <Compile Include="HttpTests\RestClientTest.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
@@ -80,6 +82,7 @@
     <Compile Include="SeznamNaradiTests\SeznamNaradiServiceTest_Unikatnost.cs" />
     <Compile Include="SeznamNaradiTests\SeznamNaradiViewModelTest.cs" />
     <Compile Include="UnitTestingTaskScheduler.cs" />
+    <Compile Include="VirtualTime.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Vydejna.Contracts\Vydejna.Contracts.csproj">

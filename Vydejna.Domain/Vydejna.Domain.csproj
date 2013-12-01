@@ -57,6 +57,7 @@
     <Compile Include="ProcesDefiniceNaradi.cs" />
     <Compile Include="ProjectionMetadata.cs" />
     <Compile Include="ProjectionProcess.cs" />
+    <Compile Include="ProjectionProxy.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="SeznamNaradiProjection.cs" />
     <Compile Include="SeznamNaradiRest.cs" />

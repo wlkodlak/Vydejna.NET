@@ -11,9 +11,9 @@ namespace Vydejna.Contracts
 {
     public class HttpRouter : IHttpServerDispatcher
     {
-        private HttpRouteConfigurator _cfg;
+        private IFindRoute _cfg;
 
-        public HttpRouter(HttpRouteConfigurator cfg)
+        public HttpRouter(IFindRoute cfg)
         {
             _cfg = cfg;
         }
