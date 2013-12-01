@@ -153,10 +153,30 @@ namespace Vydejna.Domain
                             instance.Version = (string)xmlInstance.Attribute("Version");
                             instance.ReaderVersion = (string)xmlInstance.Attribute("ReaderVersion");
                             instance.Status = StatusFromString((string)xmlInstance.Attribute("Status"));
+                            instance.TokenLock = new AsyncLock();
                             _instances.Add(instance.InstanceName, instance);
                         }
                     }
                     _isLoaded = true;
+                }
+            }
+
+            public async Task Save()
+            {
+                using (await _lock.Lock())
+                {
+                    var xml = new XElement("Projection");
+                    foreach (var instance in _instances.Values)
+                    {
+                        var xmlInstance = new XElement("Instance",
+                            new XAttribute("InstanceName", instance.InstanceName),
+                            instance.RunningNode == null ? null : new XAttribute("RunningNode", instance.RunningNode),
+                            new XAttribute("Version", instance.Version),
+                            new XAttribute("ReaderVersion", instance.ReaderVersion),
+                            new XAttribute("Status", instance.Status));
+                        xml.Add(xmlInstance);
+                    }
+                    await _parent._store.SaveDocument(_documentName, xml.ToString());
                 }
             }
 
@@ -205,9 +225,11 @@ namespace Vydejna.Domain
                     instance.ReaderVersion = minimalReader;
                     instance.Status = ProjectionStatus.NewBuild;
                     instance.TokenLock = new AsyncLock();
-                    _instances.Add(instance.InstanceName, instance);
+                    _instances[instance.InstanceName] = instance;
                     foreach (var oldInstance in _instances.Values)
                     {
+                        if (oldInstance == instance)
+                            continue;
                         if (oldInstance.Status == ProjectionStatus.NewBuild)
                         {
                             oldInstance.Status = ProjectionStatus.CancelledBuild;
@@ -215,6 +237,7 @@ namespace Vydejna.Domain
                         }
                     }
                 }
+                await Save();
                 RaiseChanges(updatedInstances);
             }
 
@@ -230,6 +253,7 @@ namespace Vydejna.Domain
                         updatedInstances.Add(BuildEvent(metadata, null));
                     }
                 }
+                await Save();
                 RaiseChanges(updatedInstances);
             }
 
@@ -245,6 +269,7 @@ namespace Vydejna.Domain
                         updatedInstances.Add(BuildEvent(metadata, null));
                     }
                 }
+                await Save();
                 RaiseChanges(updatedInstances);
             }
 
@@ -285,7 +310,7 @@ namespace Vydejna.Domain
             public async Task<IEnumerable<ProjectionInstanceMetadata>> GetAllMetadata()
             {
                 using (await _lock.Lock())
-                    return _instances.Values.Select(BuildPublicMetadata).ToList();
+                    return _instances.Values.Select(BuildPublicMetadata).OrderByDescending(i => i.Version).ToList();
             }
 
             public async Task<ProjectionInstanceMetadata> GetInstanceMetadata(string instanceName)
