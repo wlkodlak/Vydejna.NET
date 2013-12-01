@@ -14,7 +14,7 @@ namespace Vydejna.Contracts
         Task<HttpServerResponse> ProcessRequest(HttpServerRequest request);
     }
 
-    public class HttpServer
+    public class HttpServer : IDisposable
     {
         private HttpListener _listener;
         private CancellationTokenSource _cancel;
@@ -41,8 +41,16 @@ namespace Vydejna.Contracts
 
         public void Stop()
         {
+            _listener.Stop();
             _cancel.Cancel();
+            _cancel.Dispose();
             _workers.ForEach(t => t.Wait());
+        }
+
+        void IDisposable.Dispose()
+        {
+            Stop();
+            _listener.Close();
         }
 
         private void WorkerFunc()

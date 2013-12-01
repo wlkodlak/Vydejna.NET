@@ -73,7 +73,7 @@ namespace Vydejna.Domain
         }
     }
 
-    public class ProjectionProcess : IHandle<ProjectionMetadataChanged>, IProjectionProcess
+    public class ProjectionProcess : IHandle<ProjectionMetadataChanged>, IProjectionProcess, IDisposable
     {
         private string _instanceName;
         private IEventStreaming _streamer;
@@ -287,6 +287,12 @@ namespace Vydejna.Domain
         public void Stop()
         {
             _cancel.Cancel();
+            _cancel.Dispose();
+        }
+
+        void IDisposable.Dispose()
+        {
+            Stop();
         }
 
         public Task CommitProjectionProgress()

@@ -7,7 +7,7 @@ using System.Threading;
 
 namespace Vydejna.Tests
 {
-    public class UnitTestingTaskScheduler : TaskScheduler
+    public class UnitTestingTaskScheduler : TaskScheduler, IDisposable
     {
         private object _lock = new object();
         private readonly List<Task> _waiting = new List<Task>();
@@ -59,6 +59,11 @@ namespace Vydejna.Tests
         public void TryToCompleteTasks(int timeout)
         {
             _cancel.CancelAfter(timeout);
+        }
+
+        void IDisposable.Dispose()
+        {
+            _cancel.Dispose();
         }
     }
 }
