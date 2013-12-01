@@ -18,7 +18,7 @@ namespace Vydejna.Domain
 
     public interface IEventStoreWaitable : IEventStore
     {
-        Task WaitForEvents(EventStoreToken token, CancellationToken cancel, int timeout = 0);
+        Task WaitForEvents(EventStoreToken token, CancellationToken cancel);
     }
 
     public class EventStoreVersion
@@ -196,6 +196,7 @@ namespace Vydejna.Domain
         private IEventStore _store;
         private IEventStoreWaitable _waitable;
         private ITime _time;
+        private int _timeout = 200;
           
         public EventStoreWaitable(IEventStore store, ITime time)
         {
@@ -204,14 +205,18 @@ namespace Vydejna.Domain
             _time = time;
         }
 
-        public Task WaitForEvents(EventStoreToken token, CancellationToken cancel, int timeout = 0)
+        public EventStoreWaitable WithTimeout(int timeout)
+        {
+            _timeout = Math.Max(1, timeout);
+            return this;
+        }
+
+        public Task WaitForEvents(EventStoreToken token, CancellationToken cancel)
         {
             if (_waitable != null)
-                return _waitable.WaitForEvents(token, cancel, timeout);
-            else if (timeout <= 0)
-                return _time.Delay(200, cancel);
+                return _waitable.WaitForEvents(token, cancel);
             else
-                return _time.Delay(Math.Min(200, timeout), cancel);
+                return _time.Delay(_timeout, cancel);
         }
 
         public Task AddToStream(string stream, IEnumerable<EventStoreEvent> events, EventStoreVersion expectedVersion)

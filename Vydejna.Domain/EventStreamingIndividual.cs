@@ -12,18 +12,11 @@ namespace Vydejna.Domain
     {
         private IEventStoreWaitable _store;
         private ITypeMapper _typeMapper;
-        private Func<int, int> _delayForRetry;
 
         public EventStreamingIndividual(IEventStoreWaitable store, ITypeMapper typeMapper)
         {
             _store = store;
             _typeMapper = typeMapper;
-        }
-
-        public EventStreamingIndividual SetupWaiting(Func<int, int> delayForRetry)
-        {
-            _delayForRetry = delayForRetry;
-            return this;
         }
 
         public IEventStreamingInstance GetStreamer(IEnumerable<Type> filter, EventStoreToken token, bool rebuildMode)
