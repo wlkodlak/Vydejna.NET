@@ -24,6 +24,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             _repository = new UnikatnostRepositoryMock(this);
             _udalosti = new List<object>();
             _obsahRepository = new List<object>();
+            _aktualniUdalost = null;
         }
 
         private SeznamNaradiService VytvoritService()
