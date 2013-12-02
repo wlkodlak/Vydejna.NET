@@ -10,7 +10,7 @@ using Moq;
 
 namespace Vydejna.Tests.SeznamNaradiTests
 {
-    [TestClass]
+    [TestClass, NUnit.Framework.TestFixture]
     public class SeznamNaradiServiceTest_Naradi
     {
         private NaradiRepositoryMock _repository;
@@ -18,7 +18,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
         private IEnumerator<object> _aktualniUdalost;
         private Dictionary<Guid, List<object>> _obsahRepository;
 
-        [TestInitialize]
+        [TestInitialize, NUnit.Framework.SetUp]
         public void Initialize()
         {
             _repository = new NaradiRepositoryMock(this);
@@ -82,7 +82,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             }
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void AktivovatNaradi()
         {
             var idNaradi = Guid.NewGuid();
@@ -97,7 +97,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             ZadneDalsiUdalosti();
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void AktivovatNeexistujiciNaradi()
         {
             var svc = VytvoritService();
@@ -105,7 +105,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             ZadneDalsiUdalosti();
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void AktivovatAktivniNaradi()
         {
             var idNaradi = Guid.NewGuid();
@@ -117,7 +117,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             ZadneDalsiUdalosti();
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void DeaktivovatNaradi()
         {
             var idNaradi = Guid.NewGuid();
@@ -131,7 +131,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             ZadneDalsiUdalosti();
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void DeaktivovatNeexistujiciNaradi()
         {
             var svc = VytvoritService();
@@ -139,7 +139,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             ZadneDalsiUdalosti();
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void DeaktivovatNeaktivniNaradi()
         {
             var idNaradi = Guid.NewGuid();
@@ -152,7 +152,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             ZadneDalsiUdalosti();
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void DefinovatNaradiInternal()
         {
             var idNaradi = Guid.NewGuid();
@@ -166,7 +166,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             ZadneDalsiUdalosti();
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void DefinovatExistujiciNaradiInternal()
         {
             var idNaradi = Guid.NewGuid();

@@ -10,7 +10,7 @@ using Vydejna.Domain;
 
 namespace Vydejna.Tests.EventSourcedTests
 {
-    [TestClass]
+    [TestClass, NUnit.Framework.TestFixture]
     public class ProjectionMetadataTests_SingleManager
     {
         private DocumentStoreInMemory _store;
@@ -18,7 +18,7 @@ namespace Vydejna.Tests.EventSourcedTests
         private ProjectionMetadataManager _mgr;
         private IProjectionMetadata _projection;
 
-        [TestInitialize]
+        [TestInitialize, NUnit.Framework.SetUp]
         public void Initialize()
         {
             _store = new DocumentStoreInMemory();
@@ -26,7 +26,7 @@ namespace Vydejna.Tests.EventSourcedTests
             _projection = _mgr.GetProjection("Projection").GetAwaiter().GetResult();
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void GetMetadata_EmptyStore_ReturnsEmpty()
         {
             var allList = _projection.GetAllMetadata().GetAwaiter().GetResult();
@@ -34,7 +34,7 @@ namespace Vydejna.Tests.EventSourcedTests
             Assert.AreEqual(0, allList.Count(), "Count");
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void BuildNewInstance_EmptyStore_AddsInstanceToProjection()
         {
             _projection.BuildNewInstance("A", null, "1.0", "1.0").GetAwaiter().GetResult();
@@ -44,7 +44,7 @@ namespace Vydejna.Tests.EventSourcedTests
             Assert.AreEqual(expectedMetadata, allList[0], "Metadata");
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void UpdateStatus_ExistingInstance_ChangesStatus()
         {
             _projection.BuildNewInstance("A", null, "1.0", "1.0").GetAwaiter().GetResult();
@@ -55,14 +55,14 @@ namespace Vydejna.Tests.EventSourcedTests
             Assert.AreEqual(expectedMetadata, allList[0], "Metadata");
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void GetToken_InstanceNonexistent_ReturnsInitial()
         {
             var token = _projection.GetToken("X").GetAwaiter().GetResult();
             Assert.AreEqual(EventStoreToken.Initial, token);
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void GetToken_InstanceCreated_ReturnsInitial()
         {
             _projection.BuildNewInstance("X", null, "1.0", "1.0").GetAwaiter().GetResult();
@@ -70,7 +70,7 @@ namespace Vydejna.Tests.EventSourcedTests
             Assert.AreEqual(EventStoreToken.Initial, token);
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void SetToken_InstanceExists_SetsToken()
         {
             _projection.BuildNewInstance("X", null, "1.0", "1.0").GetAwaiter().GetResult();
@@ -79,7 +79,7 @@ namespace Vydejna.Tests.EventSourcedTests
             Assert.AreEqual(new EventStoreToken("00110022"), token);
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void GetAllMetadata_MultipleInstances_SortedByVersionDescending()
         {
             _projection.BuildNewInstance("A", null, "1.0", "1.0").GetAwaiter().GetResult();
@@ -93,7 +93,7 @@ namespace Vydejna.Tests.EventSourcedTests
             Assert.AreEqual("B,C,A", names);
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void DifferentProjectionsAreIndependent()
         {
             var projection2 = _mgr.GetProjection("Projection2").GetAwaiter().GetResult();
@@ -114,7 +114,7 @@ namespace Vydejna.Tests.EventSourcedTests
             Assert.AreEqual(new EventStoreToken("00001111"), projection2.GetToken("A").Result, "1:[A].Token");
         }
         
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void SameProjectionsAreSynchronized()
         {
             var projection2 = _mgr.GetProjection("Projection").GetAwaiter().GetResult();
@@ -132,14 +132,14 @@ namespace Vydejna.Tests.EventSourcedTests
                 Assert.AreEqual(meta1[i], meta2[i], "[{0}]", i);
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void HandlerToken_Nonexistent()
         {
             var handler = _mgr.GetHandler("TestHandler").GetAwaiter().GetResult();
             var token = handler.GetToken();
             Assert.AreEqual(EventStoreToken.Initial, token);
         }
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void HandlerToken_SetToken()
         {
             var handler = _mgr.GetHandler("TestHandler").GetAwaiter().GetResult();
@@ -149,18 +149,18 @@ namespace Vydejna.Tests.EventSourcedTests
         }
     }
 
-    [TestClass]
+    [TestClass, NUnit.Framework.TestFixture]
     public class ProjectionMetadataTests_Persistence
     {
         private DocumentStoreInMemory _store;
 
-        [TestInitialize]
+        [TestInitialize, NUnit.Framework.SetUp]
         public void Initialize()
         {
             _store = new DocumentStoreInMemory();
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void ArePersistent()
         {
             ArePersistent_Setup().GetAwaiter().GetResult();

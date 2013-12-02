@@ -12,7 +12,7 @@ using System.Windows.Input;
 
 namespace Vydejna.Tests.SeznamNaradiTests
 {
-    [TestClass]
+    [TestClass, NUnit.Framework.TestFixture]
     public class DefinovatNaradiViewModelTest
     {
         private MockRepository _repo;
@@ -20,7 +20,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
         private Mock<IDefinovatNaradiValidator> _validator;
         private Mock<IEventPublisher> _bus;
 
-        [TestInitialize]
+        [TestInitialize, NUnit.Framework.SetUp]
         public void Initialize()
         {
             _repo = new MockRepository(MockBehavior.Strict);
@@ -29,7 +29,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             _bus = _repo.Create<IEventPublisher>();
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void PriStartuJsouPolePrazdnaATlacitkoZakazane()
         {
             var vm = VytvoritViewModel();
@@ -41,7 +41,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             Assert.IsFalse(vm.DefinovatNaradiCommand.CanExecute(null), "DefinovatNaradiCommand.Enabled");
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void PriStartuJsouPoleOznacenaChybou()
         {
             var vm = VytvoritViewModel();
@@ -56,7 +56,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             watcher.AssertError("Rozmer", PropertyErrorWatcher.AnyError);
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void PriZmenePolicekSeVyvolavaValidatorAPropertyChanged()
         {
             DefinovatNaradiValidace validace = null;
@@ -77,7 +77,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             Assert.AreEqual("Bruska", validace.Druh, "Validace.Vykres");
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void PriNeuspesneValidaciSeDeaktivujeTlacitkoAUPolicekSeZobraziChyby()
         {
             _validator.Setup(v => v.Zkontrolovat(It.IsAny<DefinovatNaradiValidace>()));
@@ -97,7 +97,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             _repo.VerifyAll();
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void PriUspesneValidaciSeAktivujeTlacitkoAUPolicekSeSmazouChyby()
         {
             _validator.Setup(v => v.Zkontrolovat(It.IsAny<DefinovatNaradiValidace>()));
@@ -114,7 +114,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             _repo.VerifyAll();
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void PriKliknutiNaProvedeniSeOdeslePrikaz()
         {
             var task = new TaskCompletionSource<object>();
@@ -134,7 +134,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             _repo.VerifyAll();
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void PriDokonceniPrikazuSeOdesleUdalostDoAggregatoru()
         {
             UnitTestingTaskScheduler.RunTest(ts =>

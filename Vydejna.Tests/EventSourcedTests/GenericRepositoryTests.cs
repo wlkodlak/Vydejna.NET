@@ -9,7 +9,7 @@ using Moq;
 
 namespace Vydejna.Tests.EventSourcedTests
 {
-    [TestClass]
+    [TestClass, NUnit.Framework.TestFixture]
     public class GenericRepositoryTests
     {
         private class TestAggregate : IEventSourcedAggregate
@@ -79,7 +79,7 @@ namespace Vydejna.Tests.EventSourcedTests
         private readonly string _streamName = "testaggregate_11111111222233334444000000000001";
         private EventStoreInMemory _store;
 
-        [TestInitialize]
+        [TestInitialize, NUnit.Framework.SetUp]
         public void Initialize()
         {
             _store = new EventStoreInMemory();
@@ -92,7 +92,7 @@ namespace Vydejna.Tests.EventSourcedTests
             return repository;
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void Get_Nonexistent_ReturnsNull()
         {
             var repository = GetRepository();
@@ -101,7 +101,7 @@ namespace Vydejna.Tests.EventSourcedTests
             Assert.IsNull(aggregate);
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void Get_Existing_LoadsEvents()
         {
             var storedEvents = new List<EventStoreEvent>();
@@ -118,7 +118,7 @@ namespace Vydejna.Tests.EventSourcedTests
             Assert.IsInstanceOfType(aggregate.LoadedEvents[1], typeof(TestEvent2));
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void Save_New_CommitsChangesToAggregate()
         {
             var repository = GetRepository();
@@ -131,7 +131,7 @@ namespace Vydejna.Tests.EventSourcedTests
             Assert.AreEqual(1, aggregate.CommitedVersion, "Committed version");
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void Save_New_AddsEventsToStore()
         {
             var repository = GetRepository();
@@ -150,7 +150,7 @@ namespace Vydejna.Tests.EventSourcedTests
             Assert.AreEqual("NewEvent", storedEvents[0].Body);
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void Save_Existing_AddsEventsToStore()
         {
             var initialEvents = new EventStoreEvent[] { 

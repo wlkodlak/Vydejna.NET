@@ -8,10 +8,10 @@ using Vydejna.Domain;
 
 namespace Vydejna.Tests.EventSourcedTests
 {
-    [TestClass]
+    [TestClass, NUnit.Framework.TestFixture]
     public class EventStoreInMemoryTests
     {
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void GetAllEvents_Empty_EmptyResult()
         {
             var store = new EventStoreInMemory();
@@ -24,7 +24,7 @@ namespace Vydejna.Tests.EventSourcedTests
             Assert.AreEqual(EventStoreToken.Initial, events.NextToken, "NextToken");
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void AddToStream_Empty_GetAllEventsThenReturnsThose()
         {
             var store = new EventStoreInMemory();
@@ -52,7 +52,7 @@ namespace Vydejna.Tests.EventSourcedTests
             Assert.AreNotEqual(EventStoreToken.Initial, loadedEvents.Events[1].Token, "Events[1].Token");
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void AddToStream_Existing_AppendsEvents()
         {
             var store = new EventStoreInMemory();
@@ -76,7 +76,7 @@ namespace Vydejna.Tests.EventSourcedTests
             Assert.AreEqual(4, loadedEvents.Events.Count, "Count");
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void AddToStream_AddsMissingMetadataToPassedEvents()
         {
             var store = new EventStoreInMemory();
@@ -96,7 +96,7 @@ namespace Vydejna.Tests.EventSourcedTests
 
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void AddToStream_MatchingVersion_AddsEvents()
         {
             var store = new EventStoreInMemory();
@@ -120,7 +120,7 @@ namespace Vydejna.Tests.EventSourcedTests
             Assert.AreEqual(4, loadedEvents.Events.Count, "Count");
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void AddToStream_NotMatchingVersion_ThrowsWithoutAddingEvents()
         {
             var store = new EventStoreInMemory();
@@ -151,7 +151,7 @@ namespace Vydejna.Tests.EventSourcedTests
             Assert.AreEqual(2, loadedEvents.Events.Count, "Count");
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void ReadStream_WithTwoExistingStreamsAndSpecifiedMinVersion_ReadsOnlyItsEventsFromMinVersionUp()
         {
             var store = new EventStoreInMemory();
@@ -184,7 +184,7 @@ namespace Vydejna.Tests.EventSourcedTests
             }
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void GetAllEvents_WithToken_ReadsOnlyEventsAfterToken()
         {
             var store = new EventStoreInMemory();

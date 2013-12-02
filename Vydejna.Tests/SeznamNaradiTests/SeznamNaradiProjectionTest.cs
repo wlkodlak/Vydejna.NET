@@ -10,7 +10,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Vydejna.Tests.SeznamNaradiTests
 {
-    [TestClass]
+    [TestClass, NUnit.Framework.TestFixture]
     public class SeznamNaradiProjectionTest
     {
         private DocumentStoreInMemory _store;
@@ -24,7 +24,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             }
         }
 
-        [TestInitialize]
+        [TestInitialize, NUnit.Framework.SetUp]
         public void Initialize()
         {
             _store = new DocumentStoreInMemory();
@@ -50,7 +50,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             return new Guid(number, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void HandleDefinovanoNaradi_ZachovavaRazeni()
         {
             var proj = VytvoritProjection();
@@ -71,7 +71,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             AssertGuidCollectionsEqual(serazeneGuidy, guidyVysledku, "Poradi");
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void HandleDeaktivovanoNaradi_UpraviExistujici()
         {
             var proj = VytvoritProjection();
@@ -93,7 +93,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             AssertGuidCollectionsEqual(neaktivniOcekavane, neaktivniGuid, "Neaktivni");
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void HandleAktivovanoNaradi_UpraviExistujici()
         {
             var proj = VytvoritProjection();
@@ -117,7 +117,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             AssertGuidCollectionsEqual(neaktivniOcekavane, neaktivniGuid, "Neaktivni");
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void OvereniUnikanosti_AktivniINeaktivni()
         {
             var proj = VytvoritProjection();
@@ -145,7 +145,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             Assert.AreEqual(rozmer, dto.Rozmer, "Rozmer {0}", rozmer);
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void ZmenyJsouPersistentni()
         {
             var proj = VytvoritProjection();
@@ -170,7 +170,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             AssertGuidCollectionsEqual(aktivniOcekavane, aktivniGuid, "Aktivni");
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void ParalelniProjekce()
         {
             var proj1 = VytvoritProjection("A");

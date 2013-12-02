@@ -40,6 +40,9 @@
     <Reference Include="Moq">
       <HintPath>..\packages\Moq.4.0.10827\lib\NET40\Moq.dll</HintPath>
     </Reference>
+    <Reference Include="nunit.framework">
+      <HintPath>..\packages\NUnit.2.6.3\lib\nunit.framework.dll</HintPath>
+    </Reference>
     <Reference Include="PresentationFramework" />
     <Reference Include="ServiceStack.Text">
       <HintPath>..\packages\ServiceStack.Text.3.9.70\lib\net35\ServiceStack.Text.dll</HintPath>
@@ -61,6 +64,7 @@
   </Choose>
   <ItemGroup>
     <Compile Include="EventSourcedTests\EventStoreInMemoryTests.cs" />
+    <Compile Include="EventSourcedTests\EventStoreInSqlTests.cs" />
     <Compile Include="EventSourcedTests\EventStreamingTests.cs" />
     <Compile Include="EventSourcedTests\GenericRepositoryTests.cs" />
     <Compile Include="EventSourcedTests\ProjectionMetadataTests.cs" />

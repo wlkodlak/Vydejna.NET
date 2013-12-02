@@ -12,7 +12,7 @@ using System.Threading;
 namespace Vydejna.Tests.EventSourcedTests
 {
     [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Design", "CA1001:TypesThatOwnDisposableFieldsShouldBeDisposable")]
-    [TestClass]
+    [TestClass, NUnit.Framework.TestFixture]
     public class ProjectionProcessTests
     {
         private Mock<IProjectionMetadataManager> _metadataMgr;
@@ -23,7 +23,7 @@ namespace Vydejna.Tests.EventSourcedTests
         private List<EventStoreEvent> _events;
         private ManualResetEventSlim _eventStoreWaits;
 
-        [TestInitialize]
+        [TestInitialize, NUnit.Framework.SetUp]
         public void Initialize()
         {
             _events = new List<EventStoreEvent>();
@@ -37,7 +37,7 @@ namespace Vydejna.Tests.EventSourcedTests
             _metadataMgr.Setup(m => m.GetProjection("TestProjection")).Returns(() => TaskResult.GetCompletedTask<IProjectionMetadata>(_metadata));
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void InitialBuild_AsMaster()
         {
             SetupEventStore();
@@ -48,7 +48,7 @@ namespace Vydejna.Tests.EventSourcedTests
             ExpectInstance("A");
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void InitialBuild_AsRebuilder()
         {
             SetupEventStore();
@@ -57,7 +57,7 @@ namespace Vydejna.Tests.EventSourcedTests
             ExpectContents("");
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void ContinueInitial_AsMaster()
         {
             SetupEventStore();
@@ -72,7 +72,7 @@ namespace Vydejna.Tests.EventSourcedTests
             ExpectInstance("B");
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void ContinueInitial_AsRebuilder()
         {
             SetupEventStore();
@@ -90,7 +90,7 @@ namespace Vydejna.Tests.EventSourcedTests
             ExpectToken("B", originalToken);
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void RebuildInitial_AsMaster()
         {
             SetupEventStore();
@@ -105,7 +105,7 @@ namespace Vydejna.Tests.EventSourcedTests
             ExpectInstance("B");
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void RebuildInitial_AsRebuilder()
         {
             SetupEventStore();
@@ -123,7 +123,7 @@ namespace Vydejna.Tests.EventSourcedTests
             ExpectToken("B", originalToken);
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void ContinueRunning_AsMaster()
         {
             SetupEventStore();
@@ -138,7 +138,7 @@ namespace Vydejna.Tests.EventSourcedTests
             ExpectInstance("B");
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void ContinueRunning_AsRebuilder()
         {
             SetupEventStore();
@@ -156,7 +156,7 @@ namespace Vydejna.Tests.EventSourcedTests
             ExpectToken("B", originalToken);
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void RebuildRunningOnly_AsMaster()
         {
             SetupEventStore();
@@ -178,7 +178,7 @@ namespace Vydejna.Tests.EventSourcedTests
             ExpectInstance("B");
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void ParallelRebuild_AsMaster()
         {
             SetupEventStore();
@@ -203,7 +203,7 @@ namespace Vydejna.Tests.EventSourcedTests
             ExpectInstance("B");
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void RebuildRunningOnly_AsRebuilder()
         {
             SetupEventStore();
@@ -224,7 +224,7 @@ namespace Vydejna.Tests.EventSourcedTests
             ExpectInstance("D");
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void ContinueRebuild_AsRebuilder()
         {
             SetupEventStore();
@@ -248,7 +248,7 @@ namespace Vydejna.Tests.EventSourcedTests
             ExpectInstance("D");
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void RestartRebuild_AsRebuilder()
         {
             SetupEventStore();
@@ -272,7 +272,7 @@ namespace Vydejna.Tests.EventSourcedTests
             ExpectInstance("D");
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void RebuildObsoleted_AsRebuilder()
         {
             SetupEventStore();

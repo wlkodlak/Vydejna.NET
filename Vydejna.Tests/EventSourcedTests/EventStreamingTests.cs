@@ -11,7 +11,7 @@ using Vydejna.Domain;
 
 namespace Vydejna.Tests.EventSourcedTests
 {
-    [TestClass]
+    [TestClass, NUnit.Framework.TestFixture]
     public class EventStreamingTests
     {
         private class TestEvent1 { }
@@ -22,7 +22,7 @@ namespace Vydejna.Tests.EventSourcedTests
         private EventStreamingIndividual _streamer;
         private CancellationTokenSource _cancel;
 
-        [TestInitialize]
+        [TestInitialize, NUnit.Framework.SetUp]
         public void Initialize()
         {
             _store = new TestStore();
@@ -33,7 +33,7 @@ namespace Vydejna.Tests.EventSourcedTests
             _cancel = new CancellationTokenSource();
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void EmptyEventStore()
         {
             var stream = _streamer.GetStreamer(AllEventTypes(), EventStoreToken.Initial, false);
@@ -50,7 +50,7 @@ namespace Vydejna.Tests.EventSourcedTests
             }
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void FiltersEvents()
         {
             _store.AddEvent("TestEvent1", "Body1");
@@ -81,7 +81,7 @@ namespace Vydejna.Tests.EventSourcedTests
                 string.Join(", ", receivedEvents));
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void SendsNullInsteadOfWaitingInRebuildMode()
         {
             _store.AddEvent("TestEvent1", "Body1");
@@ -97,7 +97,7 @@ namespace Vydejna.Tests.EventSourcedTests
             Assert.IsNull(rebuildStopEvent);
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void WaitingForNewEventsWaitsAfterAllNewEventsAreProcessed()
         {
             int phase = 0;
@@ -141,7 +141,7 @@ namespace Vydejna.Tests.EventSourcedTests
             Assert.AreEqual(3, phase, "Phase");
         }
 
-        [TestMethod]
+        [TestMethod, NUnit.Framework.Test]
         public void StartWithPassedToken()
         {
             int phase = 0;
