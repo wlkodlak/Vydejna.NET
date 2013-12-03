@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using ServiceStack.Text;
 
 namespace Vydejna.Contracts
 {
@@ -91,17 +92,22 @@ namespace Vydejna.Contracts
         {
             if (_ignoreContentType)
                 return true;
-            var contentType = request.Headers.ContentType;
-            if (contentType == "application/json")
+            var accept = new HashSet<string>(request.Headers.AcceptTypes ?? new string[0]);
+            if (accept.Count == 0 && _allowEmptyContentType)
                 return true;
-            if (string.IsNullOrEmpty(contentType) && _allowEmptyContentType)
+            if (accept.Contains("application/json"))
                 return true;
             return false;
         }
 
         public Task<HttpServerResponse> ProcessOutput(HttpServerRequest request, object response)
         {
-            throw new NotImplementedException();
+            var stream = new MemoryStream();
+            var json = JsonSerializer.SerializeToString((T)response);
+            return new HttpServerResponseBuilder()
+                .WithHeader("Content-Type", "application/json")
+                .WithRawBody(Encoding.UTF8.GetBytes(json))
+                .BuildTask();
         }
     }
 }

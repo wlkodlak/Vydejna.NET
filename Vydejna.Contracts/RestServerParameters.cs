@@ -16,7 +16,7 @@ namespace Vydejna.Contracts
         }
         public string Method { get; set; }
         public string Url { get; set; }
-        public HttpServerHeaders Headers;
+        public HttpServerHeaders Headers { get; private set; }
 
         private Dictionary<string, List<RequestParameter>> _parameters;
         public void AddParameter(RequestParameter parameter)
@@ -51,10 +51,10 @@ namespace Vydejna.Contracts
             return new HttpServerRequestParameter(name, value);
         }
 
-        public HttpServerRequestRoute Route(string name)
+        public HttpServerRequestParameter Route(string name)
         {
             var value = GetParameters(RequestParameterType.Path, name).Select(p => p.Value).FirstOrDefault();
-            return new HttpServerRequestRoute(name, value);
+            return new HttpServerRequestParameter(name, value);
         }
 
         public System.IO.Stream PostDataStream { get; set; }
@@ -80,13 +80,13 @@ namespace Vydejna.Contracts
             else if (int.TryParse(_value, out parsedValue))
                 return new HttpServerRequestParameter<int>(_name, true, parsedValue);
             else
-                throw new RequestParameterException(string.Format("Parameter {0} is not valid integer: {1}", _name, _value));
+                throw new RequestParameterInvalidException(string.Format("Parameter {0} is not valid integer: {1}", _name, _value));
         }
         public HttpServerRequestParameter<string> AsString()
         {
             return new HttpServerRequestParameter<string>(_name, !string.IsNullOrEmpty(_value), _value);
         }
-        HttpServerRequestParameter<T> As<T>(Func<string, T> convert)
+        public HttpServerRequestParameter<T> As<T>(Func<string, T> convert)
         {
             if (string.IsNullOrEmpty(_value))
                 return new HttpServerRequestParameter<T>(_name, false, default(T));
@@ -101,50 +101,7 @@ namespace Vydejna.Contracts
             }
             catch (Exception ex)
             {
-                throw new RequestParameterException(string.Format("Parameter {0} is not valid {1}: {2}", _name, typeof(T).Name, _value), ex);
-            }
-        }
-    }
-
-    public class HttpServerRequestRoute
-    {
-        private string _name;
-        private string _value;
-
-        public HttpServerRequestRoute(string name, string value)
-        {
-            this._name = name;
-            this._value = value;
-        }
-        public int AsInteger()
-        {
-            int parsedValue;
-            if (string.IsNullOrEmpty(_value))
-                throw new RequestParameterException(string.Format("Parameter {0} is required", _name));
-            else if (int.TryParse(_value, out parsedValue))
-                return parsedValue;
-            else
-                throw new RequestParameterException(string.Format("Parameter {0} is not valid integer: {1}", _name, _value));
-        }
-        public string AsString()
-        {
-            return _value;
-        }
-        public T As<T>(Func<string, T> convert)
-        {
-            if (string.IsNullOrEmpty(_value))
-                throw new RequestParameterException(string.Format("Parameter {0} is required", _name));
-            try
-            {
-                return convert(_value);
-            }
-            catch (RequestParameterException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                throw new RequestParameterException(string.Format("Parameter {0} is not valid {1}: {2}", _name, typeof(T).Name, _value), ex);
+                throw new RequestParameterInvalidException(string.Format("Parameter {0} is not valid {1}: {2}", _name, typeof(T).Name, _value), ex);
             }
         }
     }
@@ -167,7 +124,7 @@ namespace Vydejna.Contracts
             if (_present)
                 return _value;
             else
-                throw new RequestParameterException(string.Format("Parameter {0} is missing", _name));
+                throw new RequestParameterMissingException(string.Format("Parameter {0} is missing", _name));
         }
 
         public T Optional(T defaultValue = default(T))
@@ -186,6 +143,30 @@ namespace Vydejna.Contracts
         public RequestParameterException(string message) : base(message) { }
         public RequestParameterException(string message, Exception inner) : base(message, inner) { }
         protected RequestParameterException(
+          System.Runtime.Serialization.SerializationInfo info,
+          System.Runtime.Serialization.StreamingContext context)
+            : base(info, context) { }
+    }
+
+    [Serializable]
+    public class RequestParameterMissingException : RequestParameterException
+    {
+        public RequestParameterMissingException() { }
+        public RequestParameterMissingException(string message) : base(message) { }
+        public RequestParameterMissingException(string message, Exception inner) : base(message, inner) { }
+        protected RequestParameterMissingException(
+          System.Runtime.Serialization.SerializationInfo info,
+          System.Runtime.Serialization.StreamingContext context)
+            : base(info, context) { }
+    }
+
+    [Serializable]
+    public class RequestParameterInvalidException : RequestParameterException
+    {
+        public RequestParameterInvalidException() { }
+        public RequestParameterInvalidException(string message) : base(message) { }
+        public RequestParameterInvalidException(string message, Exception inner) : base(message, inner) { }
+        protected RequestParameterInvalidException(
           System.Runtime.Serialization.SerializationInfo info,
           System.Runtime.Serialization.StreamingContext context)
             : base(info, context) { }
@@ -269,6 +250,10 @@ namespace Vydejna.Contracts
             return _response;
         }
 
+        public Task<HttpServerResponse> BuildTask()
+        {
+            return TaskResult.GetCompletedTask(_response);
+        }
     }
 
     public class HttpServerHeader
@@ -319,7 +304,7 @@ namespace Vydejna.Contracts
                     _referer = value;
                     break;
                 case "Location":
-                    _referer = value;
+                    _location = value;
                     break;
                 case "Accept":
                     _acceptTypesRaw = value;
@@ -328,7 +313,7 @@ namespace Vydejna.Contracts
                     else
                     {
                         _acceptTypes = new List<string>();
-                        var regex = new Regex(@"^ *([a-zA-Z0-9\-*]+[a-zA-Z0-9\-*])");
+                        var regex = new Regex(@"^ *([a-zA-Z0-9\-*]+/[a-zA-Z0-9\-*]+)");
                         foreach (var acceptPart in value.Split(','))
                         {
                             var match = regex.Match(acceptPart);
@@ -403,11 +388,15 @@ namespace Vydejna.Contracts
             if (!string.IsNullOrEmpty(_contentType))
                 yield return new HttpServerHeader("Content-Type", _contentType);
             if (!string.IsNullOrEmpty(_acceptLanguagesRaw))
-                yield return new HttpServerHeader("Content-Type", _acceptLanguagesRaw);
+                yield return new HttpServerHeader("Accept-Language", _acceptLanguagesRaw);
+            else if (_acceptLanguages != null)
+                yield return new HttpServerHeader("Accept-Language", string.Join(", ", _acceptLanguages));
             if (!string.IsNullOrEmpty(_acceptTypesRaw))
-                yield return new HttpServerHeader("Content-Type", _acceptTypesRaw);
+                yield return new HttpServerHeader("Accept", _acceptTypesRaw);
+            else if (_acceptTypes != null)
+                yield return new HttpServerHeader("Accept", string.Join(", ", _acceptTypes));
             if (!string.IsNullOrEmpty(_contentLanguage))
-                yield return new HttpServerHeader("Content-Type", _contentLanguage);
+                yield return new HttpServerHeader("Content-Language", _contentLanguage);
             if (_contentLength >= 0)
                 yield return new HttpServerHeader("Content-Length", _contentLength.ToString());
             if (!string.IsNullOrEmpty(_referer))
