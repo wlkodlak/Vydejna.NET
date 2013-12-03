@@ -10,10 +10,10 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Vydejna.Tests.EventSourcedTests
 {
-    [TestClass, NUnit.Framework.TestFixture]
+    [TestClass]
     public class ProjectionProxyTests
     {
-        [TestMethod, Ignore, NUnit.Framework.Test, NUnit.Framework.Ignore]
+        [TestMethod, Ignore]
         public void ProjectionProxy_Missing() { }
     }
 }

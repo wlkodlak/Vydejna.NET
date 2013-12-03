@@ -14,7 +14,7 @@ using Vydejna.Gui.Shell;
 
 namespace Vydejna.Tests.SeznamNaradiTests
 {
-    [TestClass, NUnit.Framework.TestFixture]
+    [TestClass]
     public class SeznamNaradiViewModelTest
     {
         private MockRepository _repo;
@@ -49,7 +49,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             }
         }
 
-        [TestInitialize, NUnit.Framework.SetUp]
+        [TestInitialize]
         public void Setup()
         {
             _repo = new MockRepository(MockBehavior.Strict);
@@ -59,7 +59,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             _createVM = new MockFunc<DefinovatNaradiViewModel>();
         }
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void PriInicializaciDialoguSeNacteSeznamNaradi()
         {
             var taskResult = new TaskCompletionSource<SeznamNaradiDto>();
@@ -70,7 +70,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             _repo.VerifyAll();
         }
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void KliknutiNaDefinovatNaradiOtevreNovyModulProDefinici()
         {
             _shell
@@ -84,7 +84,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             _createVM.Verify();
         }
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void PriDokonceniDefiniceNaradiSeAktualizujeSeznam()
         {
             var taskResult = new TaskCompletionSource<SeznamNaradiDto>();
@@ -95,7 +95,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             _repo.VerifyAll();
         }
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void PriPrijmuVysledkuNacitaniSeTytoZobrazi()
         {
             var taskResult = new TaskCompletionSource<SeznamNaradiDto>();
@@ -107,7 +107,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             Assert.AreEqual(5, list.Count);
         }
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void PriZmeneFiltruSeZobraziJenOdpovidajiciZaznamy()
         {
             var vm = VytvoritViewModel();
@@ -118,7 +118,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             CollectionAssert.AreEqual(ocekavano, filtrovano);
         }
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void PriNacteniZafiltrovanehoSeznamuSeFiltrAplikuje()
         {
             var vm = VytvoritViewModel();
@@ -129,7 +129,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             CollectionAssert.AreEqual(ocekavano, filtrovano);
         }
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void PriVraceniFiltruNaPrazdnyRetezecZobrazujeVsechnaNaradi()
         {
             var vm = VytvoritViewModel();
@@ -139,7 +139,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             Assert.AreEqual(5, vm.SeznamNaradi.Count);
         }
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void PriAktivaciNaradiNeaktivnihoSePoslePrikazAUpraviZobrazeni()
         {
             AktivovatNaradiCommand cmd = null;
@@ -157,7 +157,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             elementChanges.AssertChange("Aktivni");
         }
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void PriDeaktivaciNaradiAktivnihoSePoslePrikazAUpraviZobrazeni()
         {
             DeaktivovatNaradiCommand cmd = null;
@@ -175,7 +175,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             elementChanges.AssertChange("Aktivni");
         }
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void PokusOAktivaciAktivnihoNaradiNedelaNic()
         {
             var vm = VytvoritViewModel();

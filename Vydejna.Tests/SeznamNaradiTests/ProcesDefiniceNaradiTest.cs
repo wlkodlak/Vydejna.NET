@@ -10,14 +10,14 @@ using Vydejna.Domain;
 
 namespace Vydejna.Tests.SeznamNaradiTests
 {
-    [TestClass, NUnit.Framework.TestFixture]
+    [TestClass]
     public class ProcesDefiniceNaradiTest
     {
         private MockIHandle<DefinovatNaradiCommand> _mockDefinice;
         private MockIHandle<AktivovatNaradiCommand> _mockAktivace;
         private MockIHandle<DokoncitDefiniciNaradiInternalCommand> _mockDokonceni;
 
-        [TestInitialize, NUnit.Framework.SetUp]
+        [TestInitialize]
         public void Inicialize()
         {
             _mockDefinice = new MockIHandle<DefinovatNaradiCommand>();
@@ -48,7 +48,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             return new ProcesDefiniceNaradi(_mockDefinice, _mockAktivace, _mockDokonceni);
         }
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void ZahajeniDefinice()
         {
             var naradiId = Guid.NewGuid();
@@ -63,7 +63,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             Assert.AreEqual("", cmd.Druh, "Druh");
         }
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void ZahajeniAktivace()
         {
             var naradiId = Guid.NewGuid();
@@ -75,7 +75,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             Assert.AreEqual(naradiId, cmd.NaradiId, "NaradiId");
         }
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void DokonceniDefinice()
         {
             var naradiId = Guid.NewGuid();

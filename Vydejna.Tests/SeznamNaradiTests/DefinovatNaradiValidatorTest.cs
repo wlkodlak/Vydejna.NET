@@ -11,7 +11,7 @@ using Moq;
 
 namespace Vydejna.Tests.SeznamNaradiTests
 {
-    [TestClass, NUnit.Framework.TestFixture]
+    [TestClass]
     public class DefinovatNaradiValidatorTest
     {
         private class EventAggregator : IEventPublisher
@@ -26,14 +26,14 @@ namespace Vydejna.Tests.SeznamNaradiTests
         private EventAggregator _vysledky;
         private Mock<IReadSeznamNaradi> _readSvc;
 
-        [TestInitialize, NUnit.Framework.SetUp]
+        [TestInitialize]
         public void Initialize()
         {
             _vysledky = new EventAggregator();
             _readSvc = new Mock<IReadSeznamNaradi>();
         }
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void ChybejiciVykresOznamiOkamzite()
         {
             var validator = VytvoritValidator();
@@ -43,7 +43,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             OveritChybu("Druh", s => true);
         }
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void KombinaceRozmeruAVykresuNeniUnikatni()
         {
             UnitTestingTaskScheduler.RunTest(ts =>
@@ -60,7 +60,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             });
         }
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void ValidaceVPoradku()
         {
             UnitTestingTaskScheduler.RunTest(ts =>

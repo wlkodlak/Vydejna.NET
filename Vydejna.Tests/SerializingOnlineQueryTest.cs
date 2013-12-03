@@ -9,7 +9,7 @@ using Vydejna.Gui.Common;
 
 namespace Vydejna.Tests
 {
-    [TestClass, NUnit.Framework.TestFixture]
+    [TestClass]
     public class SerializingOnlineQueryTest
     {
         private class QueryState
@@ -81,7 +81,7 @@ namespace Vydejna.Tests
             }
         }
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void ImmediateResult()
         {
             var query = QueryState.CreateQuery();
@@ -91,7 +91,7 @@ namespace Vydejna.Tests
             Assert.IsTrue(state.Reported, "Reported");
         }
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void OnlineResult()
         {
             var query = QueryState.CreateQuery();
@@ -104,7 +104,7 @@ namespace Vydejna.Tests
             Assert.IsTrue(state.Reported, "Reported");
         }
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void CancelByImmediate()
         {
             var reports = new List<string>();
@@ -117,7 +117,7 @@ namespace Vydejna.Tests
             AssertEqualCollections(new string[] { "IMM2" }, reports);
         }
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void CancelWaitByImmediate()
         {
             var reports = new List<string>();
@@ -131,7 +131,7 @@ namespace Vydejna.Tests
             AssertEqualCollections(new string[] { "IMM3" }, reports);
         }
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void IgnoreBecauseOfWaiting()
         {
             var reports = new List<string>();
@@ -145,7 +145,7 @@ namespace Vydejna.Tests
             AssertEqualCollections(new string[] { "CNT2" }, reports);
         }
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void OnlineAfterImmediate()
         {
             var reports = new List<string>();

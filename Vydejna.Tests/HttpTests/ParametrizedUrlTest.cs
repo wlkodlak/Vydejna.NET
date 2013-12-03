@@ -8,10 +8,10 @@ using Vydejna.Contracts;
 
 namespace Vydejna.Tests.HttpTests
 {
-    [TestClass, NUnit.Framework.TestFixture]
+    [TestClass]
     public class ParametrizedUrlTest
     {
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void GenerateWithoutParameters()
         {
             var url = new ParametrizedUrl("http://rest.wilczak.net/web/articles/5847-restclient");
@@ -19,7 +19,7 @@ namespace Vydejna.Tests.HttpTests
                 url.CompleteUrl(Enumerable.Empty<RequestParameter>()));
         }
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void GenerateWithQueryParameters()
         {
             var url = new ParametrizedUrl("http://rest.wilczak.net/web/articles/5847-restclient");
@@ -33,7 +33,7 @@ namespace Vydejna.Tests.HttpTests
                 url.CompleteUrl(parameters));
         }
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void GenerateWithPathParameters()
         {
             var url = new ParametrizedUrl("http://rest.wilczak.net/web/{controller}/{id}-{article_name}");
@@ -47,7 +47,7 @@ namespace Vydejna.Tests.HttpTests
                 url.CompleteUrl(parameters));
         }
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void GenerateComplex()
         {
             var url = new ParametrizedUrl("http://rest.wilczak.net/web/{controller}/{id}-{article_name}?param1=value1");
@@ -63,7 +63,7 @@ namespace Vydejna.Tests.HttpTests
                 url.CompleteUrl(parameters));
         }
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void GenerateUrlEndingWithSlash()
         {
             var url = new ParametrizedUrl("http://rest.wilczak.net/web/articles/");
@@ -71,7 +71,7 @@ namespace Vydejna.Tests.HttpTests
                 url.CompleteUrl(Enumerable.Empty<RequestParameter>()));
         }
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void UrlForMatching()
         {
             TestUrlForMatching(new[] { "articles", "5847" }, ParametrizedUrl.UrlForMatching("http://localhost/articles/5847?sort=date"));
@@ -86,7 +86,7 @@ namespace Vydejna.Tests.HttpTests
             Assert.AreEqual(left, right);
         }
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void MatchOnlyFixed()
         {
             var pattern = new ParametrizedUrl("/articles/1547");
@@ -97,7 +97,7 @@ namespace Vydejna.Tests.HttpTests
             MatchTest(pattern, "/articles/1547/ordered", null);
         }
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void MatchVariables()
         {
             var pattern = new ParametrizedUrl("/articles/{id}");
@@ -112,7 +112,7 @@ namespace Vydejna.Tests.HttpTests
             MatchTest(pattern2, "/articles/1547/ordered", "311", "id", "1547", "action", "ordered");
         }
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void MatchComposites()
         {
             var pattern = new ParametrizedUrl("/articles/{id}-{name}");
@@ -171,7 +171,7 @@ namespace Vydejna.Tests.HttpTests
         }
 
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void ParseQueryString_Basic()
         {
             var parsed = ParametrizedUrl.ParseQueryString("http://localhost/action?param1=58&param2=true&p=hello_world").ToList();
@@ -184,7 +184,7 @@ namespace Vydejna.Tests.HttpTests
             }
         }
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void ParseQueryString_SpecialCharacters()
         {
             var parsed = ParametrizedUrl.ParseQueryString("http://localhost/action?spaces=hello+world&empty=&percents=%23+%2F=%3D%3F").ToList();

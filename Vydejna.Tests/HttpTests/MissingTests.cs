@@ -7,28 +7,28 @@ using System.Threading.Tasks;
 
 namespace Vydejna.Tests.HttpTests
 {
-    [TestClass, NUnit.Framework.TestFixture]
+    [TestClass]
     public class MissingTests
     {
-        [TestMethod, Ignore, NUnit.Framework.Test, NUnit.Framework.Ignore]
+        [TestMethod, Ignore]
         public void HttpClient_Missing() { }
-        [TestMethod, Ignore, NUnit.Framework.Test, NUnit.Framework.Ignore]
+        [TestMethod, Ignore]
         public void HttpServerHeaders_Missing() { }
-        [TestMethod, Ignore, NUnit.Framework.Test, NUnit.Framework.Ignore]
+        [TestMethod, Ignore]
         public void HttpServerRequest_Missing() { }
-        [TestMethod, Ignore, NUnit.Framework.Test, NUnit.Framework.Ignore]
+        [TestMethod, Ignore]
         public void HttpServerRequestParameter_Missing() { }
-        [TestMethod, Ignore, NUnit.Framework.Test, NUnit.Framework.Ignore]
+        [TestMethod, Ignore]
         public void HttpServerRequestRoute_Missing() { }
-        [TestMethod, Ignore, NUnit.Framework.Test, NUnit.Framework.Ignore]
+        [TestMethod, Ignore]
         public void HttpRouter_Missing() { }
-        [TestMethod, Ignore, NUnit.Framework.Test, NUnit.Framework.Ignore]
+        [TestMethod, Ignore]
         public void HttpRouteConfigurator_Missing() { }
-        [TestMethod, Ignore, NUnit.Framework.Test, NUnit.Framework.Ignore]
+        [TestMethod, Ignore]
         public void HttpServer_Missing() { }
-        [TestMethod, Ignore, NUnit.Framework.Test, NUnit.Framework.Ignore]
+        [TestMethod, Ignore]
         public void HttpOutputJson_Missing() { }
-        [TestMethod, Ignore, NUnit.Framework.Test, NUnit.Framework.Ignore]
+        [TestMethod, Ignore]
         public void HttpOutputDirect_Missing() { }
     }
 }

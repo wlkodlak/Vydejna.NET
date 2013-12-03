@@ -10,7 +10,7 @@ using Moq;
 
 namespace Vydejna.Tests.SeznamNaradiTests
 {
-    [TestClass, NUnit.Framework.TestFixture]
+    [TestClass]
     public class SeznamNaradiServiceTest_Unikatnost
     {
         private UnikatnostRepositoryMock _repository;
@@ -18,7 +18,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
         private IEnumerator<object> _aktualniUdalost;
         private List<object> _obsahRepository;
 
-        [TestInitialize, NUnit.Framework.SetUp]
+        [TestInitialize]
         public void Initialize()
         {
             _repository = new UnikatnostRepositoryMock(this);
@@ -78,7 +78,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             }
         }
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void ZahajitDefiniciNovehoNaradi()
         {
             var naradiId = Guid.NewGuid();
@@ -92,7 +92,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             ZadneDalsiUdalosti();
         }
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void PriZahajeniDefiniceNovehoNaradiDoplnitChybejiciIdNaradi()
         {
             var svc = VytvoritService();
@@ -105,7 +105,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             ZadneDalsiUdalosti();
         }
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void AktivovatJizExistujiciNaradi()
         {
             var naradiId = Guid.NewGuid();
@@ -120,7 +120,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             ZadneDalsiUdalosti();
         }
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void PokudDefiniceNeniDokoncenaPriZahajeniDefiniceNedelatNic()
         {
             var naradiId = Guid.NewGuid();
@@ -132,7 +132,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             ZadneDalsiUdalosti();
         }
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void DokoncitDefinici()
         {
             var naradiId = Guid.NewGuid();

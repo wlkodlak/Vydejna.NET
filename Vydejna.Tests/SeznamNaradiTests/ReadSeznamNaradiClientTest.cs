@@ -14,10 +14,10 @@ using Vydejna.Gui.SeznamNaradi;
 
 namespace Vydejna.Tests.SeznamNaradiTests
 {
-    [TestClass, NUnit.Framework.TestFixture]
+    [TestClass]
     public class ReadSeznamNaradiClientTest
     {
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void ZiskatSeznamNaradi()
         {
             var responseDto = new SeznamNaradiDto() { Offset = 40, PocetCelkem = 48 };
@@ -52,7 +52,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             }
         }
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void ZiskatUnikatnostNaradi()
         {
             var responseDto = new OvereniUnikatnostiDto()

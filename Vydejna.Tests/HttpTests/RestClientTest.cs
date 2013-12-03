@@ -9,7 +9,7 @@ using Vydejna.Contracts;
 
 namespace Vydejna.Tests.HttpTests
 {
-    [TestClass, NUnit.Framework.TestFixture]
+    [TestClass]
     public class RestClientTest
     {
         private class RestClientTestClass : RestClient
@@ -52,13 +52,13 @@ namespace Vydejna.Tests.HttpTests
 
         private RestClientTester _tester;
 
-        [TestInitialize, NUnit.Framework.SetUp]
+        [TestInitialize]
         public void Initialize()
         {
             _tester = new RestClientTester();
         }
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void SimpleGet()
         {
             var svc = new RestClientTestClass("http://localhost/resource/", _tester.HttpClient);
@@ -68,7 +68,7 @@ namespace Vydejna.Tests.HttpTests
             Assert.AreEqual("OK", result.GetPayload<string>());
         }
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void QueryStringParameters()
         {
             var svc = new RestClientTestClass("http://localhost/resource/", _tester.HttpClient);
@@ -80,7 +80,7 @@ namespace Vydejna.Tests.HttpTests
             Assert.AreEqual("Response", result.GetPayload<string>());
         }
 
-        [TestMethod, NUnit.Framework.Test]
+        [TestMethod]
         public void PathParameters()
         {
             var svc = new RestClientTestClass("http://localhost/{controller}/fixed/{id}/", _tester.HttpClient);
