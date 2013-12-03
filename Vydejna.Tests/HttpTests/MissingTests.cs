@@ -18,8 +18,5 @@ namespace Vydejna.Tests.HttpTests
         public void HttpRouter_Missing() { }
         [TestMethod, Ignore]
         public void HttpRouteConfigurator_Missing() { }
-
-        [TestMethod, Ignore]
-        public void HttpOutputDirect_Missing() { }
     }
 }

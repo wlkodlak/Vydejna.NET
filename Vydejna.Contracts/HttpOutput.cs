@@ -26,7 +26,14 @@ namespace Vydejna.Contracts
 
         public bool HandlesOutput(HttpServerRequest request, object response)
         {
-            return response != null && _handledTypes.Contains(response.GetType());
+            if (response == null)
+                return false;
+            var responseType = response.GetType();
+            if (_handledTypes.Contains(responseType))
+                return true;
+            if (_handledTypes.Any(t => t.IsAssignableFrom(responseType)))
+                return true;
+            return false;
         }
 
         public Task<HttpServerResponse> ProcessOutput(HttpServerRequest request, object response)
