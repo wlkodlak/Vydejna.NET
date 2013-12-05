@@ -8,6 +8,12 @@ using ServiceStack.Text;
 
 namespace Vydejna.Contracts
 {
+    public interface IHttpOutputProcessor
+    {
+        bool HandlesOutput(HttpServerRequest request, object response);
+        Task<HttpServerResponse> ProcessOutput(HttpServerRequest request, object response);
+    }
+
     public class HttpOutputDirect : IHttpOutputProcessor
     {
         private HashSet<Type> _handledTypes;

@@ -57,8 +57,15 @@ namespace Vydejna.Contracts
             return new HttpServerRequestParameter(name, value);
         }
 
+        public HttpServerRequestParameter FormData(string name)
+        {
+            var value = GetParameters(RequestParameterType.PostData, name).Select(p => p.Value).FirstOrDefault();
+            return new HttpServerRequestParameter(name, value);
+        }
+
         public System.IO.Stream PostDataStream { get; set; }
         public object PostDataObject { get; set; }
+        public object ContextObject { get; set; }
     }
 
     public class HttpServerRequestParameter

@@ -70,8 +70,11 @@
     <Compile Include="EventSourcedTests\ProjectionProxyTests.cs" />
     <Compile Include="HttpTests\HttpOutputDirectTests.cs" />
     <Compile Include="HttpTests\HttpOutputJsonTests.cs" />
+    <Compile Include="HttpTests\HttpRouteConfigTests.cs" />
+    <Compile Include="HttpTests\HttpRouterTests.cs" />
     <Compile Include="HttpTests\HttpServerHeadersTests.cs" />
     <Compile Include="HttpTests\HttpServerRequestTests.cs" />
+    <Compile Include="HttpTests\HttpStagedHandlerTests.cs" />
     <Compile Include="HttpTests\MissingTests.cs" />
     <Compile Include="HttpTests\ParametrizedUrlTest.cs" />
     <Compile Include="HttpTests\RestClientTest.cs" />

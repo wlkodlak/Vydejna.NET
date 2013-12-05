@@ -141,6 +141,22 @@ namespace Vydejna.Contracts
             this.Name = name;
             this.Value = value;
         }
+        public override string ToString()
+        {
+            return string.Format("{0} {1}: {2}", Type, Name, Value);
+        }
+        public override int GetHashCode()
+        {
+            return Name.GetHashCode();
+        }
+        public override bool Equals(object obj)
+        {
+            var oth = obj as RequestParameter;
+            return oth != null 
+                && Type == oth.Type 
+                && string.Equals(Name, oth.Name, StringComparison.Ordinal) 
+                && string.Equals(Value, oth.Value, StringComparison.Ordinal);
+        }
     }
 
 

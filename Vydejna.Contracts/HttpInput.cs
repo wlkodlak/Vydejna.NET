@@ -7,6 +7,12 @@ using ServiceStack.Text;
 
 namespace Vydejna.Contracts
 {
+    public interface IHttpInputProcessor
+    {
+        bool HandlesContentType(string contentType);
+        Task<object> ProcessInput(HttpServerRequest request);
+    }
+    
     public class HttpInputJson<T> : IHttpInputProcessor
     {
         public bool HandlesContentType(string contentType)
