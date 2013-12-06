@@ -70,7 +70,12 @@ namespace Vydejna.Tests.HttpTests
                 throw new NotImplementedException();
             }
 
-            Task<HttpServerRequest> IHttpRequestEnhancer.Process(HttpServerRequest request)
+            Task<object> IHttpPreprocessor.Process(HttpServerRequest request)
+            {
+                throw new NotImplementedException();
+            }
+
+            Task<HttpServerRequest> IHttpRequestEnhancer.Process(HttpServerRequest request, IEnumerable<RequestParameter> routeParameters)
             {
                 throw new NotImplementedException();
             }
