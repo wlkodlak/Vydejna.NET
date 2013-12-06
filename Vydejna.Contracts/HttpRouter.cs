@@ -14,7 +14,12 @@ namespace Vydejna.Contracts
         HttpUsedRoute FindRoute(string url);
     }
 
-    public class HttpRouter : IHttpRouter
+    public interface IHttpAddRoute
+    {
+        void AddRoute(string pattern, IHttpRouteHandler handler);
+    }
+
+    public class HttpRouter : IHttpRouter, IHttpAddRoute
     {
         private class RouteConfiguration
         {
