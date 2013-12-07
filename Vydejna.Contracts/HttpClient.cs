@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -34,7 +35,7 @@ namespace Vydejna.Contracts
     {
         public string Name { get; set; }
         public string Value { get; set; }
-        
+
         public HttpClientHeader(string name, string value)
         {
             this.Name = name;
@@ -74,10 +75,58 @@ namespace Vydejna.Contracts
             }
         }
 
+        private static DateTime ParseDateHeader(string headerValue)
+        {
+            return DateTime.ParseExact(headerValue,
+                    "ddd, dd MMM yyyy HH:mm:ss 'UTC'",
+                    CultureInfo.InvariantCulture.DateTimeFormat,
+                    DateTimeStyles.AssumeUniversal);
+        }
+
         private static void CopyHeadersToRequest(HttpClientRequest request, HttpWebRequest webRequest)
         {
             foreach (var header in request.Headers)
-                webRequest.Headers.Add(header.Name, header.Value);
+            {
+                switch (header.Name)
+                {
+                    case "Accept":
+                        webRequest.Accept = header.Value;
+                        break;
+                    case "Connection":
+                        webRequest.Connection = header.Value;
+                        break;
+                    case "Content-Length":
+                        webRequest.ContentLength = int.Parse(header.Value);
+                        break;
+                    case "Content-Type":
+                        webRequest.ContentType = header.Value;
+                        break;
+                    case "Date":
+                        webRequest.Date = ParseDateHeader(header.Value);
+                        break;
+                    case "Expect":
+                        webRequest.Expect = header.Value;
+                        break;
+                    case "Host":
+                        webRequest.Host = header.Value;
+                        break;
+                    case "If-Modified-Since":
+                        webRequest.IfModifiedSince = ParseDateHeader(header.Value);
+                        break;
+                    case "Referer":
+                        webRequest.Referer = header.Value;
+                        break;
+                    case "Transfer-Encoding":
+                        webRequest.TransferEncoding = header.Value;
+                        break;
+                    case "User-Agent":
+                        webRequest.UserAgent = header.Value;
+                        break;
+                    default:
+                        webRequest.Headers.Add(header.Name, header.Value);
+                        break;
+                }
+            }
         }
 
         private static async Task WriteRequestBody(HttpClientRequest request, HttpWebRequest webRequest)
