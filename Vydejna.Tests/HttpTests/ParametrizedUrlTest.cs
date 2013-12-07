@@ -239,6 +239,7 @@ namespace Vydejna.Tests.HttpTests
         public void GetPrefix()
         {
             GetPrefixTest("/articles/55833", "articles", "55833");
+            GetPrefixTest("/articles/", "articles");
             GetPrefixTest("/articles/{id}", "articles");
             GetPrefixTest("/articles/{id}-{name}", "articles");
             GetPrefixTest("/articles/{id}/comments", "articles");
@@ -249,8 +250,27 @@ namespace Vydejna.Tests.HttpTests
         private void GetPrefixTest(string url, params string[] parts)
         {
             var expected = new ParametrizedUrlParts(parts);
-            var actual = new ParametrizedUrl(url).GetPrefix();
+            var actual = new ParametrizedUrl(url).Prefix;
             Assert.AreEqual(expected, actual);
+        }
+
+        [TestMethod]
+        public void IsPrefixOf()
+        {
+            IsPrefixOfTest(new ParametrizedUrlParts(), new ParametrizedUrlParts("articles", "5845"), true);
+            IsPrefixOfTest(new ParametrizedUrlParts("articles"), new ParametrizedUrlParts("articles", "5845"), true);
+            IsPrefixOfTest(new ParametrizedUrlParts("articles", "5845"), new ParametrizedUrlParts("articles", "5845"), true);
+            IsPrefixOfTest(new ParametrizedUrlParts("category"), new ParametrizedUrlParts("articles", "5845"), false);
+            IsPrefixOfTest(new ParametrizedUrlParts("article"), new ParametrizedUrlParts("articles"), false);
+            IsPrefixOfTest(new ParametrizedUrlParts("articles", "5845"), new ParametrizedUrlParts("articles"), false);
+        }
+
+        private static void IsPrefixOfTest(ParametrizedUrlParts a, ParametrizedUrlParts b, bool expected)
+        {
+            var isPrefix = a.IsPrefixOf(b);
+            Assert.AreEqual(expected, isPrefix, 
+                "Should {2}be prefix:\r\n{0}\r\n{1}", 
+                a, b, expected ? "" : "not ");
         }
     }
 }

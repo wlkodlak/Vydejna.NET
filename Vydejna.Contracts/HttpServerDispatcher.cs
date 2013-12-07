@@ -16,7 +16,10 @@ namespace Vydejna.Contracts
         public Task<HttpServerResponse> ProcessRequest(HttpServerRequest request)
         {
             var route = _router.FindRoute(request.Url);
-            return route.Handler.Handle(request, route.RouteParameters);
+            if (route == null)
+                return new HttpServerResponseBuilder().WithStatusCode(404).BuildTask();
+            else
+                return route.Handler.Handle(request, route.RouteParameters);
         }
     }
 }

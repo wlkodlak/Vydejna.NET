@@ -190,6 +190,11 @@ namespace Vydejna.Contracts
             return _originalUrl;
         }
 
+        public ParametrizedUrlParts Prefix
+        {
+            get { return _prefix; }
+        }
+        
         private IPart CreatePart(string partString)
         {
             var regex = new Regex(@"^(({[^}]+})|([^{]+))*$");
@@ -290,11 +295,6 @@ namespace Vydejna.Contracts
         private static string UnescapeUri(string s)
         {
             return Uri.UnescapeDataString(s.Replace('+', ' '));
-        }
-
-        public ParametrizedUrlParts GetPrefix()
-        {
-            return _prefix;
         }
     }
 
@@ -403,6 +403,29 @@ namespace Vydejna.Contracts
             for (int i = 0; i < _elements.Count; i++)
             {
                 if (!string.Equals(_elements[i], oth._elements[i], StringComparison.Ordinal))
+                    return false;
+            }
+            return true;
+        }
+
+        public bool IsPrefixOf(ParametrizedUrlParts other)
+        {
+            if (other == null)
+                return false;
+            int countA = _elements.Count;
+            int countB = other._elements.Count;
+            int countMax = Math.Max(countA, countB);
+            for (int i = 0; i < countMax; i++)
+            {
+                var presentA = i < countA;
+                if (!presentA)
+                    return true;
+                var presentB = i < countB;
+                if (!presentB)
+                    return false;
+                var partA = _elements[i];
+                var partB = other._elements[i];
+                if (!string.Equals(partA, partB, StringComparison.Ordinal))
                     return false;
             }
             return true;

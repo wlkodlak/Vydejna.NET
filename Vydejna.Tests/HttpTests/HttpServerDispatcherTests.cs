@@ -55,17 +55,32 @@ namespace Vydejna.Tests.HttpTests
             _request.Url = "http://localhost/article/4952";
             _request.Method = "GET";
             _request.Headers.AcceptTypes = new[] { "*/*" };
-            _router.UsedRoute = 
+            _router.UsedRoute =
                 new HttpUsedRoute(new ParametrizedUrl("/article/{id}"), _handler)
                 .AddParameter(new RequestParameter(RequestParameterType.Path, "id", "4952"));
             _handler.Response = new HttpServerResponseBuilder().Redirect("http://localhost/oops").Build();
-            
+
             var dispatcherResponse = _disp.ProcessRequest(_request).GetAwaiter().GetResult();
-            
+
             Assert.AreEqual("http://localhost/article/4952", _router.RoutedUrl, "RoutedUrl");
             Assert.AreSame(_request, _handler.Request, "Request");
             Assert.AreSame(_router.UsedRoute.RouteParameters, _handler.RouteParameters, "RouteParameters");
             Assert.AreSame(_handler.Response, dispatcherResponse, "Response");
+        }
+
+        [TestMethod]
+        public void DispatchNonexistent()
+        {
+            _request.Url = "http://localhost/nonexistent";
+            _request.Method = "GET";
+            _request.Headers.AcceptTypes = new[] { "*/*" };
+            _router.UsedRoute = null;
+
+            var dispatcherResponse = _disp.ProcessRequest(_request).GetAwaiter().GetResult();
+
+            Assert.AreEqual("http://localhost/nonexistent", _router.RoutedUrl, "RoutedUrl");
+            Assert.IsNotNull(dispatcherResponse, "Response");
+            Assert.AreEqual(404, dispatcherResponse.StatusCode, "Response status");
         }
     }
 }

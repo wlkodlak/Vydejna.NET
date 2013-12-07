@@ -81,6 +81,7 @@ namespace Vydejna.Tests.HttpTests
             Assert.AreEqual("index", (_cfg.FindRoute("http://localhost/").Handler as TestRouteHandler).Name);
             Assert.AreEqual("categories", (_cfg.FindRoute("http://localhost/category/test").Handler as TestRouteHandler).Name);
             Assert.AreEqual("archive", (_cfg.FindRoute("http://localhost/archive/2012/04").Handler as TestRouteHandler).Name);
+            Assert.IsNull(_cfg.FindRoute("http://localhost/notexist"), "Nonexisting");
         }
 
         [TestMethod]

@@ -26,17 +26,38 @@ namespace Vydejna.Contracts
             public ParametrizedUrl Url;
             public IHttpRouteHandler Handler;
         }
+        private List<ParametrizedUrlParts> _prefixes;
         private List<RouteConfiguration> _routes;
         public HttpRouter()
         {
+            _prefixes = new List<ParametrizedUrlParts>();
             _routes = new List<RouteConfiguration>();
         }
         public HttpUsedRoute FindRoute(string url)
         {
+            if (_routes.Count == 0)
+                return null;
             var urlParts = ParametrizedUrl.UrlForMatching(url);
+            var candidates = FindCandidates(urlParts);
+            return FindRouteFromCandidates(urlParts, candidates);
+        }
+
+        private IEnumerable<RouteConfiguration> FindCandidates(ParametrizedUrlParts urlParts)
+        {
+            var candidates = new List<RouteConfiguration>();
+            for (int i = 0; i < _prefixes.Count; i++)
+			{
+                if (_prefixes[i].IsPrefixOf(urlParts))
+                    candidates.Add(_routes[i]);
+			}
+            return candidates;
+        }
+
+        private static HttpUsedRoute FindRouteFromCandidates(ParametrizedUrlParts urlParts, IEnumerable<RouteConfiguration> candidates)
+        {
             HttpUsedRoute bestRoute = null;
             int bestScore = 0;
-            foreach (var item in _routes)
+            foreach (var item in candidates)
             {
                 var match = item.Url.Match(urlParts);
                 if (!match.Success)
@@ -51,7 +72,13 @@ namespace Vydejna.Contracts
         }
         public void AddRoute(string pattern, IHttpRouteHandler handler)
         {
-            _routes.Add(new RouteConfiguration { Handler = handler, Url = new ParametrizedUrl(pattern) });
+            var route = new RouteConfiguration { Handler = handler, Url = new ParametrizedUrl(pattern) };
+            var prefix = route.Url.Prefix;
+            var index = _prefixes.BinarySearch(prefix);
+            if (index < 0)
+                index = ~index;
+            _prefixes.Insert(index, prefix);
+            _routes.Insert(index, route);
         }
     }
 
