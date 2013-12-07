@@ -14,8 +14,5 @@ namespace Vydejna.Tests.HttpTests
         public void HttpClient_Missing() { }
         [TestMethod, Ignore]
         public void HttpServer_Missing() { }
-
-        [TestMethod, Ignore]
-        public void HttpServerDispatcher_Missing() { }
     }
 }

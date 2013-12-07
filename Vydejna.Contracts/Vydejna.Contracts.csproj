@@ -52,6 +52,7 @@
     <Compile Include="HttpRouteConfig.cs" />
     <Compile Include="HttpRouter.cs" />
     <Compile Include="HttpServer.cs" />
+    <Compile Include="HttpServerDispatcher.cs" />
     <Compile Include="HttpStagedHandler.cs" />
     <Compile Include="IHandle.cs" />
     <Compile Include="ParametrizedUrl.cs" />
