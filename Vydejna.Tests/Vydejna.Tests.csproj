@@ -77,6 +77,7 @@
     <Compile Include="HttpTests\HttpServerDispatcherTests.cs" />
     <Compile Include="HttpTests\HttpServerHeadersTests.cs" />
     <Compile Include="HttpTests\HttpServerRequestTests.cs" />
+    <Compile Include="HttpTests\HttpServerTests.cs" />
     <Compile Include="HttpTests\HttpStagedHandlerTests.cs" />
     <Compile Include="HttpTests\MissingTests.cs" />
     <Compile Include="HttpTests\ParametrizedUrlTest.cs" />

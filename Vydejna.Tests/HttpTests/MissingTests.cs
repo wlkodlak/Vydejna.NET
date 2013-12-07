@@ -10,7 +10,5 @@ namespace Vydejna.Tests.HttpTests
     [TestClass]
     public class MissingTests
     {
-        [TestMethod, Ignore]
-        public void HttpServer_Missing() { }
     }
 }

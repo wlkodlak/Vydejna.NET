@@ -246,6 +246,12 @@ namespace Vydejna.Contracts
             return this;
         }
 
+        public HttpServerResponseBuilder WithStringBody(string text)
+        {
+            _response.RawBody = Encoding.UTF8.GetBytes(text);
+            return this;
+        }
+
         public HttpServerResponseBuilder WithBody(object body)
         {
             _response.ObjectBody = body;

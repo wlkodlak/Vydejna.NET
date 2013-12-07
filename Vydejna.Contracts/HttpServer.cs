@@ -21,30 +21,42 @@ namespace Vydejna.Contracts
         private List<Task> _workers;
         private IHttpServerDispatcher _dispatcher;
         private List<string> _prefixes;
+        private bool _isRunning;
+        private int _workerCount;
 
         public HttpServer(IEnumerable<string> prefixes, IHttpServerDispatcher dispatcher)
         {
             _listener = new HttpListener();
             _prefixes = prefixes.ToList();
             _dispatcher = dispatcher;
+            _workerCount = Environment.ProcessorCount * 4;
+        }
+        public HttpServer SetupWorkerCount(int totalCount)
+        {
+            _workerCount = totalCount;
+            return this;
         }
         public void Start()
         {
             _prefixes.ForEach(_listener.Prefixes.Add);
             _listener.Start();
             _cancel = new CancellationTokenSource();
+            _isRunning = true;
             _workers =
-                Enumerable.Range(0, Environment.ProcessorCount * 4).Select(i =>
+                Enumerable.Range(0, _workerCount).Select(i =>
                     Task.Factory.StartNew(WorkerFunc, _cancel.Token, TaskCreationOptions.LongRunning, TaskScheduler.Current))
                 .ToList();
         }
 
         public void Stop()
         {
+            if (!_isRunning)
+                return;
             _listener.Stop();
             _cancel.Cancel();
             _cancel.Dispose();
             _workers.ForEach(t => t.Wait());
+            _isRunning = false;
         }
 
         void IDisposable.Dispose()
@@ -81,16 +93,23 @@ namespace Vydejna.Contracts
 
         private async Task ProcessRequest(HttpListenerContext context)
         {
-            var request = await Task.Factory.StartNew(() => CreateRequest(context.Request));
-            var response = await _dispatcher.ProcessRequest(request);
-            await WriteResponse(context.Response, response);
+            try
+            {
+                var request = await Task.Factory.StartNew(() => CreateRequest(context.Request));
+                var response = await _dispatcher.ProcessRequest(request);
+                await WriteResponse(context.Response, response);
+            }
+            finally
+            {
+                context.Response.Close();
+            }
         }
 
         private HttpServerRequest CreateRequest(HttpListenerRequest listenerRequest)
         {
             var httpRequest = new HttpServerRequest();
             httpRequest.Method = listenerRequest.HttpMethod;
-            httpRequest.Url = listenerRequest.RawUrl;
+            httpRequest.Url = listenerRequest.Url.OriginalString;
             for (int i = 0; i < listenerRequest.Headers.Count; i++)
             {
                 var name = listenerRequest.Headers.GetKey(i);
