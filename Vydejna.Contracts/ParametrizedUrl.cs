@@ -161,13 +161,13 @@ namespace Vydejna.Contracts
             }
         }
 
+        private static Regex RegexWholeUrl = new Regex(@"^(([a-z]+://)?([^/]+)?/)(([^/]+)/)*([^?]*)(\?.*)?$", RegexOptions.Compiled);
 
         public ParametrizedUrl(string url)
         {
             _originalUrl = url;
             _parts = new List<IPart>();
-            var regex = new Regex(@"^(([a-z]+://)?([^/]+)?/)(([^/]+)/)*([^?]*)(\?.*)?$");
-            var match = regex.Match(url);
+            var match = RegexWholeUrl.Match(url);
             if (!match.Success)
                 throw new ArgumentException(string.Format("String is not URL: {0}", url));
             _urlBase = match.Groups[1].Value;
@@ -195,10 +195,11 @@ namespace Vydejna.Contracts
             get { return _prefix; }
         }
 
+        private static Regex RegexCreatePart = new Regex(@"^(({[^}]+})|([^{]+))*$", RegexOptions.Compiled);
+
         private IPart CreatePart(string partString)
         {
-            var regex = new Regex(@"^(({[^}]+})|([^{]+))*$");
-            var match = regex.Match(partString);
+            var match = RegexCreatePart.Match(partString);
             var subParts = new List<IPart>();
             foreach (Capture capture in match.Groups[1].Captures)
             {

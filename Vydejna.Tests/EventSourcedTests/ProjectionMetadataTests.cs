@@ -55,6 +55,35 @@ namespace Vydejna.Tests.EventSourcedTests
             Assert.AreEqual(expectedMetadata, allList[0], "Metadata");
         }
 
+        private class HandleNotifications : IHandle<ProjectionMetadataChanged>
+        {
+            public Action<ProjectionMetadataChanged> _handler;
+            public HandleNotifications(Action<ProjectionMetadataChanged> handler)
+            {
+                _handler = handler;
+            }
+            public void Handle(ProjectionMetadataChanged message)
+            {
+                _handler(message);
+            }
+        }
+
+        [TestMethod]
+        public void UpdateStatus_ExistingInstance_NotifiesInstance()
+        {
+            var notifiedStatusNamed = ProjectionStatus.NewBuild;
+            var notifyHandlerNamed = new HandleNotifications(m => notifiedStatusNamed = m.Status);
+            var notifiedStatusUnnamed = ProjectionStatus.NewBuild;
+            var notifyHandlerUnnamed = new HandleNotifications(m => notifiedStatusUnnamed = m.Status);
+            _projection.RegisterForChanges("A", notifyHandlerNamed);
+            _projection.RegisterForChanges(null, notifyHandlerUnnamed);
+            _projection.BuildNewInstance("A", null, "1.0", "1.0").GetAwaiter().GetResult();
+            _projection.UpdateStatus("A", ProjectionStatus.Running);
+            var allList = _projection.GetAllMetadata().GetAwaiter().GetResult().ToList();
+            Assert.AreEqual(ProjectionStatus.Running, notifiedStatusNamed, "Notified Named");
+            Assert.AreEqual(ProjectionStatus.Running, notifiedStatusUnnamed, "Notified Unnamed");
+        }
+
         [TestMethod]
         public void GetToken_InstanceNonexistent_ReturnsInitial()
         {

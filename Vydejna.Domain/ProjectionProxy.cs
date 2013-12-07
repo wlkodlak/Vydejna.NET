@@ -76,7 +76,9 @@ namespace Vydejna.Domain
 
         private List<ProjectionInstanceMetadata> PreprocessInstances(IEnumerable<ProjectionInstanceMetadata> allInstances)
         {
-            return allInstances.Where(i => IsStatusAlive(i.Status)).OrderByDescending(i => i.Version).ThenBy(i => i.Name).ToList();
+            var list = allInstances.Where(i => IsStatusAlive(i.Status)).ToList();
+            list.Sort(_comparer);
+            return list;
         }
 
         private bool IsStatusAlive(ProjectionStatus projectionStatus)
@@ -128,11 +130,24 @@ namespace Vydejna.Domain
                     return -1;
                 else
                 {
+                    var byStatus = CompareStatus(x.Status, y.Status);
+                    if (byStatus != 0)
+                        return byStatus;
                     var byVersion = -string.CompareOrdinal(x.Version, y.Version);
                     if (byVersion != 0)
                         return byVersion;
                     return string.CompareOrdinal(x.Name, y.Name);
                 }
+            }
+
+            private int CompareStatus(ProjectionStatus a, ProjectionStatus b)
+            {
+                var useA = a != ProjectionStatus.NewBuild;
+                var useB = b != ProjectionStatus.NewBuild;
+                if (useA)
+                    return useB ? 0 : -1;
+                else
+                    return useB ? 1 : 0;
             }
         }
 
@@ -197,7 +212,7 @@ namespace Vydejna.Domain
                     readerInfo.BestMetadata = bestCandidate.Instance;
                     if (bestReader == null)
                         bestReader = readerInfo;
-                    else if (string.CompareOrdinal(readerInfo.BestMetadata.Version, bestReader.BestMetadata.Version) > 0)
+                    else if (_comparer.Compare(readerInfo.BestMetadata, bestReader.BestMetadata) < 0)
                         bestReader = readerInfo;
                 }
             }
@@ -228,7 +243,7 @@ namespace Vydejna.Domain
             {
                 _currentReader = bestReader.Reader;
                 _currentInstance = bestReader.BestMetadata.Name;
-                return PickInstanceNofification.ResetOriginalInstance | PickInstanceNofification.RaiseReaderChange;
+                return PickInstanceNofification.ResetOriginalInstance | PickInstanceNofification.ChangeNewInstance | PickInstanceNofification.RaiseReaderChange;
             }
             return PickInstanceNofification.None;
         }
@@ -236,7 +251,8 @@ namespace Vydejna.Domain
         private void SendNotifications(T originalReader, PickInstanceNofification notifications)
         {
             if ((notifications & PickInstanceNofification.ResetOriginalInstance) != PickInstanceNofification.None)
-                originalReader.UseInstance(null);
+                if (originalReader != null)
+                    originalReader.UseInstance(null);
             if ((notifications & PickInstanceNofification.ChangeNewInstance) != PickInstanceNofification.None)
                 _currentReader.UseInstance(_currentInstance);
             if ((notifications & PickInstanceNofification.RaiseReaderChange) != PickInstanceNofification.None)
