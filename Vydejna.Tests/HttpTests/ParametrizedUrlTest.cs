@@ -9,7 +9,7 @@ using Vydejna.Contracts;
 namespace Vydejna.Tests.HttpTests
 {
     [TestClass]
-    public class ParametrizedUrlTest
+    public class ParametrizedUrlTest_CompleteUrl
     {
         [TestMethod]
         public void GenerateWithoutParameters()
@@ -70,7 +70,11 @@ namespace Vydejna.Tests.HttpTests
             Assert.AreEqual("http://rest.wilczak.net/web/articles/",
                 url.CompleteUrl(Enumerable.Empty<RequestParameter>()));
         }
+    }
 
+    [TestClass]
+    public class ParametrizedUrlTest_Matching
+    {
         [TestMethod]
         public void UrlForMatching()
         {
@@ -168,8 +172,11 @@ namespace Vydejna.Tests.HttpTests
             }
             return result;
         }
+    }
 
-
+    [TestClass]
+    public class ParametrizedUrlTest_QueryString
+    {
         [TestMethod]
         public void ParseQueryString_Basic()
         {
@@ -195,7 +202,11 @@ namespace Vydejna.Tests.HttpTests
                 Assert.AreEqual(expected[i * 2 + 1], parsed[i].Value, "Value {0}", i);
             }
         }
-
+    }
+    
+    [TestClass]
+    public class ParametrizedUrlTest_Parts
+    {
         [TestMethod]
         public void UrlParts_Elements()
         {
@@ -215,18 +226,17 @@ namespace Vydejna.Tests.HttpTests
             var e = new ParametrizedUrlParts("article");
             var f = new ParametrizedUrlParts("category");
             AssertPartsCompare(a, b, 0);
-            AssertPartsCompare(a, c, -1);
-            AssertPartsCompare(a, d, -1);
+            AssertPartsCompare(a, c, -2);
+            AssertPartsCompare(a, d, -2);
             AssertPartsCompare(a, e, 1);
-            AssertPartsCompare(a, f, -1);
-            AssertPartsCompare(a, b, 0);
+            AssertPartsCompare(a, f, -2);
             AssertPartsCompare(f, d, -1);
-            AssertPartsCompare(f, e, 1);
+            AssertPartsCompare(f, e, 2);
         }
 
         private void AssertPartsCompare(IComparable<ParametrizedUrlParts> a, ParametrizedUrlParts b, int expect)
         {
-            var comparison = Math.Sign(a.CompareTo(b));
+            var comparison = a.CompareTo(b);
             var op = expect == 0 ? "==" : expect < 0 ? "<" : ">";
             Assert.AreEqual(expect, comparison, "{0} {2} {1}", a, b, op);
             if (expect == 0)
@@ -272,5 +282,6 @@ namespace Vydejna.Tests.HttpTests
                 "Should {2}be prefix:\r\n{0}\r\n{1}", 
                 a, b, expected ? "" : "not ");
         }
+
     }
 }

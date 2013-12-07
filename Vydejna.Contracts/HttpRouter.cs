@@ -21,18 +21,47 @@ namespace Vydejna.Contracts
 
     public class HttpRouter : IHttpRouter, IHttpAddRoute
     {
+        private class RoutePath
+        {
+            public string Name;
+            public List<RouteConfiguration> Routes;
+            public List<RoutePath> SubPaths;
+            public RoutePath(string name, bool hasContents)
+            {
+                Name = name;
+                if (hasContents)
+                {
+                    Routes = new List<RouteConfiguration>();
+                    SubPaths = new List<RoutePath>();
+                }
+            }
+        }
+        private class RoutePathComparer : IComparer<RoutePath>
+        {
+            public int Compare(RoutePath x, RoutePath y)
+            {
+                if (ReferenceEquals(x, null))
+                    return ReferenceEquals(y, null) ? 0 : -1;
+                else
+                    return string.CompareOrdinal(x.Name, y.Name);
+            }
+        }
+
         private class RouteConfiguration
         {
             public ParametrizedUrl Url;
             public IHttpRouteHandler Handler;
         }
-        private List<ParametrizedUrlParts> _prefixes;
+        private RoutePath _paths;
         private List<RouteConfiguration> _routes;
+        private RoutePathComparer _pathComparer;
         public HttpRouter()
         {
-            _prefixes = new List<ParametrizedUrlParts>();
             _routes = new List<RouteConfiguration>();
+            _paths = new RoutePath(null, true);
+            _pathComparer = new RoutePathComparer();
         }
+
         public HttpUsedRoute FindRoute(string url)
         {
             if (_routes.Count == 0)
@@ -44,13 +73,11 @@ namespace Vydejna.Contracts
 
         private IEnumerable<RouteConfiguration> FindCandidates(ParametrizedUrlParts urlParts)
         {
-            var candidates = new List<RouteConfiguration>();
-            for (int i = 0; i < _prefixes.Count; i++)
-			{
-                if (_prefixes[i].IsPrefixOf(urlParts))
-                    candidates.Add(_routes[i]);
-			}
-            return candidates;
+            var folder = GetFolder(urlParts, false);
+            if (folder == null)
+                return new RouteConfiguration[0];
+            else
+                return folder.Routes;
         }
 
         private static HttpUsedRoute FindRouteFromCandidates(ParametrizedUrlParts urlParts, IEnumerable<RouteConfiguration> candidates)
@@ -70,15 +97,37 @@ namespace Vydejna.Contracts
             }
             return bestRoute;
         }
+
         public void AddRoute(string pattern, IHttpRouteHandler handler)
         {
             var route = new RouteConfiguration { Handler = handler, Url = new ParametrizedUrl(pattern) };
-            var prefix = route.Url.Prefix;
-            var index = _prefixes.BinarySearch(prefix);
-            if (index < 0)
-                index = ~index;
-            _prefixes.Insert(index, prefix);
-            _routes.Insert(index, route);
+            _routes.Add(route);
+            var folder = GetFolder(route.Url.Prefix, true);
+            folder.Routes.Add(route);
+        }
+
+        private RoutePath GetFolder(ParametrizedUrlParts prefix, bool createIfMissing)
+        {
+            var folder = _paths;
+            var searched = new RoutePath(null, false);
+            var maxLevel = prefix.Count;
+            for (var level = 0; level < maxLevel; level++)
+            {
+                var subFolder = (RoutePath)null;
+                searched.Name = prefix[level];
+                var index = folder.SubPaths.BinarySearch(searched, _pathComparer);
+                if (index >= 0)
+                    subFolder = folder.SubPaths[index];
+                else if (createIfMissing)
+                {
+                    subFolder = new RoutePath(prefix[level], true);
+                    folder.SubPaths.Insert(~index, subFolder);
+                }
+                else
+                    return folder;
+                folder = subFolder;
+            }
+            return folder;
         }
     }
 

@@ -194,7 +194,7 @@ namespace Vydejna.Contracts
         {
             get { return _prefix; }
         }
-        
+
         private IPart CreatePart(string partString)
         {
             var regex = new Regex(@"^(({[^}]+})|([^{]+))*$");
@@ -364,16 +364,26 @@ namespace Vydejna.Contracts
         {
             if (other == null)
                 return 1;
+            if (ReferenceEquals(this, other))
+                return 0;
             int countA = _elements.Count;
             int countB = other._elements.Count;
             int countMax = Math.Max(countA, countB);
             for (int i = 0; i < countMax; i++)
             {
-                var partA = i < countA ? _elements[i] : string.Empty;
-                var partB = i < countB ? other._elements[i] : string.Empty;
+                var presentA = i < countA;
+                var presentB = i < countB;
+                if (!presentA)
+                    return -1;
+                if (!presentB)
+                    return 1;
+                var partA = _elements[i];
+                var partB = other._elements[i];
                 var comparison = string.CompareOrdinal(partA, partB);
-                if (comparison != 0)
-                    return comparison;
+                if (comparison < 0)
+                    return -2;
+                else if (comparison > 0)
+                    return 2;
             }
             return 0;
         }
@@ -395,40 +405,14 @@ namespace Vydejna.Contracts
 
         public override bool Equals(object obj)
         {
-            if (ReferenceEquals(this, obj))
-                return true;
             var oth = obj as ParametrizedUrlParts;
-            if (oth == null || _elements.Count != oth._elements.Count)
-                return false;
-            for (int i = 0; i < _elements.Count; i++)
-            {
-                if (!string.Equals(_elements[i], oth._elements[i], StringComparison.Ordinal))
-                    return false;
-            }
-            return true;
+            return oth != null && CompareTo(oth) == 0;
         }
 
         public bool IsPrefixOf(ParametrizedUrlParts other)
         {
-            if (other == null)
-                return false;
-            int countA = _elements.Count;
-            int countB = other._elements.Count;
-            int countMax = Math.Max(countA, countB);
-            for (int i = 0; i < countMax; i++)
-            {
-                var presentA = i < countA;
-                if (!presentA)
-                    return true;
-                var presentB = i < countB;
-                if (!presentB)
-                    return false;
-                var partA = _elements[i];
-                var partB = other._elements[i];
-                if (!string.Equals(partA, partB, StringComparison.Ordinal))
-                    return false;
-            }
-            return true;
+            var comparison = CompareTo(other);
+            return comparison == 0 || comparison == -1;
         }
     }
 }
