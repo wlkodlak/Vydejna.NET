@@ -62,7 +62,6 @@ namespace Vydejna.Tests.HttpTests
             
             var dispatcherResponse = _disp.ProcessRequest(_request).GetAwaiter().GetResult();
             
-            _repo.Verify();
             Assert.AreEqual("http://localhost/article/4952", _router.RoutedUrl, "RoutedUrl");
             Assert.AreSame(_request, _handler.Request, "Request");
             Assert.AreSame(_router.UsedRoute.RouteParameters, _handler.RouteParameters, "RouteParameters");

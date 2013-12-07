@@ -13,6 +13,7 @@ namespace Vydejna.Contracts
         private string _urlBase;
         private List<IPart> _parts;
         private string _queryString;
+        private ParametrizedUrlParts _prefix;
 
         private interface IPart
         {
@@ -20,6 +21,7 @@ namespace Vydejna.Contracts
             void Match(string urlPart, ParametrizedUrlMatch result, bool updateScore);
             void BuildRegex(StringBuilder pattern);
             bool HasRegexGroup { get; }
+            bool BuildPrefix(List<string> listFixed);
         }
 
         private class FixedPart : IPart
@@ -53,6 +55,14 @@ namespace Vydejna.Contracts
             {
                 get { return false; }
             }
+
+            public bool BuildPrefix(List<string> listFixed)
+            {
+                if (string.IsNullOrEmpty(_value))
+                    return false;
+                listFixed.Add(_value);
+                return true;
+            }
         }
 
         private class VariablePart : IPart
@@ -85,6 +95,11 @@ namespace Vydejna.Contracts
             public bool HasRegexGroup
             {
                 get { return true; }
+            }
+
+            public bool BuildPrefix(List<string> listFixed)
+            {
+                return false;
             }
         }
 
@@ -139,6 +154,11 @@ namespace Vydejna.Contracts
             {
                 get { return false; }
             }
+
+            public bool BuildPrefix(List<string> listFixed)
+            {
+                return false;
+            }
         }
 
 
@@ -156,6 +176,13 @@ namespace Vydejna.Contracts
             if (match.Groups[6].Success)
                 _parts.Add(CreatePart(match.Groups[6].Value));
             _queryString = match.Groups[7].Success ? match.Groups[7].Value : "";
+            var listFixed = new List<string>(_parts.Count);
+            foreach (var item in _parts)
+            {
+                if (!item.BuildPrefix(listFixed))
+                    break;
+            }
+            _prefix = new ParametrizedUrlParts(listFixed);
         }
 
         public override string ToString()
@@ -226,14 +253,14 @@ namespace Vydejna.Contracts
             }
         }
 
-        public ParametrizedUrlMatch Match(string[] url)
+        public ParametrizedUrlMatch Match(ParametrizedUrlParts url)
         {
             var result = new ParametrizedUrlMatch();
-            int cnt = Math.Max(url.Length, _parts.Count);
+            int cnt = Math.Max(url.Count, _parts.Count);
             for (int i = 0; i < cnt && result.Success; i++)
             {
                 if (i < _parts.Count)
-                    _parts[i].Match(i < url.Length ? url[i] : string.Empty, result, true);
+                    _parts[i].Match(i < url.Count ? url[i] : string.Empty, result, true);
                 else if (!string.IsNullOrEmpty(url[i]))
                     result.Fail();
                 else if (i != (cnt - 1))
@@ -242,10 +269,10 @@ namespace Vydejna.Contracts
             return result;
         }
 
-        public static string[] UrlForMatching(string url)
+        public static ParametrizedUrlParts UrlForMatching(string url)
         {
             var parts = new Uri(url).AbsolutePath.Split('/');
-            return parts.Skip(1).ToArray();
+            return new ParametrizedUrlParts(parts.Skip(1).ToArray());
         }
 
         public static IEnumerable<RequestParameter> ParseQueryString(string url)
@@ -263,6 +290,11 @@ namespace Vydejna.Contracts
         private static string UnescapeUri(string s)
         {
             return Uri.UnescapeDataString(s.Replace('+', ' '));
+        }
+
+        public ParametrizedUrlParts GetPrefix()
+        {
+            return _prefix;
         }
     }
 
@@ -311,6 +343,69 @@ namespace Vydejna.Contracts
         System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator()
         {
             return GetEnumerator();
+        }
+    }
+
+    public class ParametrizedUrlParts : IComparable<ParametrizedUrlParts>
+    {
+        private IList<string> _elements;
+        public ParametrizedUrlParts(params string[] elements)
+        {
+            _elements = elements;
+        }
+        public ParametrizedUrlParts(IList<string> elements)
+        {
+            _elements = elements;
+        }
+        public int Count { get { return _elements.Count; } }
+        public string this[int index] { get { return _elements[index]; } }
+
+        public int CompareTo(ParametrizedUrlParts other)
+        {
+            if (other == null)
+                return 1;
+            int countA = _elements.Count;
+            int countB = other._elements.Count;
+            int countMax = Math.Max(countA, countB);
+            for (int i = 0; i < countMax; i++)
+            {
+                var partA = i < countA ? _elements[i] : string.Empty;
+                var partB = i < countB ? other._elements[i] : string.Empty;
+                var comparison = string.CompareOrdinal(partA, partB);
+                if (comparison != 0)
+                    return comparison;
+            }
+            return 0;
+        }
+
+        public override string ToString()
+        {
+            if (_elements.Count == 0)
+                return "/";
+            var sb = new StringBuilder();
+            foreach (var element in _elements)
+                sb.Append("/").Append(element);
+            return sb.ToString();
+        }
+
+        public override int GetHashCode()
+        {
+            return (_elements.Count == 0) ? 4987234 : _elements[0].GetHashCode();
+        }
+
+        public override bool Equals(object obj)
+        {
+            if (ReferenceEquals(this, obj))
+                return true;
+            var oth = obj as ParametrizedUrlParts;
+            if (oth == null || _elements.Count != oth._elements.Count)
+                return false;
+            for (int i = 0; i < _elements.Count; i++)
+            {
+                if (!string.Equals(_elements[i], oth._elements[i], StringComparison.Ordinal))
+                    return false;
+            }
+            return true;
         }
     }
 }

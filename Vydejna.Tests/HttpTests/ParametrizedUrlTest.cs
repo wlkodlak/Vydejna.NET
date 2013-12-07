@@ -77,13 +77,12 @@ namespace Vydejna.Tests.HttpTests
             TestUrlForMatching(new[] { "articles", "5847" }, ParametrizedUrl.UrlForMatching("http://localhost/articles/5847?sort=date"));
             TestUrlForMatching(new[] { "resources", "1111", "" }, ParametrizedUrl.UrlForMatching("http://localhost/resources/1111/"));
         }
-        private static void TestUrlForMatching(string[] expected, IList<string> actual)
+        private static void TestUrlForMatching(string[] expected, ParametrizedUrlParts actual)
         {
-            var left = string.Join("/", expected);
+            var expectedParts = new ParametrizedUrlParts(expected);
             if (actual == null)
-                Assert.Fail("Nothing was created for {0}", left);
-            var right = string.Join("/", actual.ToArray());
-            Assert.AreEqual(left, right);
+                Assert.Fail("Nothing was created for {0}", expectedParts);
+            Assert.AreEqual(expectedParts, actual);
         }
 
         [TestMethod]
@@ -195,6 +194,63 @@ namespace Vydejna.Tests.HttpTests
                 Assert.AreEqual(expected[i * 2], parsed[i].Name, "Name {0}", i);
                 Assert.AreEqual(expected[i * 2 + 1], parsed[i].Value, "Value {0}", i);
             }
+        }
+
+        [TestMethod]
+        public void UrlParts_Elements()
+        {
+            var parts = new ParametrizedUrlParts("articles", "5845");
+            Assert.AreEqual(2, parts.Count, "Count");
+            Assert.AreEqual("articles", parts[0], "[0]");
+            Assert.AreEqual("5845", parts[1], "[1]");
+        }
+
+        [TestMethod]
+        public void UrlParts_Comparing()
+        {
+            var a = new ParametrizedUrlParts("article", "1111");
+            var b = new ParametrizedUrlParts("article", "1111");
+            var c = new ParametrizedUrlParts("article", "3923");
+            var d = new ParametrizedUrlParts("category", "1111");
+            var e = new ParametrizedUrlParts("article");
+            var f = new ParametrizedUrlParts("category");
+            AssertPartsCompare(a, b, 0);
+            AssertPartsCompare(a, c, -1);
+            AssertPartsCompare(a, d, -1);
+            AssertPartsCompare(a, e, 1);
+            AssertPartsCompare(a, f, -1);
+            AssertPartsCompare(a, b, 0);
+            AssertPartsCompare(f, d, -1);
+            AssertPartsCompare(f, e, 1);
+        }
+
+        private void AssertPartsCompare(IComparable<ParametrizedUrlParts> a, ParametrizedUrlParts b, int expect)
+        {
+            var comparison = Math.Sign(a.CompareTo(b));
+            var op = expect == 0 ? "==" : expect < 0 ? "<" : ">";
+            Assert.AreEqual(expect, comparison, "{0} {2} {1}", a, b, op);
+            if (expect == 0)
+                Assert.AreEqual(a, b);
+            else
+                Assert.AreNotEqual(a, b);
+        }
+
+        [TestMethod]
+        public void GetPrefix()
+        {
+            GetPrefixTest("/articles/55833", "articles", "55833");
+            GetPrefixTest("/articles/{id}", "articles");
+            GetPrefixTest("/articles/{id}-{name}", "articles");
+            GetPrefixTest("/articles/{id}/comments", "articles");
+            GetPrefixTest("/category/all", "category", "all");
+            GetPrefixTest("/");
+        }
+
+        private void GetPrefixTest(string url, params string[] parts)
+        {
+            var expected = new ParametrizedUrlParts(parts);
+            var actual = new ParametrizedUrl(url).GetPrefix();
+            Assert.AreEqual(expected, actual);
         }
     }
 }
