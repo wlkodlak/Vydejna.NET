@@ -75,6 +75,7 @@ namespace Vydejna.Contracts
         private class Configurator : IHttpRouteConfigRouteWithDirect, IHttpRouteConfigCommon, IHttpRouteConfigComponents
         {
             private string _pattern;
+            private List<string> _prefixes = new List<string>();
 
             private List<Configurator> _using = new List<Configurator>();
             private List<IHttpRequestDecoder> _decoders = new List<IHttpRequestDecoder>();
@@ -107,7 +108,7 @@ namespace Vydejna.Contracts
                     FillPost(builder);
                     FillOutputs(builder);
                     FillEncoders(builder);
-                    router.AddRoute(_pattern, builder.Build());
+                    router.AddRoute(_pattern, builder.Build(), _prefixes);
                 }
             }
 
@@ -200,6 +201,12 @@ namespace Vydejna.Contracts
             IHttpRouteConfigParametrized<T> IHttpRouteConfigRoute.Parametrized<T>(Func<HttpServerRequest, Task<T>> translator)
             {
                 return new Configurator<T>(this, translator);
+            }
+
+            IHttpRouteConfigRoute IHttpRouteConfigRoute.Prefixed(string prefix)
+            {
+                _prefixes.Add(prefix);
+                return this;
             }
 
             IHttpRouteConfigRoute IHttpRouteConfigComponents<IHttpRouteConfigRoute>.With(IHttpRequestDecoder handler)
@@ -370,6 +377,7 @@ namespace Vydejna.Contracts
         IHttpRouteConfigRoute Clean();
         IHttpRouteConfigComponents To(IHttpProcessor processor);
         IHttpRouteConfigParametrized<T> Parametrized<T>(Func<HttpServerRequest, Task<T>> translator);
+        IHttpRouteConfigRoute Prefixed(string prefix);
     }
 
     public interface IHttpRouteConfigParametrized<T>

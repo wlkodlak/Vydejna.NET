@@ -286,10 +286,13 @@ namespace Vydejna.Contracts
             var parameters = new Uri(url).Query.TrimStart('?').Split('&');
             foreach (var parameter in parameters)
             {
+                if (string.IsNullOrEmpty(parameter))
+                    continue;
                 var parts = parameter.Split(new[] { '=' }, 2);
                 var name = parts[0];
-                var value = UnescapeUri(parts[1]);
-                yield return new RequestParameter(RequestParameterType.QueryString, name, value);
+                var value = parts.Length == 1 ? name : UnescapeUri(parts[1]);
+                if (!string.IsNullOrEmpty(name))
+                    yield return new RequestParameter(RequestParameterType.QueryString, name, value);
             }
         }
 

@@ -22,6 +22,7 @@ namespace Vydejna.Tests.HttpTests
             public string Pattern;
             public IHttpRouteHandler Handler;
             public bool MoreThanOne;
+            public IList<string> Prefixes;
 
             public TestProcessor Processor
             {
@@ -32,7 +33,7 @@ namespace Vydejna.Tests.HttpTests
                 }
             }
 
-            public void AddRoute(string pattern, IHttpRouteHandler handler)
+            public void AddRoute(string pattern, IHttpRouteHandler handler, IEnumerable<string> prefixes = null)
             {
                 if (Pattern != null)
                     MoreThanOne = true;
@@ -40,6 +41,7 @@ namespace Vydejna.Tests.HttpTests
                 {
                     Pattern = pattern;
                     Handler = handler;
+                    Prefixes = prefixes == null ? null : prefixes.ToList();
                 }
             }
         }
@@ -265,12 +267,32 @@ namespace Vydejna.Tests.HttpTests
             AssertTestProcessor(_builder.Encoders, "GzipEncoder");
         }
 
+        [TestMethod]
+        public void RouteWithPrefixes()
+        {
+            _cfg
+                .Route("/{version}/service")
+                .Prefixed("/v1/service")
+                .Prefixed("/v2/service")
+                .To(new TestProcessor("Processor").Processor)
+                .With(new TestProcessor("Output").Output);
+            _cfg.Configure();
+            AssertPrefixes("/v1/service", "/v2/service");
+        }
+
         private void AssertTestProcessor<T>(List<T> list, params string[] names)
         {
             CollectionAssert.AllItemsAreInstancesOfType(list, typeof(TestProcessor), "{0}", typeof(T).Name);
             string actual = string.Join(", ", list.Cast<TestProcessor>().Select(p => p.Name));
             string expected = string.Join(", ", names);
             Assert.AreEqual(expected, actual, "{0}", typeof(T).Name);
+        }
+
+        private void AssertPrefixes(params string[] prefixes)
+        {
+            var expected = prefixes == null ? null : "\r\n" + string.Join(Environment.NewLine, prefixes);
+            var actual = _router.Prefixes == null ? null : "\r\n" + string.Join(Environment.NewLine, _router.Prefixes);
+            Assert.AreEqual(expected, actual, "Prefixes");
         }
 
         private class TestRequest

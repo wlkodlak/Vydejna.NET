@@ -16,7 +16,7 @@ namespace Vydejna.Contracts
 
     public interface IHttpAddRoute
     {
-        void AddRoute(string pattern, IHttpRouteHandler handler);
+        void AddRoute(string pattern, IHttpRouteHandler handler, IEnumerable<string> overridePrefix = null);
     }
 
     public class HttpRouter : IHttpRouter, IHttpAddRoute
@@ -98,11 +98,24 @@ namespace Vydejna.Contracts
             return bestRoute;
         }
 
-        public void AddRoute(string pattern, IHttpRouteHandler handler)
+        public void AddRoute(string pattern, IHttpRouteHandler handler, IEnumerable<string> overridePrefix = null)
         {
             var route = new RouteConfiguration { Handler = handler, Url = new ParametrizedUrl(pattern) };
             _routes.Add(route);
-            var folder = GetFolder(route.Url.Prefix, true);
+            AddPrefix(route.Url.Prefix, route);
+            if (overridePrefix != null)
+            {
+                foreach (var prefixString in overridePrefix)
+                {
+                    var overridenPath = new ParametrizedUrl(prefixString);
+                    AddPrefix(overridenPath.Prefix, route);
+                }
+            }
+        }
+
+        private void AddPrefix(ParametrizedUrlParts prefix, RouteConfiguration route)
+        {
+            var folder = GetFolder(prefix, true);
             folder.Routes.Add(route);
         }
 

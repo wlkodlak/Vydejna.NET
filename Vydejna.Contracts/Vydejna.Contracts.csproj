@@ -47,6 +47,7 @@
   <ItemGroup>
     <Compile Include="ContractTypes.cs" />
     <Compile Include="HttpClient.cs" />
+    <Compile Include="HttpEnhancer.cs" />
     <Compile Include="HttpInput.cs" />
     <Compile Include="HttpOutput.cs" />
     <Compile Include="HttpRouteConfig.cs" />

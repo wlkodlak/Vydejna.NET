@@ -70,6 +70,20 @@ namespace Vydejna.Tests.HttpTests
         }
 
         [TestMethod]
+        public void SingleRouteWithOverridenPrefix()
+        {
+            var handler = new TestRouteHandler("withparams");
+            _cfg.AddRoute("/service/{version}/handler", handler, new[] { "/service/v1/handler" });
+            var route = _cfg.FindRoute("http://localhost/service/v1/handler");
+            Assert.IsNotNull(route, "Was found");
+            Assert.AreSame(handler, route.Handler, "Handler");
+            Assert.AreEqual("/service/{version}/handler", route.UrlTemplate.ToString(), "UrlTemplate");
+            Assert.IsNotNull(route.RouteParameters, "RouteParameters");
+            Assert.AreEqual(1, route.RouteParameters.Count, "RouteParameters.Count");
+            Assert.AreEqual(new RequestParameter(RequestParameterType.Path, "version", "v1"), route.RouteParameters[0], "RouteParameters[0]");
+        }
+
+        [TestMethod]
         public void MultipleDistinctRoutes()
         {
             var archive = new TestRouteHandler("archive");

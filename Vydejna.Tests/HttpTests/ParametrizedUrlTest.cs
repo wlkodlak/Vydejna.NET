@@ -178,6 +178,13 @@ namespace Vydejna.Tests.HttpTests
     public class ParametrizedUrlTest_QueryString
     {
         [TestMethod]
+        public void ParseQueryString_Empty()
+        {
+            var parsed = ParametrizedUrl.ParseQueryString("http://localhost/action?").ToList();
+            Assert.AreEqual(0, parsed.Count, "Count");
+        }
+
+        [TestMethod]
         public void ParseQueryString_Basic()
         {
             var parsed = ParametrizedUrl.ParseQueryString("http://localhost/action?param1=58&param2=true&p=hello_world").ToList();
@@ -188,6 +195,26 @@ namespace Vydejna.Tests.HttpTests
                 Assert.AreEqual(expected[i * 2], parsed[i].Name, "Name {0}", i);
                 Assert.AreEqual(expected[i * 2 + 1], parsed[i].Value, "Value {0}", i);
             }
+        }
+
+        [TestMethod]
+        public void ParseQueryString_WithoutValue()
+        {
+            var parsed = ParametrizedUrl.ParseQueryString("http://localhost/action?name").ToList();
+            Assert.AreEqual(1, parsed.Count, "Count");
+            var expected = new[] { "name", "name" };
+            for (int i = 0; i < 1; i++)
+            {
+                Assert.AreEqual(expected[i * 2], parsed[i].Name, "Name {0}", i);
+                Assert.AreEqual(expected[i * 2 + 1], parsed[i].Value, "Value {0}", i);
+            }
+        }
+
+        [TestMethod]
+        public void ParseQueryString_WithoutName()
+        {
+            var parsed = ParametrizedUrl.ParseQueryString("http://localhost/action?=name").ToList();
+            Assert.AreEqual(0, parsed.Count, "Count");
         }
 
         [TestMethod]

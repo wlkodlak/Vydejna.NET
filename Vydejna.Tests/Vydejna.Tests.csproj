@@ -70,6 +70,7 @@
     <Compile Include="EventSourcedTests\ProjectionProxyTests.cs" />
     <Compile Include="EventSourcedTests\TestMetadata.cs" />
     <Compile Include="HttpTests\HttpClientTests.cs" />
+    <Compile Include="HttpTests\HttpEnhancerTests.cs" />
     <Compile Include="HttpTests\HttpOutputDirectTests.cs" />
     <Compile Include="HttpTests\HttpOutputJsonTests.cs" />
     <Compile Include="HttpTests\HttpRouteConfigTests.cs" />
