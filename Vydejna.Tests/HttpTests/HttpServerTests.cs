@@ -45,14 +45,14 @@ namespace Vydejna.Tests.HttpTests
         [TestMethod]
         public void HandlePostRequest()
         {
-            _dispatcher.Register("/article", HandleArticle);
+            _dispatcher.Register("/article", HandlePostRequest_HandleArticle);
             _server.Start();
             var response = SendHttpRequest("POST", "article?id=3345", "<xmldata>data</xmldata>");
             _server.Stop();
             Assert.AreEqual("<resp>OK</resp>", response);
         }
 
-        private HttpServerResponse HandleArticle(HttpServerRequest request)
+        private HttpServerResponse HandlePostRequest_HandleArticle(HttpServerRequest request)
         {
             var post = ReadWholeStream(request.PostDataStream);
             Assert.AreEqual("<xmldata>data</xmldata>", post);
@@ -92,6 +92,81 @@ namespace Vydejna.Tests.HttpTests
                 return null;
             using (var reader = new StreamReader(stream))
                 return reader.ReadToEnd();
+        }
+
+        private class TestDispatcher : IHttpServerDispatcher
+        {
+            private Dictionary<string, Func<HttpServerRequest, HttpServerResponse>> _routes;
+            public TestDispatcher()
+            {
+                _routes = new Dictionary<string, Func<HttpServerRequest, HttpServerResponse>>();
+            }
+            public void Register(string url, Func<HttpServerRequest, HttpServerResponse> handler)
+            {
+                _routes[url] = handler;
+            }
+            public Task<HttpServerResponse> ProcessRequest(HttpServerRequest request)
+            {
+                var path = new Uri(request.Url).AbsolutePath;
+                Func<HttpServerRequest, HttpServerResponse> handler;
+                if (!_routes.TryGetValue(path, out handler))
+                    return new HttpServerResponseBuilder().WithStatusCode(404).BuildTask();
+                try
+                {
+                    return TaskResult.GetCompletedTask(handler(request));
+                }
+                catch (Exception ex)
+                {
+                    return new HttpServerResponseBuilder()
+                        .WithStatusCode(500)
+                        .WithStringBody(ex.ToString())
+                        .BuildTask();
+                }
+            }
+        }
+    }
+
+    [TestClass]
+    public class HttpServerLoadTests
+    {
+        private TestDispatcher _dispatcher;
+        private HttpServer _server;
+        private string _prefix;
+
+        [TestInitialize]
+        public void Initialize()
+        {
+            _prefix = "http://localhost:61111/";
+            _dispatcher = new TestDispatcher();
+            _server = new HttpServer(new[] { _prefix }, _dispatcher);
+            _server.SetupWorkerCount(32);
+        }
+
+        [TestCleanup]
+        public void Cleanup()
+        {
+            ((IDisposable)_server).Dispose();
+        }
+
+        //[TestMethod]
+        public void RunServer()
+        {
+            var html = @"<html><head><title>Article</title><body><h1>Success</h1></body></html>";
+            var articleResponse = new HttpServerResponseBuilder()
+                .WithHeader("Content-Type", "text/html")
+                .WithStringBody(html)
+                .Build();
+            var stopWait = new ManualResetEventSlim();
+            _dispatcher.Register("/stopListener", rq =>
+                {
+                    stopWait.Set();
+                    return new HttpServerResponseBuilder().WithStatusCode((int)HttpStatusCode.Accepted).Build();
+                });
+            _dispatcher.Register("/", rq => articleResponse);
+            _server.Start();
+
+            stopWait.Wait();
+            _server.Stop();
         }
 
         private class TestDispatcher : IHttpServerDispatcher

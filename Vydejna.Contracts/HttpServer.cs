@@ -55,7 +55,7 @@ namespace Vydejna.Contracts
             _listener.Stop();
             _cancel.Cancel();
             _cancel.Dispose();
-            _workers.ForEach(t => t.Wait());
+            Task.WaitAll(_workers.ToArray(), 1000);
             _isRunning = false;
         }
 
@@ -95,7 +95,7 @@ namespace Vydejna.Contracts
         {
             try
             {
-                var request = await Task.Factory.StartNew(() => CreateRequest(context.Request));
+                var request = await Task.Factory.StartNew(() => CreateRequest(context.Request), TaskCreationOptions.PreferFairness);
                 var response = await _dispatcher.ProcessRequest(request);
                 await WriteResponse(context.Response, response);
             }
