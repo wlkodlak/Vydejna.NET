@@ -62,9 +62,10 @@ namespace Vydejna.Tests.EventSourcedTests
             {
                 _handler = handler;
             }
-            public void Handle(ProjectionMetadataChanged message)
+            public Task Handle(ProjectionMetadataChanged message)
             {
                 _handler(message);
+                return TaskResult.GetCompletedTask();
             }
         }
 

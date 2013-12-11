@@ -34,12 +34,16 @@ namespace Vydejna.Tests.SeznamNaradiTests
                 _action = action;
             }
 
-            public void Handle(T message)
+            public Task Handle(T message)
             {
                 if (_action == null)
-                    Assert.Fail("Unexpected call to IHandle<{0}>", typeof(T).Name);
+                    return TaskResult.GetFailedTask<object>(new AssertFailedException(
+                        string.Format("Unexpected call to IHandle<{0}>", typeof(T).Name)));
                 else
+                {
                     _action(message);
+                    return TaskResult.GetCompletedTask();
+                }
             }
         }
 
@@ -55,7 +59,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             DefinovatNaradiCommand cmd = null;
             _mockDefinice.SetHandler(c => cmd = c);
             var proces = VytvoritProces();
-            proces.Handle(new ZahajenaDefiniceNaradiEvent { NaradiId = naradiId, Vykres = "884-55558", Rozmer = "50x5x3", Druh = "" });
+            proces.Handle(new ZahajenaDefiniceNaradiEvent { NaradiId = naradiId, Vykres = "884-55558", Rozmer = "50x5x3", Druh = "" }).GetAwaiter().GetResult();
             Assert.IsNotNull(cmd, "Ocekavan DefinovatNaradiCommand");
             Assert.AreEqual(naradiId, cmd.NaradiId, "NaradiId");
             Assert.AreEqual("884-55558", cmd.Vykres, "Vykres");
@@ -70,7 +74,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             AktivovatNaradiCommand cmd = null;
             _mockAktivace.SetHandler(c => cmd = c);
             var proces = VytvoritProces();
-            proces.Handle(new ZahajenaAktivaceNaradiEvent { NaradiId = naradiId });
+            proces.Handle(new ZahajenaAktivaceNaradiEvent { NaradiId = naradiId }).GetAwaiter().GetResult();
             Assert.IsNotNull(cmd, "Ocekavan AktivovatNaradiCommand");
             Assert.AreEqual(naradiId, cmd.NaradiId, "NaradiId");
         }
@@ -82,7 +86,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             DokoncitDefiniciNaradiInternalCommand cmd = null;
             _mockDokonceni.SetHandler(c => cmd = c);
             var proces = VytvoritProces();
-            proces.Handle(new DefinovanoNaradiEvent { NaradiId = naradiId, Vykres = "884-55558", Rozmer = "50x5x3", Druh = "" });
+            proces.Handle(new DefinovanoNaradiEvent { NaradiId = naradiId, Vykres = "884-55558", Rozmer = "50x5x3", Druh = "" }).GetAwaiter().GetResult();
             Assert.IsNotNull(cmd, "Ocekavan DokoncitDefiniciNaradiInternalCommand");
             Assert.AreEqual(naradiId, cmd.NaradiId, "NaradiId");
             Assert.AreEqual("884-55558", cmd.Vykres, "Vykres");

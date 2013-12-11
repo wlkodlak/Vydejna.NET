@@ -23,45 +23,45 @@ namespace Vydejna.Domain
             _repoUnikatnost = repoUnikatnost;
         }
 
-        public void Handle(AktivovatNaradiCommand message)
+        public async Task Handle(AktivovatNaradiCommand message)
         {
-            var naradi = _repoNaradi.Get(message.NaradiId);
+            var naradi = await _repoNaradi.Get(message.NaradiId);
             if (naradi == null)
                 return;
             naradi.Aktivovat();
-            _repoNaradi.Save(naradi);
+            await _repoNaradi.Save(naradi);
         }
 
-        public void Handle(DeaktivovatNaradiCommand message)
+        public async Task Handle(DeaktivovatNaradiCommand message)
         {
-            var naradi = _repoNaradi.Get(message.NaradiId);
+            var naradi = await _repoNaradi.Get(message.NaradiId);
             if (naradi == null)
                 return;
             naradi.Deaktivovat();
-            _repoNaradi.Save(naradi);
+            await _repoNaradi.Save(naradi);
         }
 
-        public void Handle(DefinovatNaradiInternalCommand message)
+        public async Task Handle(DefinovatNaradiInternalCommand message)
         {
-            var naradi = _repoNaradi.Get(message.NaradiId);
+            var naradi = await _repoNaradi.Get(message.NaradiId);
             if (naradi != null)
                 return;
             naradi = Naradi.Definovat(message.NaradiId, message.Vykres, message.Rozmer, message.Druh);
-            _repoNaradi.Save(naradi);
+            await _repoNaradi.Save(naradi);
         }
 
-        public void Handle(DefinovatNaradiCommand message)
+        public async Task Handle(DefinovatNaradiCommand message)
         {
-            var unikatnost = _repoUnikatnost.Get();
+            var unikatnost = await _repoUnikatnost.Get();
             unikatnost.ZahajitDefinici(message.NaradiId, message.Vykres, message.Rozmer, message.Druh);
-            _repoUnikatnost.Save(unikatnost);
+            await _repoUnikatnost.Save(unikatnost);
         }
 
-        public void Handle(DokoncitDefiniciNaradiInternalCommand message)
+        public async Task Handle(DokoncitDefiniciNaradiInternalCommand message)
         {
-            var unikatnost = _repoUnikatnost.Get();
+            var unikatnost = await _repoUnikatnost.Get();
             unikatnost.DokoncitDefinici(message.NaradiId, message.Vykres, message.Rozmer, message.Druh);
-            _repoUnikatnost.Save(unikatnost);
+            await _repoUnikatnost.Save(unikatnost);
         }
     }
 }

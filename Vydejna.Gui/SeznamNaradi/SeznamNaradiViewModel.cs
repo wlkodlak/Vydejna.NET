@@ -13,8 +13,8 @@ using Vydejna.Gui.Shell;
 namespace Vydejna.Gui.SeznamNaradi
 {
     public class SeznamNaradiViewModel
-        : IHandle<UiMessages.SeznamNaradiOtevren>
-        , IHandle<UiMessages.DokoncenaDefiniceNaradi>
+        : IHandleSync<UiMessages.SeznamNaradiOtevren>
+        , IHandleSync<UiMessages.DokoncenaDefiniceNaradi>
     {
         private IShell _shell;
         private IReadSeznamNaradi _readSvc;

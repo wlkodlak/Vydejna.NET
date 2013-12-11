@@ -264,15 +264,14 @@ namespace Vydejna.Domain
             await _projection.HandleShutdown();
         }
 
-        void IHandle<ProjectionMetadataChanged>.Handle(ProjectionMetadataChanged msg)
+        Task IHandle<ProjectionMetadataChanged>.Handle(ProjectionMetadataChanged msg)
         {
-            if (_instanceName != msg.InstanceName)
-                return;
-            if (StatusStopsHandling(msg.Status))
+            if (_instanceName == msg.InstanceName && StatusStopsHandling(msg.Status))
             {
                 _isReplaced = true;
                 _cancel.Cancel();
             }
+            return TaskResult.GetCompletedTask();
         }
 
         private bool StatusStopsHandling(ProjectionStatus status)

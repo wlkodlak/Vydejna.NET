@@ -8,6 +8,16 @@ namespace Vydejna.Contracts
 {
     public interface IHandle<T>
     {
+        Task Handle(T message);
+    }
+
+    public interface IAnswer<TQuestion, TAnswer>
+    {
+        Task<TAnswer> Handle(TQuestion);
+    }
+
+    public interface IHandleSync<T>
+    {
         void Handle(T message);
     }
 
@@ -18,6 +28,8 @@ namespace Vydejna.Contracts
 
     public static class TaskResult
     {
+        private static readonly Task CachedCompletedTask = Task.FromResult<object>(null);
+
         public static Task<T> GetCompletedTask<T>(T result)
         {
             return Task.FromResult<T>(result);
@@ -25,7 +37,7 @@ namespace Vydejna.Contracts
 
         public static Task GetCompletedTask()
         {
-            return Task.FromResult<object>(null);
+            return CachedCompletedTask;
         }
 
         public static Task<T> GetFailedTask<T>(Exception exception)

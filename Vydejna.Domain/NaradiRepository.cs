@@ -9,8 +9,8 @@ namespace Vydejna.Domain
 {
     public interface INaradiRepository
     {
-        Naradi Get(Guid id);
-        void Save(Naradi naradi);
+        Task<Naradi> Get(Guid id);
+        Task Save(Naradi naradi);
     }
 
     public class NaradiRepositoryInMemory : EventSourcedRepository<Naradi>, INaradiRepository
@@ -25,14 +25,14 @@ namespace Vydejna.Domain
             return new Naradi();
         }
 
-        Naradi INaradiRepository.Get(Guid id)
+        Task<Naradi> INaradiRepository.Get(Guid id)
         {
-            return Get(id).GetAwaiter().GetResult();
+            return Get(id);
         }
 
-        void INaradiRepository.Save(Naradi naradi)
+        Task INaradiRepository.Save(Naradi naradi)
         {
-            Save(naradi).GetAwaiter().GetResult();
+            return Save(naradi);
         }
     }
 }

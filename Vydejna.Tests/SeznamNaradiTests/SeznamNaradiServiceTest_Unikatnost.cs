@@ -66,15 +66,16 @@ namespace Vydejna.Tests.SeznamNaradiTests
                 _parent = parent;
             }
 
-            public UnikatnostNaradi Get()
+            public Task<UnikatnostNaradi> Get()
             {
-                return UnikatnostNaradi.LoadFrom(_parent._obsahRepository);
+                return TaskResult.GetCompletedTask(UnikatnostNaradi.LoadFrom(_parent._obsahRepository));
             }
 
-            public void Save(UnikatnostNaradi unikatnost)
+            public Task Save(UnikatnostNaradi unikatnost)
             {
                 var udalosti = (unikatnost as IEventSourcedAggregate).GetChanges();
                 _parent._udalosti.AddRange(udalosti);
+                return TaskResult.GetCompletedTask();
             }
         }
 
@@ -83,7 +84,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
         {
             var naradiId = Guid.NewGuid();
             var svc = VytvoritService();
-            svc.Handle(new DefinovatNaradiCommand { NaradiId = naradiId, Vykres = "1248-5574-b", Rozmer = "o 500", Druh = "" });
+            svc.Handle(new DefinovatNaradiCommand { NaradiId = naradiId, Vykres = "1248-5574-b", Rozmer = "o 500", Druh = "" }).GetAwaiter().GetResult();
             var evt = OcekavanaUdalost<ZahajenaDefiniceNaradiEvent>();
             Assert.AreEqual(naradiId, evt.NaradiId, "NaradiId");
             Assert.AreEqual("1248-5574-b", evt.Vykres, "Vykres");
@@ -96,7 +97,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
         public void PriZahajeniDefiniceNovehoNaradiDoplnitChybejiciIdNaradi()
         {
             var svc = VytvoritService();
-            svc.Handle(new DefinovatNaradiCommand { NaradiId = Guid.Empty, Vykres = "1248-5574-b", Rozmer = "o 500", Druh = "" });
+            svc.Handle(new DefinovatNaradiCommand { NaradiId = Guid.Empty, Vykres = "1248-5574-b", Rozmer = "o 500", Druh = "" }).GetAwaiter().GetResult();
             var evt = OcekavanaUdalost<ZahajenaDefiniceNaradiEvent>();
             Assert.AreNotEqual(Guid.Empty, evt.NaradiId, "NaradiId");
             Assert.AreEqual("1248-5574-b", evt.Vykres, "Vykres");
@@ -114,7 +115,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
                 new DokoncenaDefiniceNaradiEvent { NaradiId = naradiId, Vykres = "1248-5574-b", Rozmer = "o 500", Druh = "" }
                 );
             var svc = VytvoritService();
-            svc.Handle(new DefinovatNaradiCommand { NaradiId = Guid.NewGuid(), Vykres = "1248-5574-b", Rozmer = "o 500", Druh = "" });
+            svc.Handle(new DefinovatNaradiCommand { NaradiId = Guid.NewGuid(), Vykres = "1248-5574-b", Rozmer = "o 500", Druh = "" }).GetAwaiter().GetResult();
             var evt = OcekavanaUdalost<ZahajenaAktivaceNaradiEvent>();
             Assert.AreEqual(naradiId, evt.NaradiId, "NaradiId");
             ZadneDalsiUdalosti();
@@ -128,7 +129,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
                 new ZahajenaDefiniceNaradiEvent { NaradiId = naradiId, Vykres = "1248-5574-b", Rozmer = "o 500", Druh = "" }
                 );
             var svc = VytvoritService();
-            svc.Handle(new DefinovatNaradiCommand { NaradiId = Guid.NewGuid(), Vykres = "1248-5574-b", Rozmer = "o 500", Druh = "" });
+            svc.Handle(new DefinovatNaradiCommand { NaradiId = Guid.NewGuid(), Vykres = "1248-5574-b", Rozmer = "o 500", Druh = "" }).GetAwaiter().GetResult();
             ZadneDalsiUdalosti();
         }
 
@@ -140,7 +141,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
                 new ZahajenaDefiniceNaradiEvent { NaradiId = naradiId, Vykres = "1248-5574-b", Rozmer = "o 500", Druh = "" }
                 );
             var svc = VytvoritService();
-            svc.Handle(new DokoncitDefiniciNaradiInternalCommand { NaradiId = naradiId, Vykres = "1248-5574-b", Rozmer = "o 500", Druh = "" });
+            svc.Handle(new DokoncitDefiniciNaradiInternalCommand { NaradiId = naradiId, Vykres = "1248-5574-b", Rozmer = "o 500", Druh = "" }).GetAwaiter().GetResult();
             var evt = OcekavanaUdalost<DokoncenaDefiniceNaradiEvent>();
             Assert.AreEqual(naradiId, evt.NaradiId, "NaradiId");
             Assert.AreEqual("1248-5574-b", evt.Vykres, "Vykres");

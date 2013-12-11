@@ -41,7 +41,7 @@ namespace Vydejna.Domain
             {
                 try
                 {
-                    handler.Handle(cmd);
+                    await handler.Handle(cmd);
                     return new HttpServerResponseBuilder().WithStatusCode(HttpStatusCode.Accepted).Build();
                 }
                 catch (ValidationException)

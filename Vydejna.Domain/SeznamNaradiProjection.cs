@@ -198,7 +198,7 @@ namespace Vydejna.Domain
             return string.Format("{0}:::{1}", vykres, rozmer);
         }
 
-        public void Handle(DefinovanoNaradiEvent message)
+        public Task Handle(DefinovanoNaradiEvent message)
         {
             using (_lock.Update())
             {
@@ -214,35 +214,38 @@ namespace Vydejna.Domain
                     _dirty = true;
                 }
             }
+            return TaskResult.GetCompletedTask();
         }
 
-        public void Handle(AktivovanoNaradiEvent message)
+        public Task Handle(AktivovanoNaradiEvent message)
         {
             using (_lock.Update())
             {
                 var item = _indexId[message.NaradiId];
                 if (item.Dto.Aktivni)
-                    return;
+                    return TaskResult.GetCompletedTask();
                 var newDto = Clone(item.Dto);
                 newDto.Aktivni = true;
                 _lock.Write();
                 item.Dto = newDto;
                 _dirty = true;
+                return TaskResult.GetCompletedTask();
             }
         }
 
-        public void Handle(DeaktivovanoNaradiEvent message)
+        public Task Handle(DeaktivovanoNaradiEvent message)
         {
             using (_lock.Update())
             {
                 var item = _indexId[message.NaradiId];
                 if (!item.Dto.Aktivni)
-                    return;
+                    return TaskResult.GetCompletedTask();
                 var newDto = Clone(item.Dto);
                 newDto.Aktivni = false;
                 _lock.Write();
                 item.Dto = newDto; 
                 _dirty = true;
+                return TaskResult.GetCompletedTask();
             }
         }
 

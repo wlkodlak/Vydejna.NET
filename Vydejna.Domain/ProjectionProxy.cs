@@ -94,7 +94,7 @@ namespace Vydejna.Domain
             }
         }
 
-        public void Handle(ProjectionMetadataChanged message)
+        public Task Handle(ProjectionMetadataChanged message)
         {
             lock (_lock)
             {
@@ -118,6 +118,7 @@ namespace Vydejna.Domain
                     _anotherPickNeeded = false;
             }
             PickInstance();
+            return TaskResult.GetCompletedTask();
         }
 
         private class ComparerForMetadata : IComparer<ProjectionInstanceMetadata>

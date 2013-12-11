@@ -68,18 +68,19 @@ namespace Vydejna.Tests.SeznamNaradiTests
                 _parent = parent;
             }
 
-            public Naradi Get(Guid id)
+            public Task<Naradi> Get(Guid id)
             {
                 List<object> udalosti;
                 if (!_parent._obsahRepository.TryGetValue(id, out udalosti))
-                    return null;
-                return Naradi.LoadFrom(udalosti);
+                    return TaskResult.GetCompletedTask<Naradi>(null);
+                return TaskResult.GetCompletedTask(Naradi.LoadFrom(udalosti));
             }
 
-            public void Save(Naradi naradi)
+            public Task Save(Naradi naradi)
             {
                 var udalosti = (naradi as IEventSourcedAggregate).GetChanges();
                 _parent._udalosti.AddRange(udalosti);
+                return TaskResult.GetCompletedTask();
             }
         }
 
@@ -92,7 +93,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
                 new DeaktivovanoNaradiEvent { NaradiId = idNaradi }
                 );
             var svc = VytvoritService();
-            svc.Handle(new AktivovatNaradiCommand { NaradiId = idNaradi });
+            svc.Handle(new AktivovatNaradiCommand { NaradiId = idNaradi }).GetAwaiter().GetResult();
             var evt = OcekavanaUdalost<AktivovanoNaradiEvent>();
             Assert.AreEqual(idNaradi, evt.NaradiId, "NaradiId");
             ZadneDalsiUdalosti();
@@ -102,7 +103,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
         public void AktivovatNeexistujiciNaradi()
         {
             var svc = VytvoritService();
-            svc.Handle(new AktivovatNaradiCommand { NaradiId = Guid.NewGuid() });
+            svc.Handle(new AktivovatNaradiCommand { NaradiId = Guid.NewGuid() }).GetAwaiter().GetResult();
             ZadneDalsiUdalosti();
         }
 
@@ -114,7 +115,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
                 new DefinovanoNaradiEvent { NaradiId = idNaradi, Vykres = "5555", Rozmer = "0000", Druh = "" }
                 );
             var svc = VytvoritService();
-            svc.Handle(new AktivovatNaradiCommand { NaradiId = idNaradi });
+            svc.Handle(new AktivovatNaradiCommand { NaradiId = idNaradi }).GetAwaiter().GetResult();
             ZadneDalsiUdalosti();
         }
 
@@ -126,7 +127,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
                 new DefinovanoNaradiEvent { NaradiId = idNaradi, Vykres = "5555", Rozmer = "0000", Druh = "" }
                 );
             var svc = VytvoritService();
-            svc.Handle(new DeaktivovatNaradiCommand { NaradiId = idNaradi });
+            svc.Handle(new DeaktivovatNaradiCommand { NaradiId = idNaradi }).GetAwaiter().GetResult();
             var evt = OcekavanaUdalost<DeaktivovanoNaradiEvent>();
             Assert.AreEqual(idNaradi, evt.NaradiId, "NaradiId");
             ZadneDalsiUdalosti();
@@ -136,7 +137,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
         public void DeaktivovatNeexistujiciNaradi()
         {
             var svc = VytvoritService();
-            svc.Handle(new DeaktivovatNaradiCommand { NaradiId = Guid.NewGuid() });
+            svc.Handle(new DeaktivovatNaradiCommand { NaradiId = Guid.NewGuid() }).GetAwaiter().GetResult();
             ZadneDalsiUdalosti();
         }
 
@@ -149,7 +150,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
                 new DeaktivovanoNaradiEvent { NaradiId = idNaradi }
                 );
             var svc = VytvoritService();
-            svc.Handle(new DeaktivovatNaradiCommand { NaradiId = idNaradi });
+            svc.Handle(new DeaktivovatNaradiCommand { NaradiId = idNaradi }).GetAwaiter().GetResult();
             ZadneDalsiUdalosti();
         }
 
@@ -158,7 +159,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
         {
             var idNaradi = Guid.NewGuid();
             var svc = VytvoritService();
-            svc.Handle(new DefinovatNaradiInternalCommand { NaradiId = idNaradi, Vykres = "5555", Rozmer = "0000", Druh = "" });
+            svc.Handle(new DefinovatNaradiInternalCommand { NaradiId = idNaradi, Vykres = "5555", Rozmer = "0000", Druh = "" }).GetAwaiter().GetResult();
             var evt = OcekavanaUdalost<DefinovanoNaradiEvent>();
             Assert.AreEqual(idNaradi, evt.NaradiId, "NaradiId");
             Assert.AreEqual("5555", evt.Vykres, "Vykres");
@@ -175,7 +176,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
                 new DefinovanoNaradiEvent { NaradiId = idNaradi, Vykres = "5555", Rozmer = "0000", Druh = "" }
                 );
             var svc = VytvoritService();
-            svc.Handle(new DefinovatNaradiInternalCommand { NaradiId = idNaradi, Vykres = "5555", Rozmer = "0000", Druh = "" });
+            svc.Handle(new DefinovatNaradiInternalCommand { NaradiId = idNaradi, Vykres = "5555", Rozmer = "0000", Druh = "" }).GetAwaiter().GetResult();
             ZadneDalsiUdalosti();
         }
     }

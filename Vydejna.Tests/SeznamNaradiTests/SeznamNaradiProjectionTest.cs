@@ -55,14 +55,14 @@ namespace Vydejna.Tests.SeznamNaradiTests
         {
             var proj = VytvoritProjection();
 
-            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(101), Vykres = "Vykres-01-55824", Rozmer = "o 150", Druh = "" });
-            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(124), Vykres = "Vykres-05-11624", Rozmer = "20x20", Druh = "" });
-            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(284), Vykres = "Vykres-09-34812", Rozmer = "5x100", Druh = "" });
-            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(335), Vykres = "Vykres-11-72184", Rozmer = "170x3", Druh = "" });
-            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(140), Vykres = "Vykres-12-37512", Rozmer = "o 100", Druh = "" });
-            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(199), Vykres = "Vykres-07-87654", Rozmer = "o 350", Druh = "" });
-            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(924), Vykres = "Vykres-06-55824", Rozmer = "o 475", Druh = "" });
-            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(571), Vykres = "Vykres-02-37214", Rozmer = "o 4.2", Druh = "" });
+            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(101), Vykres = "Vykres-01-55824", Rozmer = "o 150", Druh = "" }).GetAwaiter().GetResult();
+            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(124), Vykres = "Vykres-05-11624", Rozmer = "20x20", Druh = "" }).GetAwaiter().GetResult();
+            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(284), Vykres = "Vykres-09-34812", Rozmer = "5x100", Druh = "" }).GetAwaiter().GetResult();
+            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(335), Vykres = "Vykres-11-72184", Rozmer = "170x3", Druh = "" }).GetAwaiter().GetResult();
+            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(140), Vykres = "Vykres-12-37512", Rozmer = "o 100", Druh = "" }).GetAwaiter().GetResult();
+            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(199), Vykres = "Vykres-07-87654", Rozmer = "o 350", Druh = "" }).GetAwaiter().GetResult();
+            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(924), Vykres = "Vykres-06-55824", Rozmer = "o 475", Druh = "" }).GetAwaiter().GetResult();
+            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(571), Vykres = "Vykres-02-37214", Rozmer = "o 4.2", Druh = "" }).GetAwaiter().GetResult();
 
             var seznam = ZiskatVsechnoNaradi(proj);
             Assert.AreEqual(8, seznam.PocetCelkem, "PocetCelkem");
@@ -75,14 +75,14 @@ namespace Vydejna.Tests.SeznamNaradiTests
         public void HandleDeaktivovanoNaradi_UpraviExistujici()
         {
             var proj = VytvoritProjection();
-            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(101), Vykres = "Vykres-01-55824", Rozmer = "o 150", Druh = "" });
-            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(571), Vykres = "Vykres-02-37214", Rozmer = "o 4.2", Druh = "" });
-            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(124), Vykres = "Vykres-05-11624", Rozmer = "20x20", Druh = "" });
-            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(335), Vykres = "Vykres-11-72184", Rozmer = "170x3", Druh = "" });
-            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(140), Vykres = "Vykres-12-37512", Rozmer = "o 100", Druh = "" });
+            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(101), Vykres = "Vykres-01-55824", Rozmer = "o 150", Druh = "" }).GetAwaiter().GetResult();
+            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(571), Vykres = "Vykres-02-37214", Rozmer = "o 4.2", Druh = "" }).GetAwaiter().GetResult();
+            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(124), Vykres = "Vykres-05-11624", Rozmer = "20x20", Druh = "" }).GetAwaiter().GetResult();
+            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(335), Vykres = "Vykres-11-72184", Rozmer = "170x3", Druh = "" }).GetAwaiter().GetResult();
+            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(140), Vykres = "Vykres-12-37512", Rozmer = "o 100", Druh = "" }).GetAwaiter().GetResult();
 
-            proj.Handle(new DeaktivovanoNaradiEvent() { NaradiId = Id(571) });
-            proj.Handle(new DeaktivovanoNaradiEvent() { NaradiId = Id(140) });
+            proj.Handle(new DeaktivovanoNaradiEvent() { NaradiId = Id(571) }).GetAwaiter().GetResult();
+            proj.Handle(new DeaktivovanoNaradiEvent() { NaradiId = Id(140) }).GetAwaiter().GetResult();
 
             var seznam = ZiskatVsechnoNaradi(proj);
             var aktivniGuid = seznam.SeznamNaradi.Where(n => n.Aktivni).Select(n => n.Id).ToArray();
@@ -97,16 +97,16 @@ namespace Vydejna.Tests.SeznamNaradiTests
         public void HandleAktivovanoNaradi_UpraviExistujici()
         {
             var proj = VytvoritProjection();
-            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(101), Vykres = "Vykres-01-55824", Rozmer = "o 150", Druh = "" });
-            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(571), Vykres = "Vykres-02-37214", Rozmer = "o 4.2", Druh = "" });
-            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(124), Vykres = "Vykres-05-11624", Rozmer = "20x20", Druh = "" });
-            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(335), Vykres = "Vykres-11-72184", Rozmer = "170x3", Druh = "" });
-            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(140), Vykres = "Vykres-12-37512", Rozmer = "o 100", Druh = "" });
-            proj.Handle(new DeaktivovanoNaradiEvent() { NaradiId = Id(101) });
-            proj.Handle(new DeaktivovanoNaradiEvent() { NaradiId = Id(571) });
-            proj.Handle(new DeaktivovanoNaradiEvent() { NaradiId = Id(140) });
+            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(101), Vykres = "Vykres-01-55824", Rozmer = "o 150", Druh = "" }).GetAwaiter().GetResult();
+            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(571), Vykres = "Vykres-02-37214", Rozmer = "o 4.2", Druh = "" }).GetAwaiter().GetResult();
+            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(124), Vykres = "Vykres-05-11624", Rozmer = "20x20", Druh = "" }).GetAwaiter().GetResult();
+            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(335), Vykres = "Vykres-11-72184", Rozmer = "170x3", Druh = "" }).GetAwaiter().GetResult();
+            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(140), Vykres = "Vykres-12-37512", Rozmer = "o 100", Druh = "" }).GetAwaiter().GetResult();
+            proj.Handle(new DeaktivovanoNaradiEvent() { NaradiId = Id(101) }).GetAwaiter().GetResult();
+            proj.Handle(new DeaktivovanoNaradiEvent() { NaradiId = Id(571) }).GetAwaiter().GetResult();
+            proj.Handle(new DeaktivovanoNaradiEvent() { NaradiId = Id(140) }).GetAwaiter().GetResult();
 
-            proj.Handle(new AktivovanoNaradiEvent() { NaradiId = Id(140) });
+            proj.Handle(new AktivovanoNaradiEvent() { NaradiId = Id(140) }).GetAwaiter().GetResult();
 
             var seznam = ZiskatVsechnoNaradi(proj);
             var aktivniGuid = seznam.SeznamNaradi.Where(n => n.Aktivni).Select(n => n.Id).ToArray();
@@ -121,15 +121,15 @@ namespace Vydejna.Tests.SeznamNaradiTests
         public void OvereniUnikanosti_AktivniINeaktivni()
         {
             var proj = VytvoritProjection();
-            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(101), Vykres = "Vykres-01-55824", Rozmer = "o 150", Druh = "" });
-            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(571), Vykres = "Vykres-02-37214", Rozmer = "o 4.2", Druh = "" });
-            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(124), Vykres = "Vykres-05-11624", Rozmer = "20x20", Druh = "" });
-            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(335), Vykres = "Vykres-11-72184", Rozmer = "170x3", Druh = "" });
-            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(140), Vykres = "Vykres-12-37512", Rozmer = "o 100", Druh = "" });
-            proj.Handle(new DeaktivovanoNaradiEvent() { NaradiId = Id(101) });
-            proj.Handle(new DeaktivovanoNaradiEvent() { NaradiId = Id(571) });
-            proj.Handle(new DeaktivovanoNaradiEvent() { NaradiId = Id(140) });
-            proj.Handle(new AktivovanoNaradiEvent() { NaradiId = Id(140) });
+            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(101), Vykres = "Vykres-01-55824", Rozmer = "o 150", Druh = "" }).GetAwaiter().GetResult();
+            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(571), Vykres = "Vykres-02-37214", Rozmer = "o 4.2", Druh = "" }).GetAwaiter().GetResult();
+            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(124), Vykres = "Vykres-05-11624", Rozmer = "20x20", Druh = "" }).GetAwaiter().GetResult();
+            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(335), Vykres = "Vykres-11-72184", Rozmer = "170x3", Druh = "" }).GetAwaiter().GetResult();
+            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(140), Vykres = "Vykres-12-37512", Rozmer = "o 100", Druh = "" }).GetAwaiter().GetResult();
+            proj.Handle(new DeaktivovanoNaradiEvent() { NaradiId = Id(101) }).GetAwaiter().GetResult();
+            proj.Handle(new DeaktivovanoNaradiEvent() { NaradiId = Id(571) }).GetAwaiter().GetResult();
+            proj.Handle(new DeaktivovanoNaradiEvent() { NaradiId = Id(140) }).GetAwaiter().GetResult();
+            proj.Handle(new AktivovanoNaradiEvent() { NaradiId = Id(140) }).GetAwaiter().GetResult();
 
             TestOvereniUnikatnosti(proj, "Vykres-02-37214", "o 4.2", true);
             TestOvereniUnikatnosti(proj, "Vykres-12-37512", "o 100", true);
@@ -149,15 +149,15 @@ namespace Vydejna.Tests.SeznamNaradiTests
         public void ZmenyJsouPersistentni()
         {
             var proj = VytvoritProjection();
-            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(101), Vykres = "Vykres-01-55824", Rozmer = "o 150", Druh = "" });
-            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(571), Vykres = "Vykres-02-37214", Rozmer = "o 4.2", Druh = "" });
-            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(124), Vykres = "Vykres-05-11624", Rozmer = "20x20", Druh = "" });
-            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(335), Vykres = "Vykres-11-72184", Rozmer = "170x3", Druh = "" });
-            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(140), Vykres = "Vykres-12-37512", Rozmer = "o 100", Druh = "" });
-            proj.Handle(new DeaktivovanoNaradiEvent() { NaradiId = Id(101) });
-            proj.Handle(new DeaktivovanoNaradiEvent() { NaradiId = Id(571) });
-            proj.Handle(new DeaktivovanoNaradiEvent() { NaradiId = Id(140) });
-            proj.Handle(new AktivovanoNaradiEvent() { NaradiId = Id(140) });
+            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(101), Vykres = "Vykres-01-55824", Rozmer = "o 150", Druh = "" }).GetAwaiter().GetResult();
+            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(571), Vykres = "Vykres-02-37214", Rozmer = "o 4.2", Druh = "" }).GetAwaiter().GetResult();
+            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(124), Vykres = "Vykres-05-11624", Rozmer = "20x20", Druh = "" }).GetAwaiter().GetResult();
+            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(335), Vykres = "Vykres-11-72184", Rozmer = "170x3", Druh = "" }).GetAwaiter().GetResult();
+            proj.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(140), Vykres = "Vykres-12-37512", Rozmer = "o 100", Druh = "" }).GetAwaiter().GetResult();
+            proj.Handle(new DeaktivovanoNaradiEvent() { NaradiId = Id(101) }).GetAwaiter().GetResult();
+            proj.Handle(new DeaktivovanoNaradiEvent() { NaradiId = Id(571) }).GetAwaiter().GetResult();
+            proj.Handle(new DeaktivovanoNaradiEvent() { NaradiId = Id(140) }).GetAwaiter().GetResult();
+            proj.Handle(new AktivovanoNaradiEvent() { NaradiId = Id(140) }).GetAwaiter().GetResult();
             ProjectionShutdown(proj);
             SafeHandle(proj, new SystemEvents.SystemShutdown());
 
@@ -174,24 +174,24 @@ namespace Vydejna.Tests.SeznamNaradiTests
         public void ParalelniProjekce()
         {
             var proj1 = VytvoritProjection("A");
-            proj1.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(101), Vykres = "Vykres-01-55824", Rozmer = "o 150", Druh = "" });
-            proj1.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(571), Vykres = "Vykres-02-37214", Rozmer = "o 4.2", Druh = "" });
-            proj1.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(140), Vykres = "Vykres-12-37512", Rozmer = "o 100", Druh = "" });
-            proj1.Handle(new DeaktivovanoNaradiEvent() { NaradiId = Id(101) });
-            proj1.Handle(new DeaktivovanoNaradiEvent() { NaradiId = Id(140) });
-            proj1.Handle(new AktivovanoNaradiEvent() { NaradiId = Id(140) });
+            proj1.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(101), Vykres = "Vykres-01-55824", Rozmer = "o 150", Druh = "" }).GetAwaiter().GetResult();
+            proj1.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(571), Vykres = "Vykres-02-37214", Rozmer = "o 4.2", Druh = "" }).GetAwaiter().GetResult();
+            proj1.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(140), Vykres = "Vykres-12-37512", Rozmer = "o 100", Druh = "" }).GetAwaiter().GetResult();
+            proj1.Handle(new DeaktivovanoNaradiEvent() { NaradiId = Id(101) }).GetAwaiter().GetResult();
+            proj1.Handle(new DeaktivovanoNaradiEvent() { NaradiId = Id(140) }).GetAwaiter().GetResult();
+            proj1.Handle(new AktivovanoNaradiEvent() { NaradiId = Id(140) }).GetAwaiter().GetResult();
             ProjectionShutdown(proj1);
 
             var proj2 = VytvoritProjection("B");
-            proj2.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(101), Vykres = "Vykres-01-55824", Rozmer = "o 150", Druh = "" });
-            proj2.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(571), Vykres = "Vykres-02-37214", Rozmer = "o 4.2", Druh = "" });
-            proj2.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(140), Vykres = "Vykres-12-37512", Rozmer = "o 100", Druh = "" });
-            proj2.Handle(new DeaktivovanoNaradiEvent() { NaradiId = Id(101) });
-            proj2.Handle(new DeaktivovanoNaradiEvent() { NaradiId = Id(140) });
-            proj2.Handle(new AktivovanoNaradiEvent() { NaradiId = Id(140) });
-            proj2.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(124), Vykres = "Vykres-05-11624", Rozmer = "20x20", Druh = "" });
-            proj2.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(335), Vykres = "Vykres-11-72184", Rozmer = "170x3", Druh = "" });
-            proj2.Handle(new DeaktivovanoNaradiEvent() { NaradiId = Id(571) });
+            proj2.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(101), Vykres = "Vykres-01-55824", Rozmer = "o 150", Druh = "" }).GetAwaiter().GetResult();
+            proj2.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(571), Vykres = "Vykres-02-37214", Rozmer = "o 4.2", Druh = "" }).GetAwaiter().GetResult();
+            proj2.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(140), Vykres = "Vykres-12-37512", Rozmer = "o 100", Druh = "" }).GetAwaiter().GetResult();
+            proj2.Handle(new DeaktivovanoNaradiEvent() { NaradiId = Id(101) }).GetAwaiter().GetResult();
+            proj2.Handle(new DeaktivovanoNaradiEvent() { NaradiId = Id(140) }).GetAwaiter().GetResult();
+            proj2.Handle(new AktivovanoNaradiEvent() { NaradiId = Id(140) }).GetAwaiter().GetResult();
+            proj2.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(124), Vykres = "Vykres-05-11624", Rozmer = "20x20", Druh = "" }).GetAwaiter().GetResult();
+            proj2.Handle(new DefinovanoNaradiEvent() { NaradiId = Id(335), Vykres = "Vykres-11-72184", Rozmer = "170x3", Druh = "" }).GetAwaiter().GetResult();
+            proj2.Handle(new DeaktivovanoNaradiEvent() { NaradiId = Id(571) }).GetAwaiter().GetResult();
             ProjectionShutdown(proj2);
 
             var aktivni1Expect = new Guid[] { Id(571), Id(140)  };
@@ -212,7 +212,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
         {
             var handler = proj as IHandle<T>;
             if (handler != null)
-                handler.Handle(evt);
+                handler.Handle(evt).GetAwaiter().GetResult();
         }
 
         private void AssertGuidCollectionsEqual(IList<Guid> expected, IList<Guid> actual, string message)

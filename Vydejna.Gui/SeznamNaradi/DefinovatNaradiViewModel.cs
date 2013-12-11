@@ -11,8 +11,8 @@ using Vydejna.Gui.Common;
 namespace Vydejna.Gui.SeznamNaradi
 {
     public class DefinovatNaradiViewModel : ViewModelBase
-        , IHandle<UiMessages.ValidovanoDefinovatNaradi>
-        , IHandle<UiMessages.DokoncenaDefiniceOtevrena>
+        , IHandleSync<UiMessages.ValidovanoDefinovatNaradi>
+        , IHandleSync<UiMessages.DokoncenaDefiniceOtevrena>
     {
         private IDefinovatNaradiValidator _validator;
         private IWriteSeznamNaradi _writeSeznamNaradi;

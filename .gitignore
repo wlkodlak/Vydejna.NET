@@ -4,3 +4,4 @@ bin/
 *.suo
 TestResult.xml
 *.sln.VisualState.xml
+*.jmx

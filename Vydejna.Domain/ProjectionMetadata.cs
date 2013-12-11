@@ -189,14 +189,14 @@ namespace Vydejna.Domain
                     return ProjectionStatus.Inactive;
             }
 
-            private void RaiseChanges(List<ProjectionMetadataChanged> updatedInstances)
+            private async Task RaiseChanges(List<ProjectionMetadataChanged> updatedInstances)
             {
                 foreach (var evt in updatedInstances)
                 {
                     foreach (var registration in _changes)
                     {
                         if (registration.HandlesInstance(evt.InstanceName))
-                            registration.Invoke(evt);
+                            await registration.Invoke(evt);
                     }
                 }
             }
@@ -238,7 +238,7 @@ namespace Vydejna.Domain
                     }
                 }
                 await Save();
-                RaiseChanges(updatedInstances);
+                await RaiseChanges(updatedInstances);
             }
 
             public async Task Upgrade(string instanceName, string newVersion)
@@ -254,7 +254,7 @@ namespace Vydejna.Domain
                     }
                 }
                 await Save();
-                RaiseChanges(updatedInstances);
+                await RaiseChanges(updatedInstances);
             }
 
             public async Task UpdateStatus(string instanceName, ProjectionStatus status)
@@ -270,7 +270,7 @@ namespace Vydejna.Domain
                     }
                 }
                 await Save();
-                RaiseChanges(updatedInstances);
+                await RaiseChanges(updatedInstances);
             }
 
             public async Task<EventStoreToken> GetToken(string instanceName)
@@ -353,9 +353,9 @@ namespace Vydejna.Domain
 
             public string InstanceName { get { return _instanceName; } }
 
-            public void Invoke(ProjectionMetadataChanged evt)
+            public Task Invoke(ProjectionMetadataChanged evt)
             {
-                _handler.Handle(evt);
+                return _handler.Handle(evt);
             }
 
             public bool HandlesInstance(string instanceName)

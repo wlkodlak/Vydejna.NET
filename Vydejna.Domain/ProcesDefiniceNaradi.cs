@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
 using Vydejna.Contracts;
 
 namespace Vydejna.Domain
@@ -25,9 +26,9 @@ namespace Vydejna.Domain
             this._dokonceni = dokonceni;
         }
 
-        public void Handle(ZahajenaDefiniceNaradiEvent evt)
+        public Task Handle(ZahajenaDefiniceNaradiEvent evt)
         {
-            _definice.Handle(new DefinovatNaradiCommand
+            return _definice.Handle(new DefinovatNaradiCommand
             {
                 NaradiId = evt.NaradiId,
                 Vykres = evt.Vykres,
@@ -36,17 +37,17 @@ namespace Vydejna.Domain
             });
         }
 
-        public void Handle(ZahajenaAktivaceNaradiEvent evt)
+        public Task Handle(ZahajenaAktivaceNaradiEvent evt)
         {
-            _aktivace.Handle(new AktivovatNaradiCommand
+            return _aktivace.Handle(new AktivovatNaradiCommand
             {
                 NaradiId = evt.NaradiId
             });
         }
 
-        public void Handle(DefinovanoNaradiEvent evt)
+        public Task Handle(DefinovanoNaradiEvent evt)
         {
-            _dokonceni.Handle(new DokoncitDefiniciNaradiInternalCommand
+            return _dokonceni.Handle(new DokoncitDefiniciNaradiInternalCommand
             {
                 NaradiId = evt.NaradiId,
                 Vykres = evt.Vykres,

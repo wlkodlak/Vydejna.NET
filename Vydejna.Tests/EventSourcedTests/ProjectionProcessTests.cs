@@ -462,13 +462,15 @@ namespace Vydejna.Tests.EventSourcedTests
             public StringBuilder Contents = new StringBuilder();
             public bool InRebuildMode;
 
-            public void Handle(TestEvent1 evt)
+            public Task Handle(TestEvent1 evt)
             {
                 Contents.AppendFormat("1: {0}\r\n", evt.Data);
+                return TaskResult.GetCompletedTask();
             }
-            public void Handle(TestEvent2 evt)
+            public Task Handle(TestEvent2 evt)
             {
                 Contents.AppendFormat("2: {0}\r\n", evt.Data);
+                return TaskResult.GetCompletedTask();
             }
 
             public ProjectionRebuildType NeedsRebuild(string storedVersion)

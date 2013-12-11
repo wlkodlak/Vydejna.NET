@@ -23,8 +23,7 @@ namespace Vydejna.Tests.EventSourcedTests
         {
             var newMetadata = new ProjectionInstanceMetadata(instanceName, version, minimalReader, null, ProjectionStatus.NewBuild);
             _metadata[instanceName] = newMetadata;
-            RaiseChanges(new ProjectionMetadataChanged(newMetadata, null));
-            return TaskResult.GetCompletedTask();
+            return RaiseChanges(new ProjectionMetadataChanged(newMetadata, null));
         }
 
         public Task Upgrade(string instanceName, string newVersion)
@@ -32,8 +31,7 @@ namespace Vydejna.Tests.EventSourcedTests
             var old = _metadata[instanceName];
             var newMetadata = new ProjectionInstanceMetadata(old.Name, newVersion, old.MinimalReader, null, old.Status);
             _metadata[instanceName] = newMetadata;
-            RaiseChanges(new ProjectionMetadataChanged(newMetadata, null));
-            return TaskResult.GetCompletedTask();
+            return RaiseChanges(new ProjectionMetadataChanged(newMetadata, null));
         }
 
         public Task UpdateStatus(string instanceName, ProjectionStatus status)
@@ -41,15 +39,14 @@ namespace Vydejna.Tests.EventSourcedTests
             var old = _metadata[instanceName];
             var newMetadata = new ProjectionInstanceMetadata(old.Name, old.Version, old.MinimalReader, null, status);
             _metadata[instanceName] = newMetadata;
-            RaiseChanges(new ProjectionMetadataChanged(newMetadata, null));
-            return TaskResult.GetCompletedTask();
+            return RaiseChanges(new ProjectionMetadataChanged(newMetadata, null));
         }
 
-        private void RaiseChanges(ProjectionMetadataChanged evt)
+        private async Task RaiseChanges(ProjectionMetadataChanged evt)
         {
             var handlers = _changes.Where(t => t.Item1 == null || t.Item1 == evt.InstanceName).Select(i => i.Item2).ToList();
             foreach (var handler in handlers)
-                handler.Handle(evt);
+                await handler.Handle(evt);
         }
 
         public Task<EventStoreToken> GetToken(string instanceName)
