@@ -13,9 +13,9 @@ namespace Vydejna.Domain
         Task Save(Naradi naradi);
     }
 
-    public class NaradiRepositoryInMemory : EventSourcedRepository<Naradi>, INaradiRepository
+    public class NaradiRepository : EventSourcedRepository<Naradi>, INaradiRepository
     {
-        public NaradiRepositoryInMemory(IEventStore store, string prefix, IEventSourcedSerializer serializer)
+        public NaradiRepository(IEventStore store, string prefix, IEventSourcedSerializer serializer)
             : base(store, prefix, serializer)
         {
         }

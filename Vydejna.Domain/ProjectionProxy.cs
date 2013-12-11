@@ -7,12 +7,12 @@ using Vydejna.Contracts;
 
 namespace Vydejna.Domain
 {
-    public abstract class ProjectionProxy<T> : IHandle<ProjectionMetadataChanged>
-         where T : class, IProjectionReader
+    public abstract class ProjectionProxy<TReader> : IHandle<ProjectionMetadataChanged>
+        where TReader : class, IProjectionReader
     {
         private IProjectionMetadataManager _mgr;
         private List<ReaderInfo> _readers;
-        private T _currentReader;
+        private TReader _currentReader;
         private string _currentInstance;
         private string _projectionName;
         private IProjectionMetadata _metadata;
@@ -26,17 +26,17 @@ namespace Vydejna.Domain
 
         private class ReaderInfo
         {
-            public T Reader;
+            public TReader Reader;
             public ProjectionInstanceMetadata BestMetadata;
             public ProjectionReadability Readability;
 
-            public ReaderInfo(T reader)
+            public ReaderInfo(TReader reader)
             {
                 this.Reader = reader;
             }
         }
 
-        protected T Reader
+        protected TReader Reader
         {
             get { return _currentReader; }
         }
@@ -50,7 +50,7 @@ namespace Vydejna.Domain
             _comparer = new ComparerForMetadata();
         }
 
-        public void Register(T reader)
+        public void Register(TReader reader)
         {
             lock (_lock)
             {
@@ -175,7 +175,7 @@ namespace Vydejna.Domain
             }
             while (performPick)
             {
-                T originalReader;
+                TReader originalReader;
 
                 lock (_lock)
                 {
@@ -249,7 +249,7 @@ namespace Vydejna.Domain
             return PickInstanceNofification.None;
         }
 
-        private void SendNotifications(T originalReader, PickInstanceNofification notifications)
+        private void SendNotifications(TReader originalReader, PickInstanceNofification notifications)
         {
             if ((notifications & PickInstanceNofification.ResetOriginalInstance) != PickInstanceNofification.None)
                 if (originalReader != null)
@@ -260,7 +260,7 @@ namespace Vydejna.Domain
                 OnReaderChanged(originalReader);
         }
 
-        protected virtual void OnReaderChanged(T original)
+        protected virtual void OnReaderChanged(TReader original)
         {
         }
     }

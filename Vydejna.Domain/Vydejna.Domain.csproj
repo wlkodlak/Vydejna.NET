@@ -46,9 +46,11 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Bootstrap.cs" />
     <Compile Include="Bus.cs" />
     <Compile Include="DocumentStore.cs" />
     <Compile Include="EventConsumer.cs" />
+    <Compile Include="EventProcess.cs" />
     <Compile Include="EventSourced.cs" />
     <Compile Include="EventStreamingIndividual.cs" />
     <Compile Include="EventStore.cs" />

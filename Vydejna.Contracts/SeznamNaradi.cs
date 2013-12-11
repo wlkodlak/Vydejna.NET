@@ -240,4 +240,29 @@ namespace Vydejna.Contracts
     {
         public Guid NaradiId;
     }
+
+    public static class VydejnaContractList
+    {
+        public static void RegisterTypes(TypeMapper mapper)
+        {
+            mapper.Register<ZiskatSeznamNaradiRequest>();
+            mapper.Register<ZiskatSeznamNaradiResponse>();
+            mapper.Register<TypNaradiDto>();
+            mapper.Register<OvereniUnikatnostiRequest>();
+            mapper.Register<OvereniUnikatnostiResponse>();
+
+            mapper.Register<AktivovatNaradiCommand>();
+            mapper.Register<DeaktivovatNaradiCommand>();
+            mapper.Register<DefinovatNaradiCommand>();
+            mapper.Register<DefinovatNaradiInternalCommand>();
+            mapper.Register<DokoncitDefiniciNaradiInternalCommand>();
+
+            mapper.Register<DefinovanoNaradiEvent>();
+            mapper.Register<AktivovanoNaradiEvent>();
+            mapper.Register<DeaktivovanoNaradiEvent>();
+            mapper.Register<ZahajenaDefiniceNaradiEvent>();
+            mapper.Register<DokoncenaDefiniceNaradiEvent>();
+            mapper.Register<ZahajenaAktivaceNaradiEvent>();
+        }
+    }
 }

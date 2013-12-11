@@ -12,17 +12,17 @@ namespace Vydejna.Domain
     public interface IProjectionProcessHandlerCollection
     {
         IHandleRegistration<T> Register<T>(IHandle<T> handler);
-        void Handle(Type type, object evt);
+        Task Handle(Type type, object evt);
         ICollection<Type> HandledTypes();
     }
 
     public class ProjectionProcessHandlers : IProjectionProcessHandlerCollection
     {
-        private Dictionary<Type, Action<object>> _handlers;
+        private Dictionary<Type, Func<object, Task>> _handlers;
 
         public ProjectionProcessHandlers()
         {
-            _handlers = new Dictionary<Type, Action<object>>();
+            _handlers = new Dictionary<Type, Func<object, Task>>();
         }
 
         public IHandleRegistration<T> Register<T>(IHandle<T> handler)
@@ -31,7 +31,7 @@ namespace Vydejna.Domain
             return new Registration<T>(this);
         }
 
-        private static Action<object> CreateDispatchableHandler<T>(IHandle<T> handler)
+        private static Func<object, Task> CreateDispatchableHandler<T>(IHandle<T> handler)
         {
             // return o => handler.Handle((T)o);
             var param = Expression.Parameter(typeof(object), "o");
@@ -39,7 +39,7 @@ namespace Vydejna.Domain
             var handleMethod = typeof(IHandle<T>).GetMethod("Handle");
             var invoke = Expression.Call(Expression.Constant(handler), handleMethod, cast);
             var name = "Handle_" + typeof(T).Name;
-            return Expression.Lambda<Action<object>>(invoke, name, new[] { param }).Compile();
+            return Expression.Lambda<Func<object, Task>>(invoke, name, new[] { param }).Compile();
         }
 
         private class Registration<T> : IHandleRegistration<T>
@@ -56,15 +56,17 @@ namespace Vydejna.Domain
             }
         }
 
-        public void Handle(Type type, object evt)
+        public Task Handle(Type type, object evt)
         {
-            Action<object> handler;
-            if (evt == null)
-                return;
-            if (type == null)
-                type = evt.GetType();
-            if (_handlers.TryGetValue(type, out handler))
-                handler(evt);
+            Func<object, Task> handler;
+            if (evt != null)
+            {
+                if (type == null)
+                    type = evt.GetType();
+                if (_handlers.TryGetValue(type, out handler))
+                    return handler(evt);
+            }
+            return TaskResult.GetCompletedTask();
         }
 
         public ICollection<Type> HandledTypes()
@@ -237,7 +239,7 @@ namespace Vydejna.Domain
                         }
 
                         var objectEvent = _serializer.Deserialize(storedEvent);
-                        _handlers.Handle(null, objectEvent);
+                        await _handlers.Handle(null, objectEvent);
                         _currentToken = storedEvent.Token;
 
                         if (!_isInBatchMode && !_isInRebuildMode)

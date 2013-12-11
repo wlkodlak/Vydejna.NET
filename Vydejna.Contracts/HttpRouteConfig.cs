@@ -72,6 +72,21 @@ namespace Vydejna.Contracts
             }
         }
 
+        private class DelegatedProcessor : IHttpProcessor
+        {
+            private Func<HttpServerRequest, Task<object>> _handler;
+
+            public DelegatedProcessor(Func<HttpServerRequest, Task<object>> handler)
+            {
+                _handler = handler;
+            }
+
+            public async Task<object> Process(HttpServerRequest request)
+            {
+                return _handler(request);
+            }
+        }
+
         private class Configurator : IHttpRouteConfigRouteWithDirect, IHttpRouteConfigCommon, IHttpRouteConfigComponents
         {
             private string _pattern;
@@ -195,6 +210,12 @@ namespace Vydejna.Contracts
             IHttpRouteConfigComponents IHttpRouteConfigRoute.To(IHttpProcessor processor)
             {
                 _processor = processor;
+                return this;
+            }
+
+            IHttpRouteConfigComponents IHttpRouteConfigRoute.To(Func<HttpServerRequest, Task<object>> handler)
+            {
+                _processor = new DelegatedProcessor(handler);
                 return this;
             }
 
@@ -376,6 +397,7 @@ namespace Vydejna.Contracts
     {
         IHttpRouteConfigRoute Clean();
         IHttpRouteConfigComponents To(IHttpProcessor processor);
+        IHttpRouteConfigComponents To(Func<HttpServerRequest, Task<object>> handler);
         IHttpRouteConfigParametrized<T> Parametrized<T>(Func<HttpServerRequest, Task<T>> translator);
         IHttpRouteConfigRoute Prefixed(string prefix);
     }

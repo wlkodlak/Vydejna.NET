@@ -10,13 +10,18 @@ namespace Vydejna.Domain
 {
     public class SeznamNaradiRest
     {
-        private SeznamNaradiService _writeSvc;
-        private SeznamNaradiProjection _readSvc;
+        private IWriteSeznamNaradi _writeSvc;
+        private IReadSeznamNaradi _readSvc;
 
-        public SeznamNaradiRest(SeznamNaradiService writeSvc, SeznamNaradiProjection readSvc)
+        public SeznamNaradiRest(IWriteSeznamNaradi writeSvc, IReadSeznamNaradi readSvc)
         {
             _writeSvc = writeSvc;
             _readSvc = readSvc;
+        }
+
+        public Task<AktivovatNaradiCommand> AktivovatNaradi(HttpServerRequest request)
+        {
+            return TaskResult.GetCompletedTask((AktivovatNaradiCommand)request.PostDataObject);
         }
 
         public Task<object> AktivovatNaradi(AktivovatNaradiCommand cmd)
@@ -24,9 +29,19 @@ namespace Vydejna.Domain
             return HandleCommand(_writeSvc, cmd);
         }
 
+        public Task<DeaktivovatNaradiCommand> DeaktivovatNaradi(HttpServerRequest request)
+        {
+            return TaskResult.GetCompletedTask((DeaktivovatNaradiCommand)request.PostDataObject);
+        }
+
         public Task<object> DeaktivovatNaradi(DeaktivovatNaradiCommand cmd)
         {
             return HandleCommand(_writeSvc, cmd);
+        }
+
+        public Task<DefinovatNaradiCommand> DefinovatNaradi(HttpServerRequest request)
+        {
+            return TaskResult.GetCompletedTask((DefinovatNaradiCommand)request.PostDataObject);
         }
 
         public Task<object> DefinovatNaradi(DefinovatNaradiCommand cmd)

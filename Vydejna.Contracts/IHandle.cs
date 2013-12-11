@@ -46,5 +46,17 @@ namespace Vydejna.Contracts
             tcs.SetException(exception);
             return tcs.Task;
         }
+
+        public static Task GetCancelledTask()
+        {
+            var tcs = new TaskCompletionSource<object>();
+            tcs.SetCanceled();
+            return tcs.Task;
+        }
+
+        public static Task GetFailedTask(Exception ex)
+        {
+            return GetFailedTask<object>(ex);
+        }
     }
 }

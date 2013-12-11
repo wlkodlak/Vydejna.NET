@@ -26,6 +26,12 @@ namespace Vydejna.Domain
         {
             return Reader.Handle(request);
         }
+
+        public SeznamNaradiProxy Register(SeznamNaradiReader reader)
+        {
+            Register(reader);
+            return this;
+        }
     }
 
     public class SeznamNaradiReader : IReadSeznamNaradi, IProjectionReader
@@ -40,11 +46,12 @@ namespace Vydejna.Domain
             _projections = new Dictionary<string, IReadSeznamNaradi>();
         }
 
-        public void Register(string instanceName, IReadSeznamNaradi projection)
+        public SeznamNaradiReader Register(string instanceName, IReadSeznamNaradi projection)
         {
             _projections[instanceName] = projection;
             if (string.Equals(_usedInstance, instanceName, StringComparison.Ordinal))
                 _activeProjection = projection;
+            return this;
         }
 
         public Task<ZiskatSeznamNaradiResponse> Handle(ZiskatSeznamNaradiRequest request)

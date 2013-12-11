@@ -13,9 +13,9 @@ namespace Vydejna.Domain
         Task Save(UnikatnostNaradi unikatnost);
     }
 
-    public class UnikatnostNaradiRepositoryInMemory : EventSourcedRepository<UnikatnostNaradi>, IUnikatnostNaradiRepository
+    public class UnikatnostNaradiRepository : EventSourcedRepository<UnikatnostNaradi>, IUnikatnostNaradiRepository
     {
-        public UnikatnostNaradiRepositoryInMemory(IEventStore store, string prefix, IEventSourcedSerializer serializer)
+        public UnikatnostNaradiRepository(IEventStore store, string prefix, IEventSourcedSerializer serializer)
             : base(store, prefix, serializer)
         {
         }

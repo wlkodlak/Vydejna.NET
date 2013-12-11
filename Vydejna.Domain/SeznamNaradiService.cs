@@ -8,9 +8,7 @@ using Vydejna.Contracts;
 namespace Vydejna.Domain
 {
     public class SeznamNaradiService
-        : IHandle<AktivovatNaradiCommand>
-        , IHandle<DeaktivovatNaradiCommand>
-        , IHandle<DefinovatNaradiCommand>
+        : IWriteSeznamNaradi
         , IHandle<DefinovatNaradiInternalCommand>
         , IHandle<DokoncitDefiniciNaradiInternalCommand>
     {
