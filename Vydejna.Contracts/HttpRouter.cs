@@ -55,20 +55,26 @@ namespace Vydejna.Contracts
         private RoutePath _paths;
         private List<RouteConfiguration> _routes;
         private RoutePathComparer _pathComparer;
+        private UpdateLock _lock;
+
         public HttpRouter()
         {
             _routes = new List<RouteConfiguration>();
             _paths = new RoutePath(null, true);
             _pathComparer = new RoutePathComparer();
+            _lock = new UpdateLock();
         }
 
         public HttpUsedRoute FindRoute(string url)
         {
-            if (_routes.Count == 0)
-                return null;
-            var urlParts = ParametrizedUrl.UrlForMatching(url);
-            var candidates = FindCandidates(urlParts);
-            return FindRouteFromCandidates(urlParts, candidates);
+            using (_lock.Read())
+            {
+                if (_routes.Count == 0)
+                    return null;
+                var urlParts = ParametrizedUrl.UrlForMatching(url);
+                var candidates = FindCandidates(urlParts);
+                return FindRouteFromCandidates(urlParts, candidates);
+            }
         }
 
         private IEnumerable<RouteConfiguration> FindCandidates(ParametrizedUrlParts urlParts)
@@ -100,15 +106,19 @@ namespace Vydejna.Contracts
 
         public void AddRoute(string pattern, IHttpRouteHandler handler, IEnumerable<string> overridePrefix = null)
         {
-            var route = new RouteConfiguration { Handler = handler, Url = new ParametrizedUrl(pattern) };
-            _routes.Add(route);
-            AddPrefix(route.Url.Prefix, route);
-            if (overridePrefix != null)
+            using (_lock.Update())
             {
-                foreach (var prefixString in overridePrefix)
+                var route = new RouteConfiguration { Handler = handler, Url = new ParametrizedUrl(pattern) };
+                _lock.Write();
+                _routes.Add(route);
+                AddPrefix(route.Url.Prefix, route);
+                if (overridePrefix != null)
                 {
-                    var overridenPath = new ParametrizedUrl(prefixString);
-                    AddPrefix(overridenPath.Prefix, route);
+                    foreach (var prefixString in overridePrefix)
+                    {
+                        var overridenPath = new ParametrizedUrl(prefixString);
+                        AddPrefix(overridenPath.Prefix, route);
+                    }
                 }
             }
         }
