@@ -17,14 +17,14 @@ namespace Vydejna.Domain
         {
         }
 
-        public Task<SeznamNaradiDto> NacistSeznamNaradi(int offset, int maxPocet)
+        public Task<ZiskatSeznamNaradiResponse> Handle(ZiskatSeznamNaradiRequest request)
         {
-            return Reader.NacistSeznamNaradi(offset, maxPocet);
+            return Reader.Handle(request);
         }
 
-        public Task<OvereniUnikatnostiDto> OveritUnikatnost(string vykres, string rozmer)
+        public Task<OvereniUnikatnostiResponse> Handle(OvereniUnikatnostiRequest request)
         {
-            return Reader.OveritUnikatnost(vykres, rozmer);
+            return Reader.Handle(request);
         }
     }
 
@@ -47,14 +47,14 @@ namespace Vydejna.Domain
                 _activeProjection = projection;
         }
 
-        public Task<SeznamNaradiDto> NacistSeznamNaradi(int offset, int maxPocet)
+        public Task<ZiskatSeznamNaradiResponse> Handle(ZiskatSeznamNaradiRequest request)
         {
-            return _activeProjection.NacistSeznamNaradi(offset, maxPocet);
+            return _activeProjection.Handle(request);
         }
 
-        public Task<OvereniUnikatnostiDto> OveritUnikatnost(string vykres, string rozmer)
+        public Task<OvereniUnikatnostiResponse> Handle(OvereniUnikatnostiRequest request)
         {
-            return _activeProjection.OveritUnikatnost(vykres, rozmer);
+            return _activeProjection.Handle(request);
         }
 
         public string GetVersion()
@@ -83,14 +83,14 @@ namespace Vydejna.Domain
 
         private class SeznamNaradiDisabledProjection : IReadSeznamNaradi
         {
-            public Task<SeznamNaradiDto> NacistSeznamNaradi(int offset, int maxPocet)
+            public Task<ZiskatSeznamNaradiResponse> Handle(ZiskatSeznamNaradiRequest request)
             {
-                return TaskResult.GetFailedTask<SeznamNaradiDto>(new NotSupportedException("IReadSeznamNaradi.NacistSeznamNaradi has no handler"));
+                return TaskResult.GetFailedTask<ZiskatSeznamNaradiResponse>(new NotSupportedException("IReadSeznamNaradi.NacistSeznamNaradi has no handler"));
             }
 
-            public Task<OvereniUnikatnostiDto> OveritUnikatnost(string vykres, string rozmer)
+            public Task<OvereniUnikatnostiResponse> Handle(OvereniUnikatnostiRequest request)
             {
-                return TaskResult.GetFailedTask<OvereniUnikatnostiDto>(new NotSupportedException("IReadSeznamNaradi.NacistSeznamNaradi has no handler"));
+                return TaskResult.GetFailedTask<OvereniUnikatnostiResponse>(new NotSupportedException("IReadSeznamNaradi.NacistSeznamNaradi has no handler"));
             }
         }
     }
@@ -172,23 +172,23 @@ namespace Vydejna.Domain
             }
         }
 
-        public Task<SeznamNaradiDto> NacistSeznamNaradi(int offset, int maxPocet)
+        public Task<ZiskatSeznamNaradiResponse> Handle(ZiskatSeznamNaradiRequest request)
         {
             using (_lock.Read())
             {
-                var filtrovano = _data.Skip(offset).Take(maxPocet).Select(i => i.Dto);
-                var dto = new SeznamNaradiDto() { Offset = offset, PocetCelkem = _data.Count };
+                var filtrovano = _data.Skip(request.Offset).Take(request.MaxPocet).Select(i => i.Dto);
+                var dto = new ZiskatSeznamNaradiResponse() { Offset = request.Offset, PocetCelkem = _data.Count };
                 dto.SeznamNaradi.AddRange(filtrovano);
                 return TaskResult.GetCompletedTask(dto);
             }
         }
 
-        public Task<OvereniUnikatnostiDto> OveritUnikatnost(string vykres, string rozmer)
+        public Task<OvereniUnikatnostiResponse> Handle(OvereniUnikatnostiRequest request)
         {
             using (_lock.Read())
             {
-                var existuje = _existujici.Contains(KlicUnikatnosti(vykres, rozmer));
-                var dto = new OvereniUnikatnostiDto() { Vykres = vykres, Rozmer = rozmer, Existuje = existuje };
+                var existuje = _existujici.Contains(KlicUnikatnosti(request.Vykres, request.Rozmer));
+                var dto = new OvereniUnikatnostiResponse() { Vykres = request.Vykres, Rozmer = request.Rozmer, Existuje = existuje };
                 return TaskResult.GetCompletedTask(dto);
             }
         }

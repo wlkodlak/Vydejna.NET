@@ -15,8 +15,8 @@ namespace Vydejna.Gui.Common
 
         public class NactenSeznamNaradi
         {
-            public SeznamNaradiDto SeznamNaradiDto { get; private set; }
-            public NactenSeznamNaradi(SeznamNaradiDto dto) { this.SeznamNaradiDto = dto; }
+            public ZiskatSeznamNaradiResponse SeznamNaradiDto { get; private set; }
+            public NactenSeznamNaradi(ZiskatSeznamNaradiResponse dto) { this.SeznamNaradiDto = dto; }
         }
 
         public class ValidovanoDefinovatNaradi

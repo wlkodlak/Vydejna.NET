@@ -75,7 +75,7 @@ namespace Vydejna.Gui.SeznamNaradi
             if (naradi.Aktivni)
                 return;
             var cmd = new AktivovatNaradiCommand { NaradiId = naradi.Id };
-            _writeSvc.AktivovatNaradi(cmd);
+            _writeSvc.Handle(cmd);
             naradi.Aktivni = true;
         }
 
@@ -85,7 +85,7 @@ namespace Vydejna.Gui.SeznamNaradi
             if (!naradi.Aktivni)
                 return;
             var cmd = new DeaktivovatNaradiCommand { NaradiId = naradi.Id };
-            _writeSvc.DeaktivovatNaradi(cmd);
+            _writeSvc.Handle(cmd);
             naradi.Aktivni = false;
         }
 
@@ -123,7 +123,7 @@ namespace Vydejna.Gui.SeznamNaradi
 
         private async Task NacistSeznamNaradi()
         {
-            var seznam = await _readSvc.NacistSeznamNaradi(0, int.MaxValue);
+            var seznam = await _readSvc.Handle(new  ZiskatSeznamNaradiRequest(0, int.MaxValue));
             Handle(new UiMessages.NactenSeznamNaradi(seznam));
         }
 

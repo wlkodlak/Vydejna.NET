@@ -20,7 +20,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
         [TestMethod]
         public void ZiskatSeznamNaradi()
         {
-            var responseDto = new SeznamNaradiDto() { Offset = 40, PocetCelkem = 48 };
+            var responseDto = new ZiskatSeznamNaradiResponse() { Offset = 40, PocetCelkem = 48 };
             for (int i = 0; i < 8; i++)
                 responseDto.SeznamNaradi.Add(new TypNaradiDto(Guid.NewGuid(), "001-" + i, i + "x" + i, "", true));
 
@@ -34,7 +34,8 @@ namespace Vydejna.Tests.SeznamNaradiTests
                 .Build();
 
             var svc = new ReadSeznamNaradiClient("http://localhost:4472/", tester.HttpClient);
-            var returnedDto = tester.RunTest(() => svc.NacistSeznamNaradi(40, 20));
+            var request = new ZiskatSeznamNaradiRequest(40, 20);
+            var returnedDto = tester.RunTest(() => svc.Handle(request));
 
             CollectionAssert.AreEqual(new byte[0], tester.Request.Body, "Body");
 
@@ -55,7 +56,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
         [TestMethod]
         public void ZiskatUnikatnostNaradi()
         {
-            var responseDto = new OvereniUnikatnostiDto()
+            var responseDto = new OvereniUnikatnostiResponse()
             {
                 Vykres = "578-5577-25",
                 Rozmer = "450x20x20",
@@ -72,7 +73,8 @@ namespace Vydejna.Tests.SeznamNaradiTests
                 .Build();
 
             var svc = new ReadSeznamNaradiClient("http://localhost:4472/", tester.HttpClient);
-            var returnedDto = tester.RunTest(() => svc.OveritUnikatnost("578-5577-25", "450x20x20"));
+            var request = new OvereniUnikatnostiRequest("578-5577-25", "450x20x20");
+            var returnedDto = tester.RunTest(() => svc.Handle(request));
             CollectionAssert.AreEqual(new byte[0], tester.Request.Body, "Body");
 
             Assert.IsNotNull(returnedDto, "No response returned");

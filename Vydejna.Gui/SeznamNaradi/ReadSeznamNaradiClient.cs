@@ -18,22 +18,22 @@ namespace Vydejna.Gui.SeznamNaradi
             this._client = client;
         }
 
-        public async Task<SeznamNaradiDto> NacistSeznamNaradi(int offset, int maxPocet)
+        public async Task<ZiskatSeznamNaradiResponse> Handle(ZiskatSeznamNaradiRequest request)
         {
             var json = new RestClientJson(_url + "SeznamNaradi", _client)
-                .AddParameter("offset", offset.ToString())
-                .AddParameter("pocet", maxPocet.ToString());
+                .AddParameter("offset", request.Offset.ToString())
+                .AddParameter("pocet", request.MaxPocet.ToString());
             var result = await json.Execute();
-            return result.GetPayload<SeznamNaradiDto>();
+            return result.GetPayload<ZiskatSeznamNaradiResponse>();
         }
 
-        public async Task<OvereniUnikatnostiDto> OveritUnikatnost(string vykres, string rozmer)
+        public async Task<OvereniUnikatnostiResponse> Handle(OvereniUnikatnostiRequest request)
         {
             var json = new RestClientJson(_url + "OveritUnikatnost", _client)
-                .AddParameter("vykres", vykres)
-                .AddParameter("rozmer", rozmer);
+                .AddParameter("vykres", request.Vykres)
+                .AddParameter("rozmer", request.Rozmer);
             var result = await json.Execute();
-            return result.GetPayload<OvereniUnikatnostiDto>();
+            return result.GetPayload<OvereniUnikatnostiResponse>();
         }
     }
 }

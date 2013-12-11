@@ -40,9 +40,9 @@ namespace Vydejna.Tests.SeznamNaradiTests
             return projekce;
         }
 
-        private static SeznamNaradiDto ZiskatVsechnoNaradi(SeznamNaradiProjection proj)
+        private static ZiskatSeznamNaradiResponse ZiskatVsechnoNaradi(SeznamNaradiProjection proj)
         {
-            return proj.NacistSeznamNaradi(0, int.MaxValue).GetAwaiter().GetResult();
+            return proj.Handle(new ZiskatSeznamNaradiRequest(0, int.MaxValue)).GetAwaiter().GetResult();
         }
 
         private static Guid Id(int number)
@@ -139,7 +139,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
 
         private void TestOvereniUnikatnosti(SeznamNaradiProjection proj, string vykres, string rozmer, bool existuje)
         {
-            var dto = proj.OveritUnikatnost(vykres, rozmer).GetAwaiter().GetResult();
+            var dto = proj.Handle(new OvereniUnikatnostiRequest(vykres, rozmer)).GetAwaiter().GetResult();
             Assert.AreEqual(existuje, dto.Existuje, "Existence {0} {1}", vykres, rozmer);
             Assert.AreEqual(vykres, dto.Vykres, "Vykres {0}", vykres);
             Assert.AreEqual(rozmer, dto.Rozmer, "Rozmer {0}", rozmer);

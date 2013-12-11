@@ -47,7 +47,7 @@ namespace Vydejna.Gui.SeznamNaradi
                 Rozmer = _rozmer,
                 Druh = _druh
             };
-            await _writeSeznamNaradi.DefinovatNaradi(cmd);
+            await _writeSeznamNaradi.Handle(cmd);
             _bus.Publish(new UiMessages.DokoncenaDefiniceNaradi());
         }
 

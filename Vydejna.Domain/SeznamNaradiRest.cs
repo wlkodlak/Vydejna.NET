@@ -78,14 +78,14 @@ namespace Vydejna.Domain
         {
             int offset = request.Parameter("offset").AsInteger().Optional(0);
             int pocet = request.Parameter("pocet").AsInteger().Optional(int.MaxValue);
-            return await _readSvc.NacistSeznamNaradi(offset, pocet);
+            return await _readSvc.Handle(new ZiskatSeznamNaradiRequest(offset, pocet));
         }
 
         public async Task<object> OveritUnikatnost(HttpServerRequest request)
         {
             string vykres = request.Parameter("vykres").AsString().Mandatory();
             string rozmer = request.Parameter("rozmer").AsString().Mandatory();
-            return await _readSvc.OveritUnikatnost(vykres, rozmer);
+            return await _readSvc.Handle(new OvereniUnikatnostiRequest(vykres, rozmer));
         }
     }
 }

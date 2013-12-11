@@ -61,7 +61,7 @@ namespace Vydejna.Gui.SeznamNaradi
 
         private async Task ZkontrolovatUnikatnost(Validace validace)
         {
-            var overeni = await _readSvc.OveritUnikatnost(validace.Vstup.Vykres, validace.Vstup.Rozmer);
+            var overeni = await _readSvc.Handle(new OvereniUnikatnostiRequest(validace.Vstup.Vykres, validace.Vstup.Rozmer));
             if (overeni.Existuje)
             {
                 validace.Vysledek.Chyba("Vykres", "Kombinace výkresu a rozměru musí být unikátní");

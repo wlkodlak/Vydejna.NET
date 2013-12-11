@@ -13,7 +13,7 @@ namespace Vydejna.Contracts
 
     public interface IAnswer<TQuestion, TAnswer>
     {
-        Task<TAnswer> Handle(TQuestion);
+        Task<TAnswer> Handle(TQuestion request);
     }
 
     public interface IHandleSync<T>

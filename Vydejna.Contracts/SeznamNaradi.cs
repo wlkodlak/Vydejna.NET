@@ -7,25 +7,110 @@ using System.Threading.Tasks;
 namespace Vydejna.Contracts
 {
     public interface IReadSeznamNaradi
+        : IAnswer<ZiskatSeznamNaradiRequest, ZiskatSeznamNaradiResponse>
+        , IAnswer<OvereniUnikatnostiRequest, OvereniUnikatnostiResponse>
     {
-        Task<SeznamNaradiDto> NacistSeznamNaradi(int offset, int maxPocet);
-        Task<OvereniUnikatnostiDto> OveritUnikatnost(string vykres, string rozmer);
     }
 
     public interface IWriteSeznamNaradi
+        : IHandle<AktivovatNaradiCommand>
+        , IHandle<DeaktivovatNaradiCommand>
+        , IHandle<DefinovatNaradiCommand>
     {
-        Task AktivovatNaradi(AktivovatNaradiCommand cmd);
-        Task DeaktivovatNaradi(DeaktivovatNaradiCommand cmd);
-        Task DefinovatNaradi(DefinovatNaradiCommand definovatNaradiCommand);
     }
 
-    public class SeznamNaradiDto
+    public static class DtoUtils
+    {
+        public static int GetHashCode<T>(T obj)
+        {
+            unchecked
+            {
+                var type = typeof(T);
+                int hash = 48972847;
+                foreach (var property in type.GetProperties())
+                {
+                    var value = property.GetValue(obj);
+                    hash *= 30481;
+                    if (value != null)
+                        hash += value.GetHashCode();
+                }
+                return hash;
+            }
+        }
+
+        public static bool Equals<T>(T a, object b)
+        {
+            if (ReferenceEquals(a, null))
+                return ReferenceEquals(b, null);
+            else if (ReferenceEquals(b, null))
+                return false;
+            else if (a.GetType() != typeof(T) || b.GetType() != typeof(T))
+                return false;
+            else
+            {
+                foreach (var property in typeof(T).GetProperties())
+                {
+                    var valA = property.GetValue(a);
+                    var valB = property.GetValue(b);
+                    if (!object.Equals(valA, valB))
+                        return false;
+                }
+                return true;
+            }
+        }
+
+        public static string ToString<T>(T obj)
+        {
+            if (ReferenceEquals(obj, null))
+                return "null";
+            var sb = new StringBuilder();
+            sb.Append(typeof(T).Name).Append(" { ");
+            bool first = true;
+            foreach (var property in typeof(T).GetProperties())
+            {
+                var value = property.GetValue(obj);
+                if (first)
+                    first = false;
+                else
+                    sb.Append(", ");
+                sb.Append(property.Name).Append(" = ").Append(value);
+            }
+            sb.Append(first ? "}" : " }");
+            return sb.ToString();
+        }
+    }
+
+    public class ZiskatSeznamNaradiRequest
+    {
+        public ZiskatSeznamNaradiRequest(int offset, int pocet)
+        {
+            this.Offset = offset;
+            this.MaxPocet = pocet;
+        }
+        public int Offset { get; set; }
+        public int MaxPocet { get; set; }
+
+        public override bool Equals(object obj)
+        {
+            return DtoUtils.Equals(this, obj);
+        }
+        public override int GetHashCode()
+        {
+            return DtoUtils.GetHashCode(this);
+        }
+        public override string ToString()
+        {
+            return DtoUtils.ToString(this);
+        }
+    }
+
+    public class ZiskatSeznamNaradiResponse
     {
         public int Offset { get; set; }
         public int PocetCelkem { get; set; }
         public List<TypNaradiDto> SeznamNaradi { get; set; }
 
-        public SeznamNaradiDto()
+        public ZiskatSeznamNaradiResponse()
         {
             this.Offset = 0;
             this.PocetCelkem = 0;
@@ -51,7 +136,32 @@ namespace Vydejna.Contracts
         }
     }
 
-    public class OvereniUnikatnostiDto
+    public class OvereniUnikatnostiRequest
+    {
+        public string Vykres { get; set; }
+        public string Rozmer { get; set; }
+
+        public OvereniUnikatnostiRequest(string vykres, string rozmer)
+        {
+            this.Vykres = vykres;
+            this.Rozmer = rozmer;
+        }
+
+        public override bool Equals(object obj)
+        {
+            return DtoUtils.Equals(this, obj);
+        }
+        public override int GetHashCode()
+        {
+            return DtoUtils.GetHashCode(this);
+        }
+        public override string ToString()
+        {
+            return DtoUtils.ToString(this);
+        }
+    }
+
+    public class OvereniUnikatnostiResponse
     {
         public string Vykres { get; set; }
         public string Rozmer { get; set; }

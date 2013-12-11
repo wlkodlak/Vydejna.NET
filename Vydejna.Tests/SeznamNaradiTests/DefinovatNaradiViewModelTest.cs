@@ -121,7 +121,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
             DefinovatNaradiCommand cmd = null;
             _validator.Setup(v => v.Zkontrolovat(It.IsAny<DefinovatNaradiValidace>()));
             _writeSvc
-                .Setup(s => s.DefinovatNaradi(It.IsAny<DefinovatNaradiCommand>()))
+                .Setup(s => s.Handle(It.IsAny<DefinovatNaradiCommand>()))
                 .Returns<DefinovatNaradiCommand>(c => { cmd = c; return task.Task; });
             var vm = VytvoritViewModel();
             vm.Vykres = "557-4711-547";
@@ -143,7 +143,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
                 DefinovatNaradiCommand cmd = null;
                 _validator.Setup(v => v.Zkontrolovat(It.IsAny<DefinovatNaradiValidace>()));
                 _writeSvc
-                    .Setup(s => s.DefinovatNaradi(It.IsAny<DefinovatNaradiCommand>()))
+                    .Setup(s => s.Handle(It.IsAny<DefinovatNaradiCommand>()))
                     .Returns<DefinovatNaradiCommand>(c => { cmd = c; return task.Task; });
                 _bus.Setup(b => b.Publish(It.IsAny<UiMessages.DokoncenaDefiniceNaradi>()));
                 var vm = VytvoritViewModel();

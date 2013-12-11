@@ -62,9 +62,10 @@ namespace Vydejna.Tests.SeznamNaradiTests
         [TestMethod]
         public void PriInicializaciDialoguSeNacteSeznamNaradi()
         {
-            var taskResult = new TaskCompletionSource<SeznamNaradiDto>();
+            var taskResult = new TaskCompletionSource<ZiskatSeznamNaradiResponse>();
             taskResult.SetResult(PrazdnySeznamNaradi());
-            _readSvc.Setup(r => r.NacistSeznamNaradi(0, int.MaxValue)).Returns(taskResult.Task);
+            var request = new ZiskatSeznamNaradiRequest(0, int.MaxValue);
+            _readSvc.Setup(r => r.Handle(request)).Returns(taskResult.Task);
             var vm = VytvoritViewModel();
             vm.Handle(new UiMessages.SeznamNaradiOtevren());
             _repo.VerifyAll();
@@ -87,9 +88,9 @@ namespace Vydejna.Tests.SeznamNaradiTests
         [TestMethod]
         public void PriDokonceniDefiniceNaradiSeAktualizujeSeznam()
         {
-            var taskResult = new TaskCompletionSource<SeznamNaradiDto>();
+            var taskResult = new TaskCompletionSource<ZiskatSeznamNaradiResponse>();
             taskResult.SetResult(PrazdnySeznamNaradi());
-            _readSvc.Setup(r => r.NacistSeznamNaradi(0, int.MaxValue)).Returns(taskResult.Task);
+            _readSvc.Setup(r => r.Handle(new ZiskatSeznamNaradiRequest(0, int.MaxValue))).Returns(taskResult.Task);
             var vm = VytvoritViewModel();
             vm.Handle(new UiMessages.DokoncenaDefiniceNaradi());
             _repo.VerifyAll();
@@ -98,8 +99,8 @@ namespace Vydejna.Tests.SeznamNaradiTests
         [TestMethod]
         public void PriPrijmuVysledkuNacitaniSeTytoZobrazi()
         {
-            var taskResult = new TaskCompletionSource<SeznamNaradiDto>();
-            _readSvc.Setup(r => r.NacistSeznamNaradi(0, int.MaxValue)).Returns(taskResult.Task);
+            var taskResult = new TaskCompletionSource<ZiskatSeznamNaradiResponse>();
+            _readSvc.Setup(r => r.Handle(new ZiskatSeznamNaradiRequest(0, int.MaxValue))).Returns(taskResult.Task);
             var vm = VytvoritViewModel();
             var list = vm.SeznamNaradi;
             vm.Handle(new UiMessages.SeznamNaradiOtevren());
@@ -143,7 +144,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
         public void PriAktivaciNaradiNeaktivnihoSePoslePrikazAUpraviZobrazeni()
         {
             AktivovatNaradiCommand cmd = null;
-            _writeSvc.Setup(s => s.AktivovatNaradi(It.IsAny<AktivovatNaradiCommand>())).Returns<AktivovatNaradiCommand>(c => { cmd = c; return null; });
+            _writeSvc.Setup(s => s.Handle(It.IsAny<AktivovatNaradiCommand>())).Returns<AktivovatNaradiCommand>(c => { cmd = c; return null; });
             var vm = VytvoritViewModel();
             var seznamNaradi = NaplnenySeznamNaradi();
             vm.Handle(new UiMessages.NactenSeznamNaradi(seznamNaradi));
@@ -161,7 +162,7 @@ namespace Vydejna.Tests.SeznamNaradiTests
         public void PriDeaktivaciNaradiAktivnihoSePoslePrikazAUpraviZobrazeni()
         {
             DeaktivovatNaradiCommand cmd = null;
-            _writeSvc.Setup(s => s.DeaktivovatNaradi(It.IsAny<DeaktivovatNaradiCommand>())).Returns<DeaktivovatNaradiCommand>(c => { cmd = c; return null; });
+            _writeSvc.Setup(s => s.Handle(It.IsAny<DeaktivovatNaradiCommand>())).Returns<DeaktivovatNaradiCommand>(c => { cmd = c; return null; });
             var vm = VytvoritViewModel();
             var seznamNaradi = NaplnenySeznamNaradi();
             vm.Handle(new UiMessages.NactenSeznamNaradi(seznamNaradi));
@@ -192,14 +193,14 @@ namespace Vydejna.Tests.SeznamNaradiTests
             return new SeznamNaradiViewModel(_shell.Object, _readSvc.Object, _writeSvc.Object, _createVM.Delegate);
         }
 
-        private SeznamNaradiDto PrazdnySeznamNaradi()
+        private ZiskatSeznamNaradiResponse PrazdnySeznamNaradi()
         {
-            return new SeznamNaradiDto();
+            return new ZiskatSeznamNaradiResponse();
         }
 
-        private SeznamNaradiDto NaplnenySeznamNaradi()
+        private ZiskatSeznamNaradiResponse NaplnenySeznamNaradi()
         {
-            var dto = new SeznamNaradiDto();
+            var dto = new ZiskatSeznamNaradiResponse();
             dto.PocetCelkem = 5;
             dto.SeznamNaradi.Add(new TypNaradiDto(Guid.NewGuid(), "1274-55871-b", "50x20x5", "", true));
             dto.SeznamNaradi.Add(new TypNaradiDto(Guid.NewGuid(), "2474-6545", "o 47mm", "Brusny kotouc", true));
