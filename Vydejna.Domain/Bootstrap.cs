@@ -11,6 +11,7 @@ namespace Vydejna.Domain
     public class Bootstrap
     {
         private QueuedBus _bus;
+        private QueuedBusProcess _busProcess;
         
         public void Init()
         {
@@ -20,9 +21,8 @@ namespace Vydejna.Domain
             var serializer = new EventSourcedJsonSerializer(typeMapper);
             _bus = new QueuedBus(new SubscriptionManager());
 
-            var sqlConfig = new SqlConfiguration(@"server=.\SQLEXPRESS");
-            var documentStore = new DocumentStoreSql(sqlConfig);
-            var eventStore = new EventStoreSql(sqlConfig);
+            var documentStore = new DocumentStoreInMemory();
+            var eventStore = new EventStoreInMemory();
             var eventStreaming = new EventStreamingIndividual(new EventStoreWaitable(eventStore, time), typeMapper);
             var metadataManager = new ProjectionMetadataManager(documentStore, "Metadata");
 
@@ -91,9 +91,9 @@ namespace Vydejna.Domain
                 .To(seznamNaradiRest.DefinovatNaradi)
                 .With(new HttpInputJson<AktivovatNaradiCommand>());
 
-            var busProcess = new QueuedBusProcess(_bus);
-            _bus.Subscribe<SystemEvents.SystemShutdown>(m => busProcess.Stop());
-            busProcess.Start();
+            _busProcess = new QueuedBusProcess(_bus);
+            _bus.Subscribe<SystemEvents.SystemShutdown>(m => _busProcess.Stop());
+            _busProcess.Start();
 
             _bus.Publish(new SystemEvents.SystemInit());
         }
@@ -101,6 +101,11 @@ namespace Vydejna.Domain
         public void Stop()
         {
             _bus.Publish(new SystemEvents.SystemShutdown());
+        }
+
+        public void Dispose()
+        {
+            _busProcess.Dispose();
         }
     }
 }

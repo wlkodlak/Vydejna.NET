@@ -220,7 +220,7 @@ namespace Vydejna.Domain
             {
                 var results = new List<EventStoreEvent>();
                 cmd.CommandText =
-                    "SELECT TOP @maxcount id, version, type, body FROM eventstore_events " +
+                    "SELECT TOP (@maxcount) id, version, type, body FROM eventstore_events " +
                     "WHERE stream = @stream AND version >= @minversion ORDER BY version";
                 cmd.Parameters.AddWithValue("@stream", stream);
                 cmd.Parameters.AddWithValue("@minversion", minVersion);
@@ -290,7 +290,7 @@ namespace Vydejna.Domain
             {
                 var results = new List<EventStoreEvent>();
                 cmd.CommandText = 
-                    "SELECT TOP @maxcount id, stream, version, type" +
+                    "SELECT TOP (@maxcount) id, stream, version, type" +
                     (loadBody ? ", body " : "") +
                     " FROM eventstore_events WHERE id > @id ORDER BY id";
                 cmd.Parameters.AddWithValue("@maxcount", maxCount);

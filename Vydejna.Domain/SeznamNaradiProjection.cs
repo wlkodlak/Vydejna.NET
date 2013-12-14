@@ -29,7 +29,7 @@ namespace Vydejna.Domain
 
         public new SeznamNaradiProxy Register(SeznamNaradiReader reader)
         {
-            Register(reader);
+            base.Register(reader);
             return this;
         }
     }

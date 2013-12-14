@@ -71,7 +71,6 @@ namespace Vydejna.Domain
                         cmd.CommandText =
                             "CREATE TABLE [dbo].[documents] (" +
                             "[id] [varchar](64) NOT NULL," +
-                            "[version] [int] NOT NULL," +
                             "[body] [text] NULL," +
                             "CONSTRAINT [PK_documents] PRIMARY KEY CLUSTERED ([id] ASC)" +
                             ")";
