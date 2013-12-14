@@ -149,7 +149,7 @@ namespace Vydejna.Tests.MessagingTests
         {
             var expectedJoined = string.Join("\r\n", expected);
             var actualJoined = string.Join("\r\n", _invocations);
-            Assert.AreEqual(expectedJoined, actualJoined, "Found handlers");
+            Assert.AreEqual(expectedJoined, actualJoined, "Invocations");
         }
 
         private class TestMessage1 { public string Data; }

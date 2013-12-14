@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
@@ -102,20 +103,19 @@ namespace Vydejna.Domain
         public class SystemShutdown { }
     }
 
-    public class DirectBus : IBus
+    public abstract class AbstractBus : IBus
     {
         private ISubscriptionManager _subscriptions;
 
-        public DirectBus(ISubscriptionManager subscribtions)
+        public AbstractBus(ISubscriptionManager subscribtions)
         {
             _subscriptions = subscribtions;
         }
 
         public void Publish<T>(T message)
         {
-            var handlers = _subscriptions.FindHandlers(typeof(T));
-            foreach (var handler in handlers)
-                new HandlerInvocation(message, handler).Run();
+            var messagesToQueue = _subscriptions.FindHandlers(message.GetType()).Select(s => new QueuedMessage(s, message)).ToList();
+            PublishCore(messagesToQueue);
         }
 
         public IHandleRegistration<T> Subscribe<T>(IHandle<T> handler)
@@ -123,28 +123,71 @@ namespace Vydejna.Domain
             return _subscriptions.Register(handler);
         }
 
-        private class HandlerInvocation
+        protected abstract void PublishCore(ICollection<QueuedMessage> messages);
+
+        protected class QueuedMessage
         {
             private object _message;
             private ISubscription _handler;
 
-            public HandlerInvocation(object message, ISubscription handler)
+            public QueuedMessage(ISubscription subscription, object message)
             {
+                _handler = subscription;
                 _message = message;
-                _handler = handler;
-            }
-            
-            public void Run()
-            {
-                var taskHandle = _handler.Handle(_message);
-                taskHandle.ContinueWith(HandleError, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
             }
 
-            private void HandleError(Task task)
+            public object Message { get { return _message; } }
+            public ISubscription Subscription { get { return _handler; } }
+
+            public void Process()
             {
-                var exception = task.Exception.GetBaseException();
-                _handler.HandleError(_message, exception);
+                try
+                {
+                    _handler.Handle(_message).Wait();
+                }
+                catch (AggregateException exception)
+                {
+                    _handler.HandleError(_message, exception.GetBaseException());
+                }
             }
+        }
+    }
+
+    public class DirectBus : AbstractBus
+    {
+        public DirectBus(ISubscriptionManager subscriptions)
+            : base(subscriptions)
+        {
+        }
+
+        protected override void PublishCore(ICollection<QueuedMessage> messages)
+        {
+            foreach (var message in messages)
+                message.Process();
+        }
+    }
+
+    public class QueuedBus : AbstractBus
+    {
+        private ConcurrentQueue<QueuedMessage> _queue;
+
+        public QueuedBus(ISubscriptionManager subscriptions)
+            : base(subscriptions)
+        {
+            _queue = new ConcurrentQueue<QueuedMessage>();
+        }
+
+        public void HandleNext()
+        {
+            QueuedMessage message;
+            if (_queue.TryDequeue(out message))
+                message.Process();
+        }
+
+        protected override void PublishCore(ICollection<AbstractBus.QueuedMessage> messages)
+        {
+            foreach (var message in messages)
+                _queue.Enqueue(message);
         }
     }
 }

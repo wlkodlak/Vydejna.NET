@@ -11,10 +11,10 @@ using Moq;
 namespace Vydejna.Tests.MessagingTests
 {
     [TestClass]
-    public class DirectBusTests
+    public class QueuedBusTests
     {
         private ISubscriptionManager _subscriptions;
-        private DirectBus _bus;
+        private QueuedBus _bus;
         private List<string> _invocations;
         private TestHandler _handler;
 
@@ -22,7 +22,7 @@ namespace Vydejna.Tests.MessagingTests
         public void Initialize()
         {
             _subscriptions = new SubscriptionManager();
-            _bus = new DirectBus(_subscriptions);
+            _bus = new QueuedBus(_subscriptions);
             _invocations = new List<string>();
             _handler = new TestHandler(_invocations);
         }
@@ -37,13 +37,15 @@ namespace Vydejna.Tests.MessagingTests
         }
 
         [TestMethod]
-        public void HandleImmediatelly()
+        public void HandleDelayed()
         {
             _bus.Subscribe<TestMessage>(_handler);
             _bus.Publish(new TestMessage { Data = "Hello" });
+            Assert.AreEqual(0, _invocations.Count, "Invocation before handling");
+            _bus.HandleNext();
             var expectedJoined = "TestMessage: Hello";
             var actualJoined = string.Join("\r\n", _invocations);
-            Assert.AreEqual(expectedJoined, actualJoined, "Invocations");
+            Assert.AreEqual(expectedJoined, actualJoined, "Found invocations");
         }
 
         [TestMethod]
@@ -62,6 +64,7 @@ namespace Vydejna.Tests.MessagingTests
                 storedException = e;
             });
             _bus.Publish(message);
+            _bus.HandleNext();
             Assert.IsTrue(wasCalled, "Was called");
             Assert.AreSame(message, storedMessage, "Message");
             Assert.AreSame(exception, storedException, "Exception");

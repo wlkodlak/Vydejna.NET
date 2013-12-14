@@ -84,6 +84,7 @@
     <Compile Include="HttpTests\ParametrizedUrlTest.cs" />
     <Compile Include="HttpTests\RestClientTest.cs" />
     <Compile Include="MessagingTests\DirectBusTests.cs" />
+    <Compile Include="MessagingTests\QueuedBusTests.cs" />
     <Compile Include="MessagingTests\SubscriptionManagerTests.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="PropertyChangedWatcher.cs" />
