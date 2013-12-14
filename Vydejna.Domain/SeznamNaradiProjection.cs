@@ -27,7 +27,7 @@ namespace Vydejna.Domain
             return Reader.Handle(request);
         }
 
-        public SeznamNaradiProxy Register(SeznamNaradiReader reader)
+        public new SeznamNaradiProxy Register(SeznamNaradiReader reader)
         {
             Register(reader);
             return this;

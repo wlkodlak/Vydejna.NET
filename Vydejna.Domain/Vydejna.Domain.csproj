@@ -65,6 +65,7 @@
     <Compile Include="SeznamNaradiRest.cs" />
     <Compile Include="SeznamNaradiService.cs" />
     <Compile Include="EventStoreSql.cs" />
+    <Compile Include="SubscriptionManager.cs" />
     <Compile Include="Time.cs" />
     <Compile Include="UnikatnostNaradi.cs" />
     <Compile Include="UnikatnostNaradiRepository.cs" />
