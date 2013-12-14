@@ -21,9 +21,23 @@ namespace Vydejna.Contracts
         void Handle(T message);
     }
 
+    public interface ICatch<T>
+    {
+        void HandleError(T message, Exception exception);
+    }
+
     public interface IHandleRegistration<T> : IDisposable
     {
         void ReplaceWith(IHandle<T> handler);
+        void HandleErrorsWith(ICatch<T> catcher);
+    }
+
+    public interface ISubscription : IHandle<object>, ICatch<object>
+    {
+    }
+
+    public interface ISubscription<T> : IHandleRegistration<T>, ISubscription
+    {
     }
 
     public static class TaskResult

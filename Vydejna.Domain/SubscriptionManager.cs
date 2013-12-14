@@ -6,16 +6,24 @@ using Vydejna.Contracts;
 
 namespace Vydejna.Domain
 {
-    public class SubscriptionManager
+    public interface ISubscriptionManager
+    {
+        IHandleRegistration<T> Register<T>(IHandle<T> handler);
+        IEnumerable<Type> GetHandledTypes();
+        ICollection<ISubscription> FindHandlers(Type type);
+    }
+    
+    public class SubscriptionManager : ISubscriptionManager
     {
         private UpdateLock _lock;
-        private Dictionary<Type, ICollection<IHandle<object>>> _handlers;
-        private ICollection<IHandle<object>> _empty;
+        private Dictionary<Type, ICollection<ISubscription>> _handlers;
+        private ICollection<ISubscription> _empty;
 
-        private class Subscription<T> : IDisposable, IHandle<object>, IHandleRegistration<T>
+        private class Subscription<T> : ISubscription<T>
         {
             private SubscriptionManager _parent;
             private IHandle<T> _handler;
+            private ICatch<T> _catcher;
             private bool _enabled;
             public readonly Type Type;
 
@@ -23,6 +31,7 @@ namespace Vydejna.Domain
             {
                 _parent = parent;
                 _handler = handler;
+                _catcher = null;
                 _enabled = true;
                 Type = typeof(T);
             }
@@ -44,13 +53,24 @@ namespace Vydejna.Domain
             {
                 _handler = handler;
             }
+
+            public void HandleErrorsWith(ICatch<T> catcher)
+            {
+                _catcher = catcher;
+            }
+
+            public void HandleError(object message, Exception exception)
+            {
+                if (_catcher != null)
+                    _catcher.HandleError((T)message, exception);
+            }
         }
 
         public SubscriptionManager()
         {
             _lock = new UpdateLock();
-            _handlers = new Dictionary<Type, ICollection<IHandle<object>>>();
-            _empty = new IHandle<object>[0];
+            _handlers = new Dictionary<Type, ICollection<ISubscription>>();
+            _empty = new ISubscription[0];
         }
 
         public IHandleRegistration<T> Register<T>(IHandle<T> handler)
@@ -60,7 +80,7 @@ namespace Vydejna.Domain
             return subscription;
         }
 
-        private void ChangeRegistration(Type type, IHandle<object> subscription, bool add)
+        private void ChangeRegistration(Type type, ISubscription subscription, bool add)
         {
             using (_lock.Update())
             {
@@ -75,11 +95,11 @@ namespace Vydejna.Domain
             }
         }
 
-        public ICollection<IHandle<object>> FindHandlers(Type type)
+        public ICollection<ISubscription> FindHandlers(Type type)
         {
             using (_lock.Read())
             {
-                ICollection<IHandle<object>> found;
+                ICollection<ISubscription> found;
                 if (_handlers.TryGetValue(type, out found))
                     return found;
                 else

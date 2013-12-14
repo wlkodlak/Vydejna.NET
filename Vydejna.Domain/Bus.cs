@@ -11,12 +11,12 @@ namespace Vydejna.Domain
 {
     public interface IPublisher
     {
-        Task Publish<T>(T message);
+        void Publish<T>(T message);
     }
 
     public interface ISubscribable
     {
-        IDisposable Subscribe<T>(IHandle<T> handler);
+        IHandleRegistration<T> Subscribe<T>(IHandle<T> handler);
     }
 
     public interface IBus : IPublisher, ISubscribable
@@ -25,30 +25,35 @@ namespace Vydejna.Domain
 
     public static class BusExtensions
     {
-        public static IDisposable Subscribe<T>(this ISubscribable self, Action<T> handler)
+        public static IHandleRegistration<T> Subscribe<T>(this ISubscribable self, Action<T> handler)
         {
             return self.Subscribe<T>(new DelegatedSyncHandler<T>(handler));
         }
 
-        public static IDisposable Subscribe<T>(this ISubscribable self, Func<T, Task> handler)
+        public static IHandleRegistration<T> Subscribe<T>(this ISubscribable self, Func<T, Task> handler)
         {
             return self.Subscribe<T>(new DelegatedAsyncHandler<T>(handler));
         }
 
+        public static void HandleErrorsWith<T>(this IHandleRegistration<T> self, Action<T, Exception> handler)
+        {
+            self.HandleErrorsWith(new DelegatedCatcher<T>(handler));
+        }
+
         private class DelegatedSyncHandler<T> : IHandle<T>
         {
-            private Action<T> handler;
+            private Action<T> _handler;
 
             public DelegatedSyncHandler(Action<T> handler)
             {
-                this.handler = handler;
+                _handler = handler;
             }
 
             public Task Handle(T message)
             {
                 try
                 {
-                    handler(message);
+                    _handler(message);
                     return TaskResult.GetCompletedTask();
                 }
                 catch (Exception ex)
@@ -60,16 +65,32 @@ namespace Vydejna.Domain
 
         private class DelegatedAsyncHandler<T> : IHandle<T>
         {
-            private Func<T, Task> handler;
+            private Func<T, Task> _handler;
 
             public DelegatedAsyncHandler(Func<T, Task> handler)
             {
-                this.handler = handler;
+                _handler = handler;
             }
 
             public Task Handle(T message)
             {
-                return handler(message);
+                return _handler(message);
+            }
+        }
+
+        private class DelegatedCatcher<T> : ICatch<T>
+        {
+            private Action<T, Exception> _catcher;
+
+            public DelegatedCatcher(Action<T, Exception> catcher)
+            {
+                _catcher = catcher;
+            }
+
+            public void HandleError(T message, Exception exception)
+            {
+                if (_catcher != null)
+                    _catcher(message, exception);
             }
         }
     }
@@ -83,184 +104,47 @@ namespace Vydejna.Domain
 
     public class DirectBus : IBus
     {
-        private UpdateLock _lock;
-        private Dictionary<Type, List<Subscription>> _subscriptions;
+        private ISubscriptionManager _subscriptions;
 
-        public DirectBus()
+        public DirectBus(ISubscriptionManager subscribtions)
         {
-            _lock = new UpdateLock();
-            _subscriptions = new Dictionary<Type, List<Subscription>>();
+            _subscriptions = subscribtions;
         }
 
-        private class Subscription : IDisposable
+        public void Publish<T>(T message)
         {
-            private DirectBus _parent;
-            private Type _type;
-            private Func<object, Task> _handler;
-
-            public Subscription(DirectBus parent, Type type, Func<object, Task> handler)
-            {
-                this._parent = parent;
-                this._type = type;
-                this._handler = handler;
-            }
-
-            public void Dispose()
-            {
-                using (_parent._lock.Update())
-                    _parent._subscriptions[_type].Remove(this);
-            }
-
-            public Task Handle(object message)
-            {
-                return _handler(message);
-            }
+            var handlers = _subscriptions.FindHandlers(typeof(T));
+            foreach (var handler in handlers)
+                new HandlerInvocation(message, handler).Run();
         }
 
-        public async Task Publish<T>(T message)
+        public IHandleRegistration<T> Subscribe<T>(IHandle<T> handler)
         {
-            List<Subscription> subscriptions;
-            using (_lock.Read())
-            {
-                if (!_subscriptions.TryGetValue(typeof(T), out subscriptions))
-                    return;
-                subscriptions = subscriptions.ToList();
-            }
-            foreach (var item in subscriptions)
-                await item.Handle(message);
+            return _subscriptions.Register(handler);
         }
 
-        public IDisposable Subscribe<T>(IHandle<T> handler)
+        private class HandlerInvocation
         {
-            using (_lock.Update())
+            private object _message;
+            private ISubscription _handler;
+
+            public HandlerInvocation(object message, ISubscription handler)
             {
-                var subscription = new Subscription(this, typeof(T), CreateHandler(handler));
-                _lock.Write();
-                List<Subscription> subscriptions;
-                if (!_subscriptions.TryGetValue(typeof(T), out subscriptions))
-                    _subscriptions[typeof(T)] = subscriptions = new List<Subscription>();
-                subscriptions.Add(subscription);
-                return subscription;
+                _message = message;
+                _handler = handler;
             }
-        }
-
-        private static Func<object, Task> CreateHandler<T>(IHandle<T> handler)
-        {
-            // return o => handler.Handle((T)o);
-            var param = Expression.Parameter(typeof(object), "o");
-            var cast = Expression.Convert(param, typeof(T));
-            var handleMethod = typeof(IHandle<T>).GetMethod("Handle");
-            var invoke = Expression.Call(Expression.Constant(handler), handleMethod, cast);
-            var name = "Handle_" + typeof(T).Name;
-            return Expression.Lambda<Func<object, Task>>(invoke, name, new[] { param }).Compile();
-        }
-    }
-
-    public class QueuedBus : IBus
-    {
-        private object _lockSubscriptions;
-        private object _lockQueue;
-        private Dictionary<Type, List<Subscription>> _subscriptions;
-        private Queue<QueuedMessage> _queue;
-
-        public QueuedBus()
-        {
-            _lockSubscriptions = new object();
-            _lockQueue = new object();
-            _subscriptions = new Dictionary<Type, List<Subscription>>();
-            _queue = new Queue<QueuedMessage>();
-        }
-
-        private class Subscription : IDisposable
-        {
-            private QueuedBus _parent;
-            private Type _type;
-            private Func<object, Task> _handler;
-
-            public Subscription(QueuedBus parent, Type type, Func<object, Task> handler)
+            
+            public void Run()
             {
-                this._parent = parent;
-                this._type = type;
-                this._handler = handler;
+                var taskHandle = _handler.Handle(_message);
+                taskHandle.ContinueWith(HandleError, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
             }
 
-            public void Dispose()
+            private void HandleError(Task task)
             {
-                lock (_parent._subscriptions)
-                    _parent._subscriptions[_type].Remove(this);
+                var exception = task.Exception.GetBaseException();
+                _handler.HandleError(_message, exception);
             }
-
-            public Task Handle(object message)
-            {
-                return _handler(message);
-            }
-        }
-
-        private class QueuedMessage
-        {
-            public Subscription Subscription;
-            public object Message;
-        }
-
-        public Task Publish<T>(T message)
-        {
-            List<QueuedMessage> messagesForQueue = null;
-            lock (_lockSubscriptions)
-            {
-                List<Subscription> subscriptions;
-                if (_subscriptions.TryGetValue(typeof(T), out subscriptions))
-                    messagesForQueue = subscriptions.Select(item => new QueuedMessage { Subscription = item, Message = message }).ToList();
-            }
-            if (messagesForQueue != null)
-            {
-                lock (_lockQueue)
-                {
-                    messagesForQueue.ForEach(_queue.Enqueue);
-                    Monitor.PulseAll(_lockQueue);
-                }
-            }
-            return TaskResult.GetCompletedTask();
-        }
-
-        public IDisposable Subscribe<T>(IHandle<T> handler)
-        {
-            lock (_lockSubscriptions)
-            {
-                var subscription = new Subscription(this, typeof(T), CreateHandler(handler));
-                List<Subscription> subscriptions;
-                if (!_subscriptions.TryGetValue(typeof(T), out subscriptions))
-                    _subscriptions[typeof(T)] = subscriptions = new List<Subscription>();
-                subscriptions.Add(subscription);
-                return subscription;
-            }
-        }
-
-        public Task ProcessNext(CancellationToken cancel)
-        {
-            QueuedMessage message = null;
-            cancel.Register(() => Monitor.PulseAll(_lockQueue));
-            lock (_lockQueue)
-            {
-                while (_queue.Count == 0)
-                {
-                    if (cancel.IsCancellationRequested)
-                        return TaskResult.GetCancelledTask();
-                    Monitor.Wait(_lockQueue);
-                }
-                message = _queue.Dequeue();
-            }
-            return message.Subscription.Handle(message.Message);
-        }
-
-        private static Func<object, Task> CreateHandler<T>(IHandle<T> handler)
-        {
-            // return o => handler.Handle((T)o);
-            var param = Expression.Parameter(typeof(object), "o");
-            var cast = Expression.Convert(param, typeof(T));
-            var handleMethod = typeof(IHandle<T>).GetMethod("Handle");
-            var invoke = Expression.Call(Expression.Constant(handler), handleMethod, cast);
-            var name = "Handle_" + typeof(T).Name;
-            return Expression.Lambda<Func<object, Task>>(invoke, name, new[] { param }).Compile();
         }
     }
 }
