@@ -93,5 +93,13 @@ namespace Vydejna.Tests.SeznamNaradiTests
             Assert.AreEqual("50x5x3", cmd.Rozmer, "Rozmer");
             Assert.AreEqual("", cmd.Druh, "Druh");
         }
+
+        [TestMethod]
+        public void ConsumerSetup()
+        {
+            var proces = VytvoritProces();
+            Assert.AreEqual("ProcesDefiniceNaradi", proces.GetConsumerName());
+            proces.HandleShutdown().GetAwaiter().GetResult();
+        }
     }
 }

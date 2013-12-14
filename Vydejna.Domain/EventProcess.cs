@@ -2,35 +2,86 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Vydejna.Contracts;
 
 namespace Vydejna.Domain
 {
-    public class EventProcess
+    public class EventProcess : IDisposable
     {
         private IEventStreaming _streamer;
-        private string _consumerName;
+        private IProjectionMetadataManager _metadataMgr;
+        private IEventSourcedSerializer _serializer;
+        private IEventConsumer _consumer;
+        private ISubscriptionManager _subscriptions;
+        private CancellationTokenSource _cancel;
+        private IEventsConsumerMetadata _metadata;
+        private IEventStreamingInstance _stream;
+        private EventStoreToken _token;
 
-        public EventProcess(IEventStreaming streamer, string consumerName)
+        public EventProcess(IEventStreaming streamer, IProjectionMetadataManager metadataManager, IEventSourcedSerializer serializer)
         {
-            this._streamer = streamer;
-            this._consumerName = consumerName;
+            _streamer = streamer;
+            _metadataMgr = metadataManager;
+            _serializer = serializer;
+            _subscriptions = new SubscriptionManager();
         }
 
-        public void Register<T>(IHandle<T> handler)
+        public EventProcess Setup(IEventConsumer consumer)
         {
-            throw new NotImplementedException();
+            _consumer = consumer;
+            return this;
         }
 
-        public void Start()
+        public IHandleRegistration<T> Register<T>(IHandle<T> handler)
         {
-            throw new NotImplementedException();
+            return _subscriptions.Register(handler);
+        }
+
+        public async Task Start()
+        {
+            _cancel = new CancellationTokenSource();
+            _metadata = await _metadataMgr.GetHandler(_consumer.GetConsumerName());
+            _token = _metadata.GetToken() ?? EventStoreToken.Initial;
+            _stream = _streamer.GetStreamer(_subscriptions.GetHandledTypes(), _token, false);
+            try
+            {
+                while (!_cancel.IsCancellationRequested)
+                {
+                    var storedEvent = await _stream.GetNextEvent(_cancel.Token);
+                    var objectEvent = _serializer.Deserialize(storedEvent);
+                    var handlers = _subscriptions.FindHandlers(objectEvent.GetType());
+                    foreach (var handler in handlers)
+                    {
+                        try
+                        {
+                            await handler.Handle(objectEvent);
+                            await _metadata.SetToken(storedEvent.Token);
+                        }
+                        catch (Exception exception)
+                        {
+                            handler.HandleError(objectEvent, exception);
+                        }
+                    }
+                }
+            }
+            catch (TaskCanceledException)
+            {
+            }
+            await _consumer.HandleShutdown();
         }
 
         public void Stop()
         {
-            throw new NotImplementedException();
+            _cancel.Cancel();
+            _cancel.Dispose();
         }
+
+        public void Dispose()
+        {
+            Stop();
+        }
+
     }
 }

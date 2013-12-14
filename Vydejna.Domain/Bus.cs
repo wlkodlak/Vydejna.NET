@@ -239,7 +239,7 @@ namespace Vydejna.Domain
         {
             _isRunning = true;
             _cancel = new CancellationTokenSource();
-            _task = Task.Factory.StartNew(ProcessCore);
+            _task = Task.Factory.StartNew(ProcessCore, TaskCreationOptions.LongRunning);
         }
 
         public void Stop()

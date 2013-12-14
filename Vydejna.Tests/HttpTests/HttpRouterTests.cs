@@ -24,7 +24,7 @@ namespace Vydejna.Tests.HttpTests
 
             public Task<HttpServerResponse> Handle(HttpServerRequest request, IList<RequestParameter> routeParameters)
             {
-                throw new NotImplementedException();
+                throw new NotSupportedException();
             }
         }
 

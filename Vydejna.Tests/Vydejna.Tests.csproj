@@ -62,7 +62,9 @@
     </Otherwise>
   </Choose>
   <ItemGroup>
+    <Compile Include="EventSourcedTests\EventProcessTests.cs" />
     <Compile Include="EventSourcedTests\EventStoreInMemoryTests.cs" />
+    <Compile Include="EventSourcedTests\EventStreamingTestBase.cs" />
     <Compile Include="EventSourcedTests\EventStreamingTests.cs" />
     <Compile Include="EventSourcedTests\GenericRepositoryTests.cs" />
     <Compile Include="EventSourcedTests\ProjectionMetadataTests.cs" />
@@ -98,6 +100,8 @@
     <Compile Include="SeznamNaradiTests\SeznamNaradiServiceTest_Naradi.cs" />
     <Compile Include="SeznamNaradiTests\SeznamNaradiServiceTest_Unikatnost.cs" />
     <Compile Include="SeznamNaradiTests\SeznamNaradiViewModelTest.cs" />
+    <Compile Include="SystemTests\HttpServerTest.cs" />
+    <Compile Include="SystemTests\SystemTest.cs" />
     <Compile Include="UnitTestingTaskScheduler.cs" />
     <Compile Include="VirtualTime.cs" />
   </ItemGroup>

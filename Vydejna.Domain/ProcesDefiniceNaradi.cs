@@ -11,6 +11,7 @@ namespace Vydejna.Domain
         : IHandle<ZahajenaDefiniceNaradiEvent>
         , IHandle<ZahajenaAktivaceNaradiEvent>
         , IHandle<DefinovanoNaradiEvent>
+        , IEventConsumer
     {
         private IHandle<DefinovatNaradiCommand> _definice;
         private IHandle<AktivovatNaradiCommand> _aktivace;
@@ -54,6 +55,16 @@ namespace Vydejna.Domain
                 Rozmer = evt.Rozmer,
                 Druh = evt.Druh
             });
+        }
+
+        public string GetConsumerName()
+        {
+            return "ProcesDefiniceNaradi";
+        }
+
+        public Task HandleShutdown()
+        {
+            return TaskResult.GetCompletedTask();
         }
     }
 }

@@ -69,52 +69,52 @@ namespace Vydejna.Tests.HttpTests
 
             public Task<HttpServerRequest> Process(HttpServerRequest request)
             {
-                throw new NotImplementedException();
+                throw new NotSupportedException();
             }
 
             Task<object> IHttpPreprocessor.Process(HttpServerRequest request)
             {
-                throw new NotImplementedException();
+                throw new NotSupportedException();
             }
 
             Task<HttpServerRequest> IHttpRequestEnhancer.Process(HttpServerRequest request, IEnumerable<RequestParameter> routeParameters)
             {
-                throw new NotImplementedException();
+                throw new NotSupportedException();
             }
 
             public bool HandlesContentType(string contentType)
             {
-                throw new NotImplementedException();
+                throw new NotSupportedException();
             }
 
             public Task<object> ProcessInput(HttpServerRequest request)
             {
-                throw new NotImplementedException();
+                throw new NotSupportedException();
             }
 
             Task<object> IHttpProcessor.Process(HttpServerRequest request)
             {
-                throw new NotImplementedException();
+                throw new NotSupportedException();
             }
 
             public Task<object> Process(HttpServerRequest request, object response)
             {
-                throw new NotImplementedException();
+                throw new NotSupportedException();
             }
 
             public bool HandlesOutput(HttpServerRequest request, object response)
             {
-                throw new NotImplementedException();
+                throw new NotSupportedException();
             }
 
             public Task<HttpServerResponse> ProcessOutput(HttpServerRequest request, object response)
             {
-                throw new NotImplementedException();
+                throw new NotSupportedException();
             }
 
             public Task<HttpServerResponse> Process(HttpServerResponse request)
             {
-                throw new NotImplementedException();
+                throw new NotSupportedException();
             }
         }
 
@@ -184,7 +184,7 @@ namespace Vydejna.Tests.HttpTests
 
             public Task<HttpServerResponse> Handle(HttpServerRequest request, IList<RequestParameter> routeParameters)
             {
-                throw new NotImplementedException();
+                throw new NotSupportedException();
             }
         }
 

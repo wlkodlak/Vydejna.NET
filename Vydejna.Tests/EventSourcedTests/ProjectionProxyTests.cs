@@ -14,7 +14,7 @@ namespace Vydejna.Tests.EventSourcedTests
     public class ProjectionProxyTests
     {
         private List<ProjectionInstanceMetadata> _metadataList;
-        private TestMetadata _metadata;
+        private TestProjectionMetadata _metadata;
         private Mock<IProjectionMetadataManager> _metadataMgr;
         private TestReader _reader1;
         private TestReader _reader2;
@@ -24,7 +24,7 @@ namespace Vydejna.Tests.EventSourcedTests
         public void Initialize()
         {
             _metadataList = new List<ProjectionInstanceMetadata>();
-            _metadata = new TestMetadata(_metadataList);
+            _metadata = new TestProjectionMetadata(_metadataList);
             _metadataMgr = new Mock<IProjectionMetadataManager>();
             _metadataMgr.Setup(m => m.GetProjection("TestProjection")).Returns(() => TaskResult.GetCompletedTask<IProjectionMetadata>(_metadata));
             _reader1 = new TestReader("X");

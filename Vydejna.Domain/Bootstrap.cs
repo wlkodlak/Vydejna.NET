@@ -51,13 +51,14 @@ namespace Vydejna.Domain
                     new NaradiRepository(eventStore, "Naradi", serializer),
                     new UnikatnostNaradiRepository(eventStore, "Unikatnost", serializer));
 
-            var seznamNaradiProcess = new ProcesDefiniceNaradi(seznamNaradiService, seznamNaradiService, seznamNaradiService);
-            var eventProcessor = new EventProcess(eventStreaming, "ProcesDefiniceNaradi");
-            eventProcessor.Register<ZahajenaDefiniceNaradiEvent>(seznamNaradiProcess);
-            eventProcessor.Register<ZahajenaAktivaceNaradiEvent>(seznamNaradiProcess);
-            eventProcessor.Register<DefinovanoNaradiEvent>(seznamNaradiProcess);
-            _bus.Subscribe<SystemEvents.SystemInit>(msg => eventProcessor.Start());
-            _bus.Subscribe<SystemEvents.SystemShutdown>(msg => eventProcessor.Stop());
+            var seznamNaradiEventHandler = new ProcesDefiniceNaradi(seznamNaradiService, seznamNaradiService, seznamNaradiService);
+            var seznamNaradiProcess = new EventProcess(eventStreaming, metadataManager, serializer)
+                .Setup(seznamNaradiEventHandler);
+            seznamNaradiProcess.Register<ZahajenaDefiniceNaradiEvent>(seznamNaradiEventHandler);
+            seznamNaradiProcess.Register<ZahajenaAktivaceNaradiEvent>(seznamNaradiEventHandler);
+            seznamNaradiProcess.Register<DefinovanoNaradiEvent>(seznamNaradiEventHandler);
+            _bus.Subscribe<SystemEvents.SystemInit>(msg => seznamNaradiProcess.Start());
+            _bus.Subscribe<SystemEvents.SystemShutdown>(msg => seznamNaradiProcess.Stop());
 
             var httpRouter = new HttpRouter();
             var httpServer = new HttpServer(new[] { "http://localhost/" }, new HttpServerDispatcher(httpRouter));
