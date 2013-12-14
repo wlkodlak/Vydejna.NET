@@ -123,7 +123,7 @@ namespace Vydejna.Gui.SeznamNaradi
 
         private async Task NacistSeznamNaradi()
         {
-            var seznam = await _readSvc.Handle(new  ZiskatSeznamNaradiRequest(0, int.MaxValue));
+            var seznam = await _readSvc.Handle(new ZiskatSeznamNaradiRequest(0, int.MaxValue)).ConfigureAwait(false);
             Handle(new UiMessages.NactenSeznamNaradi(seznam));
         }
 

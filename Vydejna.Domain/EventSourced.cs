@@ -123,7 +123,7 @@ namespace Vydejna.Domain
 
         public async Task<T> Get(Guid id)
         {
-            var storedEvents = await _store.ReadStream(StreamNameForId(id), 0, int.MaxValue, true);
+            var storedEvents = await _store.ReadStream(StreamNameForId(id), 0, int.MaxValue, true).ConfigureAwait(false);
             if (storedEvents.StreamVersion == 0)
                 return null;
             var deserialized = storedEvents.Events.Select(_serializer.Deserialize).ToList();
@@ -157,7 +157,7 @@ namespace Vydejna.Domain
                 serialized.Add(stored);
             }
             var expectedVersion = aggregate.OriginalVersion == 0 ? EventStoreVersion.EmptyStream : EventStoreVersion.Number(aggregate.OriginalVersion);
-            await _store.AddToStream(StreamNameForId(aggregate.Id), serialized, expectedVersion);
+            await _store.AddToStream(StreamNameForId(aggregate.Id), serialized, expectedVersion).ConfigureAwait(false);
             aggregate.CommitChanges(serialized.Last().StreamVersion);
         }
     }

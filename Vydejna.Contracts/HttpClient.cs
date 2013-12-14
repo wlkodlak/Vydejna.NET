@@ -51,14 +51,14 @@ namespace Vydejna.Contracts
             webRequest.AllowAutoRedirect = false;
             webRequest.Method = request.Method;
             CopyHeadersToRequest(request, webRequest);
-            await WriteRequestBody(request, webRequest);
+            await WriteRequestBody(request, webRequest).ConfigureAwait(false);
 
             var response = new HttpClientResponse();
-            using (var webResponse = await GetWebResponse(webRequest))
+            using (var webResponse = await GetWebResponse(webRequest).ConfigureAwait(false))
             {
                 response.StatusCode = (int)webResponse.StatusCode;
                 CopyHeadersToResponse(response, webResponse);
-                await GetReponseBody(response, webResponse);
+                await GetResponseBody(response, webResponse).ConfigureAwait(false);
             }
             return response;
         }
@@ -67,7 +67,7 @@ namespace Vydejna.Contracts
         {
             try
             {
-                return (HttpWebResponse)await webRequest.GetResponseAsync();
+                return (HttpWebResponse)await webRequest.GetResponseAsync().ConfigureAwait(false);
             }
             catch (WebException ex)
             {
@@ -132,8 +132,8 @@ namespace Vydejna.Contracts
         private static async Task WriteRequestBody(HttpClientRequest request, HttpWebRequest webRequest)
         {
             if (request.Body != null)
-                using (var stream = await webRequest.GetRequestStreamAsync())
-                    await stream.WriteAsync(request.Body, 0, request.Body.Length);
+                using (var stream = await webRequest.GetRequestStreamAsync().ConfigureAwait(false))
+                    await stream.WriteAsync(request.Body, 0, request.Body.Length).ConfigureAwait(false);
         }
 
         private static void CopyHeadersToResponse(HttpClientResponse response, HttpWebResponse webResponse)
@@ -146,14 +146,14 @@ namespace Vydejna.Contracts
             }
         }
 
-        private static async Task GetReponseBody(HttpClientResponse response, HttpWebResponse webResponse)
+        private static async Task GetResponseBody(HttpClientResponse response, HttpWebResponse webResponse)
         {
             using (var responseStream = webResponse.GetResponseStream())
             using (var memoryStream = new MemoryStream())
             {
                 var buffer = new byte[32 * 1024];
                 int read;
-                while ((read = await responseStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
+                while ((read = await responseStream.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false)) > 0)
                     memoryStream.Write(buffer, 0, read);
                 response.Body = memoryStream.ToArray();
             }

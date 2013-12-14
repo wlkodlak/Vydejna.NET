@@ -26,7 +26,7 @@ namespace Vydejna.Domain
         {
             var conn = new SqlConnection();
             conn.ConnectionString = _connString;
-            await conn.OpenAsync();
+            await conn.OpenAsync().ConfigureAwait(false);
             return conn;
         }
 
@@ -47,14 +47,14 @@ namespace Vydejna.Domain
 
         public async Task CreateTables()
         {
-            var conn = await _config.GetConnection();
+            var conn = await _config.GetConnection().ConfigureAwait(false);
             try
             {
                 var existingTables = new HashSet<string>();
                 using (var cmd = conn.CreateCommand())
                 {
                     cmd.CommandText = "SELECT name FROM sys.objects WHERE type = 'U'";
-                    using (var reader = await cmd.ExecuteReaderAsync())
+                    using (var reader = await cmd.ExecuteReaderAsync().ConfigureAwait(false))
                     {
                         while (reader.Read())
                             existingTables.Add(reader.GetString(0));
@@ -71,7 +71,7 @@ namespace Vydejna.Domain
                             "[version] [int] NOT NULL, " +
                             "CONSTRAINT [IX_eventstore_streams] UNIQUE NONCLUSTERED ([stream] ASC)" +
                             ")";
-                        await cmd.ExecuteNonQueryAsync();
+                        await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
                     }
                 }
 
@@ -89,7 +89,7 @@ namespace Vydejna.Domain
                             "CONSTRAINT [PK_eventstore_events] PRIMARY KEY CLUSTERED ([id] ASC)," +
                             "CONSTRAINT [IX_eventstore_events] UNIQUE NONCLUSTERED ([stream] ASC, [version] ASC)" +
                             ")";
-                        await cmd.ExecuteNonQueryAsync();
+                        await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
                     }
                 }
             }
@@ -101,13 +101,13 @@ namespace Vydejna.Domain
 
         public async Task AddToStream(string stream, IEnumerable<EventStoreEvent> events, EventStoreVersion expectedVersion)
         {
-            var conn = await _config.GetConnection();
+            var conn = await _config.GetConnection().ConfigureAwait(false);
             var eventsList = events.ToList();
             try
             {
                 using (var tran = conn.BeginTransaction())
                 {
-                    int originalVersion = await GetStreamVersion(conn, stream, true);
+                    int originalVersion = await GetStreamVersion(conn, stream, true).ConfigureAwait(false);
                     expectedVersion.Verify(originalVersion);
                     int lastVersion = originalVersion;
                     foreach (var item in eventsList)
@@ -115,9 +115,9 @@ namespace Vydejna.Domain
                         item.StreamName = stream;
                         item.StreamVersion = ++lastVersion;
                     }
-                    await InsertEvents(conn, eventsList);
-                    await UpdateStreamVersion(conn, stream, lastVersion);
-                    var tokens = await GetTokens(conn, stream, originalVersion + 1, lastVersion);
+                    await InsertEvents(conn, eventsList).ConfigureAwait(false);
+                    await UpdateStreamVersion(conn, stream, lastVersion).ConfigureAwait(false);
+                    var tokens = await GetTokens(conn, stream, originalVersion + 1, lastVersion).ConfigureAwait(false);
                     foreach (var item in eventsList)
                     {
                         int index = item.StreamVersion - originalVersion - 1;
@@ -142,9 +142,9 @@ namespace Vydejna.Domain
                 cmd.Parameters.AddWithValue("@stream", stream);
                 cmd.Parameters.AddWithValue("@minversion", minVersion);
                 cmd.Parameters.AddWithValue("@maxversion", maxVersion);
-                using (var reader = await cmd.ExecuteReaderAsync())
+                using (var reader = await cmd.ExecuteReaderAsync().ConfigureAwait(false))
                 {
-                    while (await reader.ReadAsync())
+                    while (await reader.ReadAsync().ConfigureAwait(false))
                         results.Add(new Tuple<int, int>(reader.GetInt32(0), reader.GetInt32(1)));
                 }
                 return results;
@@ -158,7 +158,7 @@ namespace Vydejna.Domain
                 cmd.CommandText = "UPDATE eventstore_streams SET version = @version WHERE stream = @stream";
                 cmd.Parameters.AddWithValue("@stream", stream);
                 cmd.Parameters.AddWithValue("@version", lastVersion);
-                await cmd.ExecuteNonQueryAsync();
+                await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
             }
         }
 
@@ -181,7 +181,7 @@ namespace Vydejna.Domain
                     paramVersion.Value = item.StreamVersion;
                     paramType.Value = item.Type;
                     paramBody.Value = item.Body;
-                    await cmd.ExecuteNonQueryAsync();
+                    await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
                 }
             }
         }
@@ -195,17 +195,17 @@ namespace Vydejna.Domain
                     (updateLock ? "(UPDLOCK) " : "") +
                     "WHERE stream = @stream";
                 cmd.Parameters.AddWithValue("@stream", stream);
-                return (int)await cmd.ExecuteScalarAsync();
+                return (int)await cmd.ExecuteScalarAsync().ConfigureAwait(false);
             }
         }
 
         public async Task<IEventStoreStream> ReadStream(string stream, int minVersion = 0, int maxCount = int.MaxValue, bool loadBody = true)
         {
-            var conn = await _config.GetConnection();
+            var conn = await _config.GetConnection().ConfigureAwait(false);
             try
             {
-                int currentVersion = await GetStreamVersion(conn, stream, false);
-                var events = await LoadStreamEvents(conn, stream, minVersion, maxCount);
+                int currentVersion = await GetStreamVersion(conn, stream, false).ConfigureAwait(false);
+                var events = await LoadStreamEvents(conn, stream, minVersion, maxCount).ConfigureAwait(false);
                 return new EventStoreStream(events, currentVersion, 0);
             }
             finally
@@ -225,9 +225,9 @@ namespace Vydejna.Domain
                 cmd.Parameters.AddWithValue("@stream", stream);
                 cmd.Parameters.AddWithValue("@minversion", minVersion);
                 cmd.Parameters.AddWithValue("@maxcount", maxCount);
-                using (var reader = await cmd.ExecuteReaderAsync())
+                using (var reader = await cmd.ExecuteReaderAsync().ConfigureAwait(false))
                 {
-                    while (await reader.ReadAsync())
+                    while (await reader.ReadAsync().ConfigureAwait(false))
                     {
                         var stored = new EventStoreEvent();
                         stored.Token = new EventStoreToken(reader.GetInt32(0).ToString());
@@ -244,15 +244,18 @@ namespace Vydejna.Domain
 
         public async Task<IEventStoreCollection> GetAllEvents(EventStoreToken token, int maxCount = int.MaxValue, bool loadBody = false)
         {
-            var conn = await _config.GetConnection();
+            var conn = await _config.GetConnection().ConfigureAwait(false);
             try
             {
                 if (token.IsCurrent)
-                    return new EventStoreCollection(Enumerable.Empty<EventStoreEvent>(), await GetCurrentToken(conn), false);
+                {
+                    var nextToken = await GetCurrentToken(conn).ConfigureAwait(false);
+                    return new EventStoreCollection(Enumerable.Empty<EventStoreEvent>(), nextToken, false);
+                }
                 var id = token.IsInitial ? 0 : int.Parse(token.ToString());
                 if (maxCount < int.MaxValue)
                     maxCount++;
-                var events = await LoadAllEvents(conn, id, maxCount, loadBody);
+                var events = await LoadAllEvents(conn, id, maxCount, loadBody).ConfigureAwait(false);
                 if (events.Count == 0)
                     return new EventStoreCollection(Enumerable.Empty<EventStoreEvent>(), token, false);
                 else if (maxCount == 1)
@@ -272,7 +275,7 @@ namespace Vydejna.Domain
             {
                 var results = new List<EventStoreEvent>();
                 cmd.CommandText = "SELECT TOP 1 id FROM eventstore_events ORDER BY id DESC";
-                using (var reader = await cmd.ExecuteReaderAsync(System.Data.CommandBehavior.SingleRow))
+                using (var reader = await cmd.ExecuteReaderAsync(System.Data.CommandBehavior.SingleRow).ConfigureAwait(false))
                 {
                     if (!reader.Read())
                         return EventStoreToken.Initial;
@@ -295,9 +298,9 @@ namespace Vydejna.Domain
                     " FROM eventstore_events WHERE id > @id ORDER BY id";
                 cmd.Parameters.AddWithValue("@maxcount", maxCount);
                 cmd.Parameters.AddWithValue("@id", id);
-                using (var reader = await cmd.ExecuteReaderAsync())
+                using (var reader = await cmd.ExecuteReaderAsync().ConfigureAwait(false))
                 {
-                    while (await reader.ReadAsync())
+                    while (await reader.ReadAsync().ConfigureAwait(false))
                     {
                         var stored = new EventStoreEvent();
                         stored.Token = new EventStoreToken(reader.GetInt32(0).ToString());
@@ -322,7 +325,7 @@ namespace Vydejna.Domain
                 .Select(evt => new { id = int.Parse(evt.Token.ToString()), evt })
                 .ToDictionary(c => c.id);
 
-            var conn = await _config.GetConnection();
+            var conn = await _config.GetConnection().ConfigureAwait(false);
             try
             {
                 using (var cmd = conn.CreateCommand())
@@ -333,9 +336,9 @@ namespace Vydejna.Domain
                     for (int i = 1; i < ids.Count; i++)
                         sb.Append(", ").Append(ids[i]);
                     sb.Append(")");
-                    using (var reader = await cmd.ExecuteReaderAsync())
+                    using (var reader = await cmd.ExecuteReaderAsync().ConfigureAwait(false))
                     {
-                        while (await reader.ReadAsync())
+                        while (await reader.ReadAsync().ConfigureAwait(false))
                             ids[reader.GetInt32(0)].evt.Body = reader.GetString(1);
                     }
                 }

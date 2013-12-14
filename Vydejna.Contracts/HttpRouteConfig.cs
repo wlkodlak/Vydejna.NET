@@ -66,8 +66,8 @@ namespace Vydejna.Contracts
 
             public async Task<object> Process(HttpServerRequest request)
             {
-                var typedRequest = await _translator(request);
-                var result = await _handler(typedRequest);
+                var typedRequest = await _translator(request).ConfigureAwait(false);
+                var result = await _handler(typedRequest).ConfigureAwait(false);
                 return result;
             }
         }

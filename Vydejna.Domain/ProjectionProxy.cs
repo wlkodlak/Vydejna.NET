@@ -62,9 +62,9 @@ namespace Vydejna.Domain
 
         public async Task InitializeInstances()
         {
-            _metadata = await _mgr.GetProjection(_projectionName);
+            _metadata = await _mgr.GetProjection(_projectionName).ConfigureAwait(false);
             _changeRegistration = _metadata.RegisterForChanges(null, this);
-            var allInstances = await _metadata.GetAllMetadata();
+            var allInstances = await _metadata.GetAllMetadata().ConfigureAwait(false);
             lock (_lock)
             {
                 _instances = PreprocessInstances(allInstances);

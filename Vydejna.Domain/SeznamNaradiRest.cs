@@ -56,7 +56,7 @@ namespace Vydejna.Domain
             {
                 try
                 {
-                    await handler.Handle(cmd);
+                    await handler.Handle(cmd).ConfigureAwait(false);
                     return new HttpServerResponseBuilder().WithStatusCode(HttpStatusCode.Accepted).Build();
                 }
                 catch (ValidationException)
@@ -67,7 +67,7 @@ namespace Vydejna.Domain
                 {
                 }
                 retry++;
-                await Delay(retry);
+                await Delay(retry).ConfigureAwait(false);
             }
             return new HttpServerResponseBuilder().WithStatusCode(HttpStatusCode.InternalServerError).Build();
         }
@@ -93,14 +93,14 @@ namespace Vydejna.Domain
         {
             int offset = request.Parameter("offset").AsInteger().Optional(0);
             int pocet = request.Parameter("pocet").AsInteger().Optional(int.MaxValue);
-            return await _readSvc.Handle(new ZiskatSeznamNaradiRequest(offset, pocet));
+            return await _readSvc.Handle(new ZiskatSeznamNaradiRequest(offset, pocet)).ConfigureAwait(false);
         }
 
         public async Task<object> OveritUnikatnost(HttpServerRequest request)
         {
             string vykres = request.Parameter("vykres").AsString().Mandatory();
             string rozmer = request.Parameter("rozmer").AsString().Mandatory();
-            return await _readSvc.Handle(new OvereniUnikatnostiRequest(vykres, rozmer));
+            return await _readSvc.Handle(new OvereniUnikatnostiRequest(vykres, rozmer)).ConfigureAwait(false);
         }
     }
 }

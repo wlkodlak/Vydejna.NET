@@ -51,18 +51,18 @@ namespace Vydejna.Domain
                     cancel.ThrowIfCancellationRequested();
                     if (_readyEvents.Count > 0)
                         return _readyEvents.Dequeue();
-                    var collection = await _store.GetAllEvents(_token, 100, false);
+                    var collection = await _store.GetAllEvents(_token, 100, false).ConfigureAwait(false);
                     _token = collection.NextToken;
                     if (collection.Events.Count > 0)
                     {
                         var usable = collection.Events.Where(e => _filter.Contains(e.Type)).ToList();
-                        await _store.LoadBodies(usable);
+                        await _store.LoadBodies(usable).ConfigureAwait(false);
                         usable.ForEach(_readyEvents.Enqueue);
                     }
                     else if (_rebuildMode)
                         return null;
                     else
-                        await _store.WaitForEvents(_token, cancel);
+                        await _store.WaitForEvents(_token, cancel).ConfigureAwait(false);
                 }
             }
         }

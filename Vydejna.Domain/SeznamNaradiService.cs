@@ -23,43 +23,43 @@ namespace Vydejna.Domain
 
         public async Task Handle(AktivovatNaradiCommand message)
         {
-            var naradi = await _repoNaradi.Get(message.NaradiId);
+            var naradi = await _repoNaradi.Get(message.NaradiId).ConfigureAwait(false);
             if (naradi == null)
                 return;
             naradi.Aktivovat();
-            await _repoNaradi.Save(naradi);
+            await _repoNaradi.Save(naradi).ConfigureAwait(false);
         }
 
         public async Task Handle(DeaktivovatNaradiCommand message)
         {
-            var naradi = await _repoNaradi.Get(message.NaradiId);
+            var naradi = await _repoNaradi.Get(message.NaradiId).ConfigureAwait(false);
             if (naradi == null)
                 return;
             naradi.Deaktivovat();
-            await _repoNaradi.Save(naradi);
+            await _repoNaradi.Save(naradi).ConfigureAwait(false);
         }
 
         public async Task Handle(DefinovatNaradiInternalCommand message)
         {
-            var naradi = await _repoNaradi.Get(message.NaradiId);
+            var naradi = await _repoNaradi.Get(message.NaradiId).ConfigureAwait(false);
             if (naradi != null)
                 return;
             naradi = Naradi.Definovat(message.NaradiId, message.Vykres, message.Rozmer, message.Druh);
-            await _repoNaradi.Save(naradi);
+            await _repoNaradi.Save(naradi).ConfigureAwait(false);
         }
 
         public async Task Handle(DefinovatNaradiCommand message)
         {
-            var unikatnost = await _repoUnikatnost.Get();
+            var unikatnost = await _repoUnikatnost.Get().ConfigureAwait(false);
             unikatnost.ZahajitDefinici(message.NaradiId, message.Vykres, message.Rozmer, message.Druh);
-            await _repoUnikatnost.Save(unikatnost);
+            await _repoUnikatnost.Save(unikatnost).ConfigureAwait(false);
         }
 
         public async Task Handle(DokoncitDefiniciNaradiInternalCommand message)
         {
-            var unikatnost = await _repoUnikatnost.Get();
+            var unikatnost = await _repoUnikatnost.Get().ConfigureAwait(false);
             unikatnost.DokoncitDefinici(message.NaradiId, message.Vykres, message.Rozmer, message.Druh);
-            await _repoUnikatnost.Save(unikatnost);
+            await _repoUnikatnost.Save(unikatnost).ConfigureAwait(false);
         }
     }
 }

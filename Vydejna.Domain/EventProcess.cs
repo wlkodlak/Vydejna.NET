@@ -42,22 +42,22 @@ namespace Vydejna.Domain
         public async Task Start()
         {
             _cancel = new CancellationTokenSource();
-            _metadata = await _metadataMgr.GetHandler(_consumer.GetConsumerName());
+            _metadata = await _metadataMgr.GetHandler(_consumer.GetConsumerName()).ConfigureAwait(false);
             _token = _metadata.GetToken() ?? EventStoreToken.Initial;
             _stream = _streamer.GetStreamer(_subscriptions.GetHandledTypes(), _token, false);
             try
             {
                 while (!_cancel.IsCancellationRequested)
                 {
-                    var storedEvent = await _stream.GetNextEvent(_cancel.Token);
+                    var storedEvent = await _stream.GetNextEvent(_cancel.Token).ConfigureAwait(false);
                     var objectEvent = _serializer.Deserialize(storedEvent);
                     var handlers = _subscriptions.FindHandlers(objectEvent.GetType());
                     foreach (var handler in handlers)
                     {
                         try
                         {
-                            await handler.Handle(objectEvent);
-                            await _metadata.SetToken(storedEvent.Token);
+                            await handler.Handle(objectEvent).ConfigureAwait(false);
+                            await _metadata.SetToken(storedEvent.Token).ConfigureAwait(false);
                         }
                         catch (Exception exception)
                         {
@@ -69,7 +69,7 @@ namespace Vydejna.Domain
             catch (TaskCanceledException)
             {
             }
-            await _consumer.HandleShutdown();
+            await _consumer.HandleShutdown().ConfigureAwait(false);
         }
 
         public void Stop()

@@ -95,9 +95,9 @@ namespace Vydejna.Contracts
         {
             try
             {
-                var request = await Task.Factory.StartNew(() => CreateRequest(context.Request), TaskCreationOptions.PreferFairness);
-                var response = await _dispatcher.ProcessRequest(request);
-                await WriteResponse(context.Response, response);
+                var request = await Task.Factory.StartNew(() => CreateRequest(context.Request), TaskCreationOptions.PreferFairness).ConfigureAwait(false);
+                var response = await _dispatcher.ProcessRequest(request).ConfigureAwait(false);
+                await WriteResponse(context.Response, response).ConfigureAwait(false);
             }
             finally
             {
@@ -134,14 +134,14 @@ namespace Vydejna.Contracts
                     var inputStream = httpResponse.StreamBody;
                     while (true)
                     {
-                        int read = await inputStream.ReadAsync(buffer, 0, buffer.Length);
+                        int read = await inputStream.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false);
                         if (read <= 0)
                             break;
-                        await stream.WriteAsync(buffer, 0, read);
+                        await stream.WriteAsync(buffer, 0, read).ConfigureAwait(false);
                     }
                 }
                 else if (httpResponse.RawBody != null && httpResponse.RawBody.Length > 0)
-                    await stream.WriteAsync(httpResponse.RawBody, 0, httpResponse.RawBody.Length);
+                    await stream.WriteAsync(httpResponse.RawBody, 0, httpResponse.RawBody.Length).ConfigureAwait(false);
             }
         }
     }

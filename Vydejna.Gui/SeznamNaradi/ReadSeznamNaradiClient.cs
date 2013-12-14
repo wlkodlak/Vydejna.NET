@@ -23,7 +23,7 @@ namespace Vydejna.Gui.SeznamNaradi
             var json = new RestClientJson(_url + "SeznamNaradi", _client)
                 .AddParameter("offset", request.Offset.ToString())
                 .AddParameter("pocet", request.MaxPocet.ToString());
-            var result = await json.Execute();
+            var result = await json.Execute().ConfigureAwait(false);
             return result.GetPayload<ZiskatSeznamNaradiResponse>();
         }
 
@@ -32,7 +32,7 @@ namespace Vydejna.Gui.SeznamNaradi
             var json = new RestClientJson(_url + "OveritUnikatnost", _client)
                 .AddParameter("vykres", request.Vykres)
                 .AddParameter("rozmer", request.Rozmer);
-            var result = await json.Execute();
+            var result = await json.Execute().ConfigureAwait(false);
             return result.GetPayload<OvereniUnikatnostiResponse>();
         }
     }

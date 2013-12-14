@@ -130,7 +130,7 @@ namespace Vydejna.Domain
 
         private async Task NacistData()
         {
-            var doc = await _store.GetDocument(_documentFullName);
+            var doc = await _store.GetDocument(_documentFullName).ConfigureAwait(false);
             if (string.IsNullOrEmpty(doc))
                 return;
             var xml = XDocument.Parse(doc);
@@ -174,7 +174,7 @@ namespace Vydejna.Domain
                     }
                     writer.WriteEndElement();
                 }
-                await _store.SaveDocument(_documentFullName, builder.ToString());
+                await _store.SaveDocument(_documentFullName, builder.ToString()).ConfigureAwait(false);
                 _dirty = false;
             }
         }
@@ -338,8 +338,8 @@ namespace Vydejna.Domain
 
         async Task IEventConsumer.HandleShutdown()
         {
-            await UlozitData();
-            await _processServices.CommitProjectionProgress();
+            await UlozitData().ConfigureAwait(false);
+            await _processServices.CommitProjectionProgress().ConfigureAwait(false);
         }
 
         string IProjection.GenerateInstanceName(string masterName)

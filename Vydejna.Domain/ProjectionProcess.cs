@@ -70,21 +70,21 @@ namespace Vydejna.Domain
 
         public async Task Start()
         {
-            await LoadMetadata();
+            await LoadMetadata().ConfigureAwait(false);
             DetectRebuildType();
 
             if (!_isRebuilder)
-                await InitializeAsMaster();
-            else if (!await InitializeAsRebuilder())
+                await InitializeAsMaster().ConfigureAwait(false);
+            else if (!await InitializeAsRebuilder().ConfigureAwait(false))
                 return;
-            
-            await Run();
+
+            await Run().ConfigureAwait(false);
         }
 
         private async Task LoadMetadata()
         {
-            _metadata = await _metadataManager.GetProjection(_projection.GetConsumerName());
-            _allMetadata = await _metadata.GetAllMetadata();
+            _metadata = await _metadataManager.GetProjection(_projection.GetConsumerName()).ConfigureAwait(false);
+            _allMetadata = await _metadata.GetAllMetadata().ConfigureAwait(false);
             _runningMetadata = _allMetadata.FirstOrDefault(m => m.Status == ProjectionStatus.Running);
             _rebuildMetadata = _allMetadata.FirstOrDefault(m => m.Status == ProjectionStatus.NewBuild);
         }
@@ -127,15 +127,18 @@ namespace Vydejna.Domain
 
         private async Task InitializeAsMaster()
         {
-            await _projection.SetInstanceName(_instanceName);
-            _currentToken = _rebuildType == ProjectionRebuildType.Initial ? EventStoreToken.Initial : await _metadata.GetToken(_instanceName);
+            await _projection.SetInstanceName(_instanceName).ConfigureAwait(false);
+            if (_rebuildType == ProjectionRebuildType.Initial)
+                _currentToken = EventStoreToken.Initial;
+            else
+                _currentToken = await _metadata.GetToken(_instanceName).ConfigureAwait(false);
             if (_rebuildType == ProjectionRebuildType.Initial)
             {
-                await _metadata.BuildNewInstance(_instanceName, null, _projection.GetVersion(), _projection.GetMinimalReader());
-                await _projection.StartRebuild(false);
+                await _metadata.BuildNewInstance(_instanceName, null, _projection.GetVersion(), _projection.GetMinimalReader()).ConfigureAwait(false);
+                await _projection.StartRebuild(false).ConfigureAwait(false);
             }
             else if (_rebuildType == ProjectionRebuildType.ContinueInitial)
-                await _projection.StartRebuild(true);
+                await _projection.StartRebuild(true).ConfigureAwait(false);
             _metadata.RegisterForChanges(_instanceName, this);
             _isInRebuildMode = _rebuildType == ProjectionRebuildType.Initial || _rebuildType == ProjectionRebuildType.ContinueInitial;
             _openedEventStream = _streamer.GetStreamer(_handlers.GetHandledTypes(), _currentToken, _isInRebuildMode);
@@ -143,17 +146,19 @@ namespace Vydejna.Domain
 
         private async Task<bool> InitializeAsRebuilder()
         {
-            await _projection.SetInstanceName(_instanceName);
+            await _projection.SetInstanceName(_instanceName).ConfigureAwait(false);
             if (_rebuildType == ProjectionRebuildType.NewRebuild)
             {
                 _currentToken = EventStoreToken.Initial;
-                await _metadata.BuildNewInstance(_instanceName, null, _projection.GetVersion(), _projection.GetMinimalReader());
-                await _projection.StartRebuild(false);
+                await _metadata
+                    .BuildNewInstance(_instanceName, null, _projection.GetVersion(), _projection.GetMinimalReader())
+                    .ConfigureAwait(false);
+                await _projection.StartRebuild(false).ConfigureAwait(false);
             }
             else if (_rebuildType == ProjectionRebuildType.ContinueRebuild)
             {
-                _currentToken = await _metadata.GetToken(_instanceName);
-                await _projection.StartRebuild(true);
+                _currentToken = await _metadata.GetToken(_instanceName).ConfigureAwait(false);
+                await _projection.StartRebuild(true).ConfigureAwait(false);
             }
             else
                 return false;
@@ -170,7 +175,7 @@ namespace Vydejna.Domain
             {
                 try
                 {
-                    var storedEvent = await _openedEventStream.GetNextEvent(_cancel.Token);
+                    var storedEvent = await _openedEventStream.GetNextEvent(_cancel.Token).ConfigureAwait(false);
                     if (storedEvent != null)
                     {
                         if (!_isInRebuildMode && !_isInBatchMode && supportsBatchMode)
@@ -182,21 +187,21 @@ namespace Vydejna.Domain
                         var objectEvent = _serializer.Deserialize(storedEvent);
                         var handlers = _handlers.FindHandlers(objectEvent.GetType());
                         foreach (var handler in handlers)
-                            await handler.Handle(objectEvent);
+                            await handler.Handle(objectEvent).ConfigureAwait(false);
                         _currentToken = storedEvent.Token;
 
                         if (!_isInBatchMode && !_isInRebuildMode)
-                            await _metadata.SetToken(_instanceName, _currentToken);
+                            await _metadata.SetToken(_instanceName, _currentToken).ConfigureAwait(false);
                         else
                             System.Diagnostics.Debug.WriteLine("Skipping SetToken({0})", _currentToken);
                     }
                     else if (_isInRebuildMode)
                     {
-                        await _projection.CommitRebuild();
-                        await _metadata.UpdateStatus(_instanceName, ProjectionStatus.Running);
-                        await _metadata.SetToken(_instanceName, _currentToken);
+                        await _projection.CommitRebuild().ConfigureAwait(false);
+                        await _metadata.UpdateStatus(_instanceName, ProjectionStatus.Running).ConfigureAwait(false);
+                        await _metadata.SetToken(_instanceName, _currentToken).ConfigureAwait(false);
                         if (_isRebuilder)
-                            await _metadata.UpdateStatus(_runningMetadata.Name, ProjectionStatus.Legacy);
+                            await _metadata.UpdateStatus(_runningMetadata.Name, ProjectionStatus.Legacy).ConfigureAwait(false);
                         _openedEventStream = _streamer.GetStreamer(_handlers.GetHandledTypes(), _currentToken, false);
                         _isInRebuildMode = false;
                     }
@@ -206,7 +211,7 @@ namespace Vydejna.Domain
                     break;
                 }
             }
-            await _projection.HandleShutdown();
+            await _projection.HandleShutdown().ConfigureAwait(false);
         }
 
         Task IHandle<ProjectionMetadataChanged>.Handle(ProjectionMetadataChanged msg)

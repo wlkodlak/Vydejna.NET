@@ -70,25 +70,25 @@ namespace Vydejna.Contracts
             try
             {
                 foreach (var handler in _decoders)
-                    request = await handler.Process(request);
+                    request = await handler.Process(request).ConfigureAwait(false);
                 foreach (var handler in _enhancers)
-                    request = await handler.Process(request, routeParameters);
+                    request = await handler.Process(request, routeParameters).ConfigureAwait(false);
                 var contentType = request.Headers.ContentType;
                 foreach (var handler in _inputs)
                 {
                     if (!handler.HandlesContentType(contentType))
                         continue;
-                    request.PostDataObject = await handler.ProcessInput(request);
+                    request.PostDataObject = await handler.ProcessInput(request).ConfigureAwait(false);
                     break;
                 }
                 var result = (object)null;
                 try
                 {
                     foreach (var handler in _pre)
-                        request.ContextObject = await handler.Process(request);
-                    result = await _processor.Process(request);
+                        request.ContextObject = await handler.Process(request).ConfigureAwait(false);
+                    result = await _processor.Process(request).ConfigureAwait(false);
                     foreach (var handler in _post)
-                        result = await handler.Process(request, result);
+                        result = await handler.Process(request, result).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -99,11 +99,11 @@ namespace Vydejna.Contracts
                 {
                     if (!handler.HandlesOutput(request, result))
                         continue;
-                    response = await handler.ProcessOutput(request, result);
+                    response = await handler.ProcessOutput(request, result).ConfigureAwait(false);
                     break;
                 }
                 foreach (var handler in _encoders)
-                    response = await handler.Process(response);
+                    response = await handler.Process(response).ConfigureAwait(false);
                 return response;
             }
             catch

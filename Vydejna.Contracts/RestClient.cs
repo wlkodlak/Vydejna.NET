@@ -64,7 +64,7 @@ namespace Vydejna.Contracts
                     request.Headers.Add(new HttpClientHeader(header.Name, header.Value));
             }
             PreExecute(request);
-            var response = await _client.Execute(request);
+            var response = await _client.Execute(request).ConfigureAwait(false);
             return CreateResult(response);
         }
 

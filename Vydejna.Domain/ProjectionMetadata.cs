@@ -33,7 +33,7 @@ namespace Vydejna.Domain
                 if (!_projections.TryGetValue(projectionName, out metadata))
                     _projections[projectionName] = metadata = new ProjectionMetadata(this, projectionName);
             }
-            await metadata.Load();
+            await metadata.Load().ConfigureAwait(false);
             return metadata;
         }
 
@@ -45,7 +45,7 @@ namespace Vydejna.Domain
                 if (!_consumers.TryGetValue(handlerName, out metadata))
                     _consumers[handlerName] = metadata = new EventsConsumerMetadata(this, handlerName);
             }
-            await metadata.Load();
+            await metadata.Load().ConfigureAwait(false);
             return metadata;
         }
 
@@ -82,9 +82,10 @@ namespace Vydejna.Domain
 
             public async Task Load()
             {
-                using (await _lock.Lock())
+                using (await _lock.Lock().ConfigureAwait(false))
                 {
-                    _token = new EventStoreToken(await _parent._store.GetDocument(_tokenDocument));
+                    var tokenString = await _parent._store.GetDocument(_tokenDocument).ConfigureAwait(false);
+                    _token = new EventStoreToken(tokenString);
                 }
             }
 
@@ -95,10 +96,10 @@ namespace Vydejna.Domain
 
             public async Task SetToken(EventStoreToken token)
             {
-                using (await _lock.Lock())
+                using (await _lock.Lock().ConfigureAwait(false))
                 {
                     _token = token;
-                    await _parent._store.SaveDocument(_tokenDocument, _token.ToString());
+                    await _parent._store.SaveDocument(_tokenDocument, _token.ToString()).ConfigureAwait(false);
                 }
             }
         }
@@ -136,12 +137,12 @@ namespace Vydejna.Domain
 
             public async Task Load()
             {
-                using (await _lock.Lock())
+                using (await _lock.Lock().ConfigureAwait(false))
                 {
                     if (_isLoaded)
                         return;
 
-                    var doc = await _parent._store.GetDocument(_documentName);
+                    var doc = await _parent._store.GetDocument(_documentName).ConfigureAwait(false);
                     if (!string.IsNullOrEmpty(doc))
                     {
                         var xml = XElement.Parse(doc);
@@ -163,7 +164,7 @@ namespace Vydejna.Domain
 
             public async Task Save()
             {
-                using (await _lock.Lock())
+                using (await _lock.Lock().ConfigureAwait(false))
                 {
                     var xml = new XElement("Projection");
                     foreach (var instance in _instances.Values)
@@ -176,7 +177,7 @@ namespace Vydejna.Domain
                             new XAttribute("Status", instance.Status));
                         xml.Add(xmlInstance);
                     }
-                    await _parent._store.SaveDocument(_documentName, xml.ToString());
+                    await _parent._store.SaveDocument(_documentName, xml.ToString()).ConfigureAwait(false);
                 }
             }
 
@@ -196,7 +197,7 @@ namespace Vydejna.Domain
                     foreach (var registration in _changes)
                     {
                         if (registration.HandlesInstance(evt.InstanceName))
-                            await registration.Invoke(evt);
+                            await registration.Invoke(evt).ConfigureAwait(false);
                     }
                 }
             }
@@ -216,7 +217,7 @@ namespace Vydejna.Domain
             public async Task BuildNewInstance(string instanceName, string nodeName, string version, string minimalReader)
             {
                 var updatedInstances = new List<ProjectionMetadataChanged>();
-                using (await _lock.Lock())
+                using (await _lock.Lock().ConfigureAwait(false))
                 {
                     var instance = new InstanceMetadata();
                     instance.InstanceName = instanceName;
@@ -237,14 +238,14 @@ namespace Vydejna.Domain
                         }
                     }
                 }
-                await Save();
-                await RaiseChanges(updatedInstances);
+                await Save().ConfigureAwait(false);
+                await RaiseChanges(updatedInstances).ConfigureAwait(false);
             }
 
             public async Task Upgrade(string instanceName, string newVersion)
             {
                 var updatedInstances = new List<ProjectionMetadataChanged>();
-                using (await _lock.Lock())
+                using (await _lock.Lock().ConfigureAwait(false))
                 {
                     InstanceMetadata metadata;
                     if (_instances.TryGetValue(instanceName, out metadata))
@@ -253,14 +254,14 @@ namespace Vydejna.Domain
                         updatedInstances.Add(BuildEvent(metadata, null));
                     }
                 }
-                await Save();
-                await RaiseChanges(updatedInstances);
+                await Save().ConfigureAwait(false);
+                await RaiseChanges(updatedInstances).ConfigureAwait(false);
             }
 
             public async Task UpdateStatus(string instanceName, ProjectionStatus status)
             {
                 var updatedInstances = new List<ProjectionMetadataChanged>();
-                using (await _lock.Lock())
+                using (await _lock.Lock().ConfigureAwait(false))
                 {
                     InstanceMetadata metadata;
                     if (_instances.TryGetValue(instanceName, out metadata))
@@ -269,24 +270,24 @@ namespace Vydejna.Domain
                         updatedInstances.Add(BuildEvent(metadata, null));
                     }
                 }
-                await Save();
-                await RaiseChanges(updatedInstances);
+                await Save().ConfigureAwait(false);
+                await RaiseChanges(updatedInstances).ConfigureAwait(false);
             }
 
             public async Task<EventStoreToken> GetToken(string instanceName)
             {
                 InstanceMetadata metadata;
-                using (await _lock.Lock())
+                using (await _lock.Lock().ConfigureAwait(false))
                 {
                     if (!_instances.TryGetValue(instanceName, out metadata))
                         return EventStoreToken.Initial;
                 }
-                using (await metadata.TokenLock.Lock())
+                using (await metadata.TokenLock.Lock().ConfigureAwait(false))
                 {
                     if (metadata.Token != null)
                         return new EventStoreToken(metadata.Token);
                     var docName = _parent.BuildTokenDocumentName(_projectionName, instanceName);
-                    metadata.Token = await _parent._store.GetDocument(docName);
+                    metadata.Token = await _parent._store.GetDocument(docName).ConfigureAwait(false);
                     return new EventStoreToken(metadata.Token);
                 }
             }
@@ -294,28 +295,28 @@ namespace Vydejna.Domain
             public async Task SetToken(string instanceName, EventStoreToken token)
             {
                 InstanceMetadata metadata;
-                using (await _lock.Lock())
+                using (await _lock.Lock().ConfigureAwait(false))
                 {
                     if (!_instances.TryGetValue(instanceName, out metadata))
                         return;
                 }
-                using (await metadata.TokenLock.Lock())
+                using (await metadata.TokenLock.Lock().ConfigureAwait(false))
                 {
                     var docName = _parent.BuildTokenDocumentName(_projectionName, instanceName);
                     metadata.Token = token.ToString();
-                    await _parent._store.SaveDocument(docName, metadata.Token);
+                    await _parent._store.SaveDocument(docName, metadata.Token).ConfigureAwait(false);
                 }
             }
 
             public async Task<IEnumerable<ProjectionInstanceMetadata>> GetAllMetadata()
             {
-                using (await _lock.Lock())
+                using (await _lock.Lock().ConfigureAwait(false))
                     return _instances.Values.Select(BuildPublicMetadata).OrderByDescending(i => i.Version).ToList();
             }
 
             public async Task<ProjectionInstanceMetadata> GetInstanceMetadata(string instanceName)
             {
-                using (await _lock.Lock())
+                using (await _lock.Lock().ConfigureAwait(false))
                 {
                     InstanceMetadata metadata;
                     if (_instances.TryGetValue(instanceName, out metadata))

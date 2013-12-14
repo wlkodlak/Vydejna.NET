@@ -50,14 +50,14 @@ namespace Vydejna.Domain
 
         public async Task CreateTables()
         {
-            var conn = await _config.GetConnection();
+            var conn = await _config.GetConnection().ConfigureAwait(false);
             try
             {
                 var existingTables = new HashSet<string>();
                 using (var cmd = conn.CreateCommand())
                 {
                     cmd.CommandText = "SELECT name FROM sys.objects WHERE type = 'U'";
-                    using (var reader = await cmd.ExecuteReaderAsync())
+                    using (var reader = await cmd.ExecuteReaderAsync().ConfigureAwait(false))
                     {
                         while (reader.Read())
                             existingTables.Add(reader.GetString(0));
@@ -74,7 +74,7 @@ namespace Vydejna.Domain
                             "[body] [text] NULL," +
                             "CONSTRAINT [PK_documents] PRIMARY KEY CLUSTERED ([id] ASC)" +
                             ")";
-                        await cmd.ExecuteNonQueryAsync();
+                        await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
                     }
                 }
             }
@@ -86,14 +86,14 @@ namespace Vydejna.Domain
 
         public async Task<string> GetDocument(string key)
         {
-            var conn = await _config.GetConnection();
+            var conn = await _config.GetConnection().ConfigureAwait(false);
             try
             {
                 using (var cmd = conn.CreateCommand())
                 {
                     cmd.CommandText = "SELECT body FROM documents WHERE id = @id";
                     cmd.Parameters.AddWithValue("@id", key);
-                    return (string)await cmd.ExecuteScalarAsync();
+                    return (string)await cmd.ExecuteScalarAsync().ConfigureAwait(false);
                 }
             }
             finally
@@ -104,7 +104,7 @@ namespace Vydejna.Domain
 
         public async Task SaveDocument(string key, string value)
         {
-            var conn = await _config.GetConnection();
+            var conn = await _config.GetConnection().ConfigureAwait(false);
             try
             {
                 using (var cmd = conn.CreateCommand())
@@ -117,7 +117,7 @@ namespace Vydejna.Domain
                         "WHEN NOT MATCHED THEN INSERT (id, body) VALUES (source.id, source.body);";
                     cmd.Parameters.AddWithValue("@id", key);
                     cmd.Parameters.AddWithValue("@body", value);
-                    await cmd.ExecuteNonQueryAsync();
+                    await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
                 }
             }
             finally
