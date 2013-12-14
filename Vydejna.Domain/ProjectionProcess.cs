@@ -16,65 +16,6 @@ namespace Vydejna.Domain
         ICollection<Type> HandledTypes();
     }
 
-    public class ProjectionProcessHandlers : IProjectionProcessHandlerCollection
-    {
-        private Dictionary<Type, Func<object, Task>> _handlers;
-
-        public ProjectionProcessHandlers()
-        {
-            _handlers = new Dictionary<Type, Func<object, Task>>();
-        }
-
-        public IHandleRegistration<T> Register<T>(IHandle<T> handler)
-        {
-            _handlers[typeof(T)] = CreateDispatchableHandler(handler);
-            return new Registration<T>(this);
-        }
-
-        private static Func<object, Task> CreateDispatchableHandler<T>(IHandle<T> handler)
-        {
-            // return o => handler.Handle((T)o);
-            var param = Expression.Parameter(typeof(object), "o");
-            var cast = Expression.Convert(param, typeof(T));
-            var handleMethod = typeof(IHandle<T>).GetMethod("Handle");
-            var invoke = Expression.Call(Expression.Constant(handler), handleMethod, cast);
-            var name = "Handle_" + typeof(T).Name;
-            return Expression.Lambda<Func<object, Task>>(invoke, name, new[] { param }).Compile();
-        }
-
-        private class Registration<T> : IHandleRegistration<T>
-        {
-            private ProjectionProcessHandlers _process;
-            public Registration(ProjectionProcessHandlers process)
-            {
-                _process = process;
-            }
-
-            public void ReplaceWith(IHandle<T> handler)
-            {
-                _process.Register(handler);
-            }
-        }
-
-        public Task Handle(Type type, object evt)
-        {
-            Func<object, Task> handler;
-            if (evt != null)
-            {
-                if (type == null)
-                    type = evt.GetType();
-                if (_handlers.TryGetValue(type, out handler))
-                    return handler(evt);
-            }
-            return TaskResult.GetCompletedTask();
-        }
-
-        public ICollection<Type> HandledTypes()
-        {
-            return _handlers.Keys;
-        }
-    }
-
     public class ProjectionProcess : IHandle<ProjectionMetadataChanged>, IProjectionProcess, IDisposable
     {
         private string _instanceName;
@@ -82,7 +23,7 @@ namespace Vydejna.Domain
         private IProjectionMetadataManager _metadataManager;
         private IProjectionMetadata _metadata;
         private IProjection _projection;
-        private IProjectionProcessHandlerCollection _handlers;
+        private SubscriptionManager _handlers;
         private IEventSourcedSerializer _serializer;
         private EventStoreToken _currentToken;
         private IEventStreamingInstance _openedEventStream;
@@ -101,7 +42,7 @@ namespace Vydejna.Domain
             _streamer = streamer;
             _metadataManager = metadataManager;
             _serializer = serializer;
-            _handlers = new ProjectionProcessHandlers();
+            _handlers = new SubscriptionManager();
             _cancel = new CancellationTokenSource();
         }
 
@@ -197,7 +138,7 @@ namespace Vydejna.Domain
                 await _projection.StartRebuild(true);
             _metadata.RegisterForChanges(_instanceName, this);
             _isInRebuildMode = _rebuildType == ProjectionRebuildType.Initial || _rebuildType == ProjectionRebuildType.ContinueInitial;
-            _openedEventStream = _streamer.GetStreamer(_handlers.HandledTypes(), _currentToken, _isInRebuildMode);
+            _openedEventStream = _streamer.GetStreamer(_handlers.GetHandledTypes(), _currentToken, _isInRebuildMode);
         }
 
         private async Task<bool> InitializeAsRebuilder()
@@ -218,7 +159,7 @@ namespace Vydejna.Domain
                 return false;
             _metadata.RegisterForChanges(_instanceName, this);
             _isInRebuildMode = true;
-            _openedEventStream = _streamer.GetStreamer(_handlers.HandledTypes(), _currentToken, true);
+            _openedEventStream = _streamer.GetStreamer(_handlers.GetHandledTypes(), _currentToken, true);
             return true;
         }
 
@@ -239,7 +180,9 @@ namespace Vydejna.Domain
                         }
 
                         var objectEvent = _serializer.Deserialize(storedEvent);
-                        await _handlers.Handle(null, objectEvent);
+                        var handlers = _handlers.FindHandlers(objectEvent.GetType());
+                        foreach (var handler in handlers)
+                            await handler.Handle(objectEvent);
                         _currentToken = storedEvent.Token;
 
                         if (!_isInBatchMode && !_isInRebuildMode)
@@ -254,7 +197,7 @@ namespace Vydejna.Domain
                         await _metadata.SetToken(_instanceName, _currentToken);
                         if (_isRebuilder)
                             await _metadata.UpdateStatus(_runningMetadata.Name, ProjectionStatus.Legacy);
-                        _openedEventStream = _streamer.GetStreamer(_handlers.HandledTypes(), _currentToken, false);
+                        _openedEventStream = _streamer.GetStreamer(_handlers.GetHandledTypes(), _currentToken, false);
                         _isInRebuildMode = false;
                     }
                 }

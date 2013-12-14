@@ -21,7 +21,7 @@ namespace Vydejna.Contracts
         void Handle(T message);
     }
 
-    public interface IHandleRegistration<T>
+    public interface IHandleRegistration<T> : IDisposable
     {
         void ReplaceWith(IHandle<T> handler);
     }

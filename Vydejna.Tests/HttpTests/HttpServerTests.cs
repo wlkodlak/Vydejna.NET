@@ -14,7 +14,7 @@ using System.Threading;
 namespace Vydejna.Tests.HttpTests
 {
     [TestClass]
-    public class HttpServerTests
+    public class HttpServerTests : IDisposable
     {
         private TestDispatcher _dispatcher;
         private HttpServer _server;
@@ -31,6 +31,11 @@ namespace Vydejna.Tests.HttpTests
 
         [TestCleanup]
         public void Cleanup()
+        {
+            Dispose();
+        }
+
+        public void Dispose()
         {
             ((IDisposable)_server).Dispose();
         }
@@ -127,7 +132,7 @@ namespace Vydejna.Tests.HttpTests
     }
 
     [TestClass]
-    public class HttpServerLoadTests
+    public class HttpServerLoadTests : IDisposable
     {
         private TestDispatcher _dispatcher;
         private HttpServer _server;
@@ -144,6 +149,11 @@ namespace Vydejna.Tests.HttpTests
 
         [TestCleanup]
         public void Cleanup()
+        {
+            Dispose();
+        }
+
+        public void Dispose()
         {
             ((IDisposable)_server).Dispose();
         }

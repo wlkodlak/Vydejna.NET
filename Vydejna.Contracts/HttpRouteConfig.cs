@@ -81,7 +81,7 @@ namespace Vydejna.Contracts
                 _handler = handler;
             }
 
-            public async Task<object> Process(HttpServerRequest request)
+            public Task<object> Process(HttpServerRequest request)
             {
                 return _handler(request);
             }

@@ -93,13 +93,47 @@ namespace Vydejna.Tests.MessagingTests
             reg2.Dispose();
             HandleMessage(new TestMessage1 { Data = "Data 2" });
             HandleMessage(new TestMessage2 { Data = "Data 3" });
-            
+
             VerifyInvocations(
                 "A TestMessage3: Data 1",
                 "B TestMessage3: Data 1",
                 "A TestMessage1: Data 2",
                 "B TestMessage1: Data 2",
                 "A TestMessage2: Data 3");
+        }
+
+        [TestMethod]
+        public void CanChangeRegistration()
+        {
+            var reg1 = _mgr.Register<TestMessage1>(_handler);
+            var reg2 = _mgr.Register<TestMessage2>(_handler);
+            var reg3 = _mgr.Register<TestMessage3>(_handler);
+            var handler2 = new TestHandler("B", _invocations);
+            reg1.ReplaceWith(handler2);
+            reg2.ReplaceWith(handler2);
+            reg3.ReplaceWith(handler2);
+
+            HandleMessage(new TestMessage3 { Data = "Data 1" });
+            HandleMessage(new TestMessage1 { Data = "Data 2" });
+            HandleMessage(new TestMessage2 { Data = "Data 3" });
+
+            VerifyInvocations(
+                "B TestMessage3: Data 1",
+                "B TestMessage1: Data 2",
+                "B TestMessage2: Data 3");
+        }
+
+        [TestMethod]
+        public void GetHandledTypes()
+        {
+            var reg1 = _mgr.Register<TestMessage1>(_handler);
+            var reg2 = _mgr.Register<TestMessage2>(_handler);
+            var reg3 = _mgr.Register<TestMessage3>(_handler);
+            var types = _mgr.GetHandledTypes();
+            var expected = "TestMessage1, TestMessage2, TestMessage3";
+            var actual = string.Join(", ", types.Select(x => x.Name).OrderBy(x => x));
+            Assert.AreEqual(expected, actual);
+
         }
 
         private void HandleMessage(object message)

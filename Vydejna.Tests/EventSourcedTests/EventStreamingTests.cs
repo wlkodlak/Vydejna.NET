@@ -12,7 +12,7 @@ using Vydejna.Domain;
 namespace Vydejna.Tests.EventSourcedTests
 {
     [TestClass]
-    public class EventStreamingTests
+    public class EventStreamingTests : IDisposable
     {
         private class TestEvent1 { }
         private class TestEvent2 { }
@@ -31,6 +31,17 @@ namespace Vydejna.Tests.EventSourcedTests
             _typeMapper.Register(typeof(TestEvent2), "TestEvent2");
             _streamer = new EventStreamingIndividual(_store, _typeMapper);
             _cancel = new CancellationTokenSource();
+        }
+
+        [TestCleanup]
+        public void Cleanup()
+        {
+            Dispose();
+        }
+
+        public void Dispose()
+        {
+            _cancel.Dispose();
         }
 
         [TestMethod]

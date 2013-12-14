@@ -12,7 +12,7 @@ namespace Vydejna.Domain
         private Dictionary<Type, ICollection<IHandle<object>>> _handlers;
         private ICollection<IHandle<object>> _empty;
 
-        private class Subscription<T> : IDisposable, IHandle<object>
+        private class Subscription<T> : IDisposable, IHandle<object>, IHandleRegistration<T>
         {
             private SubscriptionManager _parent;
             private IHandle<T> _handler;
@@ -39,6 +39,11 @@ namespace Vydejna.Domain
             {
                 _parent.ChangeRegistration(Type, this, false);
             }
+
+            public void ReplaceWith(IHandle<T> handler)
+            {
+                _handler = handler;
+            }
         }
 
         public SubscriptionManager()
@@ -48,7 +53,7 @@ namespace Vydejna.Domain
             _empty = new IHandle<object>[0];
         }
 
-        public IDisposable Register<T>(IHandle<T> handler)
+        public IHandleRegistration<T> Register<T>(IHandle<T> handler)
         {
             var subscription = new Subscription<T>(this, handler);
             ChangeRegistration(subscription.Type, subscription, true);
@@ -72,11 +77,20 @@ namespace Vydejna.Domain
 
         public ICollection<IHandle<object>> FindHandlers(Type type)
         {
-            ICollection<IHandle<object>> found;
-            if (_handlers.TryGetValue(type, out found))
-                return found;
-            else
-                return _empty;
+            using (_lock.Read())
+            {
+                ICollection<IHandle<object>> found;
+                if (_handlers.TryGetValue(type, out found))
+                    return found;
+                else
+                    return _empty;
+            }
+        }
+
+        public IEnumerable<Type> GetHandledTypes()
+        {
+            using (_lock.Read())
+                return _handlers.Keys.ToList();
         }
     }
 }
