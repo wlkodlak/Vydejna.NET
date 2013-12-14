@@ -10,7 +10,7 @@ namespace Vydejna.Domain
 {
     public class Bootstrap
     {
-        private IBus _bus;
+        private QueuedBus _bus;
         
         public void Init()
         {
@@ -18,7 +18,7 @@ namespace Vydejna.Domain
             var typeMapper = new TypeMapper();
             VydejnaContractList.RegisterTypes(typeMapper);
             var serializer = new EventSourcedJsonSerializer(typeMapper);
-            _bus = new DirectBus(new SubscriptionManager());
+            _bus = new QueuedBus(new SubscriptionManager());
 
             var sqlConfig = new SqlConfiguration(@"server=.\SQLEXPRESS");
             var documentStore = new DocumentStoreSql(sqlConfig);
@@ -89,6 +89,10 @@ namespace Vydejna.Domain
                 .Parametrized(seznamNaradiRest.DefinovatNaradi)
                 .To(seznamNaradiRest.DefinovatNaradi)
                 .With(new HttpInputJson<AktivovatNaradiCommand>());
+
+            var busProcess = new QueuedBusProcess(_bus);
+            _bus.Subscribe<SystemEvents.SystemShutdown>(m => busProcess.Stop());
+            busProcess.Start();
 
             _bus.Publish(new SystemEvents.SystemInit());
         }

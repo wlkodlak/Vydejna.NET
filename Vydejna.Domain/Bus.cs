@@ -169,25 +169,99 @@ namespace Vydejna.Domain
 
     public class QueuedBus : AbstractBus
     {
-        private ConcurrentQueue<QueuedMessage> _queue;
+        private object _lock;
+        private Queue<QueuedMessage> _queue;
 
         public QueuedBus(ISubscriptionManager subscriptions)
             : base(subscriptions)
         {
-            _queue = new ConcurrentQueue<QueuedMessage>();
+            _lock = new object();
+            _queue = new Queue<QueuedMessage>();
         }
 
-        public void HandleNext()
+        public bool HandleNext()
         {
             QueuedMessage message;
-            if (_queue.TryDequeue(out message))
-                message.Process();
+            lock (_lock)
+            {
+                if (_queue.Count == 0)
+                    return false;
+                message = _queue.Dequeue();
+            }
+            message.Process();
+            return true;
         }
 
-        protected override void PublishCore(ICollection<AbstractBus.QueuedMessage> messages)
+        protected override void PublishCore(ICollection<QueuedMessage> messages)
         {
-            foreach (var message in messages)
-                _queue.Enqueue(message);
+            lock (_lock)
+            {
+                foreach (var message in messages)
+                    _queue.Enqueue(message);
+                Monitor.PulseAll(_lock);
+
+            }
+        }
+
+        public void WaitForMessages(CancellationToken cancel)
+        {
+            using (cancel.Register(PulseMonitor))
+            {
+                lock (_lock)
+                {
+                    while (_queue.Count == 0 && !cancel.IsCancellationRequested)
+                        Monitor.Wait(_lock);
+                }
+            }
+        }
+
+        private void PulseMonitor()
+        {
+            lock (_lock)
+                Monitor.PulseAll(_lock);
+        }
+    }
+
+    public class QueuedBusProcess : IDisposable
+    {
+        private QueuedBus _bus;
+        private bool _isRunning;
+        private Task _task;
+        private CancellationTokenSource _cancel;
+
+        public QueuedBusProcess(QueuedBus bus)
+        {
+            _bus = bus;
+            _isRunning = true;
+        }
+
+        public void Start()
+        {
+            _isRunning = true;
+            _cancel = new CancellationTokenSource();
+            _task = Task.Factory.StartNew(ProcessCore);
+        }
+
+        public void Stop()
+        {
+            _isRunning = false;
+            _cancel.Cancel();
+        }
+
+        public void Dispose()
+        {
+            Stop();
+            _cancel.Dispose();
+            _task.Wait();
+        }
+
+        private void ProcessCore()
+        {
+            while (_isRunning)
+            {
+                _bus.WaitForMessages(_cancel.Token);
+                while (_bus.HandleNext()) ;
+            }
         }
     }
 }

@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Vydejna.Contracts;
 using Vydejna.Domain;
 using Moq;
+using System.Threading;
 
 namespace Vydejna.Tests.MessagingTests
 {
@@ -49,6 +50,16 @@ namespace Vydejna.Tests.MessagingTests
         }
 
         [TestMethod]
+        public void HandleReturnsTrueWhenNonEmpty()
+        {
+            _bus.Subscribe<TestMessage>(_handler);
+            _bus.Publish(new TestMessage { Data = "Hello" });
+            Assert.AreEqual(0, _invocations.Count, "Invocation before handling");
+            var processed = _bus.HandleNext();
+            Assert.IsTrue(processed, "Anything processed");
+        }
+
+        [TestMethod]
         public void HandleErrors()
         {
             var wasCalled = false;
@@ -68,6 +79,36 @@ namespace Vydejna.Tests.MessagingTests
             Assert.IsTrue(wasCalled, "Was called");
             Assert.AreSame(message, storedMessage, "Message");
             Assert.AreSame(exception, storedException, "Exception");
+        }
+
+        [TestMethod]
+        public void NothingToProcess()
+        {
+            Assert.IsFalse(_bus.HandleNext());
+        }
+
+        [TestMethod]
+        public void WaitForMessages_MessageArrived()
+        {
+            _bus.Subscribe<TestMessage>(m => { });
+            var cancel = new CancellationTokenSource();
+            var taskWait = Task.Factory.StartNew(() => _bus.WaitForMessages(cancel.Token));
+            Assert.IsFalse(taskWait.Wait(1), "Should not be completed yet");
+            _bus.Publish(new TestMessage());
+            Assert.IsTrue(taskWait.Wait(200), "WaitForMessages didn't finish in time");
+
+        }
+
+        [TestMethod]
+        public void WaitForMessages_Cancelled()
+        {
+            _bus.Subscribe<TestMessage>(m => { });
+            var cancel = new CancellationTokenSource();
+            var taskWait = Task.Factory.StartNew(() => _bus.WaitForMessages(cancel.Token));
+            Assert.IsFalse(taskWait.Wait(1), "Should not be completed yet");
+            cancel.Cancel();
+            Assert.IsTrue(taskWait.Wait(200), "WaitForMessages didn't finish in time");
+
         }
 
         protected class TestMessage { public string Data; }
