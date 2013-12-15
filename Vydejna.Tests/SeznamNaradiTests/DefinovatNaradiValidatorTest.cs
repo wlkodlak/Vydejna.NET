@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Vydejna.Gui.Common;
 using Vydejna.Gui.SeznamNaradi;
@@ -16,10 +17,12 @@ namespace Vydejna.Tests.SeznamNaradiTests
     {
         private class EventAggregator : IEventPublisher
         {
+            public ManualResetEventSlim WaitForEvents = new ManualResetEventSlim();
             public List<object> Udalosti = new List<object>();
             public void Publish<T>(T msg)
             {
                 Udalosti.Add(msg);
+                WaitForEvents.Set();
             }
         }
 
@@ -46,35 +49,29 @@ namespace Vydejna.Tests.SeznamNaradiTests
         [TestMethod]
         public void KombinaceRozmeruAVykresuNeniUnikatni()
         {
-            UnitTestingTaskScheduler.RunTest(ts =>
-            {
-                var task = new TaskCompletionSource<OvereniUnikatnostiResponse>();
-                var request = new OvereniUnikatnostiRequest("5847-5584-b", "50x20x5");
-                _readSvc.Setup(s => s.Handle(request)).Returns(task.Task).Verifiable();
-                var validator = VytvoritValidator();
-                validator.Zkontrolovat(new DefinovatNaradiValidace { Vykres = "5847-5584-b", Rozmer = "50x20x5", Druh = "Brusný kotouč" });
-                task.SetResult(new OvereniUnikatnostiResponse { Vykres = "5847-5584-b", Rozmer = "50x20x5", Existuje = true });
-                ts.TryToCompleteTasks(1000);
-                OveritChybu("Vykres", s => !string.IsNullOrEmpty(s));
-                OveritChybu("Rozmer", s => !string.IsNullOrEmpty(s));
-                OveritChybu("Druh", s => true);
-            });
+            var task = new TaskCompletionSource<OvereniUnikatnostiResponse>();
+            var request = new OvereniUnikatnostiRequest("5847-5584-b", "50x20x5");
+            _readSvc.Setup(s => s.Handle(request)).Returns(task.Task).Verifiable();
+            var validator = VytvoritValidator();
+            validator.Zkontrolovat(new DefinovatNaradiValidace { Vykres = "5847-5584-b", Rozmer = "50x20x5", Druh = "Brusný kotouč" });
+            task.SetResult(new OvereniUnikatnostiResponse { Vykres = "5847-5584-b", Rozmer = "50x20x5", Existuje = true });
+            _vysledky.WaitForEvents.Wait(1000);
+            OveritChybu("Vykres", s => !string.IsNullOrEmpty(s));
+            OveritChybu("Rozmer", s => !string.IsNullOrEmpty(s));
+            OveritChybu("Druh", s => true);
         }
 
         [TestMethod]
         public void ValidaceVPoradku()
         {
-            UnitTestingTaskScheduler.RunTest(ts =>
-            {
-                var task = new TaskCompletionSource<OvereniUnikatnostiResponse>();
-                var request = new OvereniUnikatnostiRequest("5847-5584-b", "50x20x5");
-                _readSvc.Setup(s => s.Handle(request)).Returns(task.Task).Verifiable();
-                var validator = VytvoritValidator();
-                validator.Zkontrolovat(new DefinovatNaradiValidace { Vykres = "5847-5584-b", Rozmer = "50x20x5", Druh = "Brusný kotouč" });
-                task.SetResult(new OvereniUnikatnostiResponse { Vykres = "5847-5584-b", Rozmer = "50x20x5", Existuje = false });
-                ts.TryToCompleteTasks(1000);
-                Assert.AreEqual(0, SeznamChyb().Count, "Nemá obsahovat chyby");
-            });
+            var task = new TaskCompletionSource<OvereniUnikatnostiResponse>();
+            var request = new OvereniUnikatnostiRequest("5847-5584-b", "50x20x5");
+            _readSvc.Setup(s => s.Handle(request)).Returns(task.Task).Verifiable();
+            var validator = VytvoritValidator();
+            validator.Zkontrolovat(new DefinovatNaradiValidace { Vykres = "5847-5584-b", Rozmer = "50x20x5", Druh = "Brusný kotouč" });
+            task.SetResult(new OvereniUnikatnostiResponse { Vykres = "5847-5584-b", Rozmer = "50x20x5", Existuje = false });
+            _vysledky.WaitForEvents.Wait(1000);
+            Assert.AreEqual(0, SeznamChyb().Count, "Nemá obsahovat chyby");
         }
 
         private IDefinovatNaradiValidator VytvoritValidator()

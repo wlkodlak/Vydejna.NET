@@ -36,6 +36,7 @@ namespace Vydejna.Domain
         private ProjectionRebuildType _rebuildType;
         private bool _isInRebuildMode;
         private bool _isInBatchMode;
+        private Task _processTask;
 
         public ProjectionProcess(IEventStreaming streamer, IProjectionMetadataManager metadataManager, IEventSourcedSerializer serializer)
         {
@@ -68,7 +69,12 @@ namespace Vydejna.Domain
             return _handlers.Register(handler);
         }
 
-        public async Task Start()
+        public void Start()
+        {
+            _processTask = SetupAndRun();
+        }
+
+        private async Task SetupAndRun()
         {
             await LoadMetadata().ConfigureAwait(false);
             DetectRebuildType();
@@ -239,6 +245,7 @@ namespace Vydejna.Domain
         public void Stop()
         {
             _cancel.Cancel();
+            _processTask.Wait();
             _cancel.Dispose();
         }
 

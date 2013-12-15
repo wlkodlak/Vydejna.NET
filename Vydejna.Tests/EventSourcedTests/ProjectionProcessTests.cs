@@ -17,7 +17,6 @@ namespace Vydejna.Tests.EventSourcedTests
     {
         private TestProjection _projection;
         private ProjectionProcess _process;
-        private Task _processTask;
 
         protected TestProjection Projection { get { return _projection; } }
 
@@ -365,15 +364,13 @@ namespace Vydejna.Tests.EventSourcedTests
             _process.Setup(Projection).AsMaster();
             _process.Register<TestEvent1>(Projection);
             _process.Register<TestEvent2>(Projection);
-            _processTask = _process.Start();
-            _processTask.ContinueWith(t => EventStoreWaits.Set(), TaskContinuationOptions.OnlyOnFaulted);
+            _process.Start();
             EventStoreWaits.Wait(1000);
         }
 
         private void RunAsMasterFinish()
         {
             _process.Stop();
-            _processTask.GetAwaiter().GetResult();
         }
 
         private void RunAsIdleRebuilder()
@@ -385,8 +382,8 @@ namespace Vydejna.Tests.EventSourcedTests
             process.Register<TestEvent1>(Projection);
             process.Register<TestEvent2>(Projection);
             var timeout = new Timer(o => process.Stop(), null, 1000, Timeout.Infinite);
-            var task = process.Start();
-            task.GetAwaiter().GetResult();
+            process.Start();
+            process.Stop();
             timeout.Dispose();
         }
 
@@ -396,15 +393,13 @@ namespace Vydejna.Tests.EventSourcedTests
             _process.Setup(Projection).AsRebuilder();
             _process.Register<TestEvent1>(Projection);
             _process.Register<TestEvent2>(Projection);
-            _processTask = _process.Start();
-            _processTask.ContinueWith(t => EventStoreWaits.Set(), TaskContinuationOptions.OnlyOnFaulted);
+            _process.Start();
             EventStoreWaits.Wait(1000);
         }
 
         private void RunAsRebuilderFinish()
         {
             _process.Stop();
-            _processTask.GetAwaiter().GetResult();
         }
 
 

@@ -102,7 +102,6 @@
     <Compile Include="SeznamNaradiTests\SeznamNaradiViewModelTest.cs" />
     <Compile Include="SystemTests\HttpServerTest.cs" />
     <Compile Include="SystemTests\SystemTest.cs" />
-    <Compile Include="UnitTestingTaskScheduler.cs" />
     <Compile Include="VirtualTime.cs" />
   </ItemGroup>
   <ItemGroup>

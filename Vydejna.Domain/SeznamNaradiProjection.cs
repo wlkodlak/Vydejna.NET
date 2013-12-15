@@ -339,7 +339,8 @@ namespace Vydejna.Domain
         async Task IEventConsumer.HandleShutdown()
         {
             await UlozitData().ConfigureAwait(false);
-            await _processServices.CommitProjectionProgress().ConfigureAwait(false);
+            if (_processServices != null)
+                await _processServices.CommitProjectionProgress().ConfigureAwait(false);
         }
 
         string IProjection.GenerateInstanceName(string masterName)

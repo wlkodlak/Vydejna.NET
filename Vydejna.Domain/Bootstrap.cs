@@ -61,7 +61,7 @@ namespace Vydejna.Domain
             _bus.Subscribe<SystemEvents.SystemShutdown>(msg => seznamNaradiProcess.Stop());
 
             var httpRouter = new HttpRouter();
-            var httpServer = new HttpServer(new[] { "http://localhost/" }, new HttpServerDispatcher(httpRouter));
+            var httpServer = new HttpServer(new[] { "http://localhost:61111/" }, new HttpServerDispatcher(httpRouter));
             _bus.Subscribe<SystemEvents.SystemInit>(msg => httpServer.Start());
             _bus.Subscribe<SystemEvents.SystemShutdown>(msg => httpServer.Stop());
             var httpRoutes = new HttpRouteConfig(httpRouter, HttpStagedHandler.CreateBuilder);

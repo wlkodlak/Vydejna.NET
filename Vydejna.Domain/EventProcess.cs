@@ -19,6 +19,7 @@ namespace Vydejna.Domain
         private IEventsConsumerMetadata _metadata;
         private IEventStreamingInstance _stream;
         private EventStoreToken _token;
+        private Task _processTask;
 
         public EventProcess(IEventStreaming streamer, IProjectionMetadataManager metadataManager, IEventSourcedSerializer serializer)
         {
@@ -39,7 +40,12 @@ namespace Vydejna.Domain
             return _subscriptions.Register(handler);
         }
 
-        public async Task Start()
+        public void Start()
+        {
+            _processTask = Core();
+        }
+
+        public async Task Core()
         {
             _cancel = new CancellationTokenSource();
             _metadata = await _metadataMgr.GetHandler(_consumer.GetConsumerName()).ConfigureAwait(false);
@@ -75,6 +81,7 @@ namespace Vydejna.Domain
         public void Stop()
         {
             _cancel.Cancel();
+            _processTask.Wait();
             _cancel.Dispose();
         }
 

@@ -244,8 +244,11 @@ namespace Vydejna.Domain
 
         public void Stop()
         {
-            _isRunning = false;
-            _cancel.Cancel();
+            if (_isRunning)
+            {
+                _isRunning = false;
+                _cancel.Cancel();
+            }
         }
 
         public void Dispose()

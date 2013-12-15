@@ -203,6 +203,14 @@ namespace Vydejna.Tests.SeznamNaradiTests
             AssertGuidCollectionsEqual(aktivni2Expect, aktivni2Real, "Aktivni2");
         }
 
+        [TestMethod]
+        public void UkonceniBezJedineZpravy()
+        {
+            var projekce = new SeznamNaradiProjection(_store, "SeznamNaradi");
+            var iprojection = projekce as IProjection;
+            iprojection.HandleShutdown().GetAwaiter().GetResult();
+        }
+
         private void ProjectionShutdown(IProjection projection)
         {
             projection.HandleShutdown().GetAwaiter().GetResult();

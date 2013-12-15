@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Vydejna.Gui.Common;
 using Vydejna.Gui.SeznamNaradi;
@@ -137,25 +138,26 @@ namespace Vydejna.Tests.SeznamNaradiTests
         [TestMethod]
         public void PriDokonceniPrikazuSeOdesleUdalostDoAggregatoru()
         {
-            UnitTestingTaskScheduler.RunTest(ts =>
-            {
-                var task = new TaskCompletionSource<object>();
-                DefinovatNaradiCommand cmd = null;
-                _validator.Setup(v => v.Zkontrolovat(It.IsAny<DefinovatNaradiValidace>()));
-                _writeSvc
-                    .Setup(s => s.Handle(It.IsAny<DefinovatNaradiCommand>()))
-                    .Returns<DefinovatNaradiCommand>(c => { cmd = c; return task.Task; });
-                _bus.Setup(b => b.Publish(It.IsAny<UiMessages.DokoncenaDefiniceNaradi>()));
-                var vm = VytvoritViewModel();
-                vm.Vykres = "557-4711-547";
-                vm.Rozmer = "50x20x5mm";
-                vm.Druh = "Brusný kotouč";
-                vm.Handle(new UiMessages.ValidovanoDefinovatNaradi());
-                vm.DefinovatNaradiCommand.Execute(null);
-                task.SetResult(null);
-                ts.TryToCompleteTasks(1000);
-                _repo.VerifyAll();
-            });
+            var task = new TaskCompletionSource<object>();
+            DefinovatNaradiCommand cmd = null;
+            var mre = new ManualResetEventSlim();
+            _validator
+                .Setup(v => v.Zkontrolovat(It.IsAny<DefinovatNaradiValidace>()))
+                .Callback<DefinovatNaradiValidace>(v => mre.Set());
+            _writeSvc
+                .Setup(s => s.Handle(It.IsAny<DefinovatNaradiCommand>()))
+                .Returns<DefinovatNaradiCommand>(c => { cmd = c; return task.Task; });
+            _bus.Setup(b => b.Publish(It.IsAny<UiMessages.DokoncenaDefiniceNaradi>()));
+            var vm = VytvoritViewModel();
+            vm.Vykres = "557-4711-547";
+            vm.Rozmer = "50x20x5mm";
+            vm.Druh = "Brusný kotouč";
+            vm.Handle(new UiMessages.ValidovanoDefinovatNaradi());
+            vm.DefinovatNaradiCommand.Execute(null);
+            task.SetResult(null);
+            if (!mre.Wait(1000))
+                throw new TimeoutException();
+            _repo.VerifyAll();
         }
 
         private DefinovatNaradiViewModel VytvoritViewModel()

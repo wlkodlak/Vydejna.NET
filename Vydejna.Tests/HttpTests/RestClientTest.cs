@@ -135,14 +135,11 @@ namespace Vydejna.Tests.HttpTests
 
         public T RunTest<T>(Func<Task<T>> action)
         {
-            T result = default(T);
-            UnitTestingTaskScheduler.RunTest(ts =>
-            {
-                var task = action();
-                _httpClient.SendResponse(PreparedResponse);
-                ts.TryToCompleteTasks(1000);
-                result = task.GetAwaiter().GetResult();
-            });
+            var task = action();
+            _httpClient.SendResponse(PreparedResponse);
+            if (!task.Wait(1000))
+                throw new TimeoutException();
+            T result = task.GetAwaiter().GetResult();
             _httpRequest = _httpClient.LastRequest;
             if (ExpectedResponse != null)
             {

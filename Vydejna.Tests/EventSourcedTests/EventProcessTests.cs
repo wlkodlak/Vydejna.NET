@@ -89,14 +89,13 @@ namespace Vydejna.Tests.EventSourcedTests
             _process.Setup(_consumer);
             _process.Register<TestEvent1>(_consumer);
             _process.Register<TestEvent2>(_consumer);
-            _processTask = _process.Start();
+            _process.Start();
             EventStoreWaits.Wait(1000);
         }
 
         private void Finish()
         {
             _process.Stop();
-            _processTask.Wait(1000);
         }
 
         private void ExpectToken(EventStoreToken expected)
