@@ -32,6 +32,9 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="log4net">
+      <HintPath>..\packages\log4net.2.0.3\lib\net40-full\log4net.dll</HintPath>
+    </Reference>
     <Reference Include="ServiceStack.Text">
       <HintPath>..\packages\ServiceStack.Text.3.9.70\lib\net35\ServiceStack.Text.dll</HintPath>
     </Reference>

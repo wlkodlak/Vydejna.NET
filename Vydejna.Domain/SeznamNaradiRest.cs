@@ -72,23 +72,6 @@ namespace Vydejna.Domain
             }
         }
 
-        private static Task Delay(int retry)
-        {
-            switch (retry)
-            {
-                case 0:
-                    return Task.Delay(1);
-                case 1:
-                    return Task.Delay(10);
-                case 2:
-                    return Task.Delay(50);
-                case 3:
-                    return Task.Delay(200);
-                default:
-                    return Task.Delay(500);
-            }
-        }
-
         public async Task<object> NacistSeznamNaradi(HttpServerRequest request)
         {
             int offset = request.Parameter("offset").AsInteger().Optional(0);

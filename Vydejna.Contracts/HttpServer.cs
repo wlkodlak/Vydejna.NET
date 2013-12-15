@@ -16,6 +16,7 @@ namespace Vydejna.Contracts
 
     public class HttpServer : IDisposable
     {
+        private log4net.ILog _log = log4net.LogManager.GetLogger(typeof(HttpServer));
         private HttpListener _listener;
         private CancellationTokenSource _cancel;
         private List<Task> _workers;
@@ -38,14 +39,23 @@ namespace Vydejna.Contracts
         }
         public void Start()
         {
-            _prefixes.ForEach(_listener.Prefixes.Add);
-            _listener.Start();
-            _cancel = new CancellationTokenSource();
-            _isRunning = true;
-            _workers =
-                Enumerable.Range(0, _workerCount).Select(i =>
-                    Task.Factory.StartNew(WorkerFunc, _cancel.Token, TaskCreationOptions.LongRunning, TaskScheduler.Current))
-                .ToList();
+            try
+            {
+                _prefixes.ForEach(_listener.Prefixes.Add);
+                _listener.Start();
+                _cancel = new CancellationTokenSource();
+                _isRunning = true;
+                _workers =
+                    Enumerable.Range(0, _workerCount).Select(i =>
+                        Task.Factory.StartNew(WorkerFunc, _cancel.Token, TaskCreationOptions.LongRunning, TaskScheduler.Current))
+                    .ToList();
+                _log.Debug("HttpServer started");
+            }
+            catch (Exception ex)
+            {
+                _log.Error("Could not start HttpServer", ex);
+                throw;
+            }
         }
 
         public void Stop()
@@ -57,6 +67,7 @@ namespace Vydejna.Contracts
             _cancel.Dispose();
             Task.WaitAll(_workers.ToArray(), 1000);
             _isRunning = false;
+            _log.Debug("HttpServer stopped");
         }
 
         void IDisposable.Dispose()
@@ -95,9 +106,13 @@ namespace Vydejna.Contracts
         {
             try
             {
+                var stopWatch = new System.Diagnostics.Stopwatch();
+                stopWatch.Start();
                 var request = await Task.Factory.StartNew(() => CreateRequest(context.Request), TaskCreationOptions.PreferFairness).ConfigureAwait(false);
                 var response = await _dispatcher.ProcessRequest(request).ConfigureAwait(false);
                 await WriteResponse(context.Response, response).ConfigureAwait(false);
+                stopWatch.Stop();
+                _log.DebugFormat("Request {0} completed in {1} ms", context.Request.Url.PathAndQuery, stopWatch.ElapsedMilliseconds);
             }
             finally
             {

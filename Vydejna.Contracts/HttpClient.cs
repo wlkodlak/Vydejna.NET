@@ -45,8 +45,12 @@ namespace Vydejna.Contracts
 
     public class HttpClient : IHttpClient
     {
+        private log4net.ILog _log = log4net.LogManager.GetLogger(typeof(HttpClient));
+
         public async Task<HttpClientResponse> Execute(HttpClientRequest request)
         {
+            if (_log.IsDebugEnabled)
+                LogRequest(request);
             var webRequest = HttpWebRequest.CreateHttp(request.Url);
             webRequest.AllowAutoRedirect = false;
             webRequest.Method = request.Method;
@@ -60,7 +64,33 @@ namespace Vydejna.Contracts
                 CopyHeadersToResponse(response, webResponse);
                 await GetResponseBody(response, webResponse).ConfigureAwait(false);
             }
+            if (_log.IsDebugEnabled)
+                LogResponse(response);
             return response;
+        }
+
+        private void LogRequest(HttpClientRequest request)
+        {
+            var sb = new StringBuilder();
+            sb.AppendFormat("Execute - request {0} {1}\r\n", request.Method, request.Url);
+            foreach (var header in request.Headers)
+                sb.AppendFormat("{0}: {1}\r\n", header.Name, header.Value);
+            sb.AppendLine();
+            if (request.Body != null)
+                sb.Append(Encoding.UTF8.GetString(request.Body));
+            _log.Debug(sb.ToString());
+        }
+
+        private void LogResponse(HttpClientResponse response)
+        {
+            var sb = new StringBuilder();
+            sb.AppendFormat("Execute - response {0}\r\n", response.StatusCode);
+            foreach (var header in response.Headers)
+                sb.AppendFormat("{0}: {1}\r\n", header.Name, header.Value);
+            sb.AppendLine();
+            if (response.Body != null)
+                sb.Append(Encoding.UTF8.GetString(response.Body));
+            _log.Debug(sb.ToString());
         }
 
         private static async Task<HttpWebResponse> GetWebResponse(HttpWebRequest webRequest)

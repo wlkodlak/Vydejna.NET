@@ -15,8 +15,28 @@ namespace Vydejna.Domain
         private QueuedBusProcess _busProcess;
         private ManualResetEventSlim _waitForExit;
 
+        private class CustomDebugAppender : log4net.Appender.AppenderSkeleton
+        {
+            protected override void Append(log4net.Core.LoggingEvent loggingEvent)
+            {
+                System.Diagnostics.Debug.Write(RenderLoggingEvent(loggingEvent));
+            }
+        }
+
         public void Init()
         {
+            var logLayout = new log4net.Layout.PatternLayout();
+            logLayout.ConversionPattern = "%-5level [%3thread] %date{ISO8601} %-40logger: %message%newline";
+            logLayout.ActivateOptions();
+            var debugAppender = new CustomDebugAppender();
+            debugAppender.Layout = logLayout;
+            debugAppender.ActivateOptions();
+            var hierarchy = (log4net.Repository.Hierarchy.Hierarchy) log4net.LogManager.GetRepository();
+            hierarchy.ResetConfiguration();
+            hierarchy.Threshold = log4net.Core.Level.Debug;
+            hierarchy.Root.AddAppender(debugAppender);
+            hierarchy.Configured = true;
+
             var time = new RealTime();
             var typeMapper = new TypeMapper();
             VydejnaContractList.RegisterTypes(typeMapper);

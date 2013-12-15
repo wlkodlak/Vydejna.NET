@@ -6,7 +6,7 @@ namespace Vydejna.Tests.SystemTests
     [TestClass]
     public class SystemTest
     {
-        [TestMethod]
+        [TestMethod, TestCategory("Slow")]
         public void RunDomainServer()
         {
             var bootstrap = new Bootstrap();

@@ -18,6 +18,7 @@ namespace Vydejna.Domain
 
     public class ProjectionProcess : IHandle<ProjectionMetadataChanged>, IProjectionProcess, IDisposable
     {
+        private log4net.ILog _log;
         private string _instanceName;
         private IEventStreaming _streamer;
         private IProjectionMetadataManager _metadataManager;
@@ -40,6 +41,7 @@ namespace Vydejna.Domain
 
         public ProjectionProcess(IEventStreaming streamer, IProjectionMetadataManager metadataManager, IEventSourcedSerializer serializer)
         {
+            _log = log4net.LogManager.GetLogger("ProjectionProcess.Default");
             _streamer = streamer;
             _metadataManager = metadataManager;
             _serializer = serializer;
@@ -50,6 +52,7 @@ namespace Vydejna.Domain
         public ProjectionProcess Setup(IProjection projection)
         {
             _projection = projection;
+            _log = log4net.LogManager.GetLogger(string.Format("ProjectionProcess.{0}", projection.GetConsumerName()));
             return this;
         }
 
@@ -133,6 +136,7 @@ namespace Vydejna.Domain
 
         private async Task InitializeAsMaster()
         {
+            _log.InfoFormat("Instance {0}: {1}", _instanceName, _rebuildType);
             await _projection.SetInstanceName(_instanceName).ConfigureAwait(false);
             if (_rebuildType == ProjectionRebuildType.Initial)
                 _currentToken = EventStoreToken.Initial;
@@ -144,7 +148,9 @@ namespace Vydejna.Domain
                 await _projection.StartRebuild(false).ConfigureAwait(false);
             }
             else if (_rebuildType == ProjectionRebuildType.ContinueInitial)
+            {
                 await _projection.StartRebuild(true).ConfigureAwait(false);
+            }
             _metadata.RegisterForChanges(_instanceName, this);
             _isInRebuildMode = _rebuildType == ProjectionRebuildType.Initial || _rebuildType == ProjectionRebuildType.ContinueInitial;
             _openedEventStream = _streamer.GetStreamer(_handlers.GetHandledTypes(), _currentToken, _isInRebuildMode);
@@ -176,6 +182,7 @@ namespace Vydejna.Domain
 
         private async Task Run()
         {
+            _log.DebugFormat("Processing instance {0} as {1}", _instanceName, _isRebuilder ? "rebuilder" : "master");
             var supportsBatchMode = _projection.SupportsProcessServices();
             while (!_cancel.IsCancellationRequested && !_isReplaced)
             {
@@ -188,21 +195,32 @@ namespace Vydejna.Domain
                         {
                             _projection.SetProcessServices(this);
                             _isInBatchMode = true;
+                            _log.DebugFormat("Instance {0} entering batch mode", _instanceName);
                         }
 
                         var objectEvent = _serializer.Deserialize(storedEvent);
+                        _log.DebugFormat("Instance {0} processing event {1} (token {2})", _instanceName, storedEvent.Type, storedEvent.Token);
                         var handlers = _handlers.FindHandlers(objectEvent.GetType());
                         foreach (var handler in handlers)
-                            await handler.Handle(objectEvent).ConfigureAwait(false);
+                        {
+                            try
+                            {
+                                await handler.Handle(objectEvent).ConfigureAwait(false);
+                            }
+                            catch (Exception exception)
+                            {
+                                _log.WarnFormat("Message {0} (token {1}) caused exception {2}", storedEvent.Type, storedEvent.Token, exception);
+                                handler.HandleError(objectEvent, exception);
+                            }
+                        }
                         _currentToken = storedEvent.Token;
 
                         if (!_isInBatchMode && !_isInRebuildMode)
                             await _metadata.SetToken(_instanceName, _currentToken).ConfigureAwait(false);
-                        else
-                            System.Diagnostics.Debug.WriteLine("Skipping SetToken({0})", _currentToken);
                     }
                     else if (_isInRebuildMode)
                     {
+                        _log.DebugFormat("Ending rebuild mode for instance {0}", _instanceName);
                         await _projection.CommitRebuild().ConfigureAwait(false);
                         await _metadata.UpdateStatus(_instanceName, ProjectionStatus.Running).ConfigureAwait(false);
                         await _metadata.SetToken(_instanceName, _currentToken).ConfigureAwait(false);
@@ -217,6 +235,7 @@ namespace Vydejna.Domain
                     break;
                 }
             }
+            _log.DebugFormat("Ending processing instance {0} as {1}", _instanceName, _isRebuilder ? "rebuilder" : "master");
             await _projection.HandleShutdown().ConfigureAwait(false);
         }
 

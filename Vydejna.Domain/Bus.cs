@@ -199,7 +199,6 @@ namespace Vydejna.Domain
                 foreach (var message in messages)
                     _queue.Enqueue(message);
                 Monitor.PulseAll(_lock);
-
             }
         }
 
