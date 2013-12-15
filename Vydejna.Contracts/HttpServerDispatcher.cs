@@ -13,13 +13,16 @@ namespace Vydejna.Contracts
         {
             _router = router;
         }
-        public Task<HttpServerResponse> ProcessRequest(HttpServerRequest request)
+
+        public async Task<HttpServerResponse> ProcessRequest(HttpServerRequest request)
         {
             var route = _router.FindRoute(request.Url);
             if (route == null)
-                return new HttpServerResponseBuilder().WithStatusCode(404).BuildTask();
-            else
-                return route.Handler.Handle(request, route.RouteParameters);
+                return new HttpServerResponseBuilder().WithStatusCode(404).Build();
+            var response = await route.Handler.Handle(request, route.RouteParameters);
+            if (response == null)
+                return new HttpServerResponseBuilder().WithStatusCode(500).Build();
+            return response;
         }
     }
 }

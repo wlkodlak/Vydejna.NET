@@ -196,8 +196,13 @@ namespace Vydejna.Domain
         private ReaderInfo PickBestReader()
         {
             ReaderInfo bestReader = null;
+            ReaderInfo newestReader = null;
             foreach (var readerInfo in _readers)
             {
+                if (newestReader == null)
+                    newestReader = readerInfo;
+                else if (string.CompareOrdinal(newestReader.Reader.GetVersion(), readerInfo.Reader.GetVersion()) < 0)
+                    newestReader = readerInfo;
                 var candidates = _instances
                     .Select(i => new { Instance = i, Readability = readerInfo.Reader.GetReadability(i.MinimalReader, i.Version) })
                     .ToList();
@@ -217,7 +222,7 @@ namespace Vydejna.Domain
                         bestReader = readerInfo;
                 }
             }
-            return bestReader;
+            return bestReader ?? newestReader;
         }
 
         private PickInstanceNofification ChangeToBestReader(ReaderInfo bestReader)
@@ -233,7 +238,7 @@ namespace Vydejna.Domain
             }
             else if (bestReader == _currentReader)
             {
-                var newInstance = bestReader.BestMetadata.Name;
+                var newInstance = bestReader.BestMetadata == null ? null : bestReader.BestMetadata.Name;
                 if (!string.Equals(_currentInstance, newInstance, StringComparison.Ordinal))
                 {
                     _currentInstance = newInstance;
@@ -243,7 +248,7 @@ namespace Vydejna.Domain
             else if (bestReader != _currentReader)
             {
                 _currentReader = bestReader.Reader;
-                _currentInstance = bestReader.BestMetadata.Name;
+                _currentInstance = bestReader.BestMetadata == null ? null : bestReader.BestMetadata.Name;
                 return PickInstanceNofification.ResetOriginalInstance | PickInstanceNofification.ChangeNewInstance | PickInstanceNofification.RaiseReaderChange;
             }
             return PickInstanceNofification.None;

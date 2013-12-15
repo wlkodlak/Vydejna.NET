@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Vydejna.Contracts;
 
@@ -12,7 +13,8 @@ namespace Vydejna.Domain
     {
         private QueuedBus _bus;
         private QueuedBusProcess _busProcess;
-        
+        private ManualResetEventSlim _waitForExit;
+
         public void Init()
         {
             var time = new RealTime();
@@ -20,6 +22,7 @@ namespace Vydejna.Domain
             VydejnaContractList.RegisterTypes(typeMapper);
             var serializer = new EventSourcedJsonSerializer(typeMapper);
             _bus = new QueuedBus(new SubscriptionManager());
+            _waitForExit = new ManualResetEventSlim();
 
             var documentStore = new DocumentStoreInMemory();
             var eventStore = new EventStoreInMemory();
@@ -67,10 +70,11 @@ namespace Vydejna.Domain
             var httpRoutes = new HttpRouteConfig(httpRouter, HttpStagedHandler.CreateBuilder);
             var httpStandard = httpRoutes.Common()
                 .With(new HttpUrlEnhancer())
-                .With(new HttpOutputDirect());
-            var seznamNaradiRest = new SeznamNaradiRest(
-                seznamNaradiService,
-                new SeznamNaradiProxy(metadataManager).Register(seznamNaradiReader));
+                .With(new HttpOutputDirect())
+                .With(new HttpOutputDisplayException());
+            var seznamNaradiProxy = new SeznamNaradiProxy(metadataManager).Register(seznamNaradiReader);
+            _bus.Subscribe<SystemEvents.SystemInit>(m => seznamNaradiProxy.InitializeInstances());
+            var seznamNaradiRest = new SeznamNaradiRest(seznamNaradiService, seznamNaradiProxy);
 
             httpRoutes.Route("/SeznamNaradi").Using(httpStandard)
                 .To(seznamNaradiRest.NacistSeznamNaradi)
@@ -85,11 +89,18 @@ namespace Vydejna.Domain
             httpRoutes.Route("/DeaktivovatNaradi").Using(httpStandard)
                 .Parametrized(seznamNaradiRest.DeaktivovatNaradi)
                 .To(seznamNaradiRest.DeaktivovatNaradi)
-                .With(new HttpInputJson<AktivovatNaradiCommand>());
+                .With(new HttpInputJson<DeaktivovatNaradiCommand>());
             httpRoutes.Route("/DefinovatNaradi").Using(httpStandard)
                 .Parametrized(seznamNaradiRest.DefinovatNaradi)
                 .To(seznamNaradiRest.DefinovatNaradi)
-                .With(new HttpInputJson<AktivovatNaradiCommand>());
+                .With(new HttpInputJson<DefinovatNaradiCommand>());
+            httpRoutes.Route("/StopServer").Using(httpStandard).To(rq =>
+            {
+                Stop();
+                var response = new HttpServerResponseBuilder().WithStringBody("Stopping").Build();
+                return TaskResult.GetCompletedTask<object>(response);
+            });
+            httpRoutes.Configure();
 
             _busProcess = new QueuedBusProcess(_bus);
             _bus.Subscribe<SystemEvents.SystemShutdown>(m => _busProcess.Stop());
@@ -101,11 +112,17 @@ namespace Vydejna.Domain
         public void Stop()
         {
             _bus.Publish(new SystemEvents.SystemShutdown());
+            _waitForExit.Set();
         }
 
         public void Dispose()
         {
             _busProcess.Dispose();
+        }
+
+        public void WaitForExit()
+        {
+            _waitForExit.Wait();
         }
     }
 }

@@ -82,5 +82,21 @@ namespace Vydejna.Tests.HttpTests
             Assert.IsNotNull(dispatcherResponse, "Response");
             Assert.AreEqual(404, dispatcherResponse.StatusCode, "Response status");
         }
+
+        [TestMethod]
+        public void NullResponse()
+        {
+            _request.Url = "http://localhost/article/4952";
+            _request.Method = "GET";
+            _request.Headers.AcceptTypes = new[] { "*/*" };
+            _router.UsedRoute =
+                new HttpUsedRoute(new ParametrizedUrl("/article/{id}"), _handler)
+                .AddParameter(new RequestParameter(RequestParameterType.Path, "id", "4952"));
+            _handler.Response = null;
+
+            var dispatcherResponse = _disp.ProcessRequest(_request).GetAwaiter().GetResult();
+            Assert.IsNotNull(dispatcherResponse, "Response");
+            Assert.AreEqual(500, dispatcherResponse.StatusCode, "StatusCode");
+        }
     }
 }

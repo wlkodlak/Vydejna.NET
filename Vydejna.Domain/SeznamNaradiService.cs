@@ -51,6 +51,8 @@ namespace Vydejna.Domain
         public async Task Handle(DefinovatNaradiCommand message)
         {
             var unikatnost = await _repoUnikatnost.Get().ConfigureAwait(false);
+            if (unikatnost == null)
+                unikatnost = new UnikatnostNaradi();
             unikatnost.ZahajitDefinici(message.NaradiId, message.Vykres, message.Rozmer, message.Druh);
             await _repoUnikatnost.Save(unikatnost).ConfigureAwait(false);
         }

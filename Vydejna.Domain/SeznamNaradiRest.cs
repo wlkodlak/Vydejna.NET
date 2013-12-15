@@ -51,25 +51,25 @@ namespace Vydejna.Domain
 
         private static async Task<object> HandleCommand<T>(IHandle<T> handler, T cmd)
         {
-            int retry = 0;
-            while (retry <= 3)
+            try
             {
-                try
-                {
-                    await handler.Handle(cmd).ConfigureAwait(false);
-                    return new HttpServerResponseBuilder().WithStatusCode(HttpStatusCode.Accepted).Build();
-                }
-                catch (ValidationException)
-                {
-                    return new HttpServerResponseBuilder().WithStatusCode(HttpStatusCode.BadRequest).Build();
-                }
-                catch
-                {
-                }
-                retry++;
-                await Delay(retry).ConfigureAwait(false);
+                await handler.Handle(cmd).ConfigureAwait(false);
+                return new HttpServerResponseBuilder().WithStatusCode(HttpStatusCode.Accepted).Build();
             }
-            return new HttpServerResponseBuilder().WithStatusCode(HttpStatusCode.InternalServerError).Build();
+            catch (ValidationException ex)
+            {
+                return new HttpServerResponseBuilder()
+                    .WithStatusCode(HttpStatusCode.BadRequest)
+                    .WithStringBody(ex.ToString())
+                    .Build();
+            }
+            catch (Exception ex)
+            {
+                return new HttpServerResponseBuilder()
+                    .WithStatusCode(HttpStatusCode.InternalServerError)
+                    .WithStringBody(ex.ToString())
+                    .Build();
+            }
         }
 
         private static Task Delay(int retry)

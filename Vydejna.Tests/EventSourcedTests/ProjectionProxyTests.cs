@@ -144,6 +144,14 @@ namespace Vydejna.Tests.EventSourcedTests
             VerifyReader(_reader2, "C");
         }
 
+        [TestMethod]
+        public void NoInstancePresent()
+        {
+            SetupReader(_reader1, "1.0", "1.0");
+            SetupProxy(_reader1);
+            VerifyReader(_reader1, null);
+        }
+
 
         private void SetupInstance(string name, string version, string minReader, ProjectionStatus status)
         {

@@ -17,7 +17,7 @@ namespace Vydejna.Contracts
     {
         public bool HandlesContentType(string contentType)
         {
-            return contentType == "applicaton/json";
+            return contentType != null && contentType.StartsWith("application/json");
         }
 
         public Task<object> ProcessInput(HttpServerRequest request)

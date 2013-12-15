@@ -11,8 +11,7 @@ namespace Vydejna.Tests.SystemTests
         {
             var bootstrap = new Bootstrap();
             bootstrap.Init();
-            System.Threading.Thread.Sleep(1000);
-            bootstrap.Stop();
+            bootstrap.WaitForExit();
             bootstrap.Dispose();
         }
     }

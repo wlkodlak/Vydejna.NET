@@ -72,6 +72,22 @@ namespace Vydejna.Contracts
         }
     }
 
+    public class HttpOutputDisplayException : IHttpOutputProcessor
+    {
+        public bool HandlesOutput(HttpServerRequest request, object response)
+        {
+            return response is Exception;
+        }
+
+        public Task<HttpServerResponse> ProcessOutput(HttpServerRequest request, object response)
+        {
+            return new HttpServerResponseBuilder()
+                .WithStatusCode(500)
+                .WithStringBody(response.ToString())
+                .BuildTask();
+        }
+    }
+
     public class HttpOutputJson<T> : IHttpOutputProcessor
     {
         public HttpOutputJson(string mode = null)
@@ -109,6 +125,8 @@ namespace Vydejna.Contracts
             if (accept.Count == 0 && _allowEmptyContentType)
                 return true;
             if (accept.Contains("application/json"))
+                return true;
+            if (accept.Contains("*/*"))
                 return true;
             return false;
         }

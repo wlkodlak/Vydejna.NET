@@ -86,6 +86,14 @@ namespace Vydejna.Tests.HttpTests
         }
 
         [TestMethod]
+        public void HandlesOutput_Strict_ContainsGeneric()
+        {
+            _request.Headers.AcceptTypes = new[] { "application/xml", "*/*" };
+            _output = new HttpOutputJson<TestObject>("STRICT");
+            Assert.IsTrue(_output.HandlesOutput(_request, _responseObject));
+        }
+
+        [TestMethod]
         public void ProcessOutput()
         {
             _output = new HttpOutputJson<TestObject>();

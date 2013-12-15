@@ -68,7 +68,11 @@ namespace Vydejna.Tests.SeznamNaradiTests
 
             public Task<UnikatnostNaradi> Get()
             {
-                return TaskResult.GetCompletedTask(UnikatnostNaradi.LoadFrom(_parent._obsahRepository));
+                var unikatnost = 
+                    _parent._obsahRepository.Count == 0
+                    ? null 
+                    : UnikatnostNaradi.LoadFrom(_parent._obsahRepository);
+                return TaskResult.GetCompletedTask(unikatnost);
             }
 
             public Task Save(UnikatnostNaradi unikatnost)
