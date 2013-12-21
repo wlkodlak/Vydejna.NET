@@ -156,7 +156,7 @@ namespace Vydejna.Contracts
 
     public interface IHttpRouteHandler
     {
-        Task<HttpServerResponse> Handle(HttpServerRequest request, IList<RequestParameter> routeParameters);
+        Task Handle(IHttpServerRawContext context);
     }
 
     public class HttpUsedRoute

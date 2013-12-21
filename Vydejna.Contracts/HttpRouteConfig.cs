@@ -3,421 +3,688 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.IO;
+using System.Text.RegularExpressions;
 
 namespace Vydejna.Contracts
 {
-    public class HttpRouteConfig
+    public interface IHttpRouteConfigCommitable
     {
+        void Commit();
+    }
+    public interface ISerializerPicker
+    {
+        IHttpSerializer PickDeserializer(IHttpServerStagedContext context, IEnumerable<IHttpSerializer> options, ISerializerPicker next);
+        IHttpSerializer PickSerializer(IHttpServerStagedContext context, IEnumerable<IHttpSerializer> options, ISerializerPicker next);
+    }
+    public interface IHttpProcessor
+    {
+        Task Process(IHttpServerStagedContext context);
+    }
+
+    public interface IHttpRouteCommonConfigurator : IHttpRouteConfigCommitable
+    {
+        IHttpRouteCommonConfigurator SubRouter();
+        IHttpRouteCommonConfigurator ForFolder(string path);
+        IHttpRouteCommonConfigurator WithPicker(ISerializerPicker picker);
+        IHttpRouteCommonConfigurator WithSerializer(IHttpSerializer serializer);
+        IHttpRouteCommonConfiguratorRoute Route(string path);
+    }
+    public interface IHttpRouteCommonConfiguratorRoute
+    {
+        IHttpRouteCommonConfiguratorRoute WithPicker(ISerializerPicker picker);
+        IHttpRouteCommonConfiguratorRoute WithSerializer(IHttpSerializer serializer);
+        IHttpRouteConfigCommitable To(IHttpRouteHandler handler);
+        IHttpRouteConfigCommitable To(IHttpProcessor processor);
+    }
+    public interface IHttpRouteCommonConfiguratorExtended : IHttpRouteCommonConfigurator
+    {
+        void Register(IHttpRouteConfigCommitable subRouter);
+        IHttpAddRoute GetRouter();
+        string GetPath();
+        ISerializerPicker GetPicker();
+        IList<IHttpSerializer> GetSerializers();
+    }
+
+    public class HttpRouterCommon : IHttpRouteCommonConfiguratorExtended
+    {
+        private string _prefix;
         private IHttpAddRoute _router;
-        private Func<IHttpStagedHandlerBuilder> _builderFactory;
-        private List<Configurator> _pending;
+        private List<IHttpRouteConfigCommitable> _subRouters;
+        private List<IHttpRouteConfigCommitable> _pending;
+        private ISerializerPicker _picker;
+        private IList<IHttpSerializer> _serializers;
 
-        public HttpRouteConfig(IHttpAddRoute router, Func<IHttpStagedHandlerBuilder> builderFactory)
+        public HttpRouterCommon(IHttpAddRoute router)
         {
+            _prefix = "";
             _router = router;
-            _builderFactory = builderFactory;
-            _pending = new List<Configurator>();
-        }
-        public IHttpRouteConfigRouteWithDirect Route(string pattern)
-        {
-            var cfg = new Configurator(pattern);
-            _pending.Add(cfg);
-            return cfg;
-        }
-        public IHttpRouteConfigCommon Common()
-        {
-            return new Configurator(null);
-        }
-        public void Configure()
-        {
-            foreach (var cfg in _pending)
-            {
-                cfg.Configure(_router, _builderFactory);
-            }
+            _subRouters = new List<IHttpRouteConfigCommitable>();
+            _pending = new List<IHttpRouteConfigCommitable>();
+            _picker = null;
+            _serializers = new List<IHttpSerializer>();
         }
 
-        private class Configurator<T> : IHttpRouteConfigParametrized<T>
+        public HttpRouterCommon(IHttpRouteCommonConfiguratorExtended parent, string path)
         {
-            private IHttpRouteConfigRouteWithDirect _parent;
-            private Func<HttpServerRequest, Task<T>> _translator;
+            parent.Register(this);
+            _prefix = parent.GetPath();
+            if (!string.IsNullOrEmpty(path))
+                _prefix = string.Concat(_prefix, "/", path);
+            _router = parent.GetRouter();
+            _subRouters = new List<IHttpRouteConfigCommitable>();
+            _pending = new List<IHttpRouteConfigCommitable>();
+            _picker = parent.GetPicker();
+            _serializers = parent.GetSerializers().ToList();
+        }
 
-            public Configurator(IHttpRouteConfigRouteWithDirect parent, Func<HttpServerRequest, Task<T>> translator)
+        void IHttpRouteCommonConfiguratorExtended.Register(IHttpRouteConfigCommitable subRouter)
+        {
+            _subRouters.Add(subRouter);
+        }
+
+        IHttpAddRoute IHttpRouteCommonConfiguratorExtended.GetRouter()
+        {
+            return _router;
+        }
+
+        string IHttpRouteCommonConfiguratorExtended.GetPath()
+        {
+            return _prefix;
+        }
+
+        ISerializerPicker IHttpRouteCommonConfiguratorExtended.GetPicker()
+        {
+            return _picker;
+        }
+
+        IList<IHttpSerializer> IHttpRouteCommonConfiguratorExtended.GetSerializers()
+        {
+            return _serializers;
+        }
+
+        IHttpRouteCommonConfigurator IHttpRouteCommonConfigurator.SubRouter()
+        {
+            return new HttpRouterCommon(this, "");
+        }
+
+        IHttpRouteCommonConfigurator IHttpRouteCommonConfigurator.ForFolder(string path)
+        {
+            _prefix = string.Concat(_prefix, "/", path);
+            return this;
+        }
+
+        IHttpRouteCommonConfigurator IHttpRouteCommonConfigurator.WithPicker(ISerializerPicker picker)
+        {
+            if (_picker == null)
+                _picker = picker;
+            else
+                _picker = new HttpSerializerPickerProxy(picker, _picker);
+            return this;
+        }
+
+        IHttpRouteCommonConfigurator IHttpRouteCommonConfigurator.WithSerializer(IHttpSerializer serializer)
+        {
+            _serializers.Add(serializer);
+            return this;
+        }
+
+        void IHttpRouteConfigCommitable.Commit()
+        {
+            foreach (var item in _subRouters)
+                item.Commit();
+            foreach (var item in _pending)
+                item.Commit();
+            _pending.Clear();
+        }
+
+        IHttpRouteCommonConfiguratorRoute IHttpRouteCommonConfigurator.Route(string path)
+        {
+            return new HttpRouterCommonRoute(this, path);
+        }
+
+        private class HttpRouterCommonRoute : IHttpRouteCommonConfiguratorRoute, IHttpRouteConfigCommitable
+        {
+            private HttpRouterCommon _parent;
+            private bool _isCommitted;
+            private string _path;
+            private IHttpAddRoute _router;
+            private ISerializerPicker _picker;
+            private IList<IHttpSerializer> _serializers;
+            private IHttpRouteHandler _routeHandler;
+
+            public HttpRouterCommonRoute(HttpRouterCommon parent, string path)
             {
                 _parent = parent;
-                _translator = translator;
+                _router = parent._router;
+                _picker = parent._picker;
+                _serializers = parent._serializers.ToList();
+                _path = string.Concat(parent._prefix, "/", path);
             }
 
-            public IHttpRouteConfigComponents To(Func<T, Task<object>> handler)
+            public IHttpRouteCommonConfiguratorRoute WithPicker(ISerializerPicker picker)
             {
-                return _parent.To(new ParametrizedProcessor<T>(_translator, handler));
-            }
-        }
-
-        private class ParametrizedProcessor<T> : IHttpProcessor
-        {
-            private Func<HttpServerRequest, Task<T>> _translator;
-            private Func<T, Task<object>> _handler;
-           
-            public ParametrizedProcessor(Func<HttpServerRequest, Task<T>> translator, Func<T, Task<object>> handler)
-            {
-                _translator = translator;
-                _handler = handler;
-            }
-
-            public async Task<object> Process(HttpServerRequest request)
-            {
-                var typedRequest = await _translator(request).ConfigureAwait(false);
-                var result = await _handler(typedRequest).ConfigureAwait(false);
-                return result;
-            }
-        }
-
-        private class DelegatedProcessor : IHttpProcessor
-        {
-            private Func<HttpServerRequest, Task<object>> _handler;
-
-            public DelegatedProcessor(Func<HttpServerRequest, Task<object>> handler)
-            {
-                _handler = handler;
-            }
-
-            public Task<object> Process(HttpServerRequest request)
-            {
-                return _handler(request);
-            }
-        }
-
-        private class Configurator : IHttpRouteConfigRouteWithDirect, IHttpRouteConfigCommon, IHttpRouteConfigComponents
-        {
-            private string _pattern;
-            private List<string> _prefixes = new List<string>();
-
-            private List<Configurator> _using = new List<Configurator>();
-            private List<IHttpRequestDecoder> _decoders = new List<IHttpRequestDecoder>();
-            private List<IHttpRequestEnhancer> _enhancers = new List<IHttpRequestEnhancer>();
-            private List<IHttpInputProcessor> _inputs = new List<IHttpInputProcessor>();
-            private List<IHttpPreprocessor> _pre = new List<IHttpPreprocessor>();
-            private IHttpProcessor _processor;
-            private List<IHttpPostprocessor> _post = new List<IHttpPostprocessor>();
-            private List<IHttpOutputProcessor> _outputs = new List<IHttpOutputProcessor>();
-            private List<IHttpRequestEncoder> _encoders = new List<IHttpRequestEncoder>();
-            private IHttpRouteHandler _handler;
-
-            public Configurator(string pattern)
-            {
-                _pattern = pattern;
-            }
-
-            public void Configure(IHttpAddRoute router, Func<IHttpStagedHandlerBuilder> factory)
-            {
-                if (_handler != null)
-                    router.AddRoute(_pattern, _handler);
+                if (_picker == null)
+                    _picker = picker;
                 else
+                    _picker = new HttpSerializerPickerProxy(picker, _picker);
+                return this;
+            }
+
+            public IHttpRouteCommonConfiguratorRoute WithSerializer(IHttpSerializer serializer)
+            {
+                _serializers.Add(serializer);
+                return this;
+            }
+
+            public IHttpRouteConfigCommitable To(IHttpRouteHandler handler)
+            {
+                _routeHandler = handler;
+                _parent._pending.Add(this);
+                return this;
+            }
+
+            public IHttpRouteConfigCommitable To(IHttpProcessor processor)
+            {
+                _routeHandler = new HttpRouteStagedHandler(_picker, _serializers.ToList(), processor);
+                _parent._pending.Add(this);
+                return this;
+            }
+
+            public void Commit()
+            {
+                _isCommitted = true;
+                _router.AddRoute(_path, _routeHandler, null);
+            }
+        }
+    }
+
+    public class HttpRouteStagedHandler : IHttpRouteHandler
+    {
+        private ISerializerPicker _picker;
+        private List<IHttpSerializer> _serializers;
+        private IHttpProcessor _processor;
+
+        public HttpRouteStagedHandler(ISerializerPicker picker, List<IHttpSerializer> serializers, IHttpProcessor processor)
+        {
+            this._picker = picker;
+            this._serializers = serializers;
+            this._processor = processor;
+        }
+
+        public Task Handle(IHttpServerRawContext context)
+        {
+            return new Worker(this, context).Execute();
+        }
+
+        private class Worker
+        {
+            private TaskCompletionSource<object> _task;
+            private HttpRouteStagedHandler _parent;
+            private IHttpServerRawContext _rawContext;
+            private HttpServerStagedContext _staged;
+            private StreamReader _inputReader;
+            private StreamWriter _outputWriter;
+
+            public Worker(HttpRouteStagedHandler parent, IHttpServerRawContext context)
+            {
+                _parent = parent;
+                _rawContext = context;
+                _staged = new HttpServerStagedContext(_rawContext);
+                _task = new TaskCompletionSource<object>();
+            }
+            public Task Execute()
+            {
+                try
                 {
-                    var builder = factory();
-                    FillDecoders(builder);
-                    FillEnhancers(builder);
-                    FillInputs(builder);
-                    FillPre(builder);
-                    builder.Add(_processor);
-                    FillPost(builder);
-                    FillOutputs(builder);
-                    FillEncoders(builder);
-                    router.AddRoute(_pattern, builder.Build(), _prefixes);
+                    _staged.LoadParameters();
+                    if (_rawContext.InputStream != null)
+                    {
+                        _inputReader = new StreamReader(_rawContext.InputStream);
+                        _inputReader.ReadToEndAsync().ContinueWith(Phase2);
+                    }
+                    else
+                        Phase3();
+                }
+                catch (AggregateException ex)
+                {
+                    _task.SetException(ex.GetBaseException());
+                }
+                catch (Exception ex)
+                {
+                    _task.SetException(ex);
+                }
+                return _task.Task;
+            }
+            private void Phase2(Task<string> inputStringTask)
+            {
+                try
+                {
+                    try
+                    {
+                        _staged.InputString = inputStringTask.Result;
+                    }
+                    finally
+                    {
+                        _inputReader.Dispose();
+                    }
+                    Phase3();
+                }
+                catch (AggregateException ex)
+                {
+                    _task.SetException(ex.GetBaseException());
+                }
+                catch (Exception ex)
+                {
+                    _task.SetException(ex);
                 }
             }
-
-            private void FillDecoders(IHttpStagedHandlerBuilder builder)
+            private void Phase3()
             {
-                for (int i = 0; i < _using.Count; i++)
-                    _using[i].FillDecoders(builder);
-                for (int i = 0; i < _decoders.Count; i++)
-                    builder.Add(_decoders[i]);
+                _staged.InputSerializer = _parent._picker.PickDeserializer(_staged, _parent._serializers, null);
+                _staged.OutputSerializer = _parent._picker.PickSerializer(_staged, _parent._serializers, null);
+                _parent._processor.Process(_staged).ContinueWith(Phase4);
             }
-
-            private void FillEnhancers(IHttpStagedHandlerBuilder builder)
+            private void Phase4(Task task)
             {
-                for (int i = 0; i < _using.Count; i++)
-                    _using[i].FillEnhancers(builder);
-                for (int i = 0; i < _enhancers.Count; i++)
-                    builder.Add(_enhancers[i]);
+                if (task.Exception != null)
+                    _task.SetException(task.Exception.GetBaseException());
+                else
+                {
+                    _rawContext.StatusCode = _staged.StatusCode;
+                    _rawContext.OutputHeaders.Clear();
+                    foreach (var item in _staged.OutputHeaders)
+                        _rawContext.OutputHeaders.Add(item.Key, item.Value);
+                    _outputWriter = new StreamWriter(_rawContext.OutputStream);
+                    _outputWriter.WriteAsync(_staged.OutputString).ContinueWith(Phase5);
+                }
             }
-
-            private void FillInputs(IHttpStagedHandlerBuilder builder)
+            private void Phase5(Task task)
             {
-                for (int i = _inputs.Count - 1; i >= 0 ; i--)
-                    builder.Add(_inputs[i]);
-                for (int i = _using.Count - 1; i >= 0; i--)
-                    _using[i].FillInputs(builder);
+                if (task.Exception != null)
+                    _task.SetException(task.Exception.GetBaseException());
+                else
+                    _task.SetResult(null);
             }
+        }
+    }
+   
+    public class HttpServerStagedContext : IHttpServerStagedContext
+    {
+        private IHttpServerRawContext _rawContext;
+        private HttpServerStagedParameters _parameters;
 
-            private void FillPre(IHttpStagedHandlerBuilder builder)
+        public HttpServerStagedContext(IHttpServerRawContext context)
+        {
+            _rawContext = context;
+            Method = context.Method;
+            Url = context.Url;
+            ClientAddress = context.ClientAddress;
+            InputHeaders = new HttpServerStagedContextHeaders();
+            foreach (var item in context.InputHeaders)
+                InputHeaders.Add(item.Key, item.Value);
+            OutputHeaders = new HttpServerStagedContextHeaders();
+            _parameters = new HttpServerStagedParameters();
+        }
+
+        public void LoadParameters()
+        {
+            foreach (var parameter in _rawContext.RouteParameters)
+                _parameters.AddParameter(parameter);
+            foreach (var parameter in ParametrizedUrl.ParseQueryString(_rawContext.Url))
+                _parameters.AddParameter(parameter);
+        }
+
+        public string Method { get; private set; }
+        public string Url { get; private set; }
+        public string ClientAddress { get; private set; }
+        public string InputString { get; set; }
+        public int StatusCode { get; set; }
+        public string OutputString { get; set; }
+        public IHttpSerializer InputSerializer { get; set; }
+        public IHttpSerializer OutputSerializer { get; set; }
+        public IHttpServerStagedHeaders InputHeaders { get; private set; }
+        public IHttpServerStagedHeaders OutputHeaders { get; private set; }
+        public IEnumerable<RequestParameter> RawParameters
+        {
+            get { return _parameters; }
+        }
+        public IProcessedParameter Parameter(string name)
+        {
+            return _parameters.Get(RequestParameterType.QueryString, name);
+        }
+        public IProcessedParameter PostData(string name)
+        {
+            return _parameters.Get(RequestParameterType.PostData, name);
+        }
+        public IProcessedParameter Route(string name)
+        {
+            return _parameters.Get(RequestParameterType.Path, name);
+        }
+    }
+
+    public class HttpServerStagedContextHeaders : IHttpServerStagedHeaders
+    {
+        private int _count;
+        private string _contentType, _referer, _location;
+        private int _contentLength;
+        private HttpServerStagedContextWeightedHeader _acceptTypes, _acceptLanguages;
+        private List<KeyValuePair<string, string>> _custom;
+
+        public HttpServerStagedContextHeaders()
+        {
+            _contentLength = -1;
+            _acceptTypes = new HttpServerStagedContextWeightedHeader("Accept");
+            _acceptLanguages = new HttpServerStagedContextWeightedHeader("Accept-Languages");
+            _custom = new List<KeyValuePair<string, string>>();
+        }
+
+        public string ContentType { get { return _contentType; } set { _contentType = value; } }
+        public IHttpServerStagedWeightedHeader AcceptTypes { get { return _acceptTypes; } }
+        public IHttpServerStagedWeightedHeader AcceptLanguages { get { return _acceptLanguages; } }
+        public int ContentLength { get { return _contentLength; } set { _contentLength = value; } }
+        public string Referer { get { return _referer; } set { _referer = value; } }
+        public string Location { get { return _location; } set { _location = value; } }
+
+        public IEnumerator<KeyValuePair<string, string>> GetEnumerator()
+        {
+            return CreateList().GetEnumerator();
+        }
+
+        private List<KeyValuePair<string, string>> CreateList()
+        {
+            var list = new List<KeyValuePair<string, string>>();
+            AddToList(list, "Content-Type", _contentType);
+            AddToList(list, "Content-Length", _contentLength, -1);
+            AddToList(list, "Referer", _referer);
+            AddToList(list, "Location", _location);
+            AddToList(list, _acceptTypes);
+            AddToList(list, _acceptLanguages);
+            list.AddRange(_custom);
+            return list;
+        }
+
+        private void AddToList(List<KeyValuePair<string, string>> list, string name, string value)
+        {
+            if (!string.IsNullOrEmpty(value))
+                list.Add(new KeyValuePair<string, string>(name, value));
+        }
+        private void AddToList(List<KeyValuePair<string, string>> list, string name, int value, int defaultValue)
+        {
+            if (value != defaultValue)
+                list.Add(new KeyValuePair<string, string>(name, value.ToString()));
+        }
+        private void AddToList(List<KeyValuePair<string, string>> list, IHttpServerStagedWeightedHeader header)
+        {
+            if (header.IsSet)
+                list.Add(new KeyValuePair<string, string>(header.Name, header.RawValue));
+        }
+
+        public void Add(string name, string value)
+        {
+            switch (name)
             {
-                for (int i = 0; i < _using.Count; i++)
-                    _using[i].FillPre(builder);
-                for (int i = 0; i < _pre.Count; i++)
-                    builder.Add(_pre[i]);
+                case "Accept":
+                    _acceptTypes.RawValue = value;
+                    break;
+                case "Accept-Language":
+                    _acceptTypes.RawValue = value;
+                    break;
+                case "Referer":
+                    _referer = value;
+                    break;
+                case "Location":
+                    _location = value;
+                    break;
+                case "Content-Type":
+                    _contentType = value;
+                    break;
+                case "Content-Length":
+                    if (!int.TryParse(value, out _contentLength))
+                        _contentLength = -1;
+                    break;
+                default:
+                    _custom.Add(new KeyValuePair<string, string>(name, value));
+                    break;
             }
+        }
 
-            private void FillPost(IHttpStagedHandlerBuilder builder)
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator()
+        {
+            return GetEnumerator();
+        }
+
+        public void Clear()
+        {
+            _custom.Clear();
+            _acceptTypes.Clear();
+            _acceptLanguages.Clear();
+            _referer = _location = _contentType = null;
+            _contentLength = -1;
+        }
+    }
+
+    public class HttpServerStagedContextWeightedHeader : IHttpServerStagedWeightedHeader
+    {
+        private string _name;
+        private bool _isSet;
+        private string _rawValue;
+        private List<string> _values;
+
+        public HttpServerStagedContextWeightedHeader(string name)
+        {
+            _name = name;
+            _isSet = false;
+            _rawValue = null;
+            _values = new List<string>();
+        }
+        public string Name
+        {
+            get { return _name; }
+        }
+        public string RawValue
+        {
+            get { return _rawValue; }
+            set { SetRawValue(value); }
+        }
+        public int Count
+        {
+            get { return _values.Count; }
+        }
+        public string this[int index]
+        {
+            get { return _values[index]; }
+        }
+        public bool IsSet
+        {
+            get { return _isSet; }
+        }
+
+        public void Clear()
+        {
+            _isSet = false;
+            _rawValue = "";
+            _values.Clear();
+        }
+        public void Add(string value)
+        {
+            _isSet = true;
+            if (string.IsNullOrEmpty(_rawValue))
+                _rawValue = value;
+            else
+                _rawValue = string.Concat(_rawValue, ", ", value);
+            _values.Add(value);
+        }
+        public void SetRawValue(string rawValue)
+        {
+            _rawValue = rawValue;
+            _values.Clear();
+            _isSet = true;
+            if (!string.IsNullOrEmpty(rawValue))
             {
-                for (int i = _post.Count - 1; i >= 0; i--)
-                    builder.Add(_post[i]);
-                for (int i = _using.Count - 1; i >= 0; i--)
-                    _using[i].FillPost(builder);
+                foreach (var element in rawValue.Split(','))
+                {
+                    var elementParts = element.Split(';');
+                    _values.Add(elementParts[0].Trim());
+                }
             }
+        }
 
-            private void FillOutputs(IHttpStagedHandlerBuilder builder)
-            {
-                for (int i = _outputs.Count - 1; i >= 0; i--)
-                    builder.Add(_outputs[i]);
-                for (int i = _using.Count - 1; i >= 0; i--)
-                    _using[i].FillOutputs(builder);
-            }
+        public IEnumerator<string> GetEnumerator()
+        {
+            return _values.GetEnumerator();
+        }
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator()
+        {
+            return GetEnumerator();
+        }
+    }
 
-            private void FillEncoders(IHttpStagedHandlerBuilder builder)
-            {
-                for (int i = _encoders.Count - 1; i >= 0; i--)
-                    builder.Add(_encoders[i]);
-                for (int i = _using.Count - 1; i >= 0; i--)
-                    _using[i].FillEncoders(builder);
-            }
+    public class HttpServerStagedParameters : IEnumerable<RequestParameter>
+    {
+        private Dictionary<string, List<RequestParameter>> _data;
 
-            private Configurator Clean()
-            {
-                _decoders.Clear();
-                _encoders.Clear();
-                _enhancers.Clear();
-                _inputs.Clear();
-                _outputs.Clear();
-                _post.Clear();
-                _pre.Clear();
-                _processor = null;
-                _using.Clear();
-                return this;
-            }
+        public HttpServerStagedParameters()
+        {
+            _data = new Dictionary<string, List<RequestParameter>>();
+        }
 
-            void IHttpRouteConfigRouteWithDirect.To(IHttpRouteHandler directHandler)
-            {
-                _handler = directHandler;
-            }
+        public void AddParameter(RequestParameter parameter)
+        {
+            List<RequestParameter> list;
+            var key = GetKey(parameter.Type, parameter.Name);
+            if (!_data.TryGetValue(key, out list))
+                _data[key] = list = new List<RequestParameter>();
+            list.Add(parameter);
+        }
 
-            IHttpRouteConfigRoute IHttpRouteConfigRoute.Clean()
-            {
-                return Clean();
-            }
+        public IProcessedParameter Get(RequestParameterType type, string name)
+        {
+            List<RequestParameter> list;
+            _data.TryGetValue(GetKey(type, name), out list);
+            return new HttpProcessedParameter(type, name, list);
+        }
 
-            IHttpRouteConfigComponents IHttpRouteConfigRoute.To(IHttpProcessor processor)
+        private string GetKey(RequestParameterType type, string name)
+        {
+            switch (type)
             {
-                _processor = processor;
-                return this;
-            }
-
-            IHttpRouteConfigComponents IHttpRouteConfigRoute.To(Func<HttpServerRequest, Task<object>> handler)
-            {
-                _processor = new DelegatedProcessor(handler);
-                return this;
-            }
-
-            IHttpRouteConfigParametrized<T> IHttpRouteConfigRoute.Parametrized<T>(Func<HttpServerRequest, Task<T>> translator)
-            {
-                return new Configurator<T>(this, translator);
-            }
-
-            IHttpRouteConfigRoute IHttpRouteConfigRoute.Prefixed(string prefix)
-            {
-                _prefixes.Add(prefix);
-                return this;
-            }
-
-            IHttpRouteConfigRoute IHttpRouteConfigComponents<IHttpRouteConfigRoute>.With(IHttpRequestDecoder handler)
-            {
-                _decoders.Add(handler);
-                return this;
-            }
-
-            IHttpRouteConfigRoute IHttpRouteConfigComponents<IHttpRouteConfigRoute>.With(IHttpRequestEncoder handler)
-            {
-                _encoders.Add(handler);
-                return this;
-            }
-
-            IHttpRouteConfigRoute IHttpRouteConfigComponents<IHttpRouteConfigRoute>.With(IHttpRequestEnhancer handler)
-            {
-                _enhancers.Add(handler);
-                return this;
-            }
-
-            IHttpRouteConfigRoute IHttpRouteConfigComponents<IHttpRouteConfigRoute>.With(IHttpInputProcessor handler)
-            {
-                _inputs.Add(handler);
-                return this;
-            }
-
-            IHttpRouteConfigRoute IHttpRouteConfigComponents<IHttpRouteConfigRoute>.With(IHttpOutputProcessor handler)
-            {
-                _outputs.Add(handler);
-                return this;
-            }
-
-            IHttpRouteConfigRoute IHttpRouteConfigComponents<IHttpRouteConfigRoute>.With(IHttpPreprocessor handler)
-            {
-                _pre.Add(handler);
-                return this;
-            }
-
-            IHttpRouteConfigRoute IHttpRouteConfigComponents<IHttpRouteConfigRoute>.With(IHttpPostprocessor handler)
-            {
-                _post.Add(handler);
-                return this;
-            }
-
-            IHttpRouteConfigRoute IHttpRouteConfigComponents<IHttpRouteConfigRoute>.Using(IHttpRouteConfigCommon common)
-            {
-                _using.Add((Configurator)common);
-                return this;
-            }
-
-            IHttpRouteConfigCommon IHttpRouteConfigComponents<IHttpRouteConfigCommon>.With(IHttpRequestDecoder handler)
-            {
-                _decoders.Add(handler);
-                return this;
-            }
-
-            IHttpRouteConfigCommon IHttpRouteConfigComponents<IHttpRouteConfigCommon>.With(IHttpRequestEncoder handler)
-            {
-                _encoders.Add(handler);
-                return this;
-            }
-
-            IHttpRouteConfigCommon IHttpRouteConfigComponents<IHttpRouteConfigCommon>.With(IHttpRequestEnhancer handler)
-            {
-                _enhancers.Add(handler);
-                return this;
-            }
-
-            IHttpRouteConfigCommon IHttpRouteConfigComponents<IHttpRouteConfigCommon>.With(IHttpInputProcessor handler)
-            {
-                _inputs.Add(handler);
-                return this;
-            }
-
-            IHttpRouteConfigCommon IHttpRouteConfigComponents<IHttpRouteConfigCommon>.With(IHttpOutputProcessor handler)
-            {
-                _outputs.Add(handler);
-                return this;
-            }
-
-            IHttpRouteConfigCommon IHttpRouteConfigComponents<IHttpRouteConfigCommon>.With(IHttpPreprocessor handler)
-            {
-                _pre.Add(handler);
-                return this;
-            }
-
-            IHttpRouteConfigCommon IHttpRouteConfigComponents<IHttpRouteConfigCommon>.With(IHttpPostprocessor handler)
-            {
-                _post.Add(handler);
-                return this;
-            }
-
-            IHttpRouteConfigCommon IHttpRouteConfigComponents<IHttpRouteConfigCommon>.Using(IHttpRouteConfigCommon common)
-            {
-                _using.Add((Configurator)common);
-                return this;
-            }
-
-            IHttpRouteConfigComponents IHttpRouteConfigComponents.Clean()
-            {
-                return Clean();
-            }
-
-            IHttpRouteConfigComponents IHttpRouteConfigComponents<IHttpRouteConfigComponents>.With(IHttpRequestDecoder handler)
-            {
-                _decoders.Add(handler);
-                return this;
-            }
-
-            IHttpRouteConfigComponents IHttpRouteConfigComponents<IHttpRouteConfigComponents>.With(IHttpRequestEncoder handler)
-            {
-                _encoders.Add(handler);
-                return this;
-            }
-
-            IHttpRouteConfigComponents IHttpRouteConfigComponents<IHttpRouteConfigComponents>.With(IHttpRequestEnhancer handler)
-            {
-                _enhancers.Add(handler);
-                return this;
-            }
-
-            IHttpRouteConfigComponents IHttpRouteConfigComponents<IHttpRouteConfigComponents>.With(IHttpInputProcessor handler)
-            {
-                _inputs.Add(handler);
-                return this;
-            }
-
-            IHttpRouteConfigComponents IHttpRouteConfigComponents<IHttpRouteConfigComponents>.With(IHttpOutputProcessor handler)
-            {
-                _outputs.Add(handler);
-                return this;
-            }
-
-            IHttpRouteConfigComponents IHttpRouteConfigComponents<IHttpRouteConfigComponents>.With(IHttpPreprocessor handler)
-            {
-                _pre.Add(handler);
-                return this;
-            }
-
-            IHttpRouteConfigComponents IHttpRouteConfigComponents<IHttpRouteConfigComponents>.With(IHttpPostprocessor handler)
-            {
-                _post.Add(handler);
-                return this;
-            }
-
-            IHttpRouteConfigComponents IHttpRouteConfigComponents<IHttpRouteConfigComponents>.Using(IHttpRouteConfigCommon common)
-            {
-                _using.Add((Configurator)common);
-                return this;
+                case RequestParameterType.QueryString:
+                    return "Q" + name;
+                case RequestParameterType.PostData:
+                    return "I" + name;
+                case RequestParameterType.Path:
+                    return "R" + name;
+                default:
+                    return "!" + name;
             }
         }
     }
 
-    public interface IHttpRouteConfigComponents<T>
+    public class HttpProcessedParameter : IProcessedParameter
     {
-        T With(IHttpRequestDecoder handler);
-        T With(IHttpRequestEncoder handler);
-        T With(IHttpRequestEnhancer handler);
-        T With(IHttpInputProcessor handler);
-        T With(IHttpOutputProcessor handler);
-        T With(IHttpPreprocessor handler);
-        T With(IHttpPostprocessor handler);
-        T Using(IHttpRouteConfigCommon common);
+        private RequestParameterType _type;
+        private string _name;
+        private List<string> _values;
+
+        public HttpProcessedParameter(RequestParameterType type, string name, IEnumerable<RequestParameter> values)
+        {
+            _type = type;
+            _name = name;
+            _values = values.Select(p => p.Value).Where(v => !string.IsNullOrEmpty(v)).ToList();
+        }
+
+        public ITypedProcessedParameter<int> AsInteger()
+        {
+            var stringValue = _values.FirstOrDefault();
+            int parsedValue;
+            if (stringValue == null)
+                return HttpTypedProcessedParameter<int>.CreateEmpty(_type, _name);
+            else if (int.TryParse(stringValue, out parsedValue))
+                return HttpTypedProcessedParameter<int>.CreateParsed(_type, _name, parsedValue);
+            else
+                throw new ArgumentOutOfRangeException(_name, stringValue, string.Format("Parameter {0} is in wrong format: {1}", _name, stringValue));
+        }
+
+        public ITypedProcessedParameter<string> AsString()
+        {
+            var stringValue = _values.FirstOrDefault();
+            if (stringValue == null)
+                return HttpTypedProcessedParameter<string>.CreateEmpty(_type, _name);
+            else
+                return HttpTypedProcessedParameter<string>.CreateParsed(_type, _name, parsedValue);
+        }
+
+        public ITypedProcessedParameter<T> As<T>(Func<string, T> converter)
+        {
+            var stringValue = _values.FirstOrDefault();
+            if (stringValue == null)
+                return HttpTypedProcessedParameter<T>.CreateEmpty(_type, _name);
+            try
+            {
+                T parsedValue = converter(stringValue);
+                return HttpTypedProcessedParameter<T>.CreateParsed(_type, _name, parsedValue);
+            }
+            catch (Exception)
+            {
+                throw new ArgumentOutOfRangeException(_name, stringValue, string.Format("Parameter {0} is in wrong format: {1}", _name, stringValue));
+            }
+        }
     }
 
-    public interface IHttpRouteConfigRoute : IHttpRouteConfigComponents<IHttpRouteConfigRoute>
+    public class HttpTypedProcessedParameter<T> : ITypedProcessedParameter<T>
     {
-        IHttpRouteConfigRoute Clean();
-        IHttpRouteConfigComponents To(IHttpProcessor processor);
-        IHttpRouteConfigComponents To(Func<HttpServerRequest, Task<object>> handler);
-        IHttpRouteConfigParametrized<T> Parametrized<T>(Func<HttpServerRequest, Task<T>> translator);
-        IHttpRouteConfigRoute Prefixed(string prefix);
-    }
+        private RequestParameterType _type;
+        private string _name;
+        private T _parsedValue;
+        private T _defaultValue;
+        private bool _hasDefault;
+        private bool _isEmpty;
 
-    public interface IHttpRouteConfigParametrized<T>
-    {
-        IHttpRouteConfigComponents To(Func<T, Task<object>> handler);
-    }
+        private HttpTypedProcessedParameter(RequestParameterType type, string name)
+        {
+            _type = type;
+            _name = name;
+        }
 
-    public interface IHttpRouteConfigRouteWithDirect : IHttpRouteConfigRoute
-    {
-        void To(IHttpRouteHandler directHandler);
-    }
+        public static ITypedProcessedParameter<T> CreateEmpty(RequestParameterType type, string name)
+        {
+            return new HttpTypedProcessedParameter<T>(type, name)
+            {
+                _isEmpty = true
+            };
+        }
 
-    public interface IHttpRouteConfigCommon : IHttpRouteConfigComponents<IHttpRouteConfigCommon>
-    {
-    }
+        public static ITypedProcessedParameter<T> CreateParsed(RequestParameterType type, string name, T parsedValue)
+        {
+            return new HttpTypedProcessedParameter<T>(type, name)
+            {
+                _parsedValue = parsedValue
+            };
+        }
 
-    public interface IHttpRouteConfigComponents : IHttpRouteConfigComponents<IHttpRouteConfigComponents>
-    {
-        IHttpRouteConfigComponents Clean();
+        public ITypedProcessedParameter<T> WithValidator(Action<T> validator)
+        {
+            if (!_isEmpty)
+                validator(_parsedValue);
+            return this;
+        }
+
+        public ITypedProcessedParameter<T> WithDefault(T defaultValue)
+        {
+            _hasDefault = true;
+            _defaultValue = defaultValue;
+            return this;
+        }
+
+        public T Get()
+        {
+            if (!_isEmpty)
+                return _parsedValue;
+            else if (_hasDefault)
+                return _defaultValue;
+            else
+                throw new ArgumentNullException(_name, string.Format("Parameter {0} is not present", _name));
+        }
     }
 }

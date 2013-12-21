@@ -6,6 +6,7 @@ namespace Vydejna.Tests.SystemTests
     [TestClass]
     public class SystemTest
     {
+#if false
         [TestMethod, TestCategory("Slow")]
         public void RunDomainServer()
         {
@@ -14,5 +15,6 @@ namespace Vydejna.Tests.SystemTests
             bootstrap.WaitForExit();
             bootstrap.Dispose();
         }
+#endif
     }
 }

@@ -50,14 +50,11 @@
   <ItemGroup>
     <Compile Include="ContractTypes.cs" />
     <Compile Include="HttpClient.cs" />
-    <Compile Include="HttpEnhancer.cs" />
-    <Compile Include="HttpInput.cs" />
-    <Compile Include="HttpOutput.cs" />
     <Compile Include="HttpRouteConfig.cs" />
     <Compile Include="HttpRouter.cs" />
+    <Compile Include="HttpSerialization.cs" />
     <Compile Include="HttpServer.cs" />
     <Compile Include="HttpServerDispatcher.cs" />
-    <Compile Include="HttpStagedHandler.cs" />
     <Compile Include="IHandle.cs" />
     <Compile Include="ParametrizedUrl.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

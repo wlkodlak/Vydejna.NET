@@ -9,6 +9,7 @@ using Vydejna.Contracts;
 
 namespace Vydejna.Domain
 {
+#if false
     public class Bootstrap
     {
         private QueuedBus _bus;
@@ -145,4 +146,5 @@ namespace Vydejna.Domain
             _waitForExit.Wait();
         }
     }
+#endif
 }

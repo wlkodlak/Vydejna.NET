@@ -6,12 +6,13 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Net;
 using System.IO;
+using System.Diagnostics;
 
 namespace Vydejna.Contracts
 {
     public interface IHttpServerDispatcher
     {
-        Task<HttpServerResponse> ProcessRequest(HttpServerRequest request);
+        Task ProcessRequest(IHttpServerRawContext context);
     }
 
     public class HttpServer : IDisposable
@@ -82,8 +83,7 @@ namespace Vydejna.Contracts
             {
                 while (!_cancel.IsCancellationRequested)
                 {
-                    var task = ProcessRequest(_listener.GetContext());
-                    task.ContinueWith(EatExceptions, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
+                    new RequestHandler(this, _listener.GetContext()).Run();
                 }
             }
             catch (HttpListenerException)
@@ -91,73 +91,139 @@ namespace Vydejna.Contracts
             }
         }
 
-        private void EatExceptions(Task task)
+        private class RequestHandler
         {
-            try
+            private HttpServer _parent;
+            private HttpListenerContext _context;
+            private HttpServerListenerContext _rawContext;
+            private Stopwatch _stopwatch;
+
+            public RequestHandler(HttpServer parent, HttpListenerContext context)
             {
-                task.GetAwaiter().GetResult();
+                _parent = parent;
+                _context = context;
             }
-            catch
+
+            public void Run()
             {
+                Task.Factory.StartNew(Phase1);
+            }
+
+            private void Phase1()
+            {
+                _stopwatch = new Stopwatch();
+                _stopwatch.Start();
+                _rawContext = new HttpServerListenerContext(_context);
+                _parent._dispatcher.ProcessRequest(_rawContext).ContinueWith(Phase2);
+            }
+            private void Phase2(Task task)
+            {
+                _stopwatch.Stop();
+                _parent._log.DebugFormat("Request took {0} ms", _stopwatch.ElapsedMilliseconds);
+                var exception = task.Exception;
+            }
+        }
+    }
+
+    public class HttpServerListenerContext : IHttpServerRawContext
+    {
+        private HttpListenerRequest _request;
+        private HttpListenerResponse _response;
+        private Stream _inputStream;
+        private string _clientAddress;
+        private IList<RequestParameter> _routeParameters;
+
+        public HttpServerListenerContext(HttpListenerContext listenerContext)
+        {
+            _request = listenerContext.Request;
+            _response = listenerContext.Response;
+            _clientAddress = _request.RemoteEndPoint.Address.ToString();
+            _routeParameters = new List<RequestParameter>();
+            _inputStream = _request.HasEntityBody ? _request.InputStream : null;
+            InputHeaders = new HttpServerListenerRequestHeaders(_request);
+            OutputHeaders = new HttpServerListenerResponseHeaders(_response);
+        }
+
+        public string Method { get { return _request.HttpMethod; } }
+        public string Url { get { return _request.RawUrl; } }
+        public string ClientAddress { get { return _clientAddress; } }
+        public int StatusCode { get { return _response.StatusCode; } set { _response.StatusCode = value; } }
+        public Stream InputStream { get { return _inputStream; } }
+        public Stream OutputStream { get { return _response.OutputStream; } }
+        public IList<RequestParameter> RouteParameters { get { return _routeParameters; } }
+        public IHttpServerRawHeaders InputHeaders { get; private set; }
+        public IHttpServerRawHeaders OutputHeaders { get; private set; }
+    }
+
+    public class HttpServerListenerRequestHeaders : IHttpServerRawHeaders
+    {
+        private List<KeyValuePair<string, string>> _data;
+
+        public HttpServerListenerRequestHeaders(HttpListenerRequest request)
+        {
+            for (int i = 0; i < request.Headers.Count; i++)
+            {
+                var name = request.Headers.GetKey(i);
+                foreach (string value in request.Headers.GetValues(i))
+                    _data.Add(new KeyValuePair<string, string>(name, value));
             }
         }
 
-        private async Task ProcessRequest(HttpListenerContext context)
+        public void Add(string name, string value)
         {
-            try
-            {
-                var stopWatch = new System.Diagnostics.Stopwatch();
-                stopWatch.Start();
-                var request = await Task.Factory.StartNew(() => CreateRequest(context.Request), TaskCreationOptions.PreferFairness).ConfigureAwait(false);
-                var response = await _dispatcher.ProcessRequest(request).ConfigureAwait(false);
-                await WriteResponse(context.Response, response).ConfigureAwait(false);
-                stopWatch.Stop();
-                _log.DebugFormat("Request {0} completed in {1} ms", context.Request.Url.PathAndQuery, stopWatch.ElapsedMilliseconds);
-            }
-            finally
-            {
-                context.Response.Close();
-            }
+            throw new InvalidOperationException("Request header collection is read only");
         }
 
-        private HttpServerRequest CreateRequest(HttpListenerRequest listenerRequest)
+        public void Clear()
         {
-            var httpRequest = new HttpServerRequest();
-            httpRequest.Method = listenerRequest.HttpMethod;
-            httpRequest.Url = listenerRequest.Url.OriginalString;
-            for (int i = 0; i < listenerRequest.Headers.Count; i++)
-            {
-                var name = listenerRequest.Headers.GetKey(i);
-                foreach (string value in listenerRequest.Headers.GetValues(i))
-                    httpRequest.Headers.Add(name, value);
-            }
-            httpRequest.PostDataStream = listenerRequest.InputStream;
-            return httpRequest;
+            throw new InvalidOperationException("Request header collection is read only");
         }
 
-        private async Task WriteResponse(HttpListenerResponse listenerResponse, HttpServerResponse httpResponse)
+        public IEnumerator<KeyValuePair<string, string>> GetEnumerator()
         {
-            listenerResponse.StatusCode = httpResponse.StatusCode;
-            listenerResponse.Headers.Clear();
-            foreach (var header in httpResponse.Headers)
-                listenerResponse.Headers.Add(header.Name, header.Value);
-            using (var stream = listenerResponse.OutputStream)
+            return _data.GetEnumerator();
+        }
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator()
+        {
+            return GetEnumerator();
+        }
+    }
+
+    public class HttpServerListenerResponseHeaders : IHttpServerRawHeaders
+    {
+        private HttpListenerResponse _response;
+
+        public HttpServerListenerResponseHeaders(HttpListenerResponse response)
+        {
+            _response = response;
+        }
+
+        public void Add(string name, string value)
+        {
+            _response.Headers.Add(name, value);
+        }
+
+        public void Clear()
+        {
+            _response.Headers.Clear();
+        }
+
+        public IEnumerator<KeyValuePair<string, string>> GetEnumerator()
+        {
+            var list = new List<KeyValuePair<string, string>>(_response.Headers.Count);
+            for (int i = 0; i < _response.Headers.Count; i++)
             {
-                if (httpResponse.StreamBody != null)
-                {
-                    var buffer = new byte[64 * 1024];
-                    var inputStream = httpResponse.StreamBody;
-                    while (true)
-                    {
-                        int read = await inputStream.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false);
-                        if (read <= 0)
-                            break;
-                        await stream.WriteAsync(buffer, 0, read).ConfigureAwait(false);
-                    }
-                }
-                else if (httpResponse.RawBody != null && httpResponse.RawBody.Length > 0)
-                    await stream.WriteAsync(httpResponse.RawBody, 0, httpResponse.RawBody.Length).ConfigureAwait(false);
+                var name = _response.Headers.GetKey(i);
+                foreach (string value in _response.Headers.GetValues(i))
+                    list.Add(new KeyValuePair<string, string>(name, value));
             }
+            return list.GetEnumerator();
+        }
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator()
+        {
+            return GetEnumerator();
         }
     }
 }
