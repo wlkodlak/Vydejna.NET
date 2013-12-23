@@ -7,10 +7,8 @@ using Vydejna.Contracts;
 
 namespace Vydejna.Domain
 {
-    public interface INaradiRepository
+    public interface INaradiRepository : IEventSourcedRepository<Naradi>
     {
-        Task<Naradi> Get(Guid id);
-        Task Save(Naradi naradi);
     }
 
     public class NaradiRepository : EventSourcedRepository<Naradi>, INaradiRepository
@@ -23,16 +21,6 @@ namespace Vydejna.Domain
         protected override Naradi CreateAggregate()
         {
             return new Naradi();
-        }
-
-        Task<Naradi> INaradiRepository.Get(Guid id)
-        {
-            return Get(id);
-        }
-
-        Task INaradiRepository.Save(Naradi naradi)
-        {
-            return Save(naradi);
         }
     }
 }

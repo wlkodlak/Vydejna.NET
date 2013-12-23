@@ -19,71 +19,116 @@ namespace Vydejna.Domain
             _readSvc = readSvc;
         }
 
-        public Task<AktivovatNaradiCommand> AktivovatNaradi(HttpServerRequest request)
+        public void RegisterHttpHandlers(IHttpRouteCommonConfigurator config)
         {
-            return TaskResult.GetCompletedTask((AktivovatNaradiCommand)request.PostDataObject);
+            config.Route("AktivovatNaradi").To(AktivovatNaradi);
+            config.Route("DeaktivovatNaradi").To(DeaktivovatNaradi);
+            config.Route("DefinovatNaradi").To(DefinovatNaradi);
         }
 
-        public Task<object> AktivovatNaradi(AktivovatNaradiCommand cmd)
+        public void AktivovatNaradi(IHttpServerStagedContext context)
         {
-            return HandleCommand(_writeSvc, cmd);
+            HandleCommand<AktivovatNaradiCommand>(context, _writeSvc);
+        }
+        public void DeaktivovatNaradi(IHttpServerStagedContext context)
+        {
+            HandleCommand<DeaktivovatNaradiCommand>(context, _writeSvc);
+        }
+        public void DefinovatNaradi(IHttpServerStagedContext context)
+        {
+            HandleCommand<DefinovatNaradiCommand>(context, _writeSvc);
         }
 
-        public Task<DeaktivovatNaradiCommand> DeaktivovatNaradi(HttpServerRequest request)
-        {
-            return TaskResult.GetCompletedTask((DeaktivovatNaradiCommand)request.PostDataObject);
-        }
-
-        public Task<object> DeaktivovatNaradi(DeaktivovatNaradiCommand cmd)
-        {
-            return HandleCommand(_writeSvc, cmd);
-        }
-
-        public Task<DefinovatNaradiCommand> DefinovatNaradi(HttpServerRequest request)
-        {
-            return TaskResult.GetCompletedTask((DefinovatNaradiCommand)request.PostDataObject);
-        }
-
-        public Task<object> DefinovatNaradi(DefinovatNaradiCommand cmd)
-        {
-            return HandleCommand(_writeSvc, cmd);
-        }
-
-        private static async Task<object> HandleCommand<T>(IHandle<T> handler, T cmd)
+        private void HandleCommand<TCommand>(IHttpServerStagedContext context, IHandle<CommandExecution<TCommand>> handler)
         {
             try
             {
-                await handler.Handle(cmd).ConfigureAwait(false);
-                return new HttpServerResponseBuilder().WithStatusCode(HttpStatusCode.Accepted).Build();
-            }
-            catch (ValidationException ex)
-            {
-                return new HttpServerResponseBuilder()
-                    .WithStatusCode(HttpStatusCode.BadRequest)
-                    .WithStringBody(ex.ToString())
-                    .Build();
+                var command = context.InputSerializer.Deserialize<TCommand>(context.InputString);
+                var execution = new CommandExecution<TCommand>(command, () => OnCommandCompleted(context, null), ex => OnCommandCompleted(context, ex));
+                handler.Handle(execution);
             }
             catch (Exception ex)
             {
-                return new HttpServerResponseBuilder()
-                    .WithStatusCode(HttpStatusCode.InternalServerError)
-                    .WithStringBody(ex.ToString())
-                    .Build();
+                OnCommandCompleted(context, ex);
             }
         }
 
-        public async Task<object> NacistSeznamNaradi(HttpServerRequest request)
+        public void OnCommandCompleted(IHttpServerStagedContext context, Exception exception)
         {
-            int offset = request.Parameter("offset").AsInteger().Optional(0);
-            int pocet = request.Parameter("pocet").AsInteger().Optional(int.MaxValue);
-            return await _readSvc.Handle(new ZiskatSeznamNaradiRequest(offset, pocet)).ConfigureAwait(false);
+            if (exception == null)
+                context.StatusCode = (int)HttpStatusCode.NoContent;
+            else
+            {
+                context.StatusCode = (int)HttpStatusCode.BadRequest;
+                context.OutputHeaders.ContentType = "text/plain";
+                context.OutputString = exception.ToString();
+            }
+            context.Close();
         }
 
-        public async Task<object> OveritUnikatnost(HttpServerRequest request)
+        public void NacistSeznamNaradi(IHttpServerStagedContext context)
         {
-            string vykres = request.Parameter("vykres").AsString().Mandatory();
-            string rozmer = request.Parameter("rozmer").AsString().Mandatory();
-            return await _readSvc.Handle(new OvereniUnikatnostiRequest(vykres, rozmer)).ConfigureAwait(false);
+            try
+            {
+                int offset = context.Parameter("offset").AsInteger().Default(0).Get();
+                int pocet = context.Parameter("pocet").AsInteger().Default(int.MaxValue).Get();
+                var execution = new QueryExecution<ZiskatSeznamNaradiRequest, ZiskatSeznamNaradiResponse>(
+                    new ZiskatSeznamNaradiRequest(offset, pocet), 
+                    result => OnQueryCompleted(context, result), 
+                    exception => OnQueryFailed(context, exception));
+                _readSvc.Handle(execution);
+            }
+            catch (Exception exception)
+            {
+                OnQueryFailed(context, exception);
+            }
         }
+
+        public void OveritUnikatnost(IHttpServerStagedContext context)
+        {
+            try
+            {
+                string vykres = context.Parameter("vykres").AsString().Mandatory().Get();
+                string rozmer = context.Parameter("rozmer").AsString().Mandatory().Get();
+                var execution = new QueryExecution<OvereniUnikatnostiRequest, OvereniUnikatnostiResponse>(
+                    new OvereniUnikatnostiRequest(vykres, rozmer), 
+                    result => OnQueryCompleted(context, result), 
+                    exception => OnQueryFailed(context, exception));
+                _readSvc.Handle(execution);
+            }
+            catch (Exception exception)
+            {
+                OnQueryFailed(context, exception);
+            }
+        }
+
+        private void OnQueryCompleted<T>(IHttpServerStagedContext context, T result)
+        {
+            try
+            {
+                context.StatusCode = (int)HttpStatusCode.OK;
+                context.OutputHeaders.ContentType = context.OutputSerializer.ContentType;
+                context.OutputString = context.OutputSerializer.Serialize(result);
+            }
+            finally
+            {
+                context.Close();
+            }
+        }
+
+        private void OnQueryFailed(IHttpServerStagedContext context, Exception exception)
+        {
+            try
+            {
+                context.StatusCode = (int)HttpStatusCode.InternalServerError;
+                context.OutputHeaders.ContentType = "text/plain";
+                context.OutputString = exception.ToString();
+            }
+            finally
+            {
+                context.Close();
+            }
+        }
+
     }
 }

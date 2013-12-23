@@ -9,8 +9,8 @@ namespace Vydejna.Domain
 {
     public class SeznamNaradiService
         : IWriteSeznamNaradi
-        , IHandle<DefinovatNaradiInternalCommand>
-        , IHandle<DokoncitDefiniciNaradiInternalCommand>
+        , IHandle<CommandExecution<DefinovatNaradiInternalCommand>>
+        , IHandle<CommandExecution<DokoncitDefiniciNaradiInternalCommand>>
     {
         private log4net.ILog _log;
         private INaradiRepository _repoNaradi;
@@ -23,55 +23,179 @@ namespace Vydejna.Domain
             _repoUnikatnost = repoUnikatnost;
         }
 
-        public async Task Handle(AktivovatNaradiCommand message)
+        private class NaradiHandler<TCommand>
         {
-            _log.DebugFormat("AktivovatNaradi: {0}", message.NaradiId);
-            var naradi = await _repoNaradi.Get(message.NaradiId).ConfigureAwait(false);
-            if (naradi == null)
-                return;
-            naradi.Aktivovat();
-            await _repoNaradi.Save(naradi).ConfigureAwait(false);
+            private SeznamNaradiService _parent;
+            private CommandExecution<TCommand> _message;
+            private Func<TCommand, Guid> _getId;
+            private Action<log4net.ILog, TCommand> _logAction;
+            private Action<TCommand, Naradi> _forExisting;
+            private Func<TCommand, Naradi> _forNew;
+            private Guid _id;
+
+            public NaradiHandler(SeznamNaradiService parent, CommandExecution<TCommand> message,
+                Func<TCommand, Guid> getId,
+                Action<log4net.ILog, TCommand> logAction,
+                Action<TCommand, Naradi> forExisting,
+                Func<TCommand, Naradi> forMissing)
+            {
+                _parent = parent;
+                _message = message;
+                _getId = getId;
+                _logAction = logAction;
+                _forExisting = forExisting;
+                _forNew = forMissing;
+            }
+            public void Execute()
+            {
+                try
+                {
+                    _logAction(_parent._log, _message.Command);
+                    _id = _getId(_message.Command);
+                    _parent._repoNaradi.Load(_id, NaradiNacteno, NaradiChybi, _message.OnError);
+                }
+                catch (Exception ex)
+                {
+                    _message.OnError(ex);
+                }
+            }
+            private void NaradiNacteno(Naradi naradi)
+            {
+                try
+                {
+                    _forExisting(_message.Command, naradi);
+                    _parent._repoNaradi.Save(naradi, _message.OnCompleted, Konflikt, _message.OnError);
+                }
+                catch (Exception ex)
+                {
+                    _message.OnError(ex);
+                }
+            }
+            private void NaradiChybi()
+            {
+                try
+                {
+                    var naradi = _forNew(_message.Command);
+                    _parent._repoNaradi.Save(naradi, _message.OnCompleted, Konflikt, _message.OnError);
+                }
+                catch (Exception ex)
+                {
+                    _message.OnError(ex);
+                }
+            }
+            private void Konflikt()
+            {
+                try
+                {
+                    _parent._repoNaradi.Load(_id, NaradiNacteno, NaradiChybi, _message.OnError);
+                }
+                catch (Exception ex)
+                {
+                    _message.OnError(ex);
+                }
+            }
+        }
+        private class UnikatnostHandler<TCommand>
+        {
+            private SeznamNaradiService _parent;
+            private CommandExecution<TCommand> _message;
+            private Action<log4net.ILog, TCommand> _logAction;
+            private Action<TCommand, UnikatnostNaradi> _action;
+
+            public UnikatnostHandler(SeznamNaradiService parent, CommandExecution<TCommand> message,
+                Action<log4net.ILog, TCommand> logAction,
+                Action<TCommand, UnikatnostNaradi> action)
+            {
+                _parent = parent;
+                _message = message;
+                _logAction = logAction;
+                _action = action;
+            }
+            public void Execute()
+            {
+                try
+                {
+                    _logAction(_parent._log, _message.Command);
+                    _parent._repoUnikatnost.Load(UnikatnostNactena, _message.OnError);
+                }
+                catch (Exception ex)
+                {
+                    _message.OnError(ex);
+                }
+            }
+            private void UnikatnostNactena(UnikatnostNaradi unikatnost)
+            {
+                try
+                {
+                    _action(_message.Command, unikatnost);
+                    _parent._repoUnikatnost.Save(unikatnost, _message.OnCompleted, Konflikt, _message.OnError);
+                }
+                catch (Exception ex)
+                {
+                    _message.OnError(ex);
+                }
+            }
+            private void Konflikt()
+            {
+                try
+                {
+                    _parent._repoUnikatnost.Load(UnikatnostNactena, _message.OnError);
+                }
+                catch (Exception ex)
+                {
+                    _message.OnError(ex);
+                }
+            }
         }
 
-        public async Task Handle(DeaktivovatNaradiCommand message)
+        public void Handle(CommandExecution<AktivovatNaradiCommand> message)
         {
-            _log.DebugFormat("DeaktivovatNaradi: {0}", message.NaradiId);
-            var naradi = await _repoNaradi.Get(message.NaradiId).ConfigureAwait(false);
-            if (naradi == null)
-                return;
-            naradi.Deaktivovat();
-            await _repoNaradi.Save(naradi).ConfigureAwait(false);
+            new NaradiHandler<AktivovatNaradiCommand>(
+                this, message,
+                msg => msg.NaradiId,
+                (log, msg) => log.DebugFormat("AktivovatNaradi: {0}", msg.NaradiId),
+                (msg, naradi) => naradi.Aktivovat(),
+                msg => { throw new ArgumentNullException("NaradiId", string.Format("Naradi {0} neexistuje", msg.NaradiId)); })
+                .Execute();
+        }
+        public void Handle(CommandExecution<DeaktivovatNaradiCommand> message)
+        {
+            new NaradiHandler<DeaktivovatNaradiCommand>(
+                this, message,
+                msg => msg.NaradiId,
+                (log, msg) => log.DebugFormat("DeaktivovatNaradi: {0}", msg.NaradiId),
+                (msg, naradi) => naradi.Deaktivovat(),
+                msg => { throw new ArgumentNullException("NaradiId", string.Format("Naradi {0} neexistuje", msg.NaradiId)); })
+                .Execute();
         }
 
-        public async Task Handle(DefinovatNaradiInternalCommand message)
+        public void Handle(CommandExecution<DefinovatNaradiInternalCommand> message)
         {
-            _log.DebugFormat("DefinovatNaradiInternal: {0}, vykres {1}, rozmer {2}, druh {3}", 
-                message.NaradiId, message.Vykres, message.Rozmer, message.Druh);
-            var naradi = await _repoNaradi.Get(message.NaradiId).ConfigureAwait(false);
-            if (naradi != null)
-                return;
-            naradi = Naradi.Definovat(message.NaradiId, message.Vykres, message.Rozmer, message.Druh);
-            await _repoNaradi.Save(naradi).ConfigureAwait(false);
+            new NaradiHandler<DefinovatNaradiInternalCommand>(
+                this, message,
+                msg => msg.NaradiId,
+                (log, msg) => log.DebugFormat("DefinovatNaradiInternal: {0}, vykres {1}, rozmer {2}, druh {3}", msg.NaradiId, msg.Vykres, msg.Rozmer, msg.Druh),
+                (msg, naradi) => { throw new ArgumentNullException("NaradiId", string.Format("Naradi {0} jiz existuje", msg.NaradiId)); },
+                msg => Naradi.Definovat(msg.NaradiId, msg.Vykres, msg.Rozmer, msg.Druh))
+                .Execute();
         }
 
-        public async Task Handle(DefinovatNaradiCommand message)
+        public void Handle(CommandExecution<DefinovatNaradiCommand> message)
         {
-            _log.DebugFormat("DefinovatNaradi: {0}, vykres {1}, rozmer {2}, druh {3}", 
-                message.NaradiId, message.Vykres, message.Rozmer, message.Druh);
-            var unikatnost = await _repoUnikatnost.Get().ConfigureAwait(false);
-            if (unikatnost == null)
-                unikatnost = new UnikatnostNaradi();
-            unikatnost.ZahajitDefinici(message.NaradiId, message.Vykres, message.Rozmer, message.Druh);
-            await _repoUnikatnost.Save(unikatnost).ConfigureAwait(false);
+            new UnikatnostHandler<DefinovatNaradiCommand>(
+                this, message,
+                (log, msg) => log.DebugFormat("DefinovatNaradi: {0}, vykres {1}, rozmer {2}, druh {3}", msg.NaradiId, msg.Vykres, msg.Rozmer, msg.Druh),
+                (msg, unikatnost) => unikatnost.ZahajitDefinici(msg.NaradiId, msg.Vykres, msg.Rozmer, msg.Druh))
+                .Execute();
         }
 
-        public async Task Handle(DokoncitDefiniciNaradiInternalCommand message)
+        public void Handle(CommandExecution<DokoncitDefiniciNaradiInternalCommand> message)
         {
-            _log.DebugFormat("DokoncitDefiniciNaradiInternal: {0}, vykres {1}, rozmer {2}, druh {3}", 
-                message.NaradiId, message.Vykres, message.Rozmer, message.Druh);
-            var unikatnost = await _repoUnikatnost.Get().ConfigureAwait(false);
-            unikatnost.DokoncitDefinici(message.NaradiId, message.Vykres, message.Rozmer, message.Druh);
-            await _repoUnikatnost.Save(unikatnost).ConfigureAwait(false);
+            new UnikatnostHandler<DokoncitDefiniciNaradiInternalCommand>(
+                this, message,
+                (log, msg) => log.DebugFormat("DokoncitDefiniciNaradiInternal: {0}, vykres {1}, rozmer {2}, druh {3}", msg.NaradiId, msg.Vykres, msg.Rozmer, msg.Druh),
+                (msg, unikatnost) => unikatnost.DokoncitDefinici(msg.NaradiId, msg.Vykres, msg.Rozmer, msg.Druh))
+                .Execute();
         }
     }
 }

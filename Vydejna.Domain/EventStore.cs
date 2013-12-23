@@ -10,15 +10,15 @@ namespace Vydejna.Domain
 {
     public interface IEventStore
     {
-        Task AddToStream(string stream, IEnumerable<EventStoreEvent> events, EventStoreVersion expectedVersion);
-        Task<IEventStoreStream> ReadStream(string stream, int minVersion = 0, int maxCount = int.MaxValue, bool loadBody = true);
-        Task<IEventStoreCollection> GetAllEvents(EventStoreToken token, int maxCount = int.MaxValue, bool loadBody = false);
-        Task LoadBodies(IList<EventStoreEvent> events);
+        void AddToStream(string stream, IEnumerable<EventStoreEvent> events, EventStoreVersion expectedVersion, Action onComplete, Action onConcurrency, Action<Exception> onError);
+        void ReadStream(string stream, int minVersion, int maxCount, bool loadBody, Action<IEventStoreStream> onComplete, Action<Exception> onError);
+        void GetAllEvents(EventStoreToken token, string streamPrefix, string eventType, int maxCount, bool loadBody, Action<IEventStoreCollection> onComplete, Action<Exception> onError);
+        void LoadBodies(IList<EventStoreEvent> events, Action onComplete, Action<Exception> onError);
     }
 
     public interface IEventStoreWaitable : IEventStore
     {
-        Task WaitForEvents(EventStoreToken token, CancellationToken cancel);
+        void WaitForEvents(EventStoreToken token, CancellationToken cancel, Action onComplete, Action<Exception> onError);
     }
 
     public class EventStoreVersion
@@ -79,12 +79,14 @@ namespace Vydejna.Domain
         {
             return !(a == b);
         }
-        public void Verify(int streamVersion, string stream = null)
+        public bool Verify(int streamVersion, string stream = null)
         {
             if (IsNonexistent && streamVersion != 0)
-                throw new InvalidOperationException(string.Format("Stream {0} is in version {1}, it was not supposed to exist.", stream ?? "", streamVersion));
+                return false;
             else if (IsNumbered && Version != streamVersion)
-                throw new InvalidOperationException(string.Format("Stream {0} is in version {1}, expecting {2}", stream ?? "", streamVersion, Version));
+                return false;
+            else
+                return true;
         }
     }
     public class EventStoreEvent
@@ -96,7 +98,7 @@ namespace Vydejna.Domain
         public string Format { get; set; }
         public string Body { get; set; }
     }
-    public class EventStoreToken
+    public class EventStoreToken : IComparable<EventStoreToken>, IEquatable<EventStoreToken>
     {
         private static EventStoreToken _initial = new EventStoreToken { _token = string.Empty, _mode = 1 };
         private static EventStoreToken _current = new EventStoreToken { _token = string.Empty, _mode = 2 };
@@ -119,8 +121,7 @@ namespace Vydejna.Domain
 
         public override bool Equals(object obj)
         {
-            var oth = obj as EventStoreToken;
-            return oth != null && _token.Equals(oth._token, StringComparison.Ordinal) && _mode == oth._mode;
+            return Equals(obj as EventStoreToken);
         }
         public override int GetHashCode()
         {
@@ -130,11 +131,46 @@ namespace Vydejna.Domain
         {
             return _token;
         }
+        public bool Equals(EventStoreToken oth)
+        {
+            return oth != null && _token.Equals(oth._token, StringComparison.Ordinal) && _mode == oth._mode;
+        }
+        public int CompareTo(EventStoreToken other)
+        {
+            return Compare(this, other);
+        }
+        public static int Compare(EventStoreToken a, EventStoreToken b)
+        {
+            if (ReferenceEquals(a, null))
+                return ReferenceEquals(b, null) ? 0 : -1;
+            else if (ReferenceEquals(b, null))
+                return 1;
+            else if (a._mode == 0)
+            {
+                if (b._mode == 0)
+                {
+                    if (a._token.Length == b._token.Length)
+                        return string.CompareOrdinal(a._token, b._token);
+                    else
+                    {
+                        var length = Math.Max(a._token.Length, b._token.Length);
+                        var tokenA = a._token.PadLeft(length, '0');
+                        var tokenB = b._token.PadLeft(length, '0');
+                        return string.CompareOrdinal(tokenA, tokenB);
+                    }
+                }
+                else
+                    return b._mode == 1 ? 1 : -1;
+            }
+            else if (b._mode == 0)
+                return a._mode == 1 ? -1 : 1;
+            else
+                return (a._mode == b._mode) ? 0 : (a._mode == 1) ? -1 : 1;
+        }
     }
     public interface IEventStoreCollection
     {
         EventStoreToken NextToken { get; }
-        bool HasMoreEvents { get; }
         IList<EventStoreEvent> Events { get; }
     }
     public interface IEventStoreStream
@@ -147,12 +183,10 @@ namespace Vydejna.Domain
     {
         private readonly EventStoreToken _nextToken;
         private readonly List<EventStoreEvent> _events;
-        private readonly bool _hasMoreEvents;
-        public EventStoreCollection(IEnumerable<EventStoreEvent> events, EventStoreToken next, bool more)
+        public EventStoreCollection(IEnumerable<EventStoreEvent> events, EventStoreToken next)
         {
             _events = events.ToList();
             _nextToken = next;
-            _hasMoreEvents = more;
         }
         public EventStoreToken NextToken
         {
@@ -161,10 +195,6 @@ namespace Vydejna.Domain
         public IList<EventStoreEvent> Events
         {
             get { return _events; }
-        }
-        public bool HasMoreEvents
-        {
-            get { return _hasMoreEvents; }
         }
     }
     public class EventStoreStream : IEventStoreStream
@@ -197,7 +227,7 @@ namespace Vydejna.Domain
         private IEventStoreWaitable _waitable;
         private ITime _time;
         private int _timeout = 200;
-          
+
         public EventStoreWaitable(IEventStore store, ITime time)
         {
             _store = store;
@@ -211,32 +241,32 @@ namespace Vydejna.Domain
             return this;
         }
 
-        public Task WaitForEvents(EventStoreToken token, CancellationToken cancel)
+        public void WaitForEvents(EventStoreToken token, CancellationToken cancel, Action onComplete, Action<Exception> onError)
         {
             if (_waitable != null)
-                return _waitable.WaitForEvents(token, cancel);
+                _waitable.WaitForEvents(token, cancel, onComplete, onError);
             else
-                return _time.Delay(_timeout, cancel);
+                _time.Delay(_timeout, cancel, onComplete);
         }
 
-        public Task AddToStream(string stream, IEnumerable<EventStoreEvent> events, EventStoreVersion expectedVersion)
+        public void AddToStream(string stream, IEnumerable<EventStoreEvent> events, EventStoreVersion expectedVersion, Action onComplete, Action onConcurrency, Action<Exception> onError)
         {
-            return _store.AddToStream(stream, events, expectedVersion);
+            _store.AddToStream(stream, events, expectedVersion, onComplete, onConcurrency, onError);
         }
 
-        public Task<IEventStoreStream> ReadStream(string stream, int minVersion = 0, int maxCount = int.MaxValue, bool loadBody = true)
+        public void ReadStream(string stream, int minVersion, int maxCount, bool loadBody, Action<IEventStoreStream> onComplete, Action<Exception> onError)
         {
-            return _store.ReadStream(stream, minVersion, maxCount, loadBody);
+            _store.ReadStream(stream, minVersion, maxCount, loadBody, onComplete, onError);
         }
 
-        public Task<IEventStoreCollection> GetAllEvents(EventStoreToken token, int maxCount = int.MaxValue, bool loadBody = false)
+        public void GetAllEvents(EventStoreToken token, string streamPrefix, string eventType, int maxCount, bool loadBody, Action<IEventStoreCollection> onComplete, Action<Exception> onError)
         {
-            return _store.GetAllEvents(token, maxCount, loadBody);
+            _store.GetAllEvents(token, streamPrefix, eventType, maxCount, loadBody, onComplete, onError);
         }
 
-        public Task LoadBodies(IList<EventStoreEvent> events)
+        public void LoadBodies(IList<EventStoreEvent> events, Action onComplete, Action<Exception> onError)
         {
-            return _store.LoadBodies(events);
+            _store.LoadBodies(events, onComplete, onError);
         }
     }
 
@@ -252,74 +282,100 @@ namespace Vydejna.Domain
             _versions = new Dictionary<string, int>();
         }
 
-        public Task AddToStream(string stream, IEnumerable<EventStoreEvent> events, EventStoreVersion expectedVersion)
+        public void AddToStream(string stream, IEnumerable<EventStoreEvent> events, EventStoreVersion expectedVersion, Action onComplete, Action onConcurrency, Action<Exception> onError)
         {
-            using (_lock.Update())
+            try
             {
-                int streamVersion;
-                _versions.TryGetValue(stream, out streamVersion);
-                expectedVersion.Verify(streamVersion, stream);
-
-                var newEvents = events.ToList();
-                var token = _events.Count;
-                foreach (var evt in newEvents)
+                bool wasCompleted;
+                using (_lock.Update())
                 {
-                    evt.StreamName = stream;
-                    evt.StreamVersion = ++streamVersion;
-                    evt.Token = new EventStoreToken(token.ToString());
-                    token++;
+                    int streamVersion;
+                    _versions.TryGetValue(stream, out streamVersion);
+                    wasCompleted = expectedVersion.Verify(streamVersion, stream);
+                    if (wasCompleted)
+                    {
+                        var newEvents = events.ToList();
+                        var token = _events.Count;
+                        foreach (var evt in newEvents)
+                        {
+                            evt.StreamName = stream;
+                            evt.StreamVersion = ++streamVersion;
+                            evt.Token = new EventStoreToken(token.ToString());
+                            token++;
+                        }
+
+                        _lock.Write();
+                        _versions[stream] = streamVersion;
+                        _events.AddRange(newEvents);
+                    }
                 }
-
-                _lock.Write();
-                _versions[stream] = streamVersion;
-                _events.AddRange(newEvents);
-
-                return TaskResult.GetCompletedTask();
-            }
-        }
-
-        public Task<IEventStoreStream> ReadStream(string stream, int minVersion = 0, int maxCount = int.MaxValue, bool loadBody = true)
-        {
-            using (_lock.Read())
-            {
-                int streamVersion;
-                _versions.TryGetValue(stream, out streamVersion);
-                var list = _events.Where(e => e.StreamName == stream && e.StreamVersion >= minVersion).Take(maxCount).ToList();
-                var result = new EventStoreStream(list, streamVersion, 0);
-                return TaskResult.GetCompletedTask<IEventStoreStream>(result);
-            }
-        }
-
-        public Task<IEventStoreCollection> GetAllEvents(EventStoreToken token, int maxCount = int.MaxValue, bool loadBody = false)
-        {
-            using (_lock.Read())
-            {
-                var result = Enumerable.Empty<EventStoreEvent>();
-                var next = token;
-                var more = false;
-                int skip = token.IsInitial ? 0 : token.IsCurrent ? _events.Count : int.Parse(token.ToString()) + 1;
-
-                if (_events.Count == 0)
-                    token = EventStoreToken.Initial;
-                else if (maxCount <= 0)
-                    more = skip < _events.Count;
-                else if (skip < _events.Count)
-                {
-                    var list = _events.Skip(skip).Take(maxCount).ToList();
-                    result = list;
-                    next = result.Last().Token;
-                    more = (skip + list.Count) < _events.Count;
-                }
+                if (wasCompleted)
+                    onComplete();
                 else
-                    next = _events.Last().Token;
-
-                return TaskResult.GetCompletedTask<IEventStoreCollection>(new EventStoreCollection(result, next, more));
+                    onConcurrency();
+            }
+            catch (Exception ex)
+            {
+                onError(ex);
             }
         }
 
-        public Task LoadBodies(IList<EventStoreEvent> events)
+        public void ReadStream(string stream, int minVersion, int maxCount, bool loadBody, Action<IEventStoreStream> onComplete, Action<Exception> onError)
         {
-            return TaskResult.GetCompletedTask();
+            try
+            {
+                EventStoreStream result;
+                using (_lock.Read())
+                {
+                    int streamVersion;
+                    _versions.TryGetValue(stream, out streamVersion);
+                    var list = _events.Where(e => e.StreamName == stream && e.StreamVersion >= minVersion).Take(maxCount).ToList();
+                    result = new EventStoreStream(list, streamVersion, 0);
+                }
+                onComplete(result);
+            }
+            catch (Exception ex)
+            {
+                onError(ex);
+            }
+        }
+
+        public void GetAllEvents(EventStoreToken token, string streamPrefix, string eventType, int maxCount, bool loadBody, Action<IEventStoreCollection> onComplete, Action<Exception> onError)
+        {
+            EventStoreCollection output;
+            using (_lock.Read())
+            {
+                int skip = token.IsInitial ? 0 : token.IsCurrent ? _events.Count : int.Parse(token.ToString()) + 1;
+                if (_events.Count == 0)
+                    output = new EventStoreCollection(Enumerable.Empty<EventStoreEvent>(), token);
+                else if (skip >= _events.Count)
+                    output = new EventStoreCollection(Enumerable.Empty<EventStoreEvent>(), _events.Last().Token);
+                else if (maxCount <= 0)
+                    output = new EventStoreCollection(Enumerable.Empty<EventStoreEvent>(), token);
+                else
+                {
+                    int counter = maxCount;
+                    var events = new List<EventStoreEvent>();
+                    var next = (EventStoreToken)null;
+                    for (int idx = skip; idx < _events.Count && counter > 0; idx++)
+                    {
+                        var evt = _events[idx];
+                        if (evt.StreamName.StartsWith(streamPrefix ?? "") && (eventType == null || evt.Type == eventType))
+                        {
+                            events.Add(evt);
+                            counter--;
+                        }
+                        next = evt.Token;
+                    }
+                    output = new EventStoreCollection(events, next);
+                }
+            }
+            onComplete(output);
+        }
+
+        public void LoadBodies(IList<EventStoreEvent> events, Action onComplete, Action<Exception> onError)
+        {
+            onComplete();
         }
 
     }

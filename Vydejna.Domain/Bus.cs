@@ -31,16 +31,6 @@ namespace Vydejna.Domain
             return self.Subscribe<T>(new DelegatedSyncHandler<T>(handler));
         }
 
-        public static IHandleRegistration<T> Subscribe<T>(this ISubscribable self, Func<T, Task> handler)
-        {
-            return self.Subscribe<T>(new DelegatedAsyncHandler<T>(handler));
-        }
-
-        public static void HandleErrorsWith<T>(this IHandleRegistration<T> self, Action<T, Exception> handler)
-        {
-            self.HandleErrorsWith(new DelegatedCatcher<T>(handler));
-        }
-
         private class DelegatedSyncHandler<T> : IHandle<T>
         {
             private Action<T> _handler;
@@ -50,50 +40,12 @@ namespace Vydejna.Domain
                 _handler = handler;
             }
 
-            public Task Handle(T message)
+            public void Handle(T message)
             {
-                try
-                {
-                    _handler(message);
-                    return TaskResult.GetCompletedTask();
-                }
-                catch (Exception ex)
-                {
-                    return TaskResult.GetFailedTask(ex);
-                }
+                _handler(message);
             }
         }
 
-        private class DelegatedAsyncHandler<T> : IHandle<T>
-        {
-            private Func<T, Task> _handler;
-
-            public DelegatedAsyncHandler(Func<T, Task> handler)
-            {
-                _handler = handler;
-            }
-
-            public Task Handle(T message)
-            {
-                return _handler(message);
-            }
-        }
-
-        private class DelegatedCatcher<T> : ICatch<T>
-        {
-            private Action<T, Exception> _catcher;
-
-            public DelegatedCatcher(Action<T, Exception> catcher)
-            {
-                _catcher = catcher;
-            }
-
-            public void HandleError(T message, Exception exception)
-            {
-                if (_catcher != null)
-                    _catcher(message, exception);
-            }
-        }
     }
 
     public static class SystemEvents
@@ -105,16 +57,20 @@ namespace Vydejna.Domain
 
     public abstract class AbstractBus : IBus
     {
+        private string _name;
         private ISubscriptionManager _subscriptions;
+        private log4net.ILog _log;
 
-        public AbstractBus(ISubscriptionManager subscribtions)
+        public AbstractBus(ISubscriptionManager subscribtions, string name)
         {
+            _name = name ?? "Bus";
             _subscriptions = subscribtions;
+            _log = log4net.LogManager.GetLogger(name);
         }
 
         public void Publish<T>(T message)
         {
-            var messagesToQueue = _subscriptions.FindHandlers(message.GetType()).Select(s => new QueuedMessage(s, message)).ToList();
+            var messagesToQueue = _subscriptions.FindHandlers(message.GetType()).Select(s => new QueuedMessage(s, message, OnError)).ToList();
             PublishCore(messagesToQueue);
         }
 
@@ -124,16 +80,23 @@ namespace Vydejna.Domain
         }
 
         protected abstract void PublishCore(ICollection<QueuedMessage> messages);
+        
+        protected virtual void OnError(QueuedMessage message, Exception exception)
+        {
+            _log.WarnFormat("When handling {0} exception occurred: {1}", message.Message.GetType().Name, exception);
+        }
 
         protected class QueuedMessage
         {
             private object _message;
             private ISubscription _handler;
+            private Action<QueuedMessage, Exception> _onError;
 
-            public QueuedMessage(ISubscription subscription, object message)
+            public QueuedMessage(ISubscription subscription, object message, Action<QueuedMessage, Exception> onError)
             {
                 _handler = subscription;
                 _message = message;
+                _onError = onError;
             }
 
             public object Message { get { return _message; } }
@@ -143,11 +106,11 @@ namespace Vydejna.Domain
             {
                 try
                 {
-                    _handler.Handle(_message).Wait();
+                    _handler.Handle(_message);
                 }
-                catch (AggregateException exception)
+                catch (Exception exception)
                 {
-                    _handler.HandleError(_message, exception.GetBaseException());
+                    _onError(this, exception);
                 }
             }
         }
@@ -155,8 +118,8 @@ namespace Vydejna.Domain
 
     public class DirectBus : AbstractBus
     {
-        public DirectBus(ISubscriptionManager subscriptions)
-            : base(subscriptions)
+        public DirectBus(ISubscriptionManager subscriptions, string name)
+            : base(subscriptions, name)
         {
         }
 
@@ -172,8 +135,8 @@ namespace Vydejna.Domain
         private object _lock;
         private Queue<QueuedMessage> _queue;
 
-        public QueuedBus(ISubscriptionManager subscriptions)
-            : base(subscriptions)
+        public QueuedBus(ISubscriptionManager subscriptions, string name)
+            : base(subscriptions, name)
         {
             _lock = new object();
             _queue = new Queue<QueuedMessage>();

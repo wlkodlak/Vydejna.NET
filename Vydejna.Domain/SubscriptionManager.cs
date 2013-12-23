@@ -23,7 +23,6 @@ namespace Vydejna.Domain
         {
             private SubscriptionManager _parent;
             private IHandle<T> _handler;
-            private ICatch<T> _catcher;
             private bool _enabled;
             public readonly Type Type;
 
@@ -31,17 +30,14 @@ namespace Vydejna.Domain
             {
                 _parent = parent;
                 _handler = handler;
-                _catcher = null;
                 _enabled = true;
                 Type = typeof(T);
             }
 
-            public Task Handle(object message)
+            public void Handle(object message)
             {
                 if (_enabled)
-                    return _handler.Handle((T)message);
-                else
-                    return TaskResult.GetCompletedTask();
+                    _handler.Handle((T)message);
             }
 
             public void Dispose()
@@ -52,17 +48,6 @@ namespace Vydejna.Domain
             public void ReplaceWith(IHandle<T> handler)
             {
                 _handler = handler;
-            }
-
-            public void HandleErrorsWith(ICatch<T> catcher)
-            {
-                _catcher = catcher;
-            }
-
-            public void HandleError(object message, Exception exception)
-            {
-                if (_catcher != null)
-                    _catcher.HandleError((T)message, exception);
             }
         }
 

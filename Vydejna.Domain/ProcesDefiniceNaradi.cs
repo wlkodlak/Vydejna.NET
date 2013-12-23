@@ -11,7 +11,6 @@ namespace Vydejna.Domain
         : IHandle<ZahajenaDefiniceNaradiEvent>
         , IHandle<ZahajenaAktivaceNaradiEvent>
         , IHandle<DefinovanoNaradiEvent>
-        , IEventConsumer
     {
         private IHandle<DefinovatNaradiCommand> _definice;
         private IHandle<AktivovatNaradiCommand> _aktivace;
@@ -27,9 +26,9 @@ namespace Vydejna.Domain
             this._dokonceni = dokonceni;
         }
 
-        public Task Handle(ZahajenaDefiniceNaradiEvent evt)
+        public void Handle(ZahajenaDefiniceNaradiEvent evt)
         {
-            return _definice.Handle(new DefinovatNaradiCommand
+            _definice.Handle(new DefinovatNaradiCommand
             {
                 NaradiId = evt.NaradiId,
                 Vykres = evt.Vykres,
@@ -38,33 +37,23 @@ namespace Vydejna.Domain
             });
         }
 
-        public Task Handle(ZahajenaAktivaceNaradiEvent evt)
+        public void Handle(ZahajenaAktivaceNaradiEvent evt)
         {
-            return _aktivace.Handle(new AktivovatNaradiCommand
+            _aktivace.Handle(new AktivovatNaradiCommand
             {
                 NaradiId = evt.NaradiId
             });
         }
 
-        public Task Handle(DefinovanoNaradiEvent evt)
+        public void Handle(DefinovanoNaradiEvent evt)
         {
-            return _dokonceni.Handle(new DokoncitDefiniciNaradiInternalCommand
+            _dokonceni.Handle(new DokoncitDefiniciNaradiInternalCommand
             {
                 NaradiId = evt.NaradiId,
                 Vykres = evt.Vykres,
                 Rozmer = evt.Rozmer,
                 Druh = evt.Druh
             });
-        }
-
-        public string GetConsumerName()
-        {
-            return "ProcesDefiniceNaradi";
-        }
-
-        public Task HandleShutdown()
-        {
-            return TaskResult.GetCompletedTask();
         }
     }
 }

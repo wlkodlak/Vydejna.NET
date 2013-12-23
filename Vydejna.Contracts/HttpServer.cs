@@ -12,7 +12,7 @@ namespace Vydejna.Contracts
 {
     public interface IHttpServerDispatcher
     {
-        Task ProcessRequest(IHttpServerRawContext context);
+        void DispatchRequest(IHttpServerRawContext context);
     }
 
     public class HttpServer : IDisposable
@@ -113,14 +113,13 @@ namespace Vydejna.Contracts
             {
                 _stopwatch = new Stopwatch();
                 _stopwatch.Start();
-                _rawContext = new HttpServerListenerContext(_context);
-                _parent._dispatcher.ProcessRequest(_rawContext).ContinueWith(Phase2);
+                _rawContext = new HttpServerListenerContext(_context, OnCompleted);
+                _parent._dispatcher.DispatchRequest(_rawContext);
             }
-            private void Phase2(Task task)
+            private void OnCompleted()
             {
                 _stopwatch.Stop();
                 _parent._log.DebugFormat("Request took {0} ms", _stopwatch.ElapsedMilliseconds);
-                var exception = task.Exception;
             }
         }
     }
@@ -132,8 +131,9 @@ namespace Vydejna.Contracts
         private Stream _inputStream;
         private string _clientAddress;
         private IList<RequestParameter> _routeParameters;
+        private Action _onCompleted;
 
-        public HttpServerListenerContext(HttpListenerContext listenerContext)
+        public HttpServerListenerContext(HttpListenerContext listenerContext, Action onCompleted)
         {
             _request = listenerContext.Request;
             _response = listenerContext.Response;
@@ -142,6 +142,7 @@ namespace Vydejna.Contracts
             _inputStream = _request.HasEntityBody ? _request.InputStream : null;
             InputHeaders = new HttpServerListenerRequestHeaders(_request);
             OutputHeaders = new HttpServerListenerResponseHeaders(_response);
+            _onCompleted = onCompleted;
         }
 
         public string Method { get { return _request.HttpMethod; } }
@@ -153,6 +154,12 @@ namespace Vydejna.Contracts
         public IList<RequestParameter> RouteParameters { get { return _routeParameters; } }
         public IHttpServerRawHeaders InputHeaders { get; private set; }
         public IHttpServerRawHeaders OutputHeaders { get; private set; }
+        
+        public void Close()
+        {
+            _response.Close(); 
+            _onCompleted();
+        }
     }
 
     public class HttpServerListenerRequestHeaders : IHttpServerRawHeaders
@@ -161,6 +168,7 @@ namespace Vydejna.Contracts
 
         public HttpServerListenerRequestHeaders(HttpListenerRequest request)
         {
+            _data = new List<KeyValuePair<string, string>>();
             for (int i = 0; i < request.Headers.Count; i++)
             {
                 var name = request.Headers.GetKey(i);

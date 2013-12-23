@@ -15,21 +15,25 @@ namespace Vydejna.Contracts
             _router = router;
         }
 
-        public async Task<HttpServerResponse> ProcessRequest(HttpServerRequest request)
+        public void DispatchRequest(IHttpServerRawContext context)
         {
-            var route = _router.FindRoute(request.Url);
-            if (route == null)
+            try
             {
-                _log.DebugFormat("Raw HTTP request {0}: 404 Not found", request.Url);
-                return new HttpServerResponseBuilder().WithStatusCode(404).Build();
+                var route = _router.FindRoute(context.Url);
+                if (route == null)
+                {
+                    _log.DebugFormat("Raw HTTP request {0}: 404 Not found", context.Url);
+                    context.StatusCode = 404;
+                    context.Close();
+                }
+                route.Handler.Handle(context);
             }
-            var response = await route.Handler.Handle(request, route.RouteParameters);
-            if (response == null)
+            catch (Exception ex)
             {
-                _log.WarnFormat("NULL response to {0}", request.Url);
-                return new HttpServerResponseBuilder().WithStatusCode(500).Build();
+                _log.WarnFormat("Request {0} threw exception: {1}", context.Url, ex.ToString());
+                context.StatusCode = 500;
+                context.Close();
             }
-            return response;
         }
     }
 }

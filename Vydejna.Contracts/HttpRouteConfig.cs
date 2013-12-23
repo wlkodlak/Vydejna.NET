@@ -19,7 +19,7 @@ namespace Vydejna.Contracts
     }
     public interface IHttpProcessor
     {
-        Task Process(IHttpServerStagedContext context);
+        void StartProcessing(IHttpServerStagedContext context);
     }
 
     public interface IHttpRouteCommonConfigurator : IHttpRouteConfigCommitable
@@ -44,6 +44,41 @@ namespace Vydejna.Contracts
         string GetPath();
         ISerializerPicker GetPicker();
         IList<IHttpSerializer> GetSerializers();
+    }
+    public static class HttpRouteCommonConfiguratorRouteExtensions
+    {
+        public static void To(this IHttpRouteCommonConfiguratorRoute self, Action<IHttpServerRawContext> handler)
+        {
+            self.To(new DelegatedHttpRouteHandler(handler));
+        }
+        public static void To(this IHttpRouteCommonConfiguratorRoute self, Action<IHttpServerStagedContext> processor)
+        {
+            self.To(new DelegatedHttpProcessor(processor));
+        }
+        private class DelegatedHttpRouteHandler : IHttpRouteHandler
+        {
+            Action<IHttpServerRawContext> _handler;
+            public DelegatedHttpRouteHandler(Action<IHttpServerRawContext> handler)
+            {
+                _handler = handler;
+            }
+            public void Handle(IHttpServerRawContext context)
+            {
+                _handler(context);
+            }
+        }
+        private class DelegatedHttpProcessor : IHttpProcessor
+        {
+            Action<IHttpServerStagedContext> _handler;
+            public DelegatedHttpProcessor(Action<IHttpServerStagedContext> handler)
+            {
+                _handler = handler;
+            }
+            public void StartProcessing(IHttpServerStagedContext context)
+            {
+                _handler(context);
+            }
+        }
     }
 
     public class HttpRouterCommon : IHttpRouteCommonConfiguratorExtended
@@ -193,6 +228,8 @@ namespace Vydejna.Contracts
 
             public void Commit()
             {
+                if (_isCommitted)
+                    return;
                 _isCommitted = true;
                 _router.AddRoute(_path, _routeHandler, null);
             }
@@ -212,28 +249,25 @@ namespace Vydejna.Contracts
             this._processor = processor;
         }
 
-        public Task Handle(IHttpServerRawContext context)
+        public void Handle(IHttpServerRawContext context)
         {
-            return new Worker(this, context).Execute();
+            new Worker(this, context).StartExecuting();
         }
 
         private class Worker
         {
-            private TaskCompletionSource<object> _task;
             private HttpRouteStagedHandler _parent;
             private IHttpServerRawContext _rawContext;
             private HttpServerStagedContext _staged;
             private StreamReader _inputReader;
-            private StreamWriter _outputWriter;
 
             public Worker(HttpRouteStagedHandler parent, IHttpServerRawContext context)
             {
                 _parent = parent;
                 _rawContext = context;
                 _staged = new HttpServerStagedContext(_rawContext);
-                _task = new TaskCompletionSource<object>();
             }
-            public Task Execute()
+            public void StartExecuting()
             {
                 try
                 {
@@ -241,22 +275,21 @@ namespace Vydejna.Contracts
                     if (_rawContext.InputStream != null)
                     {
                         _inputReader = new StreamReader(_rawContext.InputStream);
-                        _inputReader.ReadToEndAsync().ContinueWith(Phase2);
+                        _inputReader.ReadToEndAsync().ContinueWith(OnInputReadCompleted);
                     }
                     else
-                        Phase3();
+                    {
+                        _staged.InputString = string.Empty;
+                        CallProcessor();
+                    }
                 }
-                catch (AggregateException ex)
+                catch
                 {
-                    _task.SetException(ex.GetBaseException());
+                    _rawContext.StatusCode = 500;
+                    _rawContext.Close();
                 }
-                catch (Exception ex)
-                {
-                    _task.SetException(ex);
-                }
-                return _task.Task;
             }
-            private void Phase2(Task<string> inputStringTask)
+            private void OnInputReadCompleted(Task<string> inputStringTask)
             {
                 try
                 {
@@ -268,47 +301,24 @@ namespace Vydejna.Contracts
                     {
                         _inputReader.Dispose();
                     }
-                    Phase3();
+                    CallProcessor();
                 }
-                catch (AggregateException ex)
+                catch
                 {
-                    _task.SetException(ex.GetBaseException());
+                    _rawContext.StatusCode = 500;
+                    _rawContext.Close();
                 }
-                catch (Exception ex)
-                {
-                    _task.SetException(ex);
-                }
+
             }
-            private void Phase3()
+            private void CallProcessor()
             {
                 _staged.InputSerializer = _parent._picker.PickDeserializer(_staged, _parent._serializers, null);
                 _staged.OutputSerializer = _parent._picker.PickSerializer(_staged, _parent._serializers, null);
-                _parent._processor.Process(_staged).ContinueWith(Phase4);
-            }
-            private void Phase4(Task task)
-            {
-                if (task.Exception != null)
-                    _task.SetException(task.Exception.GetBaseException());
-                else
-                {
-                    _rawContext.StatusCode = _staged.StatusCode;
-                    _rawContext.OutputHeaders.Clear();
-                    foreach (var item in _staged.OutputHeaders)
-                        _rawContext.OutputHeaders.Add(item.Key, item.Value);
-                    _outputWriter = new StreamWriter(_rawContext.OutputStream);
-                    _outputWriter.WriteAsync(_staged.OutputString).ContinueWith(Phase5);
-                }
-            }
-            private void Phase5(Task task)
-            {
-                if (task.Exception != null)
-                    _task.SetException(task.Exception.GetBaseException());
-                else
-                    _task.SetResult(null);
+                _parent._processor.StartProcessing(_staged);
             }
         }
     }
-   
+
     public class HttpServerStagedContext : IHttpServerStagedContext
     {
         private IHttpServerRawContext _rawContext;
@@ -361,11 +371,37 @@ namespace Vydejna.Contracts
         {
             return _parameters.Get(RequestParameterType.Path, name);
         }
+        public void Close()
+        {
+            Task.Factory.StartNew(FinishContext);
+        }
+        private void FinishContext()
+        {
+            try
+            {
+                _rawContext.StatusCode = StatusCode;
+                _rawContext.OutputHeaders.Clear();
+                foreach (var header in OutputHeaders)
+                    _rawContext.OutputHeaders.Add(header.Key, header.Value);
+                if (!string.IsNullOrEmpty(OutputString))
+                {
+                    using (var writer = new StreamWriter(_rawContext.OutputStream))
+                        writer.Write(OutputString);
+                }
+            }
+            catch
+            {
+                _rawContext.StatusCode = 500;
+            }
+            finally
+            {
+                _rawContext.Close();
+            }
+        }
     }
 
     public class HttpServerStagedContextHeaders : IHttpServerStagedHeaders
     {
-        private int _count;
         private string _contentType, _referer, _location;
         private int _contentLength;
         private HttpServerStagedContextWeightedHeader _acceptTypes, _acceptLanguages;
@@ -579,6 +615,16 @@ namespace Vydejna.Contracts
                     return "!" + name;
             }
         }
+
+        public IEnumerator<RequestParameter> GetEnumerator()
+        {
+            return _data.Values.SelectMany(s => s).GetEnumerator();
+        }
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator()
+        {
+            return GetEnumerator();
+        }
     }
 
     public class HttpProcessedParameter : IProcessedParameter
@@ -612,7 +658,7 @@ namespace Vydejna.Contracts
             if (stringValue == null)
                 return HttpTypedProcessedParameter<string>.CreateEmpty(_type, _name);
             else
-                return HttpTypedProcessedParameter<string>.CreateParsed(_type, _name, parsedValue);
+                return HttpTypedProcessedParameter<string>.CreateParsed(_type, _name, stringValue);
         }
 
         public ITypedProcessedParameter<T> As<T>(Func<string, T> converter)
@@ -645,6 +691,7 @@ namespace Vydejna.Contracts
         {
             _type = type;
             _name = name;
+            _hasDefault = true;
         }
 
         public static ITypedProcessedParameter<T> CreateEmpty(RequestParameterType type, string name)
@@ -663,17 +710,23 @@ namespace Vydejna.Contracts
             };
         }
 
-        public ITypedProcessedParameter<T> WithValidator(Action<T> validator)
+        public ITypedProcessedParameter<T> Validate(Action<T> validator)
         {
             if (!_isEmpty)
                 validator(_parsedValue);
             return this;
         }
 
-        public ITypedProcessedParameter<T> WithDefault(T defaultValue)
+        public ITypedProcessedParameter<T> Default(T defaultValue)
         {
             _hasDefault = true;
             _defaultValue = defaultValue;
+            return this;
+        }
+
+        public ITypedProcessedParameter<T> Mandatory()
+        {
+            _hasDefault = false;
             return this;
         }
 

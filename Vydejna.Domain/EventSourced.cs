@@ -93,8 +93,8 @@ namespace Vydejna.Domain
     public interface IEventSourcedRepository<T>
         where T : class, IEventSourcedAggregate
     {
-        Task<T> Get(Guid id);
-        Task Save(T aggregate);
+        void Load(Guid id, Action<T> onLoaded, Action onMissing, Action<Exception> onError);
+        void Save(T aggregate, Action onSaved, Action onConcurrency, Action<Exception> onError);
     }
 
     public interface IEventSourcedSerializer
@@ -121,18 +121,6 @@ namespace Vydejna.Domain
 
         protected abstract T CreateAggregate();
 
-        public async Task<T> Get(Guid id)
-        {
-            var storedEvents = await _store.ReadStream(StreamNameForId(id), 0, int.MaxValue, true).ConfigureAwait(false);
-            if (storedEvents.StreamVersion == 0)
-                return null;
-            var deserialized = storedEvents.Events.Select(_serializer.Deserialize).ToList();
-            var aggregate = CreateAggregate();
-            aggregate.LoadFromEvents(deserialized);
-            aggregate.CommitChanges(storedEvents.StreamVersion);
-            return aggregate;
-        }
-
         protected string Prefix { get { return _prefix; } }
 
         protected virtual string StreamNameForId(Guid id)
@@ -144,21 +132,116 @@ namespace Vydejna.Domain
                 .ToString();
         }
 
-        public async Task Save(T aggregate)
+        public void Load(Guid id, Action<T> onLoaded, Action onMissing, Action<Exception> onError)
         {
-            var changes = aggregate.GetChanges();
-            if (changes.Count == 0)
-                return;
-            var serialized = new List<EventStoreEvent>(changes.Count);
-            foreach (var evt in changes)
+            new AggregateLoading(this, id, onLoaded, onMissing, onError).Execute();
+        }
+        public void Save(T aggregate, Action onSaved, Action onConcurrency, Action<Exception> onError)
+        {
+            new AggregateSaving(this, aggregate, onSaved, onConcurrency, onError).Execute();
+        }
+
+        private class AggregateLoading
+        {
+            private EventSourcedRepository<T> _parent;
+            private string _streamName;
+            private Action<T> _onLoaded;
+            private Action _onMissing;
+            private Action<Exception> _onError;
+
+            public AggregateLoading(EventSourcedRepository<T> parent, Guid id, Action<T> onLoaded, Action onMissing, Action<Exception> onError)
             {
-                var stored = new EventStoreEvent();
-                _serializer.Serialize(evt, stored);
-                serialized.Add(stored);
+                _parent = parent;
+                _streamName = _parent.StreamNameForId(id);
+                _onLoaded = onLoaded;
+                _onMissing = onMissing;
+                _onError = onError;
             }
-            var expectedVersion = aggregate.OriginalVersion == 0 ? EventStoreVersion.EmptyStream : EventStoreVersion.Number(aggregate.OriginalVersion);
-            await _store.AddToStream(StreamNameForId(aggregate.Id), serialized, expectedVersion).ConfigureAwait(false);
-            aggregate.CommitChanges(serialized.Last().StreamVersion);
+            public void Execute()
+            {
+                _parent._store.ReadStream(_streamName, 0, int.MaxValue, true, EventStreamLoaded, _onError);
+            }
+            private void EventStreamLoaded(IEventStoreStream stream)
+            {
+                try
+                {
+                    if (stream.StreamVersion == 0)
+                        _onMissing();
+                    else
+                    {
+                        var deserialized = stream.Events.Select(_parent._serializer.Deserialize).ToList();
+                        var aggregate = _parent.CreateAggregate();
+                        aggregate.LoadFromEvents(deserialized);
+                        aggregate.CommitChanges(stream.StreamVersion);
+                        _onLoaded(aggregate);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _onError(ex);
+                }
+            }
+        }
+
+        private class AggregateSaving
+        {
+            private EventSourcedRepository<T> _parent;
+            private T _aggregate;
+            private Action _onSaved;
+            private Action _onConcurrency;
+            private Action<Exception> _onError;
+            private int _streamVersionForCommit;
+
+            public AggregateSaving(EventSourcedRepository<T> parent, T aggregate, Action onSaved, Action onConcurrency, Action<Exception> onError)
+            {
+                _parent = parent;
+                _aggregate = aggregate;
+                _onSaved = onSaved;
+                _onConcurrency = onConcurrency;
+                _onError = onError;
+            }
+            public void Execute()
+            {
+                try
+                {
+                    var changes = _aggregate.GetChanges();
+                    if (changes.Count == 0)
+                        _onSaved();
+                    else
+                    {
+                        var serialized = new List<EventStoreEvent>(changes.Count);
+                        foreach (var evt in changes)
+                        {
+                            var stored = new EventStoreEvent();
+                            _parent._serializer.Serialize(evt, stored);
+                            serialized.Add(stored);
+                        }
+                        _streamVersionForCommit = serialized.Last().StreamVersion;
+                        var expectedVersion =
+                            _aggregate.OriginalVersion == 0
+                            ? EventStoreVersion.EmptyStream
+                            : EventStoreVersion.Number(_aggregate.OriginalVersion);
+                        var streamName = _parent.StreamNameForId(_aggregate.Id);
+                        _parent._store.AddToStream(streamName, serialized, expectedVersion, AggregateSaved, _onConcurrency, _onError);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _onError(ex);
+                }
+            }
+            private void AggregateSaved()
+            {
+                try
+                {
+                    _aggregate.CommitChanges(_streamVersionForCommit);
+                    _onSaved();
+                }
+                catch (Exception ex)
+                {
+                    _onError(ex);
+                }
+            }
         }
     }
 

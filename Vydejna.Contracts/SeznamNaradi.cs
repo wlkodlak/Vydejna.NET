@@ -13,9 +13,9 @@ namespace Vydejna.Contracts
     }
 
     public interface IWriteSeznamNaradi
-        : IHandle<AktivovatNaradiCommand>
-        , IHandle<DeaktivovatNaradiCommand>
-        , IHandle<DefinovatNaradiCommand>
+        : IHandle<CommandExecution<AktivovatNaradiCommand>>
+        , IHandle<CommandExecution<DeaktivovatNaradiCommand>>
+        , IHandle<CommandExecution<DefinovatNaradiCommand>>
     {
     }
 

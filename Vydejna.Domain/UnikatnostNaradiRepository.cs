@@ -9,8 +9,8 @@ namespace Vydejna.Domain
 {
     public interface IUnikatnostNaradiRepository
     {
-        Task<UnikatnostNaradi> Get();
-        Task Save(UnikatnostNaradi unikatnost);
+        void Load(Action<UnikatnostNaradi> onLoaded, Action<Exception> onError);
+        void Save(UnikatnostNaradi aggregate, Action onSaved, Action onConcurrency, Action<Exception> onError);
     }
 
     public class UnikatnostNaradiRepository : EventSourcedRepository<UnikatnostNaradi>, IUnikatnostNaradiRepository
@@ -30,14 +30,9 @@ namespace Vydejna.Domain
             return new UnikatnostNaradi();
         }
 
-        Task<UnikatnostNaradi> IUnikatnostNaradiRepository.Get()
+        public void Load(Action<UnikatnostNaradi> onLoaded, Action<Exception> onError)
         {
-            return Get(Guid.Empty);
-        }
-
-        Task IUnikatnostNaradiRepository.Save(UnikatnostNaradi unikatnost)
-        {
-            return Save(unikatnost);
+            Load(Guid.Empty, onLoaded, () => onLoaded(new UnikatnostNaradi()), onError);
         }
     }
 }
