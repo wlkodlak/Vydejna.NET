@@ -16,9 +16,9 @@ namespace Vydejna.Domain
     {
         IHandleRegistration<CommandExecution<T>> Register<T>(IHandle<CommandExecution<T>> handler);
         IEnumerable<Type> GetHandledTypes();
-        ICollection<ICommandSubscription> FindHandlers(Type type);
+        ICommandSubscription FindHandler(Type type);
     }
-    
+
     public class SubscriptionManager : ISubscriptionManager
     {
         private UpdateLock _lock;
@@ -108,8 +108,7 @@ namespace Vydejna.Domain
     public class CommandSubscriptionManager : ICommandSubscriptionManager
     {
         private UpdateLock _lock;
-        private Dictionary<Type, ICollection<ICommandSubscription>> _handlers;
-        private ICollection<ICommandSubscription> _empty;
+        private Dictionary<Type, ICommandSubscription> _handlers;
 
         private class Subscription<T> : ICommandSubscription<T>
         {
@@ -148,8 +147,7 @@ namespace Vydejna.Domain
         public CommandSubscriptionManager()
         {
             _lock = new UpdateLock();
-            _handlers = new Dictionary<Type, ICollection<ICommandSubscription>>();
-            _empty = new ICommandSubscription[0];
+            _handlers = new Dictionary<Type, ICommandSubscription>();
         }
 
         public IHandleRegistration<CommandExecution<T>> Register<T>(IHandle<CommandExecution<T>> handler)
@@ -161,28 +159,26 @@ namespace Vydejna.Domain
 
         private void ChangeRegistration(Type type, ICommandSubscription subscription, bool add)
         {
-            using (_lock.Update())
+            using (_lock.Lock())
             {
-                var list = FindHandlers(type);
-                var copy = list.ToList();
                 if (add)
-                    copy.Add(subscription);
+                    _handlers[type] = subscription;
                 else
-                    copy.Remove(subscription);
-                _lock.Write();
-                _handlers[type] = copy;
+                {
+                    ICommandSubscription found;
+                    if (_handlers.TryGetValue(type, out found) && found == subscription)
+                        _handlers.Remove(type);
+                }
             }
         }
 
-        public ICollection<ICommandSubscription> FindHandlers(Type type)
+        public ICommandSubscription FindHandler(Type type)
         {
             using (_lock.Read())
             {
-                ICollection<ICommandSubscription> found;
-                if (_handlers.TryGetValue(type, out found))
-                    return found;
-                else
-                    return _empty;
+                ICommandSubscription found;
+                _handlers.TryGetValue(type, out found);
+                return found;
             }
         }
 

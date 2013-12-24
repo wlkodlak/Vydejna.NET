@@ -20,7 +20,6 @@ namespace Vydejna.Domain
         private readonly ICommandSubscriptionManager _subscriptions;
         private CancellationTokenSource _cancel;
         private bool _isRunning;
-        private MetadataInfo _handlerInfo;
         private EventStoreToken _token;
         private IEventHandler _eventHandler;
         private IEventStreamer _streamer;
@@ -103,15 +102,14 @@ namespace Vydejna.Domain
                 if (evnt != null && !_cancel.IsCancellationRequested)
                 {
                     var eventType = _serializer.GetTypeFromName(evnt.Type);
-                    var handlers = _subscriptions.FindHandlers(eventType);
-                    if (handlers.Count == 0)
+                    var handler = _subscriptions.FindHandler(eventType);
+                    if (handler == null)
                         EventHandled();
                     else
                     {
-                        _handlerList = handlers.GetEnumerator();
                         _handledEvent = _serializer.Deserialize(evnt);
                         _token = evnt.Token;
-                        CallNextHandler();
+                        _handlerList.Current.Handle(_handledEvent, EventHandled, OnHandlerError);
                     }
                 }
                 else
@@ -123,12 +121,9 @@ namespace Vydejna.Domain
             }
         }
 
-        private void CallNextHandler()
+        private void OnHandlerError(Exception exception)
         {
-            if (_handlerList.MoveNext())
-                _handlerList.Current.Handle(_handledEvent, CallNextHandler, OnHandlerError);
-            else
-                EventHandled();
+            EventHandled();
         }
 
         private void EventHandled()
@@ -172,11 +167,6 @@ namespace Vydejna.Domain
         {
             _metadata.CancelLock();
             _isRunning = false;
-        }
-
-        private void OnHandlerError(Exception exception)
-        {
-            CallNextHandler();
         }
     }
 }

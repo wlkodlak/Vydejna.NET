@@ -54,6 +54,7 @@
     <Compile Include="DocumentStore.cs" />
     <Compile Include="EventHandlerMetadata.cs" />
     <Compile Include="EventProcessSimple.cs" />
+    <Compile Include="EventProjectorSimple.cs" />
     <Compile Include="EventSourced.cs" />
     <Compile Include="EventStreaming.cs" />
     <Compile Include="EventStore.cs" />
