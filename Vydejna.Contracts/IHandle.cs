@@ -65,6 +65,14 @@ namespace Vydejna.Contracts
     {
     }
 
+    public interface ICommandSubscription
+    {
+        void Handle(object command, Action onComplete, Action<Exception> onError);
+    }
+    public interface ICommandSubscription<T> : IHandleRegistration<CommandExecution<T>>, ICommandSubscription
+    {
+    }
+
     public static class TaskResult
     {
         private static readonly Task CachedCompletedTask = Task.FromResult<object>(null);

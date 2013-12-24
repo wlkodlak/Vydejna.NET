@@ -102,6 +102,8 @@ namespace Vydejna.Domain
         bool HandlesFormat(string format);
         object Deserialize(EventStoreEvent evt);
         void Serialize(object evt, EventStoreEvent stored);
+        string GetTypeName(Type type);
+        Type GetTypeFromName(string typeName);
     }
 
     public abstract class EventSourcedRepository<T>
@@ -270,6 +272,17 @@ namespace Vydejna.Domain
         public bool HandlesFormat(string format)
         {
             return format == "json";
+        }
+
+
+        public string GetTypeName(Type type)
+        {
+            return _mapper.GetName(type);
+        }
+
+        public Type GetTypeFromName(string typeName)
+        {
+            return _mapper.GetType(typeName);
         }
     }
 

@@ -106,14 +106,17 @@ namespace Vydejna.Domain
 
             private void OnCancelled()
             {
+                Action<EventStoreEvent> onComplete;
                 lock (_lock)
                 {
                     if (_isWorking)
                         return;
+                    onComplete = _onComplete;
                     _onComplete = null;
                     foreach (var streamer in _substreamers)
                         streamer.Cancel();
                 }
+                onComplete(null);
             }
 
             private void OnPotentiallyCompleted()
