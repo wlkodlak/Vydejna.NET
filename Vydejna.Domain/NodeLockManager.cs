@@ -19,7 +19,6 @@ namespace Vydejna.Domain
         private string _nodeName;
         private object _lock;
         private HashSet<string> _ownedLocks;
-        private IDisposable _changesRegistration;
         private Dictionary<string, LockWatch> _allWatchers;
 
         private class LockWatch
@@ -27,33 +26,39 @@ namespace Vydejna.Domain
             private NodeLockManager _parent;
             private string _lockName;
             private List<Action> _watchers;
+            private IDisposable _documentWatcher;
+
             public LockWatch(NodeLockManager parent, string lockName)
             {
                 _parent = parent;
                 _lockName = lockName;
                 _watchers = new List<Action>();
             }
-            public void AddWatcher(Action onLockAvailable)
+
+            public void AddWatcher(Action onLockChanged)
             {
-                _watchers.Add(onLockAvailable);
-                ReportChange();
+                lock (_parent._lock)
+                    _watchers.Add(onLockChanged);
+                if (_documentWatcher == null)
+                    _documentWatcher = _parent._store.WatchChanges(_lockName, LockDocumentChanged);
+                LockDocumentChanged();
             }
-            public void ReportChange()
+
+            private void LockDocumentChanged()
             {
-                if (_watchers.Count == 0)
+                lock (_parent._lock)
+                {
+                    if (_watchers.Count == 0)
+                        return;
+                }
+                _parent._store.GetDocument(_lockName, LockDocumentLoaded, () => LockDocumentLoaded(0, null), ex => { });
+            }
+
+            private void LockDocumentLoaded(int version, string owner)
+            {
+                var isAvailable = string.IsNullOrEmpty(owner) || string.Equals(owner, _parent._nodeName);
+                if (!isAvailable)
                     return;
-                _parent._store.GetDocument(_lockName, OnLockExists, ReportLockIsAvailable, IgnoreErrors);
-            }
-            private void OnLockExists(int version, string owningNode)
-            {
-                var isAvailable = string.IsNullOrEmpty(owningNode) || string.Equals(owningNode, _parent._nodeName);
-                ReportLockIsAvailable();
-            }
-            private void IgnoreErrors(Exception exception)
-            {
-            }
-            private void ReportLockIsAvailable()
-            {
                 List<Action> watchers;
                 lock (_parent._lock)
                 {
@@ -61,7 +66,22 @@ namespace Vydejna.Domain
                     _watchers.Clear();
                 }
                 foreach (var watcher in watchers)
-                    watcher();
+                {
+                    try
+                    {
+                        watcher();
+                    }
+                    catch
+                    {
+                    }
+                }
+            }
+
+            public void Dispose()
+            {
+                if (_documentWatcher != null)
+                    _documentWatcher.Dispose();
+                _documentWatcher = null;
             }
         }
 
@@ -78,20 +98,10 @@ namespace Vydejna.Domain
         {
             lock (_lock)
             {
-                if (_changesRegistration == null)
-                    _changesRegistration = _store.WatchChanges(OnLocksChanged);
                 LockWatch watchers;
                 if (!_allWatchers.TryGetValue(lockName, out watchers))
                     _allWatchers[lockName] = watchers = new LockWatch(this, lockName);
                 watchers.AddWatcher(onLockChanged);
-            }
-        }
-        private void OnLocksChanged()
-        {
-            lock (_lock)
-            {
-                foreach (var watcher in _allWatchers)
-                    watcher.Value.ReportChange();
             }
         }
 
@@ -155,9 +165,9 @@ namespace Vydejna.Domain
         {
             lock (_lock)
             {
-                if (_changesRegistration != null)
-                    _changesRegistration.Dispose();
-                _changesRegistration = null;
+                foreach (var watcher in _allWatchers.Values)
+                    watcher.Dispose();
+                _allWatchers.Clear();
                 foreach (var lockName in _ownedLocks)
                     _store.SaveDocument(lockName, "", DocumentStoreVersion.Any, NoAction, NoAction, IgnoreError);
                 _ownedLocks.Clear();

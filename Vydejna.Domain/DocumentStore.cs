@@ -16,7 +16,7 @@ namespace Vydejna.Domain
         void DeleteAll(Action onComplete);
         void GetDocument(string name, Action<int, string> onFound, Action onMissing, Action<Exception> onError);
         void SaveDocument(string name, string value, DocumentStoreVersion expectedVersion, Action onSave, Action onConcurrency, Action<Exception> onError);
-        IDisposable WatchChanges(Action onSomethingChanged);
+        IDisposable WatchChanges(string name, Action onSomethingChanged);
     }
     public interface IDocumentStore : IDocumentFolder
     {
@@ -75,21 +75,20 @@ namespace Vydejna.Domain
 
         private class FolderWatcher : IDisposable
         {
-            private ConcurrentDictionary<int, FolderWatcher> _watchers;
+            private FolderWatcherCollection _parent;
             private int _key;
             private Action _onSomethingChanged;
 
-            public FolderWatcher(ConcurrentDictionary<int, FolderWatcher> watchersCollection, int key, Action onSomethingChanged)
+            public FolderWatcher(FolderWatcherCollection parent, int key, Action onSomethingChanged)
             {
                 _key = key;
-                _watchers = watchersCollection;
+                _parent = parent;
                 _onSomethingChanged = onSomethingChanged;
             }
 
             public void Dispose()
             {
-                FolderWatcher removedValue;
-                _watchers.TryRemove(_key, out removedValue);
+                _parent.Remove(_key);
             }
 
             public void CallHandler()
@@ -105,13 +104,44 @@ namespace Vydejna.Domain
             }
         }
 
+        private class FolderWatcherCollection
+        {
+            private int _key;
+            private ConcurrentDictionary<int, FolderWatcher> _watchers;
+
+            public FolderWatcherCollection()
+            {
+                _key = 0;
+                _watchers = new ConcurrentDictionary<int, FolderWatcher>();
+            }
+
+            public IDisposable AddWatcher(Action onSomethingChanged)
+            {
+                Interlocked.Increment(ref _key);
+                var watcher = new FolderWatcher(this, _key, onSomethingChanged);
+                _watchers.TryAdd(_key, watcher);
+                return watcher;
+            }
+
+            public void CallWatchers()
+            {
+                foreach (var watcher in _watchers.Values)
+                    watcher.CallHandler();
+            }
+
+            public void Remove(int key)
+            {
+                FolderWatcher removed;
+                _watchers.TryRemove(key, out removed);
+            }
+        }
+
         private class DocumentFolder : IDocumentFolder
         {
             private static readonly Regex _regex = new Regex(@"^[a-zA-Z0-9_\-.]+$", RegexOptions.Compiled);
             private ConcurrentDictionary<string, DocumentFolder> _folders = new ConcurrentDictionary<string, DocumentFolder>();
             private ConcurrentDictionary<string, Document> _documents = new ConcurrentDictionary<string, Document>();
-            private int _watcherNumber = 0;
-            private ConcurrentDictionary<int, FolderWatcher> _watchers = new ConcurrentDictionary<int,FolderWatcher>();
+            private ConcurrentDictionary<string, FolderWatcherCollection> _watchers = new ConcurrentDictionary<string, FolderWatcherCollection>();
 
             public IDocumentFolder SubFolder(string name)
             {
@@ -129,12 +159,14 @@ namespace Vydejna.Domain
 
             public void DeleteAll(Action onComplete)
             {
+                List<string> documentNames = _documents.Keys.ToList();
                 foreach (var folder in _folders)
                     folder.Value.DeleteAll(() => { });
                 _folders.Clear();
                 _documents.Clear();
                 onComplete();
-                CallWatchers();
+                foreach (string name in documentNames)
+                    CallWatchers(name);
             }
 
             public void GetDocument(string name, Action<int, string> onFound, Action onMissing, Action<Exception> onError)
@@ -184,22 +216,20 @@ namespace Vydejna.Domain
                 {
                     onError(ex);
                 }
-                CallWatchers();
+                CallWatchers(name);
             }
 
-            public IDisposable WatchChanges(Action onSomethingChanged)
+            public IDisposable WatchChanges(string name, Action onSomethingChanged)
             {
-                int key = Interlocked.Increment(ref _watcherNumber);
-                var watcher = new FolderWatcher(_watchers, key, onSomethingChanged);
-                _watchers.TryAdd(key, watcher);
-                return watcher;
+                var watcherCollection = _watchers.GetOrAdd(name, new FolderWatcherCollection());
+                return watcherCollection.AddWatcher(onSomethingChanged);
             }
 
-            private void CallWatchers()
+            private void CallWatchers(string name)
             {
-                var watchers = _watchers.Values.ToList();
-                foreach (var watcher in watchers)
-                    watcher.CallHandler();
+                FolderWatcherCollection collection;
+                if (_watchers.TryGetValue(name, out collection))
+                    collection.CallWatchers();
             }
         }
 
@@ -225,9 +255,9 @@ namespace Vydejna.Domain
             _root.SaveDocument(name, value, expectedVersion, onSave, onConcurrency, onError);
         }
 
-        public IDisposable WatchChanges(Action onSomethingChanged)
+        public IDisposable WatchChanges(string name, Action onSomethingChanged)
         {
-            return _root.WatchChanges(onSomethingChanged);
+            return _root.WatchChanges(name, onSomethingChanged);
         }
     }
 }
