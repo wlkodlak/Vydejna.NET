@@ -16,6 +16,7 @@ namespace Vydejna.Domain
     {
         void Register<TEvent>(IPureProjectionHandler<TState, TEvent> handler);
         IPureProjectionHandler<TState, object> FindHandler(Type type);
+        IList<Type> GetRegisteredTypes();
     }
 
     public interface IPureProjectionStateToken<TState>
@@ -63,6 +64,11 @@ namespace Vydejna.Domain
             IPureProjectionHandler<TState, object> handler;
             _handlers.TryGetValue(type, out handler);
             return handler;
+        }
+
+        public IList<Type> GetRegisteredTypes()
+        {
+            return _handlers.Keys.ToList();
         }
     }
 
@@ -112,6 +118,11 @@ namespace Vydejna.Domain
         public IPureProjectionHandler<TState, object> FindHandler(Type type)
         {
             return _dispatcher.FindHandler(type);
+        }
+
+        public IList<Type> GetRegisteredTypes()
+        {
+            return _dispatcher.GetRegisteredTypes();
         }
     }
 }
