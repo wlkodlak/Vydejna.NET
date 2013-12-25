@@ -15,24 +15,20 @@ namespace Vydejna.Domain
     public class EventProcessSimple
     {
         private readonly IMetadataInstance _metadata;
-        private readonly IEventStreaming _streaming;
-        private readonly IEventSourcedSerializer _serializer;
+        private readonly IEventStreamingDeserialized _streaming;
         private readonly ICommandSubscriptionManager _subscriptions;
         private CancellationTokenSource _cancel;
-        private bool _isRunning;
         private EventStoreToken _token;
         private IEventHandler _eventHandler;
-        private IEventStreamer _streamer;
-        private IEnumerator<ICommandSubscription> _handlerList;
         private object _handledEvent;
         private int _flushCounter;
         private bool _metadataDirty;
+        private IDisposable _waitForLock;
 
-        public EventProcessSimple(IMetadataInstance metadata, IEventStreaming streaming, IEventSourcedSerializer serializer, ICommandSubscriptionManager subscriptions)
+        public EventProcessSimple(IMetadataInstance metadata, IEventStreamingDeserialized streaming, ICommandSubscriptionManager subscriptions)
         {
             _metadata = metadata;
             _streaming = streaming;
-            _serializer = serializer;
             _subscriptions = subscriptions;
         }
 
@@ -55,36 +51,33 @@ namespace Vydejna.Domain
         private void SystemInit(SystemEvents.SystemInit msg)
         {
             _cancel = new CancellationTokenSource();
-            _metadata.Lock(ObtainedLock);
+            _waitForLock = _metadata.Lock(ObtainedLock);
         }
 
         private void SystemShutdown(SystemEvents.SystemShutdown msg)
         {
             _cancel.Cancel();
-            if (!_isRunning)
-                _metadata.CancelLock();
+            _waitForLock.Dispose();
         }
 
         private void ObtainedLock()
         {
-            _isRunning = true;
             if (!_cancel.IsCancellationRequested)
-                _metadata.GetData(OnMetadataLoaded, OnError);
+                _metadata.GetToken(OnMetadataLoaded, OnError);
             else
                 StopRunning();
         }
 
-        private void OnMetadataLoaded(MetadataInfo handlerInfo)
+        private void OnMetadataLoaded(EventStoreToken token)
         {
             if (!_cancel.IsCancellationRequested)
             {
                 try
                 {
-                    _token = handlerInfo.Token;
-                    var handledTypeNames = _subscriptions.GetHandledTypes().Select(_serializer.GetTypeName).ToArray();
+                    _token = token;
                     var prefixes = _eventHandler != null ? _eventHandler.GetEventStreamPrefixes() : null;
-                    _streamer = _streaming.GetStreamer(new EventStreamingFilter(_token, handledTypeNames, prefixes ?? new string[0]));
-                    _streamer.GetNextEvent(EventReceived, _cancel.Token, false);
+                    _streaming.Setup(_token, _subscriptions.GetHandledTypes().ToArray(), prefixes ?? new string[0]);
+                    _streaming.GetNextEvent(EventReceived, NoNewEvents, CannotReceiveEvents, _cancel.Token, false);
                 }
                 catch (Exception ex)
                 {
@@ -95,30 +88,39 @@ namespace Vydejna.Domain
                 StopRunning();
         }
 
-        private void EventReceived(EventStoreEvent evnt)
+        private void EventReceived(EventStoreToken token, object evnt)
         {
             try
             {
-                if (evnt != null && !_cancel.IsCancellationRequested)
+                if (_cancel.IsCancellationRequested)
+                    SaveToken();
+                else
                 {
-                    var eventType = _serializer.GetTypeFromName(evnt.Type);
-                    var handler = _subscriptions.FindHandler(eventType);
+                    var handler = _subscriptions.FindHandler(evnt.GetType());
                     if (handler == null)
                         EventHandled();
                     else
                     {
-                        _handledEvent = _serializer.Deserialize(evnt);
-                        _token = evnt.Token;
-                        _handlerList.Current.Handle(_handledEvent, EventHandled, OnHandlerError);
+                        _token = token;
+                        _handledEvent = evnt;
+                        handler.Handle(_handledEvent, EventHandled, OnHandlerError);
                     }
                 }
-                else
-                    SaveMetadata();
             }
             catch (Exception exception)
             {
                 OnError(exception);
             }
+        }
+
+        private void NoNewEvents()
+        {
+            SaveToken();
+        }
+
+        private void CannotReceiveEvents(Exception exception, EventStoreEvent evnt)
+        {
+            OnError(exception);
         }
 
         private void OnHandlerError(Exception exception)
@@ -132,27 +134,27 @@ namespace Vydejna.Domain
             if (_flushCounter > 0)
             {
                 _flushCounter--;
-                _streamer.GetNextEvent(EventReceived, _cancel.Token, true);
+                _streaming.GetNextEvent(EventReceived, NoNewEvents, CannotReceiveEvents, _cancel.Token, true);
             }
             else
-                SaveMetadata();
+                SaveToken();
         }
 
-        private void SaveMetadata()
+        private void SaveToken()
         {
             if (_metadataDirty)
             {
                 _flushCounter = 20;
-                _metadata.SetData(new MetadataInfo(_token, string.Empty), OnMetadataSaved, OnError);
+                _metadata.SetToken(_token, OnTokenSaved, OnError);
             }
             else
-                OnMetadataSaved();
+                OnTokenSaved();
         }
 
-        private void OnMetadataSaved()
+        private void OnTokenSaved()
         {
             if (!_cancel.IsCancellationRequested)
-                _streamer.GetNextEvent(EventReceived, _cancel.Token, false);
+                _streaming.GetNextEvent(EventReceived, NoNewEvents, CannotReceiveEvents, _cancel.Token, false);
             else
                 StopRunning();
         }
@@ -165,8 +167,7 @@ namespace Vydejna.Domain
 
         private void StopRunning()
         {
-            _metadata.CancelLock();
-            _isRunning = false;
+            _metadata.Unlock();
         }
     }
 }

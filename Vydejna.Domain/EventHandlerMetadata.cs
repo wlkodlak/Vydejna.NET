@@ -13,46 +13,12 @@ namespace Vydejna.Domain
 
     public interface IMetadataInstance
     {
-        void GetData(Action<MetadataInfo> onCompleted, Action<Exception> onError);
-        void SetData(MetadataInfo info, Action onCompleted, Action<Exception> onError);
-        void Lock(Action onLockObtained);
-        void CancelLock();
-    }
-
-    public class MetadataInfo
-    {
-        private readonly EventStoreToken _token;
-        private readonly string _version;
-        private readonly string _serialized;
-
-        public MetadataInfo(EventStoreToken token, string version)
-            : this(token, version, Serialize(token, version))
-        {
-        }
-        private MetadataInfo(EventStoreToken token, string version, string serialized)
-        {
-            _token = token;
-            _version = version;
-            _serialized = serialized;
-        }
-
-        public EventStoreToken Token { get { return _token; } }
-        public string Version { get { return _version; } }
-        public string Serialize() { return _serialized; }
-
-        private static string Serialize(EventStoreToken token, string version)
-        {
-            return string.Format("{0}\r\n{1}", token.ToString(), version);
-        }
-        public static MetadataInfo Deserialize(string serialized)
-        {
-            if (string.IsNullOrEmpty(serialized))
-                return new MetadataInfo(EventStoreToken.Initial, "");
-            var parts = serialized.Split(new[] { "\r\n" }, StringSplitOptions.None);
-            var token = new EventStoreToken(parts[0]);
-            var version = parts.Length >= 2 ? parts[1] : "";
-            return new MetadataInfo(token, version, serialized);
-        }
+        void GetToken(Action<EventStoreToken> onCompleted, Action<Exception> onError);
+        void SetToken(EventStoreToken token, Action onCompleted, Action<Exception> onError);
+        void GetVersion(Action<string> onCompleted, Action<Exception> onError);
+        void SetVersion(string version, Action onCompleted, Action<Exception> onError);
+        IDisposable Lock(Action onLockObtained);
+        void Unlock();
     }
 
     public class MetadataManager : IMetadataManager
@@ -68,90 +34,61 @@ namespace Vydejna.Domain
 
         public IMetadataInstance GetConsumer(string consumerName)
         {
-            return new MetadataInstance(this, consumerName);
+            return new MetadataInstance(consumerName, consumerName + "_ver", consumerName + "_tok", _store, _locking);
+        }
+    }
+
+    public class MetadataInstance : IMetadataInstance
+    {
+        private string _lockName;
+        private string _versionDoc;
+        private string _tokenDoc;
+        private IDocumentFolder _store;
+        private INodeLockManager _locking;
+
+        public MetadataInstance(string lockName, string versionDoc, string tokenDoc, IDocumentFolder store, INodeLockManager locking)
+        {
+            this._lockName = lockName;
+            this._versionDoc = versionDoc;
+            this._tokenDoc = tokenDoc;
+            this._store = store;
+            this._locking = locking;
         }
 
-        private class MetadataInstance : IMetadataInstance
+        public void GetToken(Action<EventStoreToken> onCompleted, Action<Exception> onError)
         {
-            private MetadataManager _parent;
-            private string _name;
-            private LockExecutor _lockExecutor;
+            _store.GetDocument(_tokenDoc, (v, c) => onCompleted(new EventStoreToken(c)), () => onCompleted(EventStoreToken.Initial), onError);
+        }
 
-            public MetadataInstance(MetadataManager parent, string name)
-            {
-                _parent = parent;
-                _name = name;
-            }
+        public void SetToken(EventStoreToken token, Action onCompleted, Action<Exception> onError)
+        {
+            _store.SaveDocument(_tokenDoc, token.ToString(), DocumentStoreVersion.Any, onCompleted, onCompleted, onError);
+        }
 
-            public void GetData(Action<MetadataInfo> onCompleted, Action<Exception> onError)
-            {
-                _parent._store.GetDocument(_name,
-                    (v, c) => onCompleted(MetadataInfo.Deserialize(c)),
-                    () => onCompleted(MetadataInfo.Deserialize(null)),
-                    onError);
-            }
+        public void GetVersion(Action<string> onCompleted, Action<Exception> onError)
+        {
+            if (string.IsNullOrEmpty(_versionDoc))
+                onCompleted(null);
+            else
+                _store.GetDocument(_versionDoc, (v, c) => onCompleted(c), () => onCompleted(null), onError);
+        }
 
-            public void SetData(MetadataInfo info, Action onCompleted, Action<Exception> onError)
-            {
-                _parent._store.SaveDocument(_name, info.Serialize(), DocumentStoreVersion.Any, onCompleted, () => { }, onError);
-            }
+        public void SetVersion(string version, Action onCompleted, Action<Exception> onError)
+        {
+            if (string.IsNullOrEmpty(_versionDoc))
+                onCompleted();
+            else
+                _store.SaveDocument(_versionDoc, version, DocumentStoreVersion.Any, onCompleted, onCompleted, onError);
+        }
 
-            public void Lock(Action onLockObtained)
-            {
-                _lockExecutor = new LockExecutor(_parent._locking, _name, onLockObtained);
-                _lockExecutor.Execute();
-            }
+        public IDisposable Lock(Action onLockObtained)
+        {
+            return _locking.Lock(_lockName, onLockObtained, () => { }, false);
+        }
 
-            private class LockExecutor
-            {
-                private INodeLockManager _locking;
-                private string _name;
-                private Action _onLockObtained;
-                private bool _lockCanceled;
-                private bool _isLocked;
-
-                public LockExecutor(INodeLockManager locking, string name, Action onLockObtained)
-                {
-                    _locking = locking;
-                    _name = name;
-                    _onLockObtained = onLockObtained;
-                    _lockCanceled = false;
-                }
-                public void Execute()
-                {
-                    _locking.Lock(_name, OnLockCompleted);
-                }
-                private void OnLockCompleted(bool obtained)
-                {
-                    if (obtained)
-                    {
-                        _isLocked = true;
-                        _onLockObtained();
-                    }
-                    else
-                        _locking.WaitForLock(_name, OnLockAvailable);
-                }
-                private void OnLockAvailable()
-                {
-                    if (!_lockCanceled)
-                        _locking.Lock(_name, OnLockCompleted);
-                }
-                public void CancelLock()
-                {
-                    _lockCanceled = true;
-                    if (_isLocked)
-                    {
-                        _locking.Unlock(_name);
-                        _isLocked = false;
-                    }
-                }
-            }
-
-            public void CancelLock()
-            {
-                if (_lockExecutor != null)
-                    _lockExecutor.CancelLock();
-            }
+        public void Unlock()
+        {
+            _locking.Unlock(_lockName);
         }
     }
 }

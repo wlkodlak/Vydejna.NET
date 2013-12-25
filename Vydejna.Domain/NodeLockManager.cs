@@ -8,82 +8,18 @@ namespace Vydejna.Domain
 {
     public interface INodeLockManager
     {
-        void WaitForLock(string lockName, Action onLockChanged);
-        void Lock(string lockName, Action<bool> onCompleted);
+        IDisposable Lock(string lockName, Action onLocked, Action cannotLock, bool nowait);
         void Unlock(string lockName);
         void Dispose();
     }
+
     public class NodeLockManager : INodeLockManager
     {
         private IDocumentFolder _store;
         private string _nodeName;
         private object _lock;
         private HashSet<string> _ownedLocks;
-        private Dictionary<string, LockWatch> _allWatchers;
-
-        private class LockWatch
-        {
-            private NodeLockManager _parent;
-            private string _lockName;
-            private List<Action> _watchers;
-            private IDisposable _documentWatcher;
-
-            public LockWatch(NodeLockManager parent, string lockName)
-            {
-                _parent = parent;
-                _lockName = lockName;
-                _watchers = new List<Action>();
-            }
-
-            public void AddWatcher(Action onLockChanged)
-            {
-                lock (_parent._lock)
-                    _watchers.Add(onLockChanged);
-                if (_documentWatcher == null)
-                    _documentWatcher = _parent._store.WatchChanges(_lockName, LockDocumentChanged);
-                LockDocumentChanged();
-            }
-
-            private void LockDocumentChanged()
-            {
-                lock (_parent._lock)
-                {
-                    if (_watchers.Count == 0)
-                        return;
-                }
-                _parent._store.GetDocument(_lockName, LockDocumentLoaded, () => LockDocumentLoaded(0, null), ex => { });
-            }
-
-            private void LockDocumentLoaded(int version, string owner)
-            {
-                var isAvailable = string.IsNullOrEmpty(owner) || string.Equals(owner, _parent._nodeName);
-                if (!isAvailable)
-                    return;
-                List<Action> watchers;
-                lock (_parent._lock)
-                {
-                    watchers = _watchers.ToList();
-                    _watchers.Clear();
-                }
-                foreach (var watcher in watchers)
-                {
-                    try
-                    {
-                        watcher();
-                    }
-                    catch
-                    {
-                    }
-                }
-            }
-
-            public void Dispose()
-            {
-                if (_documentWatcher != null)
-                    _documentWatcher.Dispose();
-                _documentWatcher = null;
-            }
-        }
+        private List<IDisposable> _lockers;
 
         public NodeLockManager(IDocumentFolder store, string nodeName)
         {
@@ -91,43 +27,72 @@ namespace Vydejna.Domain
             _nodeName = nodeName;
             _lock = new object();
             _ownedLocks = new HashSet<string>();
-            _allWatchers = new Dictionary<string, LockWatch>();
+            _lockers = new List<IDisposable>();
         }
 
-        public void WaitForLock(string lockName, Action onLockChanged)
+        public IDisposable Lock(string lockName, Action onLocked, Action cannotLock, bool nowait)
         {
-            lock (_lock)
-            {
-                LockWatch watchers;
-                if (!_allWatchers.TryGetValue(lockName, out watchers))
-                    _allWatchers[lockName] = watchers = new LockWatch(this, lockName);
-                watchers.AddWatcher(onLockChanged);
-            }
+            var locker = new LockExecutor(this, lockName, onLocked, cannotLock, nowait);
+            locker.Execute();
+            return locker;
         }
 
-        public void Lock(string lockName, Action<bool> onCompleted)
-        {
-            new LockExecutor(this, lockName, onCompleted).Execute();
-        }
-
-        private class LockExecutor
+        private class LockExecutor : IDisposable
         {
             private NodeLockManager _parent;
             private string _lockName;
-            private Action<bool> _onCompleted;
-            public LockExecutor(NodeLockManager parent, string lockName, Action<bool> onCompleted)
+            private Action _onLocked;
+            private Action _cannotLock;
+            private bool _nowait;
+            private bool _cancel;
+            private bool _busy;
+            private bool _pendingChange;
+            private IDisposable _documentWatch;
+
+            public LockExecutor(NodeLockManager parent, string lockName, Action onLocked, Action cannotLock, bool nowait)
             {
                 _parent = parent;
                 _lockName = lockName;
-                _onCompleted = onCompleted;
+                _onLocked = onLocked;
+                _cannotLock = cannotLock;
+                _nowait = nowait;
             }
             public void Execute()
             {
+                _documentWatch = _parent._store.WatchChanges(_lockName, OnLockChanged);
+                OnLockChanged();
+            }
+            private void OnLockChanged()
+            {
+                lock (_parent._lock)
+                {
+                    if (_cancel)
+                        return;
+                    if (_busy)
+                    {
+                        _pendingChange = true;
+                        return;
+                    }
+                    else
+                    {
+                        _pendingChange = false;
+                        _busy = true;
+                    }
+                }
                 _parent._store.GetDocument(_lockName, OnLockFound, OnLockMissing, OnError);
             }
             private void OnLockFound(int version, string owningNode)
             {
-                if (string.IsNullOrEmpty(owningNode))
+                bool cancel;
+                lock (_parent._lock)
+                {
+                    cancel = _cancel;
+                    if (_cancel)
+                        _busy = false;
+                }
+                if (cancel)
+                    _cannotLock();
+                else if (string.IsNullOrEmpty(owningNode))
                     _parent._store.SaveDocument(_lockName, _parent._nodeName, DocumentStoreVersion.At(version), OnLockObtained, OnLockBusy, OnError);
                 else if (owningNode == _parent._nodeName)
                     OnLockObtained();
@@ -138,19 +103,58 @@ namespace Vydejna.Domain
             {
                 _parent._store.SaveDocument(_lockName, _parent._nodeName, DocumentStoreVersion.New, OnLockObtained, OnLockBusy, OnError);
             }
-            private void OnError(Exception exception)
-            {
-                _onCompleted(false);
-            }
             private void OnLockBusy()
             {
-                _onCompleted(false);
+                bool tryAgain;
+                bool reportCannotLock;
+                lock (_parent._lock)
+                {
+                    tryAgain = _pendingChange && !_cancel && !_nowait;
+                    _pendingChange = false;
+                    if (!tryAgain)
+                        _busy = false;
+                    reportCannotLock = _nowait;
+                }
+                if (tryAgain)
+                    _parent._store.GetDocument(_lockName, OnLockFound, OnLockMissing, OnError);
+                else if (reportCannotLock)
+                    _cannotLock();
+            }
+            private void OnError(Exception exception)
+            {
+                lock (_parent._lock)
+                {
+                    _busy = false;
+                    if (!_cancel)
+                    {
+                        _cancel = true;
+                        _documentWatch.Dispose();
+                    }
+                }
+                _cannotLock();
             }
             private void OnLockObtained()
             {
                 lock (_parent._lock)
+                {
                     _parent._ownedLocks.Add(_lockName);
-                _onCompleted(true);
+                    if (!_cancel)
+                    {
+                        _cancel = true;
+                        _documentWatch.Dispose();
+                    }
+                }
+                _onLocked();
+            }
+            public void Dispose()
+            {
+                lock (_parent._lock)
+                {
+                    if (_cancel)
+                        return;
+                    _cancel = true;
+                    _documentWatch.Dispose();
+                }
             }
         }
 
@@ -165,9 +169,9 @@ namespace Vydejna.Domain
         {
             lock (_lock)
             {
-                foreach (var watcher in _allWatchers.Values)
-                    watcher.Dispose();
-                _allWatchers.Clear();
+                foreach (var locker in _lockers)
+                    locker.Dispose();
+                _lockers.Clear();
                 foreach (var lockName in _ownedLocks)
                     _store.SaveDocument(lockName, "", DocumentStoreVersion.Any, NoAction, NoAction, IgnoreError);
                 _ownedLocks.Clear();

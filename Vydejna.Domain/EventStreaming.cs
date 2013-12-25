@@ -34,6 +34,11 @@ namespace Vydejna.Domain
     {
         void GetNextEvent(Action<EventStoreEvent> onComplete, CancellationToken cancel, bool withoutWaiting);
     }
+    public interface IEventStreamingDeserialized
+    {
+        void Setup(EventStoreToken firstToken, IList<Type> types, IList<string> prefixes);
+        void GetNextEvent(Action<EventStoreToken, object> onEventRead, Action onEventNotAvailable, Action<Exception, EventStoreEvent> onError, CancellationToken cancel, bool nowait);
+    }
 
     public class EventStreaming : IEventStreaming
     {
@@ -276,6 +281,56 @@ namespace Vydejna.Domain
                         _status = StreamerStatus.Failed;
                     }
                 }
+            }
+        }
+    }
+
+    public class EventStreamingDeserialized : IEventStreamingDeserialized
+    {
+        private IEventStreaming _streaming;
+        private IEventSourcedSerializer _serializer;
+        private IEventStreamer _streamer;
+        private Action<EventStoreToken, object> _onEventRead;
+        private Action _onEventNotAvailable;
+        private Action<Exception, EventStoreEvent> _onError;
+
+        public EventStreamingDeserialized(IEventStreaming streaming, IEventSourcedSerializer serializer)
+        {
+            _streaming = streaming;
+            _serializer = serializer;
+        }
+
+        public void Setup(EventStoreToken firstToken, IList<Type> types, IList<string> prefixes)
+        {
+            var typeNames = types.Select(_serializer.GetTypeName).ToArray();
+            _streamer = _streaming.GetStreamer(new EventStreamingFilter(firstToken, typeNames, prefixes));
+        }
+
+        public void GetNextEvent(Action<EventStoreToken, object> onEventRead, Action onEventNotAvailable, Action<Exception, EventStoreEvent> onError, CancellationToken cancel, bool nowait)
+        {
+            _onEventRead = onEventRead;
+            _onEventNotAvailable = onEventNotAvailable;
+            _onError = onError;
+            _streamer.GetNextEvent(RawEventReceived, cancel, nowait);
+        }
+
+        private void RawEventReceived(EventStoreEvent rawEvent)
+        {
+            if (rawEvent == null)
+                _onEventNotAvailable();
+            else
+            {
+                object deserialized;
+                try
+                {
+                    deserialized = _serializer.Deserialize(rawEvent);
+                }
+                catch (Exception exception)
+                {
+                    _onError(exception, rawEvent);
+                    return;
+                }
+                _onEventRead(rawEvent.Token, deserialized);
             }
         }
     }
