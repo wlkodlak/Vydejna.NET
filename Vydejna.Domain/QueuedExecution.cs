@@ -94,4 +94,54 @@ namespace Vydejna.Domain
             self.Enqueue(new QueueExecutionDispatchError(onError, exception));
         }
     }
+
+    public class QueuedCommandSubscriptionManager : ICommandSubscriptionManager
+    {
+        private ICommandSubscriptionManager _manager;
+        private IQueueExecution _executor;
+
+        private class QueueingSubscription : ICommandSubscription, IHandle<CommandExecution<object>>
+        {
+            private IQueueExecution _executor;
+            private ICommandSubscription _original;
+
+            public QueueingSubscription(IQueueExecution executor, ICommandSubscription original)
+            {
+                _executor = executor;
+                _original = original;
+            }
+            public void Handle(object command, Action onComplete, Action<Exception> onError)
+            {
+                _executor.Enqueue(this, new CommandExecution<object>(command, onComplete, onError));
+            }
+            public void Handle(CommandExecution<object> msg)
+            {
+                _original.Handle(msg.Command, msg.OnCompleted, msg.OnError);
+            }
+        }
+
+        public QueuedCommandSubscriptionManager(ICommandSubscriptionManager manager, IQueueExecution executor)
+        {
+            _manager = manager;
+            _executor = executor;
+        }
+
+        public IHandleRegistration<CommandExecution<T>> Register<T>(IHandle<CommandExecution<T>> handler)
+        {
+            return _manager.Register(handler);
+        }
+
+        public IEnumerable<Type> GetHandledTypes()
+        {
+            return _manager.GetHandledTypes();
+        }
+
+        public ICommandSubscription FindHandler(Type type)
+        {
+            var handler =  _manager.FindHandler(type);
+            if (handler == null)
+                return null;
+            return new QueueingSubscription(_executor, handler);
+        }
+    }
 }
