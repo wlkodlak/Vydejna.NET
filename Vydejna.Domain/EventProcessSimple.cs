@@ -13,6 +13,8 @@ namespace Vydejna.Domain
         IList<string> GetEventStreamPrefixes();
     }
     public class EventProcessSimple
+        : IHandle<SystemEvents.SystemInit>
+        , IHandle<SystemEvents.SystemShutdown>
     {
         private readonly IMetadataInstance _metadata;
         private readonly IEventStreamingDeserialized _streaming;
@@ -44,17 +46,17 @@ namespace Vydejna.Domain
 
         public void Subscribe(IBus bus)
         {
-            bus.Subscribe<SystemEvents.SystemInit>(SystemInit);
-            bus.Subscribe<SystemEvents.SystemShutdown>(SystemShutdown);
+            bus.Subscribe<SystemEvents.SystemInit>(this);
+            bus.Subscribe<SystemEvents.SystemShutdown>(this);
         }
 
-        private void SystemInit(SystemEvents.SystemInit msg)
+        public void Handle(SystemEvents.SystemInit msg)
         {
             _cancel = new CancellationTokenSource();
             _waitForLock = _metadata.Lock(ObtainedLock);
         }
 
-        private void SystemShutdown(SystemEvents.SystemShutdown msg)
+        public void Handle(SystemEvents.SystemShutdown msg)
         {
             _cancel.Cancel();
             _waitForLock.Dispose();
@@ -76,7 +78,7 @@ namespace Vydejna.Domain
                 {
                     _token = token;
                     var prefixes = _eventHandler != null ? _eventHandler.GetEventStreamPrefixes() : null;
-                    _streaming.Setup(_token, _subscriptions.GetHandledTypes().ToArray(), prefixes ?? new string[0]);
+                    _streaming.Setup(_token, _subscriptions.GetHandledTypes().ToArray(), prefixes ?? new string[0], false);
                     _streaming.GetNextEvent(EventReceived, NoNewEvents, CannotReceiveEvents, _cancel.Token, false);
                 }
                 catch (Exception ex)

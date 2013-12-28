@@ -226,7 +226,7 @@ namespace Vydejna.Domain
                 if (_parent._deleteAll)
                 {
                     _parent._deleteAll = false;
-                    _parent._store.DeleteAll(ProcessNextDirtyItem);
+                    _parent._store.DeleteAll(ProcessNextDirtyItem, _onError);
                 }
                 else
                     ProcessNextDirtyItem();

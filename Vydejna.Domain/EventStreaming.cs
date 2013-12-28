@@ -36,17 +36,19 @@ namespace Vydejna.Domain
     }
     public interface IEventStreamingDeserialized
     {
-        void Setup(EventStoreToken firstToken, IList<Type> types, IList<string> prefixes);
+        void Setup(EventStoreToken firstToken, IList<Type> types, IList<string> prefixes, bool prefilterType);
         void GetNextEvent(Action<EventStoreToken, object> onEventRead, Action onEventNotAvailable, Action<Exception, EventStoreEvent> onError, CancellationToken cancel, bool nowait);
     }
 
     public class EventStreaming : IEventStreaming
     {
         private IEventStoreWaitable _store;
+        private IQueueExecution _executor;
 
-        public EventStreaming(IEventStoreWaitable store)
+        public EventStreaming(IEventStoreWaitable store, IQueueExecution executor)
         {
             _store = store;
+            _executor = executor;
         }
 
         public IEventStreamer GetStreamer(EventStreamingFilter filter)
@@ -56,8 +58,8 @@ namespace Vydejna.Domain
 
         private class EventsStream : IEventStreamer
         {
-            private EventStreaming _parent;
             private IEventStoreWaitable _store;
+            private IQueueExecution _executor;
             private IList<SubStreamer> _substreamers;
             private object _lock;
             private CancellationTokenRegistration _cancel;
@@ -65,10 +67,27 @@ namespace Vydejna.Domain
             private bool _nowait;
             private bool _isWorking;
 
+            private class GetNextEventCompleted : IQueuedExecutionDispatcher
+            {
+                private Action<EventStoreEvent> _onComplete;
+                private EventStoreEvent _completedEvent;
+
+                public GetNextEventCompleted(Action<EventStoreEvent> onComplete, EventStoreEvent completedEvent)
+                {
+                    _onComplete = onComplete;
+                    _completedEvent = completedEvent;
+                }
+
+                public void Execute()
+                {
+                    _onComplete(_completedEvent);
+                }
+            }
+
             public EventsStream(EventStreaming parent, EventStreamingFilter filter)
             {
-                _parent = parent;
-                _store = _parent._store;
+                _store = parent._store;
+                _executor = parent._executor;
                 _lock = new object();
                 if (filter.StreamPrefixes.Count == 0)
                 {
@@ -121,7 +140,7 @@ namespace Vydejna.Domain
                     foreach (var streamer in _substreamers)
                         streamer.Cancel();
                 }
-                onComplete(null);
+                _executor.Enqueue(new GetNextEventCompleted(onComplete, null));
             }
 
             private void OnPotentiallyCompleted()
@@ -165,7 +184,7 @@ namespace Vydejna.Domain
                     }
                 }
                 if (hasCompleted)
-                    onComplete(completedEvent);
+                    _executor.Enqueue(new GetNextEventCompleted(onComplete, completedEvent));
             }
 
             public void Dispose()
@@ -193,7 +212,7 @@ namespace Vydejna.Domain
                 private string _eventType;
                 private Queue<EventStoreEvent> _readyEvents;
                 private EventStoreEvent _firstEvent;
-                private CancellationTokenSource _cancelWait;
+                private IDisposable _currentWait;
 
                 public SubStreamer(EventsStream parent, EventStoreToken token, string prefix, string eventType)
                 {
@@ -204,7 +223,6 @@ namespace Vydejna.Domain
                     _status = StreamerStatus.Initial;
                     _readyEvents = new Queue<EventStoreEvent>();
                     _firstEvent = null;
-                    _cancelWait = new CancellationTokenSource();
                 }
 
                 public bool IsWaiting { get { return _status == StreamerStatus.Waiting; } }
@@ -238,13 +256,15 @@ namespace Vydejna.Domain
 
                 public void Cancel()
                 {
-                    _cancelWait.Cancel();
+                    if (_currentWait != null)
+                        _currentWait.Dispose();
                 }
 
                 private void LoadCompleted(IEventStoreCollection events)
                 {
                     lock (_parent._lock)
                     {
+                        _currentWait = null;
                         foreach (var evt in events.Events)
                         {
                             if (_firstEvent == null)
@@ -255,7 +275,8 @@ namespace Vydejna.Domain
                         _token = events.NextToken;
                         if (_firstEvent == null)
                         {
-                            _parent._store.WaitForEvents(_token, _cancelWait.Token, NewEventsBecameAvailable, LoadFailed);
+                            _status = StreamerStatus.Waiting;
+                            _currentWait = _parent._store.WaitForEvents(_token, _prefix, _eventType, 20, true, LoadCompleted, LoadFailed);
                         }
                         else if (_status == StreamerStatus.Loading)
                         {
@@ -265,19 +286,11 @@ namespace Vydejna.Domain
                     }
                 }
 
-                private void NewEventsBecameAvailable()
-                {
-                    lock (_parent._lock)
-                    {
-                        _status = StreamerStatus.Loading;
-                        _parent._store.GetAllEvents(_token, _prefix, _eventType, 20, true, LoadCompleted, LoadFailed);
-                    }
-                }
-
                 private void LoadFailed(Exception exception)
                 {
                     lock (_parent._lock)
                     {
+                        _currentWait = null;
                         _status = StreamerStatus.Failed;
                     }
                 }
@@ -290,9 +303,12 @@ namespace Vydejna.Domain
         private IEventStreaming _streaming;
         private IEventSourcedSerializer _serializer;
         private IEventStreamer _streamer;
+        private HashSet<string> _typeFilter;
         private Action<EventStoreToken, object> _onEventRead;
         private Action _onEventNotAvailable;
         private Action<Exception, EventStoreEvent> _onError;
+        private bool _nowait;
+        private CancellationToken _cancel;
 
         public EventStreamingDeserialized(IEventStreaming streaming, IEventSourcedSerializer serializer)
         {
@@ -300,9 +316,10 @@ namespace Vydejna.Domain
             _serializer = serializer;
         }
 
-        public void Setup(EventStoreToken firstToken, IList<Type> types, IList<string> prefixes)
+        public void Setup(EventStoreToken firstToken, IList<Type> types, IList<string> prefixes, bool prefilterType)
         {
-            var typeNames = types.Select(_serializer.GetTypeName).ToArray();
+            _typeFilter = new HashSet<string>(types.Select(_serializer.GetTypeName));
+            var typeNames = prefilterType ? _typeFilter.ToArray() : new string[0];
             _streamer = _streaming.GetStreamer(new EventStreamingFilter(firstToken, typeNames, prefixes));
         }
 
@@ -311,7 +328,9 @@ namespace Vydejna.Domain
             _onEventRead = onEventRead;
             _onEventNotAvailable = onEventNotAvailable;
             _onError = onError;
-            _streamer.GetNextEvent(RawEventReceived, cancel, nowait);
+            _cancel = cancel;
+            _nowait = nowait;
+            _streamer.GetNextEvent(RawEventReceived, _cancel, _nowait);
         }
 
         private void RawEventReceived(EventStoreEvent rawEvent)
@@ -320,17 +339,22 @@ namespace Vydejna.Domain
                 _onEventNotAvailable();
             else
             {
-                object deserialized;
-                try
+                if (_typeFilter.Contains(rawEvent.Type))
                 {
-                    deserialized = _serializer.Deserialize(rawEvent);
+                    object deserialized;
+                    try
+                    {
+                        deserialized = _serializer.Deserialize(rawEvent);
+                    }
+                    catch (Exception exception)
+                    {
+                        _onError(exception, rawEvent);
+                        return;
+                    }
+                    _onEventRead(rawEvent.Token, deserialized);
                 }
-                catch (Exception exception)
-                {
-                    _onError(exception, rawEvent);
-                    return;
-                }
-                _onEventRead(rawEvent.Token, deserialized);
+                else
+                    _streamer.GetNextEvent(RawEventReceived, _cancel, _nowait);
             }
         }
     }

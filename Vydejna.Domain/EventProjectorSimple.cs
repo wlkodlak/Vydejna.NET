@@ -93,7 +93,7 @@ namespace Vydejna.Domain
                 _lastCompletedToken = token;
                 _version = _projectionInfo.GetVersion();
                 _upgradeMode = _projectionInfo.UpgradeMode(_storedVersion);
-                _streaming.Setup(_lastCompletedToken, _subscriptions.GetHandledTypes().ToArray(), _projectionInfo.GetStreamPrefixes());
+                _streaming.Setup(_lastCompletedToken, _subscriptions.GetHandledTypes().ToArray(), _projectionInfo.GetStreamPrefixes(), false);
                 _flushCounter = 20;
                 if (_upgradeMode == EventProjectionUpgradeMode.Rebuild)
                     CallHandler(new ProjectorMessages.Reset(), SaveNewVersion, OnError);

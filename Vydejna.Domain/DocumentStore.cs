@@ -13,7 +13,7 @@ namespace Vydejna.Domain
     public interface IDocumentFolder
     {
         IDocumentFolder SubFolder(string name);
-        void DeleteAll(Action onComplete);
+        void DeleteAll(Action onComplete, Action<Exception> onError);
         void GetDocument(string name, Action<int, string> onFound, Action onMissing, Action<Exception> onError);
         void SaveDocument(string name, string value, DocumentStoreVersion expectedVersion, Action onSave, Action onConcurrency, Action<Exception> onError);
         IDisposable WatchChanges(string name, Action onSomethingChanged);
@@ -93,14 +93,7 @@ namespace Vydejna.Domain
 
             public void CallHandler()
             {
-                try
-                {
-                    _onSomethingChanged();
-                }
-                catch
-                {
-                    Dispose();
-                }
+                _onSomethingChanged();
             }
         }
 
@@ -108,11 +101,13 @@ namespace Vydejna.Domain
         {
             private int _key;
             private ConcurrentDictionary<int, FolderWatcher> _watchers;
+            private IQueueExecution _executor;
 
-            public FolderWatcherCollection()
+            public FolderWatcherCollection(IQueueExecution executor)
             {
                 _key = 0;
                 _watchers = new ConcurrentDictionary<int, FolderWatcher>();
+                _executor = executor;
             }
 
             public IDisposable AddWatcher(Action onSomethingChanged)
@@ -126,7 +121,7 @@ namespace Vydejna.Domain
             public void CallWatchers()
             {
                 foreach (var watcher in _watchers.Values)
-                    watcher.CallHandler();
+                    _executor.Enqueue(watcher.CallHandler);
             }
 
             public void Remove(int key)
@@ -139,9 +134,15 @@ namespace Vydejna.Domain
         private class DocumentFolder : IDocumentFolder
         {
             private static readonly Regex _regex = new Regex(@"^[a-zA-Z0-9_\-.]+$", RegexOptions.Compiled);
+            private IQueueExecution _executor;
             private ConcurrentDictionary<string, DocumentFolder> _folders = new ConcurrentDictionary<string, DocumentFolder>();
             private ConcurrentDictionary<string, Document> _documents = new ConcurrentDictionary<string, Document>();
             private ConcurrentDictionary<string, FolderWatcherCollection> _watchers = new ConcurrentDictionary<string, FolderWatcherCollection>();
+
+            public DocumentFolder(IQueueExecution executor)
+            {
+                _executor = executor;
+            }
 
             public IDocumentFolder SubFolder(string name)
             {
@@ -152,19 +153,19 @@ namespace Vydejna.Domain
                 {
                     if (_folders.TryGetValue(name, out folder))
                         return folder;
-                    else if (_folders.TryAdd(name, (folder = new DocumentFolder())))
+                    else if (_folders.TryAdd(name, (folder = new DocumentFolder(_executor))))
                         return folder;
                 }
             }
 
-            public void DeleteAll(Action onComplete)
+            public void DeleteAll(Action onComplete, Action<Exception> onError)
             {
                 List<string> documentNames = _documents.Keys.ToList();
                 foreach (var folder in _folders)
-                    folder.Value.DeleteAll(() => { });
+                    folder.Value.DeleteAll(() => { }, ex => { });
                 _folders.Clear();
                 _documents.Clear();
-                onComplete();
+                _executor.Enqueue(onComplete);
                 foreach (string name in documentNames)
                     CallWatchers(name);
             }
@@ -177,15 +178,34 @@ namespace Vydejna.Domain
                         throw new ArgumentOutOfRangeException(name, "Invalid characters in name");
                     Document document;
                     if (!_documents.TryGetValue(name, out document))
-                        onMissing();
+                        _executor.Enqueue(onMissing);
                     else if (document.Version == 0)
-                        onMissing();
+                        _executor.Enqueue(onMissing);
                     else
-                        onFound(document.Version, document.Value);
+                        _executor.Enqueue(new DocumentFound(onFound, document.Version, document.Value));
                 }
                 catch (Exception ex)
                 {
-                    onError(ex);
+                    _executor.Enqueue(onError, ex);
+                }
+            }
+
+            private class DocumentFound : IQueuedExecutionDispatcher
+            {
+                private Action<int, string> _onFound;
+                private int _version;
+                private string _contents;
+
+                public DocumentFound(Action<int, string> onFound, int version, string contents)
+                {
+                    this._onFound = onFound;
+                    this._version = version;
+                    this._contents = contents;
+                }
+
+                public void Execute()
+                {
+                    _onFound(_version, _contents);
                 }
             }
 
@@ -208,20 +228,20 @@ namespace Vydejna.Domain
                         }
                     }
                     if (wasSaved)
-                        onSave();
+                        _executor.Enqueue(onSave);
                     else
-                        onConcurrency();
+                        _executor.Enqueue(onConcurrency);
                 }
                 catch (Exception ex)
                 {
-                    onError(ex);
+                    _executor.Enqueue(onError, ex);
                 }
                 CallWatchers(name);
             }
 
             public IDisposable WatchChanges(string name, Action onSomethingChanged)
             {
-                var watcherCollection = _watchers.GetOrAdd(name, new FolderWatcherCollection());
+                var watcherCollection = _watchers.GetOrAdd(name, new FolderWatcherCollection(_executor));
                 return watcherCollection.AddWatcher(onSomethingChanged);
             }
 
@@ -233,16 +253,21 @@ namespace Vydejna.Domain
             }
         }
 
-        private readonly DocumentFolder _root = new DocumentFolder();
+        private readonly DocumentFolder _root;
+
+        public DocumentStoreInMemory(IQueueExecution executor)
+        {
+            _root = new DocumentFolder(executor);
+        }
 
         public IDocumentFolder SubFolder(string name)
         {
             return _root.SubFolder(name);
         }
 
-        public void DeleteAll(Action onComplete)
+        public void DeleteAll(Action onComplete, Action<Exception> onError)
         {
-            _root.DeleteAll(onComplete);
+            _root.DeleteAll(onComplete, onError);
         }
 
         public void GetDocument(string name, Action<int, string> onFound, Action onMissing, Action<Exception> onError)

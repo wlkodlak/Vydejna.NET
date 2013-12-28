@@ -25,7 +25,7 @@ namespace Vydejna.Domain
         void Subscribe(IPureProjectionDispatcher<TState> dispatcher);
     }
 
-    public class EventProjectorPure<TState>
+    public class PureProjectionProcess<TState>
         : IHandle<SystemEvents.SystemInit>
         , IHandle<SystemEvents.SystemShutdown>
     {
@@ -42,7 +42,7 @@ namespace Vydejna.Domain
         private IPureProjectionHandler<TState, object> _currentHandler;
         private string _currentPartition;
 
-        public EventProjectorPure(
+        public PureProjectionProcess(
             string lockName, 
             IPureProjectionVersionControl versioning, 
             INodeLockManager locking,
@@ -85,12 +85,12 @@ namespace Vydejna.Domain
                 StopWorking();
             else if (string.IsNullOrEmpty(version) || _versioning.NeedsRebuild(version))
             {
-                _streaming.Setup(EventStoreToken.Initial, _dispatcher.GetRegisteredTypes(), _versioning.GetStreamPrefixes());
+                _streaming.Setup(EventStoreToken.Initial, _dispatcher.GetRegisteredTypes(), _versioning.GetStreamPrefixes(), false);
                 _store.Reset(_versioning.GetVersion(), ProcessEvents, OnError);
             }
             else
             {
-                _streaming.Setup(token, _dispatcher.GetRegisteredTypes(), _versioning.GetStreamPrefixes());
+                _streaming.Setup(token, _dispatcher.GetRegisteredTypes(), _versioning.GetStreamPrefixes(), false);
                 _streaming.GetNextEvent(OnEventReceived, OnEventUnavailable, OnEventError, _cancel.Token, false);
             }
         }
