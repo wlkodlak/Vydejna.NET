@@ -12,11 +12,13 @@ namespace Vydejna.Domain
     {
         private IWriteSeznamNaradi _writeSvc;
         private IReadSeznamNaradi _readSvc;
+        private IQueueExecution _executor;
 
-        public SeznamNaradiRest(IWriteSeznamNaradi writeSvc, IReadSeznamNaradi readSvc)
+        public SeznamNaradiRest(IWriteSeznamNaradi writeSvc, IReadSeznamNaradi readSvc, IQueueExecution executor)
         {
             _writeSvc = writeSvc;
             _readSvc = readSvc;
+            _executor = executor;
         }
 
         public void RegisterHttpHandlers(IHttpRouteCommonConfigurator config)
@@ -45,7 +47,7 @@ namespace Vydejna.Domain
             {
                 var command = context.InputSerializer.Deserialize<TCommand>(context.InputString);
                 var execution = new CommandExecution<TCommand>(command, () => OnCommandCompleted(context, null), ex => OnCommandCompleted(context, ex));
-                handler.Handle(execution);
+                _executor.Enqueue(handler, execution);
             }
             catch (Exception ex)
             {
@@ -76,7 +78,7 @@ namespace Vydejna.Domain
                     new ZiskatSeznamNaradiRequest(offset, pocet), 
                     result => OnQueryCompleted(context, result), 
                     exception => OnQueryFailed(context, exception));
-                _readSvc.Handle(execution);
+                _executor.Enqueue(_readSvc, execution);
             }
             catch (Exception exception)
             {
@@ -94,7 +96,7 @@ namespace Vydejna.Domain
                     new OvereniUnikatnostiRequest(vykres, rozmer), 
                     result => OnQueryCompleted(context, result), 
                     exception => OnQueryFailed(context, exception));
-                _readSvc.Handle(execution);
+                _executor.Enqueue(_readSvc, execution);
             }
             catch (Exception exception)
             {

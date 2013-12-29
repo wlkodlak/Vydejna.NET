@@ -11,7 +11,7 @@ namespace Vydejna.Contracts
 {
     public interface IHttpClient
     {
-        Task<HttpClientResponse> Execute(HttpClientRequest request);
+        void Execute(HttpClientRequest request, Action<HttpClientResponse> onCompleted, Action<Exception> onError);
     }
 
     public class HttpClientRequest
@@ -47,145 +47,214 @@ namespace Vydejna.Contracts
     {
         private log4net.ILog _log = log4net.LogManager.GetLogger(typeof(HttpClient));
 
-        public async Task<HttpClientResponse> Execute(HttpClientRequest request)
+        public void Execute(HttpClientRequest request, Action<HttpClientResponse> onCompleted, Action<Exception> onError)
         {
-            if (_log.IsDebugEnabled)
-                LogRequest(request);
-            var webRequest = HttpWebRequest.CreateHttp(request.Url);
-            webRequest.AllowAutoRedirect = false;
-            webRequest.Method = request.Method;
-            CopyHeadersToRequest(request, webRequest);
-            await WriteRequestBody(request, webRequest).ConfigureAwait(false);
+            new Execution(this, request, onCompleted, onError).Execute();
+        }
 
-            var response = new HttpClientResponse();
-            using (var webResponse = await GetWebResponse(webRequest).ConfigureAwait(false))
+        private class Execution
+        {
+            private HttpClient _parent;
+            private HttpClientRequest _request;
+            private HttpClientResponse _response;
+            private Action<HttpClientResponse> _onCompleted;
+            private Action<Exception> _onError;
+            private Stream _requestStream;
+            private Stream _responseStream;
+            private HttpWebResponse _webResponse;
+            private HttpWebRequest _webRequest;
+            private MemoryStream _memoryStream;
+            private byte[] _copyBuffer;
+
+            public Execution(HttpClient parent, HttpClientRequest request, Action<HttpClientResponse> onCompleted, Action<Exception> onError)
             {
-                response.StatusCode = (int)webResponse.StatusCode;
-                CopyHeadersToResponse(response, webResponse);
-                await GetResponseBody(response, webResponse).ConfigureAwait(false);
+                this._parent = parent;
+                this._request = request;
+                this._onCompleted = onCompleted;
+                this._onError = onError;
             }
-            if (_log.IsDebugEnabled)
-                LogResponse(response);
-            return response;
-        }
 
-        private void LogRequest(HttpClientRequest request)
-        {
-            var sb = new StringBuilder();
-            sb.AppendFormat("Execute - request {0} {1}\r\n", request.Method, request.Url);
-            foreach (var header in request.Headers)
-                sb.AppendFormat("{0}: {1}\r\n", header.Name, header.Value);
-            sb.AppendLine();
-            if (request.Body != null)
-                sb.Append(Encoding.UTF8.GetString(request.Body));
-            _log.Debug(sb.ToString());
-        }
-
-        private void LogResponse(HttpClientResponse response)
-        {
-            var sb = new StringBuilder();
-            sb.AppendFormat("Execute - response {0}\r\n", response.StatusCode);
-            foreach (var header in response.Headers)
-                sb.AppendFormat("{0}: {1}\r\n", header.Name, header.Value);
-            sb.AppendLine();
-            if (response.Body != null)
-                sb.Append(Encoding.UTF8.GetString(response.Body));
-            _log.Debug(sb.ToString());
-        }
-
-        private static async Task<HttpWebResponse> GetWebResponse(HttpWebRequest webRequest)
-        {
-            try
+            public void Execute()
             {
-                return (HttpWebResponse)await webRequest.GetResponseAsync().ConfigureAwait(false);
+                if (_parent._log.IsDebugEnabled)
+                    LogRequest(_request);
+                _webRequest = HttpWebRequest.CreateHttp(_request.Url);
+                _webRequest.AllowAutoRedirect = false;
+                _webRequest.Method = _request.Method;
+                CopyHeadersToRequest(_request, _webRequest);
+                _response = new HttpClientResponse();
+
+                if (_request.Body != null)
+                    _webRequest.GetRequestStreamAsync().ContinueWith(ConnectedToRequestStream);
+                else
+                    _webRequest.GetResponseAsync().ContinueWith(ReceivedWebResponse);
             }
-            catch (WebException ex)
-            {
-                return (HttpWebResponse)ex.Response;
-            }
-        }
 
-        private static DateTime ParseDateHeader(string headerValue)
-        {
-            return DateTime.ParseExact(headerValue,
-                    "ddd, dd MMM yyyy HH:mm:ss 'UTC'",
-                    CultureInfo.InvariantCulture.DateTimeFormat,
-                    DateTimeStyles.AssumeUniversal);
-        }
-
-        private static void CopyHeadersToRequest(HttpClientRequest request, HttpWebRequest webRequest)
-        {
-            foreach (var header in request.Headers)
+            private void ConnectedToRequestStream(Task<Stream> task)
             {
-                switch (header.Name)
+                if (task.Exception != null)
+                    _onError(task.Exception.GetBaseException());
+                else
                 {
-                    case "Accept":
-                        webRequest.Accept = header.Value;
-                        break;
-                    case "Connection":
-                        webRequest.Connection = header.Value;
-                        break;
-                    case "Content-Length":
-                        webRequest.ContentLength = int.Parse(header.Value);
-                        break;
-                    case "Content-Type":
-                        webRequest.ContentType = header.Value;
-                        break;
-                    case "Date":
-                        webRequest.Date = ParseDateHeader(header.Value);
-                        break;
-                    case "Expect":
-                        webRequest.Expect = header.Value;
-                        break;
-                    case "Host":
-                        webRequest.Host = header.Value;
-                        break;
-                    case "If-Modified-Since":
-                        webRequest.IfModifiedSince = ParseDateHeader(header.Value);
-                        break;
-                    case "Referer":
-                        webRequest.Referer = header.Value;
-                        break;
-                    case "Transfer-Encoding":
-                        webRequest.TransferEncoding = header.Value;
-                        break;
-                    case "User-Agent":
-                        webRequest.UserAgent = header.Value;
-                        break;
-                    default:
-                        webRequest.Headers.Add(header.Name, header.Value);
-                        break;
+                    _requestStream = task.Result;
+                    _requestStream.WriteAsync(_request.Body, 0, _request.Body.Length).ContinueWith(SentRequestData);
                 }
             }
-        }
 
-        private static async Task WriteRequestBody(HttpClientRequest request, HttpWebRequest webRequest)
-        {
-            if (request.Body != null)
-                using (var stream = await webRequest.GetRequestStreamAsync().ConfigureAwait(false))
-                    await stream.WriteAsync(request.Body, 0, request.Body.Length).ConfigureAwait(false);
-        }
-
-        private static void CopyHeadersToResponse(HttpClientResponse response, HttpWebResponse webResponse)
-        {
-            for (int i = 0; i < webResponse.Headers.Count; i++)
+            private void SentRequestData(Task task)
             {
-                var name = webResponse.Headers.GetKey(i);
-                foreach (var value in webResponse.Headers.GetValues(i))
-                    response.Headers.Add(new HttpClientHeader(name, value));
+                _requestStream.Dispose();
+                if (task.Exception != null)
+                    _onError(task.Exception.GetBaseException());
+                else
+                    _webRequest.GetResponseAsync().ContinueWith(ReceivedWebResponse);
             }
-        }
 
-        private static async Task GetResponseBody(HttpClientResponse response, HttpWebResponse webResponse)
-        {
-            using (var responseStream = webResponse.GetResponseStream())
-            using (var memoryStream = new MemoryStream())
+            private void ReceivedWebResponse(Task<WebResponse> task)
             {
-                var buffer = new byte[32 * 1024];
-                int read;
-                while ((read = await responseStream.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false)) > 0)
-                    memoryStream.Write(buffer, 0, read);
-                response.Body = memoryStream.ToArray();
+                var exception = task.Exception == null ? null : task.Exception.GetBaseException();
+                var webException = exception as WebException;
+                if (webException != null)
+                {
+                    _webResponse = (HttpWebResponse)webException.Response;
+                    ProcessWebResponse();
+                }
+                else if (exception != null)
+                    _onError(exception);
+                else
+                {
+                    _webResponse = (HttpWebResponse)task.Result;
+                    ProcessWebResponse();
+                }
+            }
+
+            private void ProcessWebResponse()
+            {
+                _response.StatusCode = (int)_webResponse.StatusCode;
+                CopyHeadersToResponse(_response, _webResponse);
+                _responseStream = _webResponse.GetResponseStream();
+                _memoryStream = new MemoryStream();
+                _copyBuffer = new byte[32 * 1024];
+                _responseStream.ReadAsync(_copyBuffer, 0, _copyBuffer.Length).ContinueWith(CopiedResponseStream);
+            }
+
+            private void CopiedResponseStream(Task<int> task)
+            {
+                if (task.Exception != null)
+                {
+                    _responseStream.Dispose();
+                    _onError(task.Exception.GetBaseException());
+                }
+                else
+                {
+                    int read = task.Result;
+                    if (read == 0)
+                    {
+                        _responseStream.Dispose();
+                        _response.Body = _memoryStream.ToArray();
+                        FinishedReadingResponse();
+                    }
+                    else
+                    {
+                        _memoryStream.Write(_copyBuffer, 0, read);
+                        _responseStream.ReadAsync(_copyBuffer, 0, _copyBuffer.Length).ContinueWith(CopiedResponseStream);
+                    }
+                }
+            }
+
+            private void FinishedReadingResponse()
+            {
+                if (_parent._log.IsDebugEnabled)
+                    LogResponse(_response);
+                _onCompleted(_response);
+            }
+
+            private void LogRequest(HttpClientRequest request)
+            {
+                var sb = new StringBuilder();
+                sb.AppendFormat("Execute - request {0} {1}\r\n", request.Method, request.Url);
+                foreach (var header in request.Headers)
+                    sb.AppendFormat("{0}: {1}\r\n", header.Name, header.Value);
+                sb.AppendLine();
+                if (request.Body != null)
+                    sb.Append(Encoding.UTF8.GetString(request.Body));
+                _parent._log.Debug(sb.ToString());
+            }
+
+            private void LogResponse(HttpClientResponse response)
+            {
+                var sb = new StringBuilder();
+                sb.AppendFormat("Execute - response {0}\r\n", response.StatusCode);
+                foreach (var header in response.Headers)
+                    sb.AppendFormat("{0}: {1}\r\n", header.Name, header.Value);
+                sb.AppendLine();
+                if (response.Body != null)
+                    sb.Append(Encoding.UTF8.GetString(response.Body));
+                _parent._log.Debug(sb.ToString());
+            }
+
+            private static DateTime ParseDateHeader(string headerValue)
+            {
+                return DateTime.ParseExact(headerValue,
+                        "ddd, dd MMM yyyy HH:mm:ss 'UTC'",
+                        CultureInfo.InvariantCulture.DateTimeFormat,
+                        DateTimeStyles.AssumeUniversal);
+            }
+
+            private static void CopyHeadersToRequest(HttpClientRequest request, HttpWebRequest webRequest)
+            {
+                foreach (var header in request.Headers)
+                {
+                    switch (header.Name)
+                    {
+                        case "Accept":
+                            webRequest.Accept = header.Value;
+                            break;
+                        case "Connection":
+                            webRequest.Connection = header.Value;
+                            break;
+                        case "Content-Length":
+                            webRequest.ContentLength = int.Parse(header.Value);
+                            break;
+                        case "Content-Type":
+                            webRequest.ContentType = header.Value;
+                            break;
+                        case "Date":
+                            webRequest.Date = ParseDateHeader(header.Value);
+                            break;
+                        case "Expect":
+                            webRequest.Expect = header.Value;
+                            break;
+                        case "Host":
+                            webRequest.Host = header.Value;
+                            break;
+                        case "If-Modified-Since":
+                            webRequest.IfModifiedSince = ParseDateHeader(header.Value);
+                            break;
+                        case "Referer":
+                            webRequest.Referer = header.Value;
+                            break;
+                        case "Transfer-Encoding":
+                            webRequest.TransferEncoding = header.Value;
+                            break;
+                        case "User-Agent":
+                            webRequest.UserAgent = header.Value;
+                            break;
+                        default:
+                            webRequest.Headers.Add(header.Name, header.Value);
+                            break;
+                    }
+                }
+            }
+
+            private static void CopyHeadersToResponse(HttpClientResponse response, HttpWebResponse webResponse)
+            {
+                for (int i = 0; i < webResponse.Headers.Count; i++)
+                {
+                    var name = webResponse.Headers.GetKey(i);
+                    foreach (var value in webResponse.Headers.GetValues(i))
+                        response.Headers.Add(new HttpClientHeader(name, value));
+                }
             }
         }
     }

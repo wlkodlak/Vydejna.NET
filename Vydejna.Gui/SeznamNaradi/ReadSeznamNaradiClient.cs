@@ -18,15 +18,6 @@ namespace Vydejna.Gui.SeznamNaradi
             this._client = client;
         }
 
-        public async Task<ZiskatSeznamNaradiResponse> Handle(ZiskatSeznamNaradiRequest request)
-        {
-            var json = new RestClientJson(_url + "SeznamNaradi", _client)
-                .AddParameter("offset", request.Offset.ToString())
-                .AddParameter("pocet", request.MaxPocet.ToString());
-            var result = await json.Execute().ConfigureAwait(false);
-            return result.GetPayload<ZiskatSeznamNaradiResponse>();
-        }
-
         public async Task<OvereniUnikatnostiResponse> Handle(OvereniUnikatnostiRequest request)
         {
             var json = new RestClientJson(_url + "OveritUnikatnost", _client)
@@ -34,6 +25,38 @@ namespace Vydejna.Gui.SeznamNaradi
                 .AddParameter("rozmer", request.Rozmer);
             var result = await json.Execute().ConfigureAwait(false);
             return result.GetPayload<OvereniUnikatnostiResponse>();
+        }
+
+        public void Handle(QueryExecution<ZiskatSeznamNaradiRequest, ZiskatSeznamNaradiResponse> message)
+        {
+            new ZiskatSeznamNaradiWorker(this, message).Execute();
+        }
+
+        public void Handle(QueryExecution<OvereniUnikatnostiRequest, OvereniUnikatnostiResponse> message)
+        {
+            throw new NotImplementedException();
+        }
+
+        private class ZiskatSeznamNaradiWorker
+        {
+            private ReadSeznamNaradiClient _parent;
+            private QueryExecution<ZiskatSeznamNaradiRequest, ZiskatSeznamNaradiResponse> _message;
+
+            public ZiskatSeznamNaradiWorker(ReadSeznamNaradiClient parent, QueryExecution<ZiskatSeznamNaradiRequest, ZiskatSeznamNaradiResponse> message)
+            {
+                this._parent = parent;
+                this._message = message;
+            }
+
+
+            public void Execute()
+            {
+                var json = new RestClientJson(_parent._url + "SeznamNaradi", _parent._client)
+                    .AddParameter("offset", _message.Request.Offset.ToString())
+                    .AddParameter("pocet", _message.Request.MaxPocet.ToString());
+                var result = json.Execute(OnExecuted, OnError);
+                return result.GetPayload<ZiskatSeznamNaradiResponse>();
+            }
         }
     }
 }

@@ -17,6 +17,8 @@ namespace Vydejna.Contracts
         private List<RequestParameter> _parameters;
         private byte[] _payload;
         private string _method;
+        private Action<RestClientResult> _onComplete;
+        private Action<Exception> _onError;
 
         protected RestClient(string url, IHttpClient client)
         {
@@ -52,7 +54,7 @@ namespace Vydejna.Contracts
             _payload = data;
         }
 
-        public async Task<RestClientResult> Execute()
+        public void Execute(Action<RestClientResult> onComplete, Action<Exception> onError)
         {
             var request = new HttpClientRequest();
             request.Url = _url.CompleteUrl(_parameters);
@@ -64,8 +66,22 @@ namespace Vydejna.Contracts
                     request.Headers.Add(new HttpClientHeader(header.Name, header.Value));
             }
             PreExecute(request);
-            var response = await _client.Execute(request).ConfigureAwait(false);
-            return CreateResult(response);
+            _onComplete = onComplete;
+            _onError = onError;
+            _client.Execute(request, OnComplete, onError);
+        }
+
+        private void OnComplete(HttpClientResponse response)
+        {
+            try
+            {
+                var jsonResult = CreateResult(response);
+                _onComplete(jsonResult);
+            }
+            catch (Exception ex)
+            {
+                _onError(ex);
+            }
         }
 
         public abstract RestClient SetPayload<T>(T data);

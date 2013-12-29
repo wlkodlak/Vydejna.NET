@@ -47,9 +47,8 @@ namespace Vydejna.Contracts
         }
     }
 
-    public interface IAnswer<TQuestion, TAnswer>
+    public interface IAnswer<TQuestion, TAnswer> : IHandle<QueryExecution<TQuestion, TAnswer>>
     {
-        void Handle(QueryExecution<TQuestion, TAnswer> request);
     }
 
     public interface IHandleRegistration<T> : IDisposable
