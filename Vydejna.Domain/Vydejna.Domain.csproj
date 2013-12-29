@@ -77,6 +77,7 @@
     <Compile Include="PureProjectionDispatcher.cs" />
     <Compile Include="PureProjectionStateCache.cs" />
     <Compile Include="QueuedExecution.cs" />
+    <Compile Include="SeznamNaradiProjection.cs" />
     <Compile Include="SeznamNaradiRest.cs" />
     <Compile Include="SeznamNaradiService.cs" />
     <Compile Include="SubscriptionManager.cs" />

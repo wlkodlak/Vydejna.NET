@@ -502,7 +502,7 @@ namespace Vydejna.Domain
             private object _lock;
             private List<EventStoreEvent> _events;
             private int _minAllowed, _minLoaded, _maxLoaded, _currentId, _toLoad;
-            private bool _initialized, _anythingLoaded, _isWorking;
+            private bool _initialized, _isWorking;
 
             public EventsCache(EventStorePostgres parent)
             {
