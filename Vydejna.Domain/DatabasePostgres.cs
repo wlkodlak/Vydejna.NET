@@ -95,5 +95,15 @@ namespace Vydejna.Domain
                 }
             }
         }
+
+        public void ExecuteSync(Action<NpgsqlConnection> handler)
+        {
+            using (var conn = new NpgsqlConnection())
+            {
+                conn.ConnectionString = _connectionString;
+                conn.Open();
+                handler(conn);
+            }
+        }
     }
 }

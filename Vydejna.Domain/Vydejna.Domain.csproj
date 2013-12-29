@@ -63,6 +63,7 @@
     <Compile Include="EventHandlerMetadata.cs" />
     <Compile Include="EventProcessSimple.cs" />
     <Compile Include="EventStoreInMemory.cs" />
+    <Compile Include="EventStorePostgres.cs" />
     <Compile Include="PureProjectionProcess.cs" />
     <Compile Include="EventProjectorSimple.cs" />
     <Compile Include="EventSourced.cs" />

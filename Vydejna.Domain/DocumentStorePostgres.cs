@@ -89,6 +89,19 @@ namespace Vydejna.Domain
             _timer.Dispose();
         }
 
+        public void Initialize()
+        {
+            _db.ExecuteSync(InitializeDatabase);
+        }
+        private void InitializeDatabase(NpgsqlConnection conn)
+        {
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "CREATE TABLE IF NOT EXISTS documents (key varchar PRIMARY KEY, version integer NOT NULL, contents text NOT NULL)";
+                cmd.ExecuteNonQuery();
+            }
+        }
+
         private int GetWatcherKey()
         {
             return System.Threading.Interlocked.Increment(ref _watcherKey);
