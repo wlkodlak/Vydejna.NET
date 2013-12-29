@@ -1,10 +1,7 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using Vydejna.Contracts;
+﻿using ServiceLib;
+using System;
 using System.Net;
+using Vydejna.Contracts;
 
 namespace Vydejna.Domain
 {
