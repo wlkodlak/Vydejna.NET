@@ -37,7 +37,7 @@ namespace Vydejna.Gui.SeznamNaradi
             this._povolenyUpravy = true;
         }
 
-        private async void DefinovatNaradi()
+        private void DefinovatNaradi()
         {
             PovolenyUpravy = false;
             _definovatNaradiCommand.Enabled = false;
@@ -47,8 +47,7 @@ namespace Vydejna.Gui.SeznamNaradi
                 Rozmer = _rozmer,
                 Druh = _druh
             };
-            await _writeSeznamNaradi.Handle(cmd).ConfigureAwait(false);
-            _bus.Publish(new UiMessages.DokoncenaDefiniceNaradi());
+            _writeSeznamNaradi.Handle(new CommandExecution<DefinovatNaradiCommand>(cmd, () => _bus.Publish(new UiMessages.DokoncenaDefiniceNaradi()), ex => { }));
         }
 
         private void VyvolatValidaci()

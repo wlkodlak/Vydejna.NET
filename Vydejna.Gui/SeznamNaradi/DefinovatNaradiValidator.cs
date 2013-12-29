@@ -59,13 +59,44 @@ namespace Vydejna.Gui.SeznamNaradi
             return validace.Vysledek.Chyby.Count != 0;
         }
 
-        private async Task ZkontrolovatUnikatnost(Validace validace)
+        private void ZkontrolovatUnikatnost(Validace validace, Action onCompleted)
         {
-            var overeni = await _readSvc.Handle(new OvereniUnikatnostiRequest(validace.Vstup.Vykres, validace.Vstup.Rozmer)).ConfigureAwait(false);
-            if (overeni.Existuje)
+            new ZkontrolovatUnikatnostWorker(_readSvc, validace, onCompleted).Execute();
+        }
+
+        private class ZkontrolovatUnikatnostWorker
+        {
+            private IReadSeznamNaradi _readSvc;
+            private Validace _validace;
+            private Action _onCompleted;
+
+            public ZkontrolovatUnikatnostWorker(IReadSeznamNaradi readSvc, Validace validace, Action onCompleted)
             {
-                validace.Vysledek.Chyba("Vykres", "Kombinace výkresu a rozměru musí být unikátní");
-                validace.Vysledek.Chyba("Rozmer", "Kombinace výkresu a rozměru musí být unikátní");
+                this._readSvc = readSvc;
+                this._validace = validace;
+                this._onCompleted = onCompleted;
+            }
+
+            public void Execute()
+            {
+                _readSvc.Handle(new QueryExecution<OvereniUnikatnostiRequest, OvereniUnikatnostiResponse>(
+                    new OvereniUnikatnostiRequest(_validace.Vstup.Vykres, _validace.Vstup.Rozmer),
+                    ValidaceDokoncena, ChybaValidace));
+            }
+
+            private void ValidaceDokoncena(OvereniUnikatnostiResponse overeni)
+            {
+                if (overeni.Existuje)
+                {
+                    _validace.Vysledek.Chyba("Vykres", "Kombinace výkresu a rozměru musí být unikátní");
+                    _validace.Vysledek.Chyba("Rozmer", "Kombinace výkresu a rozměru musí být unikátní");
+                }
+                _onCompleted();
+            }
+
+            private void ChybaValidace(Exception obj)
+            {
+                _onCompleted();
             }
         }
 

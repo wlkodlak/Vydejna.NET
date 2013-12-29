@@ -18,15 +18,6 @@ namespace Vydejna.Gui.SeznamNaradi
             this._client = client;
         }
 
-        public async Task<OvereniUnikatnostiResponse> Handle(OvereniUnikatnostiRequest request)
-        {
-            var json = new RestClientJson(_url + "OveritUnikatnost", _client)
-                .AddParameter("vykres", request.Vykres)
-                .AddParameter("rozmer", request.Rozmer);
-            var result = await json.Execute().ConfigureAwait(false);
-            return result.GetPayload<OvereniUnikatnostiResponse>();
-        }
-
         public void Handle(QueryExecution<ZiskatSeznamNaradiRequest, ZiskatSeznamNaradiResponse> message)
         {
             new ZiskatSeznamNaradiWorker(this, message).Execute();
@@ -34,13 +25,14 @@ namespace Vydejna.Gui.SeznamNaradi
 
         public void Handle(QueryExecution<OvereniUnikatnostiRequest, OvereniUnikatnostiResponse> message)
         {
-            throw new NotImplementedException();
+            new OvereniUnikatnostiWorker(this, message).Execute();
         }
 
         private class ZiskatSeznamNaradiWorker
         {
             private ReadSeznamNaradiClient _parent;
             private QueryExecution<ZiskatSeznamNaradiRequest, ZiskatSeznamNaradiResponse> _message;
+            private RestClient _restCall;
 
             public ZiskatSeznamNaradiWorker(ReadSeznamNaradiClient parent, QueryExecution<ZiskatSeznamNaradiRequest, ZiskatSeznamNaradiResponse> message)
             {
@@ -48,14 +40,83 @@ namespace Vydejna.Gui.SeznamNaradi
                 this._message = message;
             }
 
+            public void Execute()
+            {
+                try
+                {
+                    _restCall = new RestClientJson(_parent._url + "SeznamNaradi", _parent._client)
+                        .AddParameter("offset", _message.Request.Offset.ToString())
+                        .AddParameter("pocet", _message.Request.MaxPocet.ToString());
+                    _restCall.Execute(OnExecuted, OnError);
+                }
+                catch (Exception ex)
+                {
+                    _message.OnError(ex);
+                }
+            }
+
+            private void OnError(Exception ex)
+            {
+                _message.OnError(ex);
+            }
+
+            private void OnExecuted(RestClientResult result)
+            {
+                try
+                {
+                    var payload = result.GetPayload<ZiskatSeznamNaradiResponse>();
+                    _message.OnCompleted(payload);
+                }
+                catch (Exception ex)
+                {
+                    _message.OnError(ex);
+                }
+            }
+        }
+
+        private class OvereniUnikatnostiWorker
+        {
+            private ReadSeznamNaradiClient _parent;
+            private QueryExecution<OvereniUnikatnostiRequest, OvereniUnikatnostiResponse> _message;
+            private RestClient _restCall;
+
+            public OvereniUnikatnostiWorker(ReadSeznamNaradiClient parent, QueryExecution<OvereniUnikatnostiRequest, OvereniUnikatnostiResponse> message)
+            {
+                this._parent = parent;
+                this._message = message;
+            }
 
             public void Execute()
             {
-                var json = new RestClientJson(_parent._url + "SeznamNaradi", _parent._client)
-                    .AddParameter("offset", _message.Request.Offset.ToString())
-                    .AddParameter("pocet", _message.Request.MaxPocet.ToString());
-                var result = json.Execute(OnExecuted, OnError);
-                return result.GetPayload<ZiskatSeznamNaradiResponse>();
+                try
+                {
+                    _restCall = new RestClientJson(_parent._url + "OveritUnikatnost", _parent._client)
+                        .AddParameter("vykres", _message.Request.Vykres)
+                        .AddParameter("rozmer", _message.Request.Rozmer);
+                    _restCall.Execute(OnExecuted, OnError);
+                }
+                catch (Exception ex)
+                {
+                    _message.OnError(ex);
+                }
+            }
+
+            private void OnError(Exception ex)
+            {
+                _message.OnError(ex);
+            }
+
+            private void OnExecuted(RestClientResult result)
+            {
+                try
+                {
+                    var payload = result.GetPayload<OvereniUnikatnostiResponse>();
+                    _message.OnCompleted(payload);
+                }
+                catch (Exception ex)
+                {
+                    _message.OnError(ex);
+                }
             }
         }
     }

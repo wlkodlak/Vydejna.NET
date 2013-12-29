@@ -265,22 +265,6 @@ namespace Vydejna.Domain
                 _parent._executor.Enqueue(new ReadStreamComplete(_onComplete, new EventStoreStream(events, streamVersion, 0)));
             }
         }
-        private class ReadStreamComplete : IQueuedExecutionDispatcher
-        {
-            private Action<IEventStoreStream> _onComplete;
-            private EventStoreStream _stream;
-
-            public ReadStreamComplete(Action<IEventStoreStream> onComplete, EventStoreStream stream)
-            {
-                _onComplete = onComplete;
-                _stream = stream;
-            }
-
-            public void Execute()
-            {
-                _onComplete(_stream);
-            }
-        }
         private class LoadBodiesWorker
         {
             private EventStorePostgres _parent;
@@ -471,24 +455,6 @@ namespace Vydejna.Domain
             {
                 this.Nowait = true;
                 this._parent._cache.RemoveRequest(this);
-            }
-        }
-        private class GetAllEventsComplete : IQueuedExecutionDispatcher
-        {
-            private Action<IEventStoreCollection> _onComplete;
-            private IList<EventStoreEvent> _events;
-            private EventStoreToken _nextToken;
-
-            public GetAllEventsComplete(Action<IEventStoreCollection> onComplete, IList<EventStoreEvent> events, EventStoreToken nextToken)
-            {
-                _onComplete = onComplete;
-                _events = events;
-                _nextToken = nextToken;
-            }
-
-            public void Execute()
-            {
-                _onComplete(new EventStoreCollection(_events, _nextToken));
             }
         }
         private class EventsCache

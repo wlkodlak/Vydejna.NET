@@ -13,13 +13,15 @@ namespace Vydejna.Domain
         private List<EventStoreEvent> _events;
         private Dictionary<string, int> _versions;
         private List<Waiter> _waiters;
+        private IQueueExecution _executor;
 
-        public EventStoreInMemory()
+        public EventStoreInMemory(IQueueExecution executor)
         {
             _lock = new UpdateLock();
             _events = new List<EventStoreEvent>();
             _versions = new Dictionary<string, int>();
             _waiters = new List<Waiter>();
+            _executor = executor;
         }
 
         private EventStoreToken CreateToken(int eventIndex)
@@ -57,14 +59,14 @@ namespace Vydejna.Domain
                 if (wasCompleted)
                 {
                     NotifyWaiters();
-                    onComplete();
+                    _executor.Enqueue(onComplete);
                 }
                 else
-                    onConcurrency();
+                    _executor.Enqueue(onConcurrency);
             }
             catch (Exception ex)
             {
-                onError(ex);
+                _executor.Enqueue(onError, ex);
             }
         }
 
@@ -80,11 +82,11 @@ namespace Vydejna.Domain
                     var list = _events.Where(e => e.StreamName == stream && e.StreamVersion >= minVersion).Take(maxCount).ToList();
                     result = new EventStoreStream(list, streamVersion, 0);
                 }
-                onComplete(result);
+                _executor.Enqueue(new ReadStreamComplete(onComplete, result));
             }
             catch (Exception ex)
             {
-                onError(ex);
+                _executor.Enqueue(onError, ex);
             }
         }
 
@@ -102,7 +104,7 @@ namespace Vydejna.Domain
             }
             catch (Exception exception)
             {
-                onError(exception);
+                _executor.Enqueue(onError, exception);
                 return;
             }
             waiter.Complete();
@@ -110,7 +112,7 @@ namespace Vydejna.Domain
 
         public void LoadBodies(IList<EventStoreEvent> events, Action onComplete, Action<Exception> onError)
         {
-            onComplete();
+            _executor.Enqueue(onComplete);
         }
 
         public IDisposable WaitForEvents(EventStoreToken token, string streamPrefix, string eventType, int maxCount, bool loadBody, Action<IEventStoreCollection> onComplete, Action<Exception> onError)
@@ -128,12 +130,11 @@ namespace Vydejna.Domain
                         _lock.Write();
                         _waiters.Add(waiter);
                     }
-
                 }
             }
             catch (Exception exception)
             {
-                onError(exception);
+                _executor.Enqueue(onError, exception);
                 return null;
             }
             if (wasPrepared)
@@ -235,7 +236,7 @@ namespace Vydejna.Domain
 
             public void Complete()
             {
-                _onComplete(new EventStoreCollection(_readyEvents, _nextToken));
+                _parent._executor.Enqueue(new GetAllEventsComplete(_onComplete, _readyEvents, _nextToken));
             }
         }
     }

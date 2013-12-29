@@ -221,4 +221,38 @@ namespace Vydejna.Domain
             get { return _events; }
         }
     }
+    public class ReadStreamComplete : IQueuedExecutionDispatcher
+    {
+        private Action<IEventStoreStream> _onComplete;
+        private EventStoreStream _stream;
+
+        public ReadStreamComplete(Action<IEventStoreStream> onComplete, EventStoreStream stream)
+        {
+            _onComplete = onComplete;
+            _stream = stream;
+        }
+
+        public void Execute()
+        {
+            _onComplete(_stream);
+        }
+    }
+    public class GetAllEventsComplete : IQueuedExecutionDispatcher
+    {
+        private Action<IEventStoreCollection> _onComplete;
+        private IList<EventStoreEvent> _events;
+        private EventStoreToken _nextToken;
+
+        public GetAllEventsComplete(Action<IEventStoreCollection> onComplete, IList<EventStoreEvent> events, EventStoreToken nextToken)
+        {
+            _onComplete = onComplete;
+            _events = events;
+            _nextToken = nextToken;
+        }
+
+        public void Execute()
+        {
+            _onComplete(new EventStoreCollection(_events, _nextToken));
+        }
+    }
 }

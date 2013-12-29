@@ -10,7 +10,7 @@ namespace Vydejna.Gui.Common
     public class SerializingOnlineQuery<T> where T : class
     {
         private Func<T, bool> _immediateFunc;
-        private Func<T, Task> _onlineFunc;
+        private Action<T, Action> _onlineFunc;
         private Action<T> _reportFunc;
         private bool _cancelMode;
         private QueryInfo _current, _waiting;
@@ -25,7 +25,7 @@ namespace Vydejna.Gui.Common
 
         public SerializingOnlineQuery(
             Func<T, bool> immediateFunc,
-            Func<T, Task> onlineFunc,
+            Action<T, Action> onlineFunc,
             Action<T> reportFunc,
             bool cancelMode)
         {
@@ -80,14 +80,13 @@ namespace Vydejna.Gui.Common
                     finishTask.Task.SetResult(null);
                 if (runOnline)
                 {
-                    var task = _onlineFunc(state);
-                    task.ContinueWith(FinishOnlineRun);
+                    _onlineFunc(state, FinishOnlineRun);
                 }
                 return info.Task.Task;
             }
         }
 
-        private void FinishOnlineRun(Task x)
+        private void FinishOnlineRun()
         {
             bool reportCurrent;
             T stateForOnline;
@@ -111,8 +110,7 @@ namespace Vydejna.Gui.Common
             originalCurrent.Task.SetResult(null);
             if (stateForOnline != null)
             {
-                var task = _onlineFunc(_current.State);
-                task.ContinueWith(FinishOnlineRun);
+                _onlineFunc(_current.State, FinishOnlineRun);
             }
         }
     }

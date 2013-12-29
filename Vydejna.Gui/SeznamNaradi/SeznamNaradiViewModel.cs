@@ -28,9 +28,9 @@ namespace Vydejna.Gui.SeznamNaradi
         private Func<DefinovatNaradiViewModel> _createDefinovatNaradi;
 
         public SeznamNaradiViewModel(
-            IShell shell, 
-            IReadSeznamNaradi readSeznamNaradi, 
-            IWriteSeznamNaradi writeSeznamNaradi, 
+            IShell shell,
+            IReadSeznamNaradi readSeznamNaradi,
+            IWriteSeznamNaradi writeSeznamNaradi,
             Func<DefinovatNaradiViewModel> createDefinovatNaradi)
         {
             this._shell = shell;
@@ -59,7 +59,7 @@ namespace Vydejna.Gui.SeznamNaradi
             this._nactenaNaradi.Add(new TypNaradiViewModel { Vykres = "5-5574-2240", Rozmer = "", Druh = "Kleština", Aktivni = false });
             this._nactenaNaradi.Add(new TypNaradiViewModel { Vykres = "5-4472-247b", Rozmer = "", Druh = "Brusný kotouč", Aktivni = true });
             this._nactenaNaradi.Add(new TypNaradiViewModel { Vykres = "547-5574-2b", Rozmer = "50x20x5mm", Druh = "Brusný kotouč", Aktivni = true });
-            this._nactenaNaradi.Add(new TypNaradiViewModel { Vykres = "8724-5521",   Rozmer = "800x50mm", Druh = "Brusný kotouč", Aktivni = true });
+            this._nactenaNaradi.Add(new TypNaradiViewModel { Vykres = "8724-5521", Rozmer = "800x50mm", Druh = "Brusný kotouč", Aktivni = true });
         }
 
         public static SeznamNaradiViewModel DesignerVM { get { return new SeznamNaradiViewModel(); } }
@@ -75,7 +75,7 @@ namespace Vydejna.Gui.SeznamNaradi
             if (naradi.Aktivni)
                 return;
             var cmd = new AktivovatNaradiCommand { NaradiId = naradi.Id };
-            _writeSvc.Handle(cmd);
+            _writeSvc.Handle(new CommandExecution<AktivovatNaradiCommand>(cmd, () => { }, ex => { }));
             naradi.Aktivni = true;
         }
 
@@ -85,7 +85,7 @@ namespace Vydejna.Gui.SeznamNaradi
             if (!naradi.Aktivni)
                 return;
             var cmd = new DeaktivovatNaradiCommand { NaradiId = naradi.Id };
-            _writeSvc.Handle(cmd);
+            _writeSvc.Handle(new CommandExecution<DeaktivovatNaradiCommand>(cmd, () => { }, ex => { }));
             naradi.Aktivni = false;
         }
 
@@ -95,12 +95,12 @@ namespace Vydejna.Gui.SeznamNaradi
 
         public void Handle(UiMessages.SeznamNaradiOtevren evt)
         {
-            var task = NacistSeznamNaradi();
+            NacistSeznamNaradi();
         }
 
         public void Handle(UiMessages.DokoncenaDefiniceNaradi evt)
         {
-            var task = NacistSeznamNaradi();
+            NacistSeznamNaradi();
         }
 
         public void Handle(UiMessages.NactenSeznamNaradi evt)
@@ -121,10 +121,12 @@ namespace Vydejna.Gui.SeznamNaradi
             }
         }
 
-        private async Task NacistSeznamNaradi()
+        private void NacistSeznamNaradi()
         {
-            var seznam = await _readSvc.Handle(new ZiskatSeznamNaradiRequest(0, int.MaxValue)).ConfigureAwait(false);
-            Handle(new UiMessages.NactenSeznamNaradi(seznam));
+            _readSvc.Handle(new QueryExecution<ZiskatSeznamNaradiRequest, ZiskatSeznamNaradiResponse>(
+                new ZiskatSeznamNaradiRequest(0, int.MaxValue),
+                seznam => Handle(new UiMessages.NactenSeznamNaradi(seznam)),
+                ex => { }));
         }
 
         public ListCollectionView SeznamNaradi

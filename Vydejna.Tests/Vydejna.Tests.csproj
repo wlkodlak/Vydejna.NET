@@ -62,7 +62,6 @@
     </Otherwise>
   </Choose>
   <ItemGroup>
-    <Compile Include="EventSourcedTests\EventProcessTests.cs" />
     <Compile Include="EventSourcedTests\EventStoreInMemoryTests.cs" />
     <Compile Include="EventSourcedTests\EventStreamingTestBase.cs" />
     <Compile Include="EventSourcedTests\EventStreamingTests.cs" />
