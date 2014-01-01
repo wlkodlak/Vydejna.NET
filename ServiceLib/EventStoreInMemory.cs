@@ -37,7 +37,7 @@ namespace ServiceLib
                 {
                     int streamVersion;
                     _versions.TryGetValue(stream, out streamVersion);
-                    wasCompleted = expectedVersion.Verify(streamVersion, stream);
+                    wasCompleted = expectedVersion.VerifyVersion(streamVersion);
                     if (wasCompleted)
                     {
                         var newEvents = events.ToList();

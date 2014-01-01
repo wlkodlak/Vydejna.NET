@@ -27,25 +27,20 @@ namespace ServiceLib
         {
             _version = version;
         }
-        private static EventStoreVersion _any = new EventStoreVersion(-2);
-        private static EventStoreVersion _empty = new EventStoreVersion(-1);
+        private static EventStoreVersion _any = new EventStoreVersion(-1);
+        private static EventStoreVersion _new = new EventStoreVersion(0);
 
         public static EventStoreVersion Any { get { return _any; } }
-        public static EventStoreVersion EmptyStream { get { return _empty; } }
-        public static EventStoreVersion Number(int version)
+        public static EventStoreVersion New { get { return _new; } }
+        public static EventStoreVersion At(int version)
         {
             return new EventStoreVersion(version);
         }
 
-        public int Version { get { return _version; } }
-        public bool IsNumbered { get { return _version >= 0; } }
-        public bool IsNonexistent { get { return _version == -1; } }
-        public bool IsAny { get { return _version == -2; } }
-
         public override bool Equals(object obj)
         {
             var oth = obj as EventStoreVersion;
-            if (ReferenceEquals(obj, oth))
+            if (ReferenceEquals(this, oth))
                 return true;
             else if (ReferenceEquals(oth, null))
                 return false;
@@ -58,14 +53,12 @@ namespace ServiceLib
         }
         public override string ToString()
         {
-            if (IsNumbered)
-                return string.Format("Version {0}", _version);
-            else if (IsAny)
-                return "Any version";
-            else if (IsNonexistent)
-                return "Nonexistent";
+            if (_version < 0)
+                return "Any";
+            else if (_version == 0)
+                return "New";
             else
-                return "Invalid version";
+                return string.Format("Version {0}", _version);
         }
         public static bool operator ==(EventStoreVersion a, EventStoreVersion b)
         {
@@ -78,14 +71,12 @@ namespace ServiceLib
         {
             return !(a == b);
         }
-        public bool Verify(int streamVersion, string stream = null)
+        public bool VerifyVersion(int streamVersion)
         {
-            if (IsNonexistent && streamVersion != 0)
-                return false;
-            else if (IsNumbered && Version != streamVersion)
-                return false;
-            else
+            if (_version < 0)
                 return true;
+            else
+                return _version == streamVersion;
         }
     }
     public class EventStoreEvent

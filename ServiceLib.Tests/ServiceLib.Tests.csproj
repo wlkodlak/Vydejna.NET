@@ -37,6 +37,7 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="Microsoft.CSharp" />
     <Reference Include="Moq">
       <HintPath>..\packages\Moq.4.2.1312.1622\lib\net40\Moq.dll</HintPath>
     </Reference>
@@ -59,7 +60,11 @@
     <Compile Include="Documents\DocumentStoreVersionTests.cs" />
     <Compile Include="Documents\EventHandlerMetadataTests.cs" />
     <Compile Include="Documents\NodeLockManagerTests.cs" />
+    <Compile Include="EventSourced\AggregateTests.cs" />
+    <Compile Include="EventSourced\EventStoreTokenTests.cs" />
+    <Compile Include="EventSourced\EventStoreVersionTests.cs" />
     <Compile Include="EventSourced\GenericRepositoryTests.cs" />
+    <Compile Include="EventSourced\SerializerTests.cs" />
     <Compile Include="Messaging\BusTests.cs" />
     <Compile Include="Messaging\CommandSubscriptionManagerTests.cs" />
     <Compile Include="Messaging\QueuedExecutionTests.cs" />

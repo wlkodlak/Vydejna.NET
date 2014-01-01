@@ -222,8 +222,8 @@ namespace ServiceLib
                         }
                         var expectedVersion =
                             _aggregate.OriginalVersion == 0
-                            ? EventStoreVersion.EmptyStream
-                            : EventStoreVersion.Number(_aggregate.OriginalVersion);
+                            ? EventStoreVersion.New
+                            : EventStoreVersion.At(_aggregate.OriginalVersion);
                         var streamName = _parent.StreamNameForId(_aggregate.Id);
                         _parent._store.AddToStream(streamName, serialized, expectedVersion, AggregateSaved, _onConcurrency, _onError);
                     }

@@ -26,7 +26,7 @@ namespace ServiceLib.Tests.TestUtils
             lock (_lock)
             {
                 var version = _allEvents.Where(e => e.StreamName == stream).Count();
-                if (!expectedVersion.Verify(version))
+                if (!expectedVersion.VerifyVersion(version))
                     _executor.Enqueue(onConcurrency);
                 else
                 {

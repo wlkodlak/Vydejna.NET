@@ -142,7 +142,7 @@ namespace ServiceLib
                         cmd.Parameters.AddWithValue("streamname", _stream);
                         version = (int)cmd.ExecuteScalar();
                     }
-                    bool versionVerified = _expectedVersion.Verify(version, _stream);
+                    bool versionVerified = _expectedVersion.VerifyVersion(version);
                     var finalVersion = version + _events.Count;
                     if (versionVerified)
                     {
