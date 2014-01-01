@@ -55,6 +55,8 @@
     </Otherwise>
   </Choose>
   <ItemGroup>
+    <Compile Include="Documents\DocumentStoreInMemoryTests.cs" />
+    <Compile Include="Documents\DocumentStoreVersionTests.cs" />
     <Compile Include="Messaging\BusTests.cs" />
     <Compile Include="Messaging\CommandSubscriptionManagerTests.cs" />
     <Compile Include="Messaging\QueuedExecutionTests.cs" />
@@ -63,7 +65,6 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
-    <Folder Include="Documents\" />
     <Folder Include="EventHandlers\" />
     <Folder Include="EventSourced\" />
     <Folder Include="Http\" />

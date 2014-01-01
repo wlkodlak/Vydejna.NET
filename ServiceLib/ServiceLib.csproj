@@ -58,6 +58,7 @@
     <Compile Include="ContractTypes.cs" />
     <Compile Include="DatabasePostgres.cs" />
     <Compile Include="DocumentStore.cs" />
+    <Compile Include="DocumentStoreInMemory.cs" />
     <Compile Include="DocumentStorePostgres.cs" />
     <Compile Include="EventHandlerMetadata.cs" />
     <Compile Include="EventProcessSimple.cs" />
