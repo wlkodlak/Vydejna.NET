@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading.Tasks;
 
 namespace ServiceLib
 {
@@ -134,6 +133,7 @@ namespace ServiceLib
 
             public void Dispose()
             {
+                _enabled = false;
                 _parent.ChangeRegistration(Type, this, false);
             }
 
@@ -161,7 +161,11 @@ namespace ServiceLib
             using (_lock.Lock())
             {
                 if (add)
-                    _handlers[type] = subscription;
+                {
+                    if (_handlers.ContainsKey(type))
+                        throw new InvalidOperationException(string.Format("Type {0} is already registered", type.Name));
+                    _handlers.Add(type, subscription);
+                }
                 else
                 {
                     ICommandSubscription found;

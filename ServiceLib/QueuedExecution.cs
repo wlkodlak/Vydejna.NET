@@ -18,11 +18,11 @@ namespace ServiceLib
     {
         void Execute();
     }
-    public class QueuedExecutionDispatcher<T> : IQueuedExecutionDispatcher
+    public class QueuedExecutionDispatchGeneric<T> : IQueuedExecutionDispatcher
     {
         private IHandle<T> _handler;
         private T _message;
-        public QueuedExecutionDispatcher(IHandle<T> handler, T message)
+        public QueuedExecutionDispatchGeneric(IHandle<T> handler, T message)
         {
             _handler = handler;
             _message = message;
@@ -53,27 +53,25 @@ namespace ServiceLib
     public interface IQueueExecution
     {
         void Enqueue(IQueuedExecutionDispatcher handler);
-        void Enqueue<T>(IHandle<T> handler, T message);
     }
 
     public class QueuedExecutionWorker : IHandle<QueuedExecution>, IQueueExecution
     {
         private IBus _bus;
 
-        public void Subscribe(IBus bus)
+        public QueuedExecutionWorker(IBus bus)
         {
             _bus = bus;
+        }
+
+        public void Subscribe(IBus bus)
+        {
             bus.Subscribe<QueuedExecution>(this);
         }
 
         public void Handle(QueuedExecution message)
         {
             message.Dispatcher.Execute();
-        }
-
-        public void Enqueue<T>(IHandle<T> handler, T message)
-        {
-            Enqueue(new QueuedExecutionDispatcher<T>(handler, message));
         }
 
         public void Enqueue(IQueuedExecutionDispatcher handler)
@@ -84,6 +82,10 @@ namespace ServiceLib
 
     public static class QueueExecutionExtensions
     {
+        public static void Enqueue<T>(this IQueueExecution self, IHandle<T> handler, T message)
+        {
+            self.Enqueue(new QueuedExecutionDispatchGeneric<T>(handler, message));
+        }
         public static void Enqueue(this IQueueExecution self, Action action)
         {
             self.Enqueue(new QueueExecutionDispatchAction(action));

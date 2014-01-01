@@ -44,7 +44,6 @@ namespace ServiceLib
                 _handler(message);
             }
         }
-
     }
 
     public static class SystemEvents

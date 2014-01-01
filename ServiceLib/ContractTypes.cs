@@ -35,7 +35,7 @@ namespace ServiceLib
 
         private static string CreateTypeName(Type type)
         {
-            return type.FullName;
+            return type.FullName.Replace('+', '.');
         }
 
         public string GetName(Type type)
