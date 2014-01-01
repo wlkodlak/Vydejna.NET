@@ -59,6 +59,7 @@
     <Compile Include="Documents\DocumentStoreVersionTests.cs" />
     <Compile Include="Documents\EventHandlerMetadataTests.cs" />
     <Compile Include="Documents\NodeLockManagerTests.cs" />
+    <Compile Include="EventSourced\GenericRepositoryTests.cs" />
     <Compile Include="Messaging\BusTests.cs" />
     <Compile Include="Messaging\CommandSubscriptionManagerTests.cs" />
     <Compile Include="Messaging\QueuedExecutionTests.cs" />
@@ -66,11 +67,11 @@
     <Compile Include="Messaging\TypeMapperTests.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="TestUtils\TestDocumentFolder.cs" />
+    <Compile Include="TestUtils\TestEventStore.cs" />
     <Compile Include="TestUtils\TestExecutor.cs" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="EventHandlers\" />
-    <Folder Include="EventSourced\" />
     <Folder Include="Http\" />
   </ItemGroup>
   <ItemGroup>

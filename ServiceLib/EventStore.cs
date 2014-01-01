@@ -11,13 +11,13 @@ namespace ServiceLib
     {
         void AddToStream(string stream, IEnumerable<EventStoreEvent> events, EventStoreVersion expectedVersion, Action onComplete, Action onConcurrency, Action<Exception> onError);
         void ReadStream(string stream, int minVersion, int maxCount, bool loadBody, Action<IEventStoreStream> onComplete, Action<Exception> onError);
-        void GetAllEvents(EventStoreToken token, string streamPrefix, string eventType, int maxCount, bool loadBody, Action<IEventStoreCollection> onComplete, Action<Exception> onError);
+        void GetAllEvents(EventStoreToken token, int maxCount, bool loadBody, Action<IEventStoreCollection> onComplete, Action<Exception> onError);
         void LoadBodies(IList<EventStoreEvent> events, Action onComplete, Action<Exception> onError);
     }
 
     public interface IEventStoreWaitable : IEventStore
     {
-        IDisposable WaitForEvents(EventStoreToken token, string streamPrefix, string eventType, int maxCount, bool loadBody, Action<IEventStoreCollection> onComplete, Action<Exception> onError);
+        IDisposable WaitForEvents(EventStoreToken token, int maxCount, bool loadBody, Action<IEventStoreCollection> onComplete, Action<Exception> onError);
     }
 
     public class EventStoreVersion
@@ -220,12 +220,12 @@ namespace ServiceLib
             get { return _events; }
         }
     }
-    public class ReadStreamComplete : IQueuedExecutionDispatcher
+    public class EventStoreReadStreamComplete : IQueuedExecutionDispatcher
     {
         private Action<IEventStoreStream> _onComplete;
         private EventStoreStream _stream;
 
-        public ReadStreamComplete(Action<IEventStoreStream> onComplete, EventStoreStream stream)
+        public EventStoreReadStreamComplete(Action<IEventStoreStream> onComplete, EventStoreStream stream)
         {
             _onComplete = onComplete;
             _stream = stream;
@@ -236,13 +236,13 @@ namespace ServiceLib
             _onComplete(_stream);
         }
     }
-    public class GetAllEventsComplete : IQueuedExecutionDispatcher
+    public class EventStoreGetAllEventsComplete : IQueuedExecutionDispatcher
     {
         private Action<IEventStoreCollection> _onComplete;
         private IList<EventStoreEvent> _events;
         private EventStoreToken _nextToken;
 
-        public GetAllEventsComplete(Action<IEventStoreCollection> onComplete, IList<EventStoreEvent> events, EventStoreToken nextToken)
+        public EventStoreGetAllEventsComplete(Action<IEventStoreCollection> onComplete, IList<EventStoreEvent> events, EventStoreToken nextToken)
         {
             _onComplete = onComplete;
             _events = events;

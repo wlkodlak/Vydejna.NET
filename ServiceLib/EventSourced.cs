@@ -211,13 +211,15 @@ namespace ServiceLib
                     else
                     {
                         var serialized = new List<EventStoreEvent>(changes.Count);
+                        _streamVersionForCommit = _aggregate.OriginalVersion;
                         foreach (var evt in changes)
                         {
+                            _streamVersionForCommit++;
                             var stored = new EventStoreEvent();
                             _parent._serializer.Serialize(evt, stored);
+                            stored.StreamVersion = _streamVersionForCommit;
                             serialized.Add(stored);
                         }
-                        _streamVersionForCommit = serialized.Last().StreamVersion;
                         var expectedVersion =
                             _aggregate.OriginalVersion == 0
                             ? EventStoreVersion.EmptyStream

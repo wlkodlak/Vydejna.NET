@@ -89,19 +89,9 @@ namespace ServiceLib
                 _executor = parent._executor;
                 _lock = new object();
                 if (filter.StreamPrefixes.Count == 0)
-                {
-                    if (filter.Types.Count == 0)
-                        _substreamers = new SubStreamer[1] { new SubStreamer(this, filter.FirstToken, null, null) };
-                    else
-                        _substreamers = filter.Types.Select(type => new SubStreamer(this, filter.FirstToken, null, type)).ToArray();
-                }
+                    _substreamers = new SubStreamer[1] { new SubStreamer(this, filter.FirstToken, null) };
                 else
-                {
-                    if (filter.Types.Count == 0)
-                        _substreamers = filter.StreamPrefixes.Select(prefix => new SubStreamer(this, filter.FirstToken, prefix, null)).ToArray();
-                    else
-                        _substreamers = filter.StreamPrefixes.SelectMany(prefix => filter.Types.Select(type => new SubStreamer(this, filter.FirstToken, prefix, type))).ToArray();
-                }
+                    _substreamers = filter.StreamPrefixes.Select(prefix => new SubStreamer(this, filter.FirstToken, prefix)).ToArray();
             }
 
             public void GetNextEvent(Action<EventStoreEvent> onComplete, CancellationToken cancel, bool withoutWaiting)
@@ -208,17 +198,15 @@ namespace ServiceLib
                 private EventsStream _parent;
                 private EventStoreToken _token;
                 private string _prefix;
-                private string _eventType;
                 private Queue<EventStoreEvent> _readyEvents;
                 private EventStoreEvent _firstEvent;
                 private IDisposable _currentWait;
 
-                public SubStreamer(EventsStream parent, EventStoreToken token, string prefix, string eventType)
+                public SubStreamer(EventsStream parent, EventStoreToken token, string prefix)
                 {
                     _parent = parent;
                     _token = token;
                     _prefix = prefix;
-                    _eventType = eventType;
                     _status = StreamerStatus.Initial;
                     _readyEvents = new Queue<EventStoreEvent>();
                     _firstEvent = null;
@@ -234,7 +222,7 @@ namespace ServiceLib
                     if (_status == StreamerStatus.Initial || _status == StreamerStatus.Failed)
                     {
                         _status = StreamerStatus.Loading;
-                        _parent._store.GetAllEvents(_token, _prefix, _eventType, 20, true, LoadCompleted, LoadFailed);
+                        _parent._store.GetAllEvents(_token, 20, true, LoadCompleted, LoadFailed);
                     }
                 }
 
@@ -248,7 +236,7 @@ namespace ServiceLib
                         {
                             _firstEvent = null;
                             _status = StreamerStatus.Loading;
-                            _parent._store.GetAllEvents(_token, _prefix, _eventType, 20, true, LoadCompleted, LoadFailed);
+                            _parent._store.GetAllEvents(_token, 20, true, LoadCompleted, LoadFailed);
                         }
                     }
                 }
@@ -275,7 +263,7 @@ namespace ServiceLib
                         if (_firstEvent == null)
                         {
                             _status = StreamerStatus.Waiting;
-                            _currentWait = _parent._store.WaitForEvents(_token, _prefix, _eventType, 20, true, LoadCompleted, LoadFailed);
+                            _currentWait = _parent._store.WaitForEvents(_token, 20, true, LoadCompleted, LoadFailed);
                         }
                         else if (_status == StreamerStatus.Loading)
                         {

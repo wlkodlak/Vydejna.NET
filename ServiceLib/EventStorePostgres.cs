@@ -76,15 +76,15 @@ namespace ServiceLib
             new LoadBodiesWorker(this, events, onComplete, onError).Execute();
         }
 
-        public void GetAllEvents(EventStoreToken token, string streamPrefix, string eventType, int maxCount, bool loadBody, Action<IEventStoreCollection> onComplete, Action<Exception> onError)
+        public void GetAllEvents(EventStoreToken token, int maxCount, bool loadBody, Action<IEventStoreCollection> onComplete, Action<Exception> onError)
         {
-            _cache.Process(new GetAllEventsRequest(this, token, streamPrefix, eventType, maxCount, loadBody, onComplete, onError, true));
+            _cache.Process(new GetAllEventsRequest(this, token, maxCount, loadBody, onComplete, onError, true));
         }
 
-        public IDisposable WaitForEvents(EventStoreToken token, string streamPrefix, string eventType, int maxCount, bool loadBody, Action<IEventStoreCollection> onComplete, Action<Exception> onError)
+        public IDisposable WaitForEvents(EventStoreToken token, int maxCount, bool loadBody, Action<IEventStoreCollection> onComplete, Action<Exception> onError)
         {
             _listener.StartListening();
-            var request = new GetAllEventsRequest(this, token, streamPrefix, eventType, maxCount, loadBody, onComplete, onError, false);
+            var request = new GetAllEventsRequest(this, token, maxCount, loadBody, onComplete, onError, false);
             _cache.Process(request);
             return request;
         }
@@ -262,7 +262,7 @@ namespace ServiceLib
                             streamVersion = (int)reader.GetInt32(0);
                     }
                 }
-                _parent._executor.Enqueue(new ReadStreamComplete(_onComplete, new EventStoreStream(events, streamVersion, 0)));
+                _parent._executor.Enqueue(new EventStoreReadStreamComplete(_onComplete, new EventStoreStream(events, streamVersion, 0)));
             }
         }
         private class LoadBodiesWorker
@@ -314,8 +314,6 @@ namespace ServiceLib
         {
             public int StartingId;
             public EventStoreToken PublicToken;
-            public string Prefix;
-            public string EventType;
             public int MaxCount;
             public bool LoadBody;
             public Action<IEventStoreCollection> OnComplete;
@@ -323,12 +321,10 @@ namespace ServiceLib
             public bool Nowait;
             private EventStorePostgres _parent;
 
-            public GetAllEventsRequest(EventStorePostgres parent, EventStoreToken token, string streamPrefix, string eventType, int maxCount, bool loadBody, Action<IEventStoreCollection> onComplete, Action<Exception> onError, bool nowait)
+            public GetAllEventsRequest(EventStorePostgres parent, EventStoreToken token, int maxCount, bool loadBody, Action<IEventStoreCollection> onComplete, Action<Exception> onError, bool nowait)
             {
                 this._parent = parent;
                 this.PublicToken = token;
-                this.Prefix = streamPrefix;
-                this.EventType = eventType;
                 this.MaxCount = maxCount;
                 this.LoadBody = loadBody;
                 this.OnComplete = onComplete;
@@ -358,7 +354,7 @@ namespace ServiceLib
                 if (MaxCount <= 0)
                 {
                     var nextToken = maxId == 0 ? EventStoreToken.Initial : new EventStoreToken(maxId.ToString());
-                    _parent._executor.Enqueue(new GetAllEventsComplete(OnComplete, events, nextToken));
+                    _parent._executor.Enqueue(new EventStoreGetAllEventsComplete(OnComplete, events, nextToken));
                 }
                 else if (maxId > 0)
                 {
@@ -368,16 +364,6 @@ namespace ServiceLib
                         sb.Append("SELECT id, streamname, version, eventtype, format, contents FROM eventstore_events ");
                         sb.AppendFormat("WHERE id > :minid ");
                         cmd.Parameters.AddWithValue("minid", StartingId);
-                        if (!string.IsNullOrEmpty(Prefix))
-                        {
-                            sb.Append("AND streamname LIKE :prefix ");
-                            cmd.Parameters.AddWithValue("prefix", Prefix + '%');
-                        }
-                        if (!string.IsNullOrEmpty(EventType))
-                        {
-                            sb.Append("AND eventtype = :eventtype ");
-                            cmd.Parameters.AddWithValue("eventtype", EventType);
-                        }
                         sb.AppendFormat("ORDER BY id LIMIT {0}", MaxCount);
                         cmd.CommandText = sb.ToString();
                         using (var reader = cmd.ExecuteReader())
@@ -397,7 +383,7 @@ namespace ServiceLib
                         }
                     }
                     if (events.Count > 0 || Nowait)
-                        _parent._executor.Enqueue(new GetAllEventsComplete(OnComplete, events, new EventStoreToken(maxId.ToString())));
+                        _parent._executor.Enqueue(new EventStoreGetAllEventsComplete(OnComplete, events, new EventStoreToken(maxId.ToString())));
                     else
                     {
                         this.StartingId = maxId;
@@ -405,7 +391,7 @@ namespace ServiceLib
                     }
                 }
                 else if (Nowait)
-                    _parent._executor.Enqueue(new GetAllEventsComplete(OnComplete, events, EventStoreToken.Initial));
+                    _parent._executor.Enqueue(new EventStoreGetAllEventsComplete(OnComplete, events, EventStoreToken.Initial));
                 else
                 {
                     this.StartingId = maxId;
@@ -419,7 +405,7 @@ namespace ServiceLib
                 {
                     var lastEvent = cachedEvents.LastOrDefault();
                     var nextToken = lastEvent == null ? EventStoreToken.Initial : lastEvent.Token;
-                    _parent._executor.Enqueue(new GetAllEventsComplete(OnComplete, new EventStoreEvent[0], nextToken));
+                    _parent._executor.Enqueue(new EventStoreGetAllEventsComplete(OnComplete, new EventStoreEvent[0], nextToken));
                     return true;
                 }
                 else
@@ -427,12 +413,12 @@ namespace ServiceLib
                     var events = cachedEvents.Where(Filter).Take(MaxCount).ToList();
                     if (events.Count > 0)
                     {
-                        _parent._executor.Enqueue(new GetAllEventsComplete(OnComplete, events, events.Last().Token));
+                        _parent._executor.Enqueue(new EventStoreGetAllEventsComplete(OnComplete, events, events.Last().Token));
                         return true;
                     }
                     else if (Nowait)
                     {
-                        _parent._executor.Enqueue(new GetAllEventsComplete(OnComplete, events, cachedEvents.Last().Token));
+                        _parent._executor.Enqueue(new EventStoreGetAllEventsComplete(OnComplete, events, cachedEvents.Last().Token));
                         return true;
                     }
                     else
@@ -443,10 +429,6 @@ namespace ServiceLib
             private bool Filter(EventStoreEvent evnt)
             {
                 if (PublicToken.CompareTo(evnt.Token) >= 0)
-                    return false;
-                if (!string.IsNullOrEmpty(Prefix) && !evnt.StreamName.StartsWith(Prefix))
-                    return false;
-                if (!string.IsNullOrEmpty(EventType) && !string.Equals(EventType, evnt.Type, StringComparison.Ordinal))
                     return false;
                 return true;
             }

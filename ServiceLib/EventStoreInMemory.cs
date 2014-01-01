@@ -81,7 +81,7 @@ namespace ServiceLib
                     var list = _events.Where(e => e.StreamName == stream && e.StreamVersion >= minVersion).Take(maxCount).ToList();
                     result = new EventStoreStream(list, streamVersion, 0);
                 }
-                _executor.Enqueue(new ReadStreamComplete(onComplete, result));
+                _executor.Enqueue(new EventStoreReadStreamComplete(onComplete, result));
             }
             catch (Exception ex)
             {
@@ -89,14 +89,14 @@ namespace ServiceLib
             }
         }
 
-        public void GetAllEvents(EventStoreToken token, string streamPrefix, string eventType, int maxCount, bool loadBody, Action<IEventStoreCollection> onComplete, Action<Exception> onError)
+        public void GetAllEvents(EventStoreToken token, int maxCount, bool loadBody, Action<IEventStoreCollection> onComplete, Action<Exception> onError)
         {
             Waiter waiter;
             try
             {
                 using (_lock.Read())
                 {
-                    waiter = new Waiter(this, token, streamPrefix, eventType, maxCount, loadBody, onComplete, onError);
+                    waiter = new Waiter(this, token, maxCount, loadBody, onComplete, onError);
                     if (!waiter.Prepare())
                         waiter.PrepareNowait();
                 }
@@ -114,7 +114,7 @@ namespace ServiceLib
             _executor.Enqueue(onComplete);
         }
 
-        public IDisposable WaitForEvents(EventStoreToken token, string streamPrefix, string eventType, int maxCount, bool loadBody, Action<IEventStoreCollection> onComplete, Action<Exception> onError)
+        public IDisposable WaitForEvents(EventStoreToken token, int maxCount, bool loadBody, Action<IEventStoreCollection> onComplete, Action<Exception> onError)
         {
             Waiter waiter;
             bool wasPrepared;
@@ -122,7 +122,7 @@ namespace ServiceLib
             {
                 using (_lock.Read())
                 {
-                    waiter = new Waiter(this, token, streamPrefix, eventType, maxCount, loadBody, onComplete, onError);
+                    waiter = new Waiter(this, token, maxCount, loadBody, onComplete, onError);
                     wasPrepared = waiter.Prepare();
                     if (!wasPrepared)
                     {
@@ -166,8 +166,6 @@ namespace ServiceLib
             private EventStoreInMemory _parent;
             private int _skip;
             private EventStoreToken _token;
-            private string _streamPrefix;
-            private string _eventType;
             private int _maxCount;
             private bool _loadBody;
             private Action<IEventStoreCollection> _onComplete;
@@ -175,7 +173,7 @@ namespace ServiceLib
             private List<EventStoreEvent> _readyEvents;
             private EventStoreToken _nextToken;
 
-            public Waiter(EventStoreInMemory parent, EventStoreToken token, string streamPrefix, string eventType, int maxCount, bool loadBody, Action<IEventStoreCollection> onComplete, Action<Exception> onError)
+            public Waiter(EventStoreInMemory parent, EventStoreToken token, int maxCount, bool loadBody, Action<IEventStoreCollection> onComplete, Action<Exception> onError)
             {
                 _parent = parent;
                 _token = token;
@@ -185,8 +183,6 @@ namespace ServiceLib
                     _skip = _parent._events.Count + 1;
                 else
                     _skip = int.Parse(token.ToString());
-                _streamPrefix = streamPrefix;
-                _eventType = eventType;
                 _maxCount = maxCount;
                 _loadBody = loadBody;
                 _onComplete = onComplete;
@@ -217,11 +213,8 @@ namespace ServiceLib
                     for (int idx = _skip; idx < _parent._events.Count && counter > 0; idx++)
                     {
                         var evt = _parent._events[idx];
-                        if (evt.StreamName.StartsWith(_streamPrefix ?? "") && (_eventType == null || evt.Type == _eventType))
-                        {
-                            _readyEvents.Add(evt);
-                            counter--;
-                        }
+                        _readyEvents.Add(evt);
+                        counter--;
                         _nextToken = evt.Token;
                     }
                     return true;
@@ -235,7 +228,7 @@ namespace ServiceLib
 
             public void Complete()
             {
-                _parent._executor.Enqueue(new GetAllEventsComplete(_onComplete, _readyEvents, _nextToken));
+                _parent._executor.Enqueue(new EventStoreGetAllEventsComplete(_onComplete, _readyEvents, _nextToken));
             }
         }
     }
