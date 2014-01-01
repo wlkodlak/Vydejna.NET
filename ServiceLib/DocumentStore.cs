@@ -50,4 +50,22 @@ namespace ServiceLib
         public bool AllowNew { get { return _version <= 0; } }
     }
 
+    public class DocumentFound : IQueuedExecutionDispatcher
+    {
+        private Action<int, string> _onFound;
+        private int _version;
+        private string _contents;
+
+        public DocumentFound(Action<int, string> onFound, int version, string contents)
+        {
+            this._onFound = onFound;
+            this._version = version;
+            this._contents = contents;
+        }
+
+        public void Execute()
+        {
+            _onFound(_version, _contents);
+        }
+    }
 }

@@ -155,6 +155,7 @@ namespace ServiceLib
                     _cancel = true;
                     _documentWatch.Dispose();
                 }
+                _cannotLock();
             }
         }
 

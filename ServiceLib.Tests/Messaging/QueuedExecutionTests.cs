@@ -1,9 +1,6 @@
 ﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
-using System;
-using System.Collections.Generic;
+using ServiceLib.Tests.TestUtils;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace ServiceLib.Tests.Messaging
 {
@@ -60,22 +57,6 @@ namespace ServiceLib.Tests.Messaging
             _testExecutor.Process();
             Assert.IsTrue(completed, "Completed when it should");
 
-        }
-
-        private class TestExecutor : IQueueExecution
-        {
-            private Queue<IQueuedExecutionDispatcher> _queue = new Queue<IQueuedExecutionDispatcher>();
-
-            public void Enqueue(IQueuedExecutionDispatcher handler)
-            {
-                _queue.Enqueue(handler);
-            }
-
-            public void Process()
-            {
-                while (_queue.Count > 0)
-                    _queue.Dequeue().Execute();
-            }
         }
 
         private class TestMessage { }
