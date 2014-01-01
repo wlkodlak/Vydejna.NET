@@ -42,6 +42,8 @@
       <HintPath>..\packages\Moq.4.2.1312.1622\lib\net40\Moq.dll</HintPath>
     </Reference>
     <Reference Include="System" />
+    <Reference Include="System.XML" />
+    <Reference Include="System.Xml.Linq" />
   </ItemGroup>
   <Choose>
     <When Condition="('$(VisualStudioVersion)' == '10.0' or '$(VisualStudioVersion)' == '') and '$(TargetFrameworkVersion)' == 'v3.5'">
@@ -64,21 +66,29 @@
     <Compile Include="EventSourced\EventStoreInMemoryTests.cs" />
     <Compile Include="EventSourced\EventStoreTokenTests.cs" />
     <Compile Include="EventSourced\EventStoreVersionTests.cs" />
+    <Compile Include="EventSourced\EventStreamingDeserializedTests.cs" />
+    <Compile Include="EventSourced\EventStreamingTests.cs" />
     <Compile Include="EventSourced\GenericRepositoryTests.cs" />
     <Compile Include="EventSourced\SerializerTests.cs" />
+    <Compile Include="Http\HttpClientTests.cs" />
+    <Compile Include="Http\HttpRouterTests.cs" />
+    <Compile Include="Http\HttpSerializationTests.cs" />
+    <Compile Include="Http\HttpServerDispatcherTests.cs" />
+    <Compile Include="Http\ParametrizedUrlTest.cs" />
+    <Compile Include="Http\RestClientTest.cs" />
     <Compile Include="Messaging\BusTests.cs" />
     <Compile Include="Messaging\CommandSubscriptionManagerTests.cs" />
     <Compile Include="Messaging\QueuedExecutionTests.cs" />
     <Compile Include="Messaging\SubscriptionManagerTests.cs" />
     <Compile Include="Messaging\TypeMapperTests.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="TestUtils\PreserveExceptionStackTrace.cs" />
     <Compile Include="TestUtils\TestDocumentFolder.cs" />
     <Compile Include="TestUtils\TestEventStore.cs" />
     <Compile Include="TestUtils\TestExecutor.cs" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="EventHandlers\" />
-    <Folder Include="Http\" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\ServiceLib\ServiceLib.csproj">

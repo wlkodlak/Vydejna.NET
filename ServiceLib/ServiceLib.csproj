@@ -71,9 +71,14 @@
     <Compile Include="HttpClient.cs" />
     <Compile Include="HttpRouteConfig.cs" />
     <Compile Include="HttpRouter.cs" />
+    <Compile Include="HttpRouterCommon.cs" />
+    <Compile Include="HttpRouteStagedHandler.cs" />
     <Compile Include="HttpSerialization.cs" />
     <Compile Include="HttpServer.cs" />
     <Compile Include="HttpServerDispatcher.cs" />
+    <Compile Include="HttpServerStagedContext.cs" />
+    <Compile Include="HttpServerStagedContextHeaders.cs" />
+    <Compile Include="HttpServerStagedParameters.cs" />
     <Compile Include="IHandle.cs" />
     <Compile Include="NodeLockManager.cs" />
     <Compile Include="ParametrizedUrl.cs" />

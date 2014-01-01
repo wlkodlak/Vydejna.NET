@@ -7,6 +7,7 @@ using ServiceStack.Text;
 using System.Xml;
 using System.Runtime.Serialization;
 using System.IO;
+using System.Text.RegularExpressions;
 
 namespace ServiceLib
 {
@@ -17,6 +18,7 @@ namespace ServiceLib
         bool ProducesContentType(string acceptType);
         T Deserialize<T>(string data);
         string Serialize<T>(T data);
+        bool TryRecognizeInput(string data);
     }
 
     public class HttpSerializerJson : IHttpSerializer
@@ -61,6 +63,11 @@ namespace ServiceLib
         public string Serialize<T>(T data)
         {
             return JsonSerializer.SerializeToString(data);
+        }
+
+        public bool TryRecognizeInput(string data)
+        {
+            return Regex.IsMatch(data, @"^\s*{\s*[""'a-zA-Z0-9]");
         }
     }
 
@@ -114,6 +121,11 @@ namespace ServiceLib
                 return stringWriter.ToString();
             }
         }
+
+        public bool TryRecognizeInput(string data)
+        {
+            return Regex.IsMatch(data, @"^\s*<");
+        }
     }
 
     public class HttpSerializerPicker : ISerializerPicker
@@ -133,7 +145,7 @@ namespace ServiceLib
         {
             var serializer = (IHttpSerializer)null;
             var acceptTypes = context.InputHeaders.AcceptTypes;
-            if (acceptTypes == null)
+            if (acceptTypes == null || acceptTypes.Count == 0)
                 serializer = options.FirstOrDefault();
             else
                 serializer = acceptTypes
@@ -148,8 +160,8 @@ namespace ServiceLib
             var contentType = context.InputHeaders.ContentType;
             if (deserializer == null && contentType != null)
                 deserializer = options.FirstOrDefault(s => s.ConsumesContentType(contentType));
-            if (deserializer == null)
-                deserializer = PickSerializerCore(context, options);
+            if (deserializer == null && !string.IsNullOrEmpty(context.InputString))
+                deserializer = options.FirstOrDefault(s => s.TryRecognizeInput(context.InputString));
             if (deserializer == null && next != null)
                 deserializer = next.PickDeserializer(context, options, null);
             return deserializer;

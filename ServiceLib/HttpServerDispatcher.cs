@@ -26,7 +26,8 @@ namespace ServiceLib
                     context.StatusCode = 404;
                     context.Close();
                 }
-                route.Handler.Handle(context);
+                else
+                    route.Handler.Handle(context);
             }
             catch (Exception ex)
             {
