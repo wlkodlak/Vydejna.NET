@@ -61,6 +61,7 @@
     <Compile Include="Documents\EventHandlerMetadataTests.cs" />
     <Compile Include="Documents\NodeLockManagerTests.cs" />
     <Compile Include="EventSourced\AggregateTests.cs" />
+    <Compile Include="EventSourced\EventStoreInMemoryTests.cs" />
     <Compile Include="EventSourced\EventStoreTokenTests.cs" />
     <Compile Include="EventSourced\EventStoreVersionTests.cs" />
     <Compile Include="EventSourced\GenericRepositoryTests.cs" />

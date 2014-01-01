@@ -17,8 +17,13 @@ namespace ServiceLib.Tests.TestUtils
 
         public void Process()
         {
-            while (_queue.Count > 0)
-                _queue.Dequeue().Execute();
+            for (int i = 0; _queue.Count > 0; i++)
+            {
+                if (i < 2000)
+                    _queue.Dequeue().Execute();
+                else
+                    throw new InvalidOperationException("Endless loop");
+            }
         }
     }
 }

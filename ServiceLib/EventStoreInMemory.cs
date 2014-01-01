@@ -44,10 +44,10 @@ namespace ServiceLib
                         var token = _events.Count;
                         foreach (var evt in newEvents)
                         {
+                            token++;
                             evt.StreamName = stream;
                             evt.StreamVersion = ++streamVersion;
                             evt.Token = CreateToken(token);
-                            token++;
                         }
 
                         _lock.Write();
@@ -120,7 +120,7 @@ namespace ServiceLib
             bool wasPrepared;
             try
             {
-                using (_lock.Read())
+                using (_lock.Update())
                 {
                     waiter = new Waiter(this, token, maxCount, loadBody, onComplete, onError);
                     wasPrepared = waiter.Prepare();
@@ -144,7 +144,7 @@ namespace ServiceLib
         private void NotifyWaiters()
         {
             var readyWaiters = new List<Waiter>();
-            using (_lock.Read())
+            using (_lock.Update())
             {
                 foreach (var waiter in _waiters)
                 {
@@ -223,7 +223,8 @@ namespace ServiceLib
 
             public void PrepareNowait()
             {
-                _nextToken = _parent.CreateToken(_parent._events.Count);
+                int totalEvents = _parent._events.Count;
+                _nextToken = totalEvents == 0 ? EventStoreToken.Initial : _parent.CreateToken(totalEvents);
             }
 
             public void Complete()
