@@ -71,9 +71,12 @@
     <Compile Include="EventSourced\GenericRepositoryTests.cs" />
     <Compile Include="EventSourced\SerializerTests.cs" />
     <Compile Include="Http\HttpClientTests.cs" />
+    <Compile Include="Http\HttpRouterConfigTests.cs" />
     <Compile Include="Http\HttpRouterTests.cs" />
     <Compile Include="Http\HttpSerializationTests.cs" />
     <Compile Include="Http\HttpServerDispatcherTests.cs" />
+    <Compile Include="Http\HttpStagedContextHeadersTests.cs" />
+    <Compile Include="Http\HttpStagedParametersTests.cs" />
     <Compile Include="Http\ParametrizedUrlTest.cs" />
     <Compile Include="Http\RestClientTest.cs" />
     <Compile Include="Messaging\BusTests.cs" />

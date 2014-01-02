@@ -116,7 +116,7 @@ namespace ServiceLib
                 _router = parent._router;
                 _picker = parent._picker;
                 _serializers = parent._serializers.ToList();
-                _path = string.Concat(parent._prefix, "/", path);
+                _path = string.IsNullOrEmpty(path) ? parent._prefix : string.Concat(parent._prefix, "/", path);
             }
 
             public IHttpRouteCommonConfiguratorRoute WithPicker(ISerializerPicker picker)
