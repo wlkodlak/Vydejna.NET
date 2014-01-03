@@ -22,11 +22,12 @@ namespace ServiceLib
             list.Add(parameter);
         }
 
-        public IProcessedParameter Get(RequestParameterType type, string name)
+        public IHttpProcessedParameter Get(RequestParameterType type, string name)
         {
             List<RequestParameter> list;
             _data.TryGetValue(GetKey(type, name), out list);
-            return new HttpProcessedParameter(type, name, list);
+            var values = list == null ? new string[0] : list.Select(p => p.Value).ToArray();
+            return new HttpProcessedParameter(type, name, values);
         }
 
         private string GetKey(RequestParameterType type, string name)
@@ -55,58 +56,82 @@ namespace ServiceLib
         }
     }
 
-    public class HttpProcessedParameter : IProcessedParameter
+    public class HttpProcessedParameter : IHttpProcessedParameter
     {
         private RequestParameterType _type;
         private string _name;
-        private List<string> _values;
+        private string _singleValue;
+        private IList<string> _values;
 
-        public HttpProcessedParameter(RequestParameterType type, string name, IEnumerable<RequestParameter> values)
+        public HttpProcessedParameter(RequestParameterType type, string name, string singleValue)
         {
             _type = type;
             _name = name;
-            _values = values.Select(p => p.Value).Where(v => !string.IsNullOrEmpty(v)).ToList();
+            _singleValue = singleValue;
+            _values = null;
         }
 
-        public ITypedProcessedParameter<int> AsInteger()
+        public HttpProcessedParameter(RequestParameterType type, string name, IList<string> values)
         {
-            var stringValue = _values.FirstOrDefault();
+            _type = type;
+            _name = name;
+            _singleValue = values == null || values.Count == 0 ? null : values[0];
+            _values = values;
+        }
+
+        public IHttpTypedProcessedParameter<int> AsInteger()
+        {
             int parsedValue;
-            if (stringValue == null)
+            if (_singleValue == null)
                 return HttpTypedProcessedParameter<int>.CreateEmpty(_type, _name);
-            else if (int.TryParse(stringValue, out parsedValue))
+            else if (int.TryParse(_singleValue, out parsedValue))
                 return HttpTypedProcessedParameter<int>.CreateParsed(_type, _name, parsedValue);
             else
-                throw new ArgumentOutOfRangeException(_name, stringValue, string.Format("Parameter {0} is in wrong format: {1}", _name, stringValue));
+                throw new ArgumentOutOfRangeException(_name, _singleValue, string.Format("Parameter {0} is in wrong format: {1}", _name, _singleValue));
         }
 
-        public ITypedProcessedParameter<string> AsString()
+        public IHttpTypedProcessedParameter<string> AsString()
         {
-            var stringValue = _values.FirstOrDefault();
-            if (stringValue == null)
+            if (string.IsNullOrEmpty(_singleValue))
                 return HttpTypedProcessedParameter<string>.CreateEmpty(_type, _name);
             else
-                return HttpTypedProcessedParameter<string>.CreateParsed(_type, _name, stringValue);
+                return HttpTypedProcessedParameter<string>.CreateParsed(_type, _name, _singleValue);
         }
 
-        public ITypedProcessedParameter<T> As<T>(Func<string, T> converter)
+        public IHttpTypedProcessedParameter<T> As<T>(Func<string, T> converter)
         {
-            var stringValue = _values.FirstOrDefault();
-            if (stringValue == null)
+            if (string.IsNullOrEmpty(_singleValue))
                 return HttpTypedProcessedParameter<T>.CreateEmpty(_type, _name);
             try
             {
-                T parsedValue = converter(stringValue);
+                T parsedValue = converter(_singleValue);
                 return HttpTypedProcessedParameter<T>.CreateParsed(_type, _name, parsedValue);
             }
             catch (Exception)
             {
-                throw new ArgumentOutOfRangeException(_name, stringValue, string.Format("Parameter {0} is in wrong format: {1}", _name, stringValue));
+                throw new ArgumentOutOfRangeException(_name, _singleValue, string.Format("Parameter {0} is in wrong format: {1}", _name, _singleValue));
             }
+        }
+
+        public IList<string> GetRawValues()
+        {
+            if (_values == null)
+                _values = (_singleValue == null)? new string[0] :  new string[1] { _singleValue };
+            return _values;
+        }
+
+        public RequestParameterType Type
+        {
+            get { return _type; }
+        }
+
+        public string Name
+        {
+            get { return _name; }
         }
     }
 
-    public class HttpTypedProcessedParameter<T> : ITypedProcessedParameter<T>
+    public class HttpTypedProcessedParameter<T> : IHttpTypedProcessedParameter<T>
     {
         private RequestParameterType _type;
         private string _name;
@@ -122,7 +147,7 @@ namespace ServiceLib
             _hasDefault = true;
         }
 
-        public static ITypedProcessedParameter<T> CreateEmpty(RequestParameterType type, string name)
+        public static IHttpTypedProcessedParameter<T> CreateEmpty(RequestParameterType type, string name)
         {
             return new HttpTypedProcessedParameter<T>(type, name)
             {
@@ -130,7 +155,7 @@ namespace ServiceLib
             };
         }
 
-        public static ITypedProcessedParameter<T> CreateParsed(RequestParameterType type, string name, T parsedValue)
+        public static IHttpTypedProcessedParameter<T> CreateParsed(RequestParameterType type, string name, T parsedValue)
         {
             return new HttpTypedProcessedParameter<T>(type, name)
             {
@@ -138,21 +163,21 @@ namespace ServiceLib
             };
         }
 
-        public ITypedProcessedParameter<T> Validate(Action<T> validator)
+        public IHttpTypedProcessedParameter<T> Validate(Action<T> validator)
         {
             if (!_isEmpty)
                 validator(_parsedValue);
             return this;
         }
 
-        public ITypedProcessedParameter<T> Default(T defaultValue)
+        public IHttpTypedProcessedParameter<T> Default(T defaultValue)
         {
             _hasDefault = true;
             _defaultValue = defaultValue;
             return this;
         }
 
-        public ITypedProcessedParameter<T> Mandatory()
+        public IHttpTypedProcessedParameter<T> Mandatory()
         {
             _hasDefault = false;
             return this;
@@ -165,7 +190,36 @@ namespace ServiceLib
             else if (_hasDefault)
                 return _defaultValue;
             else
-                throw new ArgumentNullException(_name, string.Format("Parameter {0} is not present", _name));
+                throw new MissingMandatoryParameterException(_name);
+        }
+
+        public RequestParameterType Type
+        {
+            get { return _type; }
+        }
+
+        public string Name
+        {
+            get { return _name; }
+        }
+
+        public bool IsEmpty
+        {
+            get { return _isEmpty; }
+        }
+
+        public IHttpTypedProcessedParameter<T> Validate(Predicate<T> predicate, string description)
+        {
+            if (!_isEmpty && !predicate(_parsedValue))
+                throw new ParameterValidationException(_name, _parsedValue.ToString(), description);
+            return this;
+        }
+
+        public IHttpTypedProcessedParameter<T> Validate(Action<IHttpTypedProcessedParameter<T>, T> validation)
+        {
+            if (!_isEmpty)
+                validation(this, _parsedValue);
+            return this;
         }
     }
 }

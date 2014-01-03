@@ -40,9 +40,9 @@ namespace ServiceLib
         IHttpServerStagedHeaders InputHeaders { get; }
         IHttpServerStagedHeaders OutputHeaders { get; }
         IEnumerable<RequestParameter> RawParameters { get; }
-        IProcessedParameter Parameter(string name);
-        IProcessedParameter PostData(string name);
-        IProcessedParameter Route(string name);
+        IHttpProcessedParameter Parameter(string name);
+        IHttpProcessedParameter PostData(string name);
+        IHttpProcessedParameter Route(string name);
         void Close();
     }
     public interface IHttpServerStagedHeaders : IHttpServerRawHeaders
@@ -64,17 +64,48 @@ namespace ServiceLib
         void Add(string value);
         bool IsSet { get; }
     }
-    public interface IProcessedParameter
+    public interface IHttpProcessedParameter
     {
-        ITypedProcessedParameter<int> AsInteger();
-        ITypedProcessedParameter<string> AsString();
-        ITypedProcessedParameter<T> As<T>(Func<string, T> converter);
+        RequestParameterType Type { get; }
+        string Name { get; }
+        IList<string> GetRawValues();
+        IHttpTypedProcessedParameter<int> AsInteger();
+        IHttpTypedProcessedParameter<string> AsString();
+        IHttpTypedProcessedParameter<T> As<T>(Func<string, T> converter);
     }
-    public interface ITypedProcessedParameter<T>
+    public interface IHttpTypedProcessedParameter<T>
     {
-        ITypedProcessedParameter<T> Validate(Action<T> validator);
-        ITypedProcessedParameter<T> Default(T defaultValue);
-        ITypedProcessedParameter<T> Mandatory();
+        RequestParameterType Type { get; }
+        string Name { get; }
+        bool IsEmpty { get; }
+        IHttpTypedProcessedParameter<T> Validate(Predicate<T> predicate, string description);
+        IHttpTypedProcessedParameter<T> Validate(Action<IHttpTypedProcessedParameter<T>, T> validation);
+        IHttpTypedProcessedParameter<T> Default(T defaultValue);
+        IHttpTypedProcessedParameter<T> Mandatory();
         T Get();
+    }
+    public class MissingMandatoryParameterException : ArgumentException
+    {
+        public MissingMandatoryParameterException(string paramName)
+            : base(string.Format("Mandatory parameter {0} is missing", paramName), paramName)
+        {
+        }
+    }
+    public class ParameterValidationException : ArgumentException
+    {
+        public ParameterValidationException(string paramName, string actualValue, string description)
+            : base(CreateMessage(paramName, actualValue, description), paramName)
+        {
+            ActualValue = actualValue;
+            Description = description;
+        }
+
+        private static string CreateMessage(string paramName, string actualValue, string description)
+        {
+            return string.Format("Parameter {0} {1}. It's {2}.", paramName, description, actualValue);
+        }
+
+        public string ActualValue { get; private set; }
+        public string Description { get; private set; }
     }
 }

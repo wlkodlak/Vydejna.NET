@@ -133,9 +133,9 @@ namespace ServiceLib.Tests.Http
             public IHttpServerStagedHeaders InputHeaders { get; set; }
             public IHttpServerStagedHeaders OutputHeaders { get; set; }
             public IEnumerable<RequestParameter> RawParameters { get; set; }
-            public IProcessedParameter Parameter(string name) { return null; }
-            public IProcessedParameter PostData(string name) { return null; }
-            public IProcessedParameter Route(string name) { return null; }
+            public IHttpProcessedParameter Parameter(string name) { return null; }
+            public IHttpProcessedParameter PostData(string name) { return null; }
+            public IHttpProcessedParameter Route(string name) { return null; }
             public void Close() { }
             public TestStagedContext()
             {

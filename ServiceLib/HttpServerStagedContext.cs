@@ -44,15 +44,15 @@ namespace ServiceLib
         {
             get { return _parameters; }
         }
-        public IProcessedParameter Parameter(string name)
+        public IHttpProcessedParameter Parameter(string name)
         {
             return _parameters.Get(RequestParameterType.QueryString, name);
         }
-        public IProcessedParameter PostData(string name)
+        public IHttpProcessedParameter PostData(string name)
         {
             return _parameters.Get(RequestParameterType.PostData, name);
         }
-        public IProcessedParameter Route(string name)
+        public IHttpProcessedParameter Route(string name)
         {
             return _parameters.Get(RequestParameterType.Path, name);
         }
