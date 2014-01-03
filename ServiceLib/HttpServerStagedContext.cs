@@ -8,6 +8,7 @@ namespace ServiceLib
     {
         private IHttpServerRawContext _rawContext;
         private HttpServerStagedParameters _parameters;
+        private StreamWriter _writer;
 
         public HttpServerStagedContext(IHttpServerRawContext context)
         {
@@ -58,10 +59,6 @@ namespace ServiceLib
         }
         public void Close()
         {
-            Task.Factory.StartNew(FinishContext);
-        }
-        private void FinishContext()
-        {
             try
             {
                 _rawContext.StatusCode = StatusCode;
@@ -70,18 +67,23 @@ namespace ServiceLib
                     _rawContext.OutputHeaders.Add(header.Key, header.Value);
                 if (!string.IsNullOrEmpty(OutputString))
                 {
-                    using (var writer = new StreamWriter(_rawContext.OutputStream))
-                        writer.Write(OutputString);
+                    _writer = new StreamWriter(_rawContext.OutputStream);
+                    _writer.WriteAsync(OutputString).ContinueWith(WriteOutputComplete);
                 }
+                else
+                    _rawContext.Close();
             }
             catch
             {
                 _rawContext.StatusCode = 500;
-            }
-            finally
-            {
                 _rawContext.Close();
             }
+        }
+        private void WriteOutputComplete(Task task)
+        {
+            var error = task.Exception;
+            _writer.Close();
+            _rawContext.Close();
         }
     }
 }

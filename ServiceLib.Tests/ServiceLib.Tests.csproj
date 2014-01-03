@@ -75,6 +75,7 @@
     <Compile Include="Http\HttpRouterTests.cs" />
     <Compile Include="Http\HttpSerializationTests.cs" />
     <Compile Include="Http\HttpServerDispatcherTests.cs" />
+    <Compile Include="Http\HttpServerStagedContextTests.cs" />
     <Compile Include="Http\HttpStagedContextHeadersTests.cs" />
     <Compile Include="Http\HttpStagedParametersTests.cs" />
     <Compile Include="Http\ParametrizedUrlTest.cs" />
