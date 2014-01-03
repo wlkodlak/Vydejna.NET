@@ -7,10 +7,10 @@ namespace ServiceLib
     public class HttpRouteStagedHandler : IHttpRouteHandler
     {
         private ISerializerPicker _picker;
-        private List<IHttpSerializer> _serializers;
+        private IList<IHttpSerializer> _serializers;
         private IHttpProcessor _processor;
 
-        public HttpRouteStagedHandler(ISerializerPicker picker, List<IHttpSerializer> serializers, IHttpProcessor processor)
+        public HttpRouteStagedHandler(ISerializerPicker picker, IList<IHttpSerializer> serializers, IHttpProcessor processor)
         {
             this._picker = picker;
             this._serializers = serializers;

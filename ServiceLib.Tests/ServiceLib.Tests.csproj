@@ -73,6 +73,7 @@
     <Compile Include="Http\HttpClientTests.cs" />
     <Compile Include="Http\HttpRouterConfigTests.cs" />
     <Compile Include="Http\HttpRouterTests.cs" />
+    <Compile Include="Http\HttpRouteStagedHandlerTests.cs" />
     <Compile Include="Http\HttpSerializationTests.cs" />
     <Compile Include="Http\HttpServerDispatcherTests.cs" />
     <Compile Include="Http\HttpServerStagedContextTests.cs" />
@@ -90,6 +91,8 @@
     <Compile Include="TestUtils\TestDocumentFolder.cs" />
     <Compile Include="TestUtils\TestEventStore.cs" />
     <Compile Include="TestUtils\TestExecutor.cs" />
+    <Compile Include="TestUtils\TestRawContext.cs" />
+    <Compile Include="TestUtils\TestStagedContext.cs" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="EventHandlers\" />
