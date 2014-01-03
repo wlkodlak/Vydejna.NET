@@ -115,6 +115,7 @@ namespace ServiceLib.Tests.Http
         {
             public HttpClientRequest LastRequest;
             private Action<HttpClientResponse> _onCompleted;
+            private ManualResetEventSlim _mre = new ManualResetEventSlim();
 
             public void SendResponse(HttpClientResponse response)
             {
@@ -125,6 +126,12 @@ namespace ServiceLib.Tests.Http
             {
                 LastRequest = request;
                 _onCompleted = onCompleted;
+                _mre.Set();
+            }
+
+            public bool WaitForExecute(int timeout = 100)
+            {
+                return _mre.Wait(timeout);
             }
         }
 
@@ -148,11 +155,12 @@ namespace ServiceLib.Tests.Http
             _waitForCompletion = new ManualResetEventSlim();
             _response = null;
             restClient.Execute(OnComplete, OnError);
+            _httpClient.WaitForExecute();
+            _httpClient.SendResponse(PreparedResponse);
+            _httpRequest = _httpClient.LastRequest;
             _waitForCompletion.Wait(1000);
             if (_exception != null)
                 throw _exception.PreserveStackTrace();
-            _httpClient.SendResponse(PreparedResponse);
-            _httpRequest = _httpClient.LastRequest;
             if (ExpectedResponse != null)
             {
                 if (ExpectedResponse.Value)
