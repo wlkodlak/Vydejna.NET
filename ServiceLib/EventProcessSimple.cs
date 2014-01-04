@@ -18,12 +18,14 @@ namespace ServiceLib
         private int _flushCounter;
         private bool _metadataDirty;
         private IDisposable _waitForLock;
+        private int _flushAfter;
 
         public EventProcessSimple(IMetadataInstance metadata, IEventStreamingDeserialized streaming, ICommandSubscriptionManager subscriptions)
         {
             _metadata = metadata;
             _streaming = streaming;
             _subscriptions = subscriptions;
+            _flushAfter = _flushCounter = 20;
         }
 
         public IHandleRegistration<CommandExecution<T>> Register<T>(IHandle<CommandExecution<T>> handler)
@@ -119,9 +121,9 @@ namespace ServiceLib
         private void EventHandled()
         {
             _metadataDirty = true;
+            _flushCounter--;
             if (_flushCounter > 0)
             {
-                _flushCounter--;
                 _streaming.GetNextEvent(EventReceived, NoNewEvents, CannotReceiveEvents, true);
             }
             else
@@ -132,7 +134,7 @@ namespace ServiceLib
         {
             if (_metadataDirty)
             {
-                _flushCounter = 20;
+                _flushCounter = _flushAfter;
                 _metadata.SetToken(_token, OnTokenSaved, OnError);
             }
             else
@@ -157,6 +159,12 @@ namespace ServiceLib
         {
             _streaming.Dispose();
             _metadata.Unlock();
+        }
+
+        public EventProcessSimple WithTokenFlushing(int flushAfter)
+        {
+            _flushCounter = _flushAfter = flushAfter;
+            return this;
         }
     }
 }
