@@ -15,7 +15,6 @@ namespace ServiceLib
         : IHandle<CommandExecution<ProjectorMessages.Reset>>
         , IHandle<CommandExecution<ProjectorMessages.UpgradeFrom>>
     {
-        IList<string> GetStreamPrefixes();
         string GetVersion();
         EventProjectionUpgradeMode UpgradeMode(string storedVersion);
     }
@@ -42,7 +41,7 @@ namespace ServiceLib
         private EventStoreToken _lastCompletedToken;
         private string _version;
         private EventProjectionUpgradeMode _upgradeMode;
-        private CancellationTokenSource _cancel;
+        private bool _cancel;
         private int _flushCounter;
         private bool _metadataDirty;
         private ICommandSubscription _currentHandler;
@@ -72,7 +71,6 @@ namespace ServiceLib
 
         public void Handle(SystemEvents.SystemInit message)
         {
-            _cancel = new CancellationTokenSource();
             _waitForLock = _metadata.Lock(OnProjectionLocked);
         }
 
@@ -92,7 +90,7 @@ namespace ServiceLib
                 _lastCompletedToken = token;
                 _version = _projectionInfo.GetVersion();
                 _upgradeMode = _projectionInfo.UpgradeMode(_storedVersion);
-                _streaming.Setup(_lastCompletedToken, _subscriptions.GetHandledTypes().ToArray(), _projectionInfo.GetStreamPrefixes(), false);
+                _streaming.Setup(_lastCompletedToken, _subscriptions.GetHandledTypes().ToArray());
                 _flushCounter = 20;
                 if (_upgradeMode == EventProjectionUpgradeMode.Rebuild)
                     CallHandler(new ProjectorMessages.Reset(), SaveNewVersion, OnError);
@@ -136,8 +134,8 @@ namespace ServiceLib
         }
         private void ProcessNextEvent()
         {
-            if (!_cancel.IsCancellationRequested)
-                _streaming.GetNextEvent(OnEventReceived, OnEventsUsedUp, OnEventsError, _cancel.Token, true);
+            if (!_cancel)
+                _streaming.GetNextEvent(OnEventReceived, OnEventsUsedUp, OnEventsError, true);
             else
                 SaveToken();
         }
@@ -201,17 +199,17 @@ namespace ServiceLib
         }
         private void FlushReported()
         {
-            if (_cancel.IsCancellationRequested)
+            if (_cancel)
                 StopRunning();
             else if (_currentEvent != null)
-                _streaming.GetNextEvent(OnEventReceived, OnEventsUsedUp, OnEventsError, _cancel.Token, true);
+                _streaming.GetNextEvent(OnEventReceived, OnEventsUsedUp, OnEventsError, true);
             else
-                _streaming.GetNextEvent(OnEventReceived, OnEventsUsedUp, OnEventsError, _cancel.Token, false);
+                _streaming.GetNextEvent(OnEventReceived, OnEventsUsedUp, OnEventsError, false);
         }
 
         private void OnError(Exception exception)
         {
-            _cancel.Cancel();
+            _cancel = true;
             StopRunning();
         }
 
@@ -222,12 +220,14 @@ namespace ServiceLib
 
         private void StopRunning()
         {
+            _streaming.Dispose();
             _metadata.Unlock();
         }
 
         public void Handle(SystemEvents.SystemShutdown message)
         {
-            _cancel.Cancel();
+            _cancel = true;
+            _streaming.Dispose();
             _waitForLock.Dispose();
         }
     }

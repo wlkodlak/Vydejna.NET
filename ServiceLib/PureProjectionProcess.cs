@@ -14,7 +14,6 @@ namespace ServiceLib
     {
         string GetVersion();
         bool NeedsRebuild(string storedVersion);
-        IList<string> GetStreamPrefixes();
     }
     public interface IPureProjection<TState> : IPureProjectionVersionControl, IPureProjectionSerializer<TState>, IPureProjectionStateToken<TState>
     {
@@ -32,7 +31,7 @@ namespace ServiceLib
         private readonly IPureProjectionDispatcher<TState> _dispatcher;
         private readonly IEventStreamingDeserialized _streaming;
 
-        private CancellationTokenSource _cancel;
+        private bool _cancel;
         private EventStoreToken _currentToken;
         private object _currentEvent;
         private IPureProjectionHandler<TState, object> _currentHandler;
@@ -62,13 +61,13 @@ namespace ServiceLib
 
         public void Handle(SystemEvents.SystemInit message)
         {
-            _cancel = new CancellationTokenSource();
             _locking.Lock(_lockName, OnLockObtained, EmptyAction, false);
         }
 
         public void Handle(SystemEvents.SystemShutdown message)
         {
-            _cancel.Cancel();
+            _cancel = true;
+            _streaming.Dispose();
         }
 
         private void OnLockObtained()
@@ -77,29 +76,29 @@ namespace ServiceLib
         }
         private void OnMetadataLoaded(string version, EventStoreToken token)
         {
-            if (_cancel.IsCancellationRequested)
+            if (_cancel)
                 StopWorking();
             else if (string.IsNullOrEmpty(version) || _versioning.NeedsRebuild(version))
             {
-                _streaming.Setup(EventStoreToken.Initial, _dispatcher.GetRegisteredTypes(), _versioning.GetStreamPrefixes(), false);
+                _streaming.Setup(EventStoreToken.Initial, _dispatcher.GetRegisteredTypes());
                 _store.Reset(_versioning.GetVersion(), ProcessEvents, OnError);
             }
             else
             {
-                _streaming.Setup(token, _dispatcher.GetRegisteredTypes(), _versioning.GetStreamPrefixes(), false);
-                _streaming.GetNextEvent(OnEventReceived, OnEventUnavailable, OnEventError, _cancel.Token, false);
+                _streaming.Setup(token, _dispatcher.GetRegisteredTypes());
+                _streaming.GetNextEvent(OnEventReceived, OnEventUnavailable, OnEventError, false);
             }
         }
         private void ProcessEvents()
         {
-            if (_cancel.IsCancellationRequested)
+            if (_cancel)
                 StopWorking();
             else
-                _streaming.GetNextEvent(OnEventReceived, OnEventUnavailable, OnEventError, _cancel.Token, true);
+                _streaming.GetNextEvent(OnEventReceived, OnEventUnavailable, OnEventError, true);
         }
         private void OnEventReceived(EventStoreToken token, object evnt)
         {
-            if (_cancel.IsCancellationRequested)
+            if (_cancel)
                 StopWorking();
             else
             {
@@ -116,10 +115,10 @@ namespace ServiceLib
         }
         private void OnStoreFlushed()
         {
-            if (_cancel.IsCancellationRequested)
+            if (_cancel)
                 StopWorking();
             else
-                _streaming.GetNextEvent(OnEventReceived, OnEventUnavailable, OnEventError, _cancel.Token, false);
+                _streaming.GetNextEvent(OnEventReceived, OnEventUnavailable, OnEventError, false);
         }
         private void PartitionLoaded(TState state)
         {
@@ -140,11 +139,12 @@ namespace ServiceLib
         }
         private void OnError(Exception exception)
         {
-            _cancel.Cancel();
+            _cancel = true;
             StopWorking();
         }
         private void StopWorking()
         {
+            _streaming.Dispose();
             _locking.Unlock(_lockName);
         }
         private void EmptyAction()

@@ -7,36 +7,18 @@ using System.Threading.Tasks;
 
 namespace ServiceLib
 {
-    public class EventStreamingFilter
-    {
-        private readonly EventStoreToken _firstToken;
-        private readonly IList<string> _types;
-        private readonly IList<string> _prefixes;
-
-        public EventStoreToken FirstToken { get { return _firstToken; } }
-        public IList<string> Types { get { return _types; } }
-        public IList<string> StreamPrefixes { get { return _prefixes; } }
-
-        public EventStreamingFilter(EventStoreToken firstToken, IList<string> types, IList<string> prefixes)
-        {
-            _firstToken = firstToken;
-            _types = types;
-            _prefixes = prefixes;
-        }
-    }
-
     public interface IEventStreaming
     {
-        IEventStreamer GetStreamer(EventStreamingFilter filter);
+        IEventStreamer GetStreamer(EventStoreToken token);
     }
     public interface IEventStreamer : IDisposable
     {
-        void GetNextEvent(Action<EventStoreEvent> onComplete, CancellationToken cancel, bool withoutWaiting);
+        void GetNextEvent(Action<EventStoreEvent> onComplete, Action<Exception> onError, bool withoutWaiting);
     }
-    public interface IEventStreamingDeserialized
+    public interface IEventStreamingDeserialized : IDisposable
     {
-        void Setup(EventStoreToken firstToken, IList<Type> types, IList<string> prefixes, bool prefilterType);
-        void GetNextEvent(Action<EventStoreToken, object> onEventRead, Action onEventNotAvailable, Action<Exception, EventStoreEvent> onError, CancellationToken cancel, bool nowait);
+        void Setup(EventStoreToken firstToken, IList<Type> types);
+        void GetNextEvent(Action<EventStoreToken, object> onEventRead, Action onEventNotAvailable, Action<Exception, EventStoreEvent> onError, bool nowait);
     }
 
     public class EventStreaming : IEventStreaming
@@ -50,9 +32,9 @@ namespace ServiceLib
             _executor = executor;
         }
 
-        public IEventStreamer GetStreamer(EventStreamingFilter filter)
+        public IEventStreamer GetStreamer(EventStoreToken token)
         {
-            return new EventsStream(this, filter);
+            return new EventsStream(this, token);
         }
 
         private class EventsStream : IEventStreamer
@@ -83,15 +65,11 @@ namespace ServiceLib
                 }
             }
 
-            public EventsStream(EventStreaming parent, EventStreamingFilter filter)
+            public EventsStream(EventStreaming parent, EventStoreToken token)
             {
                 _store = parent._store;
                 _executor = parent._executor;
                 _lock = new object();
-                if (filter.StreamPrefixes.Count == 0)
-                    _substreamers = new SubStreamer[1] { new SubStreamer(this, filter.FirstToken, null) };
-                else
-                    _substreamers = filter.StreamPrefixes.Select(prefix => new SubStreamer(this, filter.FirstToken, prefix)).ToArray();
             }
 
             public void GetNextEvent(Action<EventStoreEvent> onComplete, CancellationToken cancel, bool withoutWaiting)
@@ -282,6 +260,11 @@ namespace ServiceLib
                     }
                 }
             }
+
+            public void GetNextEvent(Action<EventStoreEvent> onComplete, Action<Exception> onError, bool withoutWaiting)
+            {
+                throw new NotImplementedException();
+            }
         }
     }
 
@@ -294,8 +277,7 @@ namespace ServiceLib
         private Action<EventStoreToken, object> _onEventRead;
         private Action _onEventNotAvailable;
         private Action<Exception, EventStoreEvent> _onError;
-        private bool _nowait;
-        private CancellationToken _cancel;
+        private bool _nowait, _isDisposed;
 
         public EventStreamingDeserialized(IEventStreaming streaming, IEventSourcedSerializer serializer)
         {
@@ -303,21 +285,34 @@ namespace ServiceLib
             _serializer = serializer;
         }
 
-        public void Setup(EventStoreToken firstToken, IList<Type> types, IList<string> prefixes, bool prefilterType)
+        public void Setup(EventStoreToken firstToken, IList<Type> types)
         {
             _typeFilter = new HashSet<string>(types.Select(_serializer.GetTypeName));
-            var typeNames = prefilterType ? _typeFilter.ToArray() : new string[0];
-            _streamer = _streaming.GetStreamer(new EventStreamingFilter(firstToken, typeNames, prefixes));
+            _streamer = _streaming.GetStreamer(firstToken);
+            _isDisposed = false;
         }
 
-        public void GetNextEvent(Action<EventStoreToken, object> onEventRead, Action onEventNotAvailable, Action<Exception, EventStoreEvent> onError, CancellationToken cancel, bool nowait)
+        public void GetNextEvent(Action<EventStoreToken, object> onEventRead, Action onEventNotAvailable, Action<Exception, EventStoreEvent> onError, bool nowait)
         {
             _onEventRead = onEventRead;
             _onEventNotAvailable = onEventNotAvailable;
             _onError = onError;
-            _cancel = cancel;
             _nowait = nowait;
-            _streamer.GetNextEvent(RawEventReceived, _cancel, _nowait);
+            if (_isDisposed)
+                _onError(new ObjectDisposedException("Streamer is disposed"), null);
+            else
+                _streamer.GetNextEvent(RawEventReceived, OnError, _nowait);
+        }
+
+        public void Dispose()
+        {
+            _isDisposed = true;
+            _streamer.Dispose();
+        }
+
+        private void OnError(Exception exception)
+        {
+            _onError(exception, null);
         }
 
         private void RawEventReceived(EventStoreEvent rawEvent)
@@ -341,7 +336,7 @@ namespace ServiceLib
                     _onEventRead(rawEvent.Token, deserialized);
                 }
                 else
-                    _streamer.GetNextEvent(RawEventReceived, _cancel, _nowait);
+                    _streamer.GetNextEvent(RawEventReceived, OnError, _nowait);
             }
         }
     }

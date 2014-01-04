@@ -5,10 +5,6 @@ using System.Threading;
 
 namespace ServiceLib
 {
-    public interface IEventHandler
-    {
-        IList<string> GetEventStreamPrefixes();
-    }
     public class EventProcessSimple
         : IHandle<SystemEvents.SystemInit>
         , IHandle<SystemEvents.SystemShutdown>
@@ -16,9 +12,8 @@ namespace ServiceLib
         private readonly IMetadataInstance _metadata;
         private readonly IEventStreamingDeserialized _streaming;
         private readonly ICommandSubscriptionManager _subscriptions;
-        private CancellationTokenSource _cancel;
+        private bool _cancel;
         private EventStoreToken _token;
-        private IEventHandler _eventHandler;
         private object _handledEvent;
         private int _flushCounter;
         private bool _metadataDirty;
@@ -29,11 +24,6 @@ namespace ServiceLib
             _metadata = metadata;
             _streaming = streaming;
             _subscriptions = subscriptions;
-        }
-
-        public void SetupHandler(IEventHandler eventHandler)
-        {
-            _eventHandler = eventHandler;
         }
 
         public IHandleRegistration<CommandExecution<T>> Register<T>(IHandle<CommandExecution<T>> handler)
@@ -49,19 +39,19 @@ namespace ServiceLib
 
         public void Handle(SystemEvents.SystemInit msg)
         {
-            _cancel = new CancellationTokenSource();
             _waitForLock = _metadata.Lock(ObtainedLock);
         }
 
         public void Handle(SystemEvents.SystemShutdown msg)
         {
-            _cancel.Cancel();
+            _cancel = true;
+            _streaming.Dispose();
             _waitForLock.Dispose();
         }
 
         private void ObtainedLock()
         {
-            if (!_cancel.IsCancellationRequested)
+            if (!_cancel)
                 _metadata.GetToken(OnMetadataLoaded, OnError);
             else
                 StopRunning();
@@ -69,14 +59,13 @@ namespace ServiceLib
 
         private void OnMetadataLoaded(EventStoreToken token)
         {
-            if (!_cancel.IsCancellationRequested)
+            if (!_cancel)
             {
                 try
                 {
                     _token = token;
-                    var prefixes = _eventHandler != null ? _eventHandler.GetEventStreamPrefixes() : null;
-                    _streaming.Setup(_token, _subscriptions.GetHandledTypes().ToArray(), prefixes ?? new string[0], false);
-                    _streaming.GetNextEvent(EventReceived, NoNewEvents, CannotReceiveEvents, _cancel.Token, false);
+                    _streaming.Setup(_token, _subscriptions.GetHandledTypes().ToArray());
+                    _streaming.GetNextEvent(EventReceived, NoNewEvents, CannotReceiveEvents, false);
                 }
                 catch (Exception ex)
                 {
@@ -91,7 +80,7 @@ namespace ServiceLib
         {
             try
             {
-                if (_cancel.IsCancellationRequested)
+                if (_cancel)
                     SaveToken();
                 else
                 {
@@ -133,7 +122,7 @@ namespace ServiceLib
             if (_flushCounter > 0)
             {
                 _flushCounter--;
-                _streaming.GetNextEvent(EventReceived, NoNewEvents, CannotReceiveEvents, _cancel.Token, true);
+                _streaming.GetNextEvent(EventReceived, NoNewEvents, CannotReceiveEvents, true);
             }
             else
                 SaveToken();
@@ -152,20 +141,21 @@ namespace ServiceLib
 
         private void OnTokenSaved()
         {
-            if (!_cancel.IsCancellationRequested)
-                _streaming.GetNextEvent(EventReceived, NoNewEvents, CannotReceiveEvents, _cancel.Token, false);
+            if (!_cancel)
+                _streaming.GetNextEvent(EventReceived, NoNewEvents, CannotReceiveEvents, false);
             else
                 StopRunning();
         }
 
         private void OnError(Exception exception)
         {
-            _cancel.Cancel();
+            _cancel = true;
             StopRunning();
         }
 
         private void StopRunning()
         {
+            _streaming.Dispose();
             _metadata.Unlock();
         }
     }
