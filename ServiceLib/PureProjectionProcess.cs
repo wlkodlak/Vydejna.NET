@@ -24,9 +24,8 @@ namespace ServiceLib
         : IHandle<SystemEvents.SystemInit>
         , IHandle<SystemEvents.SystemShutdown>
     {
-        private readonly string _lockName;
         private readonly IPureProjectionVersionControl _versioning;
-        private readonly INodeLockManager _locking;
+        private readonly INodeLock _locking;
         private readonly IPureProjectionStateCache<TState> _store;
         private readonly IPureProjectionDispatcher<TState> _dispatcher;
         private readonly IEventStreamingDeserialized _streaming;
@@ -38,14 +37,12 @@ namespace ServiceLib
         private string _currentPartition;
 
         public PureProjectionProcess(
-            string lockName, 
             IPureProjectionVersionControl versioning, 
-            INodeLockManager locking,
+            INodeLock locking,
             IPureProjectionStateCache<TState> store, 
             IPureProjectionDispatcher<TState> dispatcher, 
             IEventStreamingDeserialized streaming)
         {
-            _lockName = lockName;
             _versioning = versioning;
             _locking = locking;
             _store = store;
@@ -61,12 +58,13 @@ namespace ServiceLib
 
         public void Handle(SystemEvents.SystemInit message)
         {
-            _locking.Lock(_lockName, OnLockObtained, EmptyAction, false);
+            _locking.Lock(OnLockObtained, EmptyAction);
         }
 
         public void Handle(SystemEvents.SystemShutdown message)
         {
             _cancel = true;
+            _locking.Dispose();
             _streaming.Dispose();
         }
 
@@ -125,12 +123,18 @@ namespace ServiceLib
             try
             {
                 var newState = _currentHandler.ApplyEvent(state, _currentEvent, _currentToken);
-                _store.Set(_currentPartition, newState, ProcessEvents, OnError);
+                _store.Set(_currentPartition, newState, SaveToken, OnError);
             }
             catch (Exception exception)
             {
                 OnError(exception);
             }
+        }
+
+        private void SaveToken()
+        {
+            _store.SetToken(_currentToken);
+            ProcessEvents();
         }
 
         private void OnEventError(Exception exception, EventStoreEvent evnt)
@@ -145,7 +149,7 @@ namespace ServiceLib
         private void StopWorking()
         {
             _streaming.Dispose();
-            _locking.Unlock(_lockName);
+            _locking.Unlock();
         }
         private void EmptyAction()
         {

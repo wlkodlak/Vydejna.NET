@@ -62,19 +62,27 @@ namespace ServiceLib.Tests.Documents
             Assert.AreEqual("1.12", version);
         }
 
+        private class EmptyDisposable : IDisposable
+        {
+            public void Dispose() { }
+        }
+
         [TestMethod]
         public void LockMetadata()
         {
             bool obtained;
             Action lockAction = null;
+            var lockWait = new EmptyDisposable();
             _locking
                 .Setup(l => l.Lock("consumer", It.IsAny<Action>(), It.IsAny<Action>(), false))
-                .Callback<string, Action, Action, bool>((doc, succ, fail, nowait) => lockAction = succ);
-            _inst.Lock(() => obtained = true);
+                .Callback<string, Action, Action, bool>((doc, succ, fail, nowait) => lockAction = succ)
+                .Returns(lockWait);
+            var returnedWait = _inst.Lock(() => obtained = true);
             Assert.IsNotNull(lockAction, "No success action");
             obtained = false;
             lockAction();
             Assert.IsTrue(obtained, "Correct action");
+            Assert.AreSame(lockWait, returnedWait, "IDisposable");
         }
 
         [TestMethod]

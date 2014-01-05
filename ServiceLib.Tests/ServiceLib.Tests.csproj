@@ -62,8 +62,10 @@
     <Compile Include="Documents\DocumentStoreVersionTests.cs" />
     <Compile Include="Documents\EventHandlerMetadataTests.cs" />
     <Compile Include="Documents\NodeLockManagerTests.cs" />
+    <Compile Include="Documents\NodeLockTests.cs" />
     <Compile Include="EventHandlers\EventProcessSimpleTests.cs" />
     <Compile Include="EventHandlers\PureProjectionDispatcherTests.cs" />
+    <Compile Include="EventHandlers\PureProjectionProcessTests.cs" />
     <Compile Include="EventHandlers\PureProjectionStateCacheTests.cs" />
     <Compile Include="EventHandlers\PureProjectionTestBase.cs" />
     <Compile Include="EventSourced\AggregateTests.cs" />
@@ -96,6 +98,7 @@
     <Compile Include="TestUtils\TestEventStore.cs" />
     <Compile Include="TestUtils\TestExecutor.cs" />
     <Compile Include="TestUtils\TestMetadataInstance.cs" />
+    <Compile Include="TestUtils\TestNodeLock.cs" />
     <Compile Include="TestUtils\TestRawContext.cs" />
     <Compile Include="TestUtils\TestStagedContext.cs" />
     <Compile Include="TestUtils\TestStreaming.cs" />

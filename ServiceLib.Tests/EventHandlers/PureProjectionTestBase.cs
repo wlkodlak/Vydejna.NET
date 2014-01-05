@@ -72,6 +72,7 @@ namespace ServiceLib.Tests.EventHandlers
             , IPureProjectionHandler<TestState, TestEvent2>
             , IPureProjectionHandler<TestState, TestEvent3>
             , IPureProjectionStateToken<TestState>
+            , IPureProjectionVersionControl
         {
 
             public string Partition(TestEvent1 evnt)
@@ -112,6 +113,16 @@ namespace ServiceLib.Tests.EventHandlers
             public EventStoreToken GetTokenFromState(TestState state)
             {
                 return state.Token;
+            }
+
+            public string GetVersion()
+            {
+                return "1.0";
+            }
+
+            public bool NeedsRebuild(string storedVersion)
+            {
+                return string.IsNullOrEmpty(storedVersion) || storedVersion != "1.0";
             }
         }
 

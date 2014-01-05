@@ -13,6 +13,12 @@ namespace ServiceLib
         void Dispose();
     }
 
+    public interface INodeLock : IDisposable
+    {
+        void Lock(Action onLocked, Action cannotLock);
+        void Unlock();
+    }
+
     public class NodeLockManager : INodeLockManager
     {
         private IDocumentFolder _store;
@@ -183,6 +189,44 @@ namespace ServiceLib
         }
         private void IgnoreError(Exception exception)
         {
+        }
+    }
+
+    public class NodeLock : INodeLock
+    {
+        private INodeLockManager _manager;
+        private string _lockName;
+        private IDisposable _wait;
+        private Action _onLocked;
+        
+        public NodeLock(INodeLockManager manager, string lockName)
+        {
+            _manager = manager;
+            _lockName = lockName;
+        }
+
+        public void Lock(Action onLocked, Action cannotLock)
+        {
+            _onLocked = onLocked;
+            _wait = _manager.Lock(_lockName, OnLocked, cannotLock, false);
+        }
+
+        private void OnLocked()
+        {
+            _wait = null;
+            _onLocked();
+        }
+
+        public void Unlock()
+        {
+            _manager.Unlock(_lockName);
+        }
+
+        public void Dispose()
+        {
+            if (_wait != null)
+                _wait.Dispose();
+            _wait = null;
         }
     }
 }

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using System.Collections.Generic;
 
 namespace ServiceLib.Tests.TestUtils
@@ -34,6 +35,11 @@ namespace ServiceLib.Tests.TestUtils
             {
                 _handler(_token, _event);
             }
+        }
+
+        public IList<string> SupportedTypes()
+        {
+            return _types.Select(t => t.Name).OrderBy(n => n).ToList();
         }
 
         public TestStreaming(IQueueExecution executor)
