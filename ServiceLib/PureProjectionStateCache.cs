@@ -39,6 +39,7 @@ namespace ServiceLib
         private EventStoreToken _token;
         private bool _autoFlushEnabled, _autoFlushWhenRebuilding;
         private int _autoFlushInitial, _autoFlushLeft;
+        private int _mruLimit;
         private bool _deleteAll;
 
         public PureProjectionStateCache(IDocumentFolder store, IPureProjectionSerializer<TState> serializer)
@@ -48,6 +49,7 @@ namespace ServiceLib
             _index = new Dictionary<string, CacheItem>();
             _autoFlushEnabled = true;
             _autoFlushInitial = _autoFlushLeft = 100;
+            _mruLimit = 2;
         }
 
         public void SetupFlushing(bool enabled, bool allowWhenRebuilding, int counter)
@@ -55,6 +57,11 @@ namespace ServiceLib
             _autoFlushEnabled = enabled;
             _autoFlushWhenRebuilding = allowWhenRebuilding;
             _autoFlushInitial = _autoFlushLeft = counter;
+        }
+
+        public void SetupMruLimit(int mruLimit)
+        {
+            _mruLimit = mruLimit;
         }
 
         private CacheItem FindOrCreate(string partition)
@@ -84,7 +91,7 @@ namespace ServiceLib
             {
                 if (cacheItem.Touched)
                     cacheItem.Age = 0;
-                else if (cacheItem.Age < 2)
+                else if (cacheItem.Age < _mruLimit)
                     cacheItem.Age++;
                 else if (!cacheItem.Dirty)
                     keysForRemoving.Add(cacheItem.Partition);
@@ -103,6 +110,7 @@ namespace ServiceLib
             {
                 item.State = _serializer.InitialState();
                 item.Loaded = true;
+                onCompleted(item.State);
             }
             else
                 new LoadPartitionWorker(this, item, onCompleted, onError).Execute();
@@ -131,6 +139,7 @@ namespace ServiceLib
             {
                 try
                 {
+                    _item.Loaded = true;
                     _item.State = _parent._serializer.Deserialize(contents);
                     _onCompleted(_item.State);
                 }
@@ -187,8 +196,8 @@ namespace ServiceLib
             else
             {
                 _autoFlushLeft = _autoFlushInitial;
-                bool peformFlush = _autoFlushEnabled && (_deleteAll || _autoFlushWhenRebuilding);
-                if (peformFlush)
+                bool performFlush = _autoFlushEnabled && (!_deleteAll || _autoFlushWhenRebuilding);
+                if (performFlush)
                     new FlushWorker(this, onCompleted, onError).Execute();
                 else
                 {
@@ -322,6 +331,8 @@ namespace ServiceLib
             }
             private void ReportResult()
             {
+                _version = _version ?? "";
+                _token = _token ?? EventStoreToken.Initial;
                 _parent.MetadataLoaded(_version, _token);
                 _onCompleted(_version, _token);
             }

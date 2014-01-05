@@ -193,7 +193,7 @@ namespace ServiceLib.Tests.EventHandlers
             }
         }
 
-        private class TestEvent { public string Data; }
+        private class TestEvent { }
         private class TestEvent1 : TestEvent { }
         private class TestEvent2 : TestEvent { }
         private class TestEvent3 : TestEvent { }

@@ -7,7 +7,8 @@ using System.Threading.Tasks;
 
 namespace ServiceLib.Tests.EventHandlers
 {
-    public abstract class PureProjectionDispatcherTests_Common
+    [TestClass]
+    public class PureProjectionDispatcherTests : PureProjectionTestBase
     {
         protected TestHandler _handler;
         protected PureProjectionDispatcher<TestState> _dispatcher;
@@ -22,93 +23,6 @@ namespace ServiceLib.Tests.EventHandlers
             _dispatcher.Register<TestEvent3>(_handler);
         }
 
-        protected class TestState
-        {
-            private EventStoreToken _token;
-            private string _output;
-            
-            public TestState(EventStoreToken token, string output)
-            {
-                _token = token;
-                _output = output;
-            }
-
-            public static TestState Initial { get { return new TestState(EventStoreToken.Initial, null); } }
-            public TestState Add(string prefix, string data)
-            {
-                string newOutput;
-                if (_output == null)
-                    newOutput = string.Concat(prefix, data);
-                else
-                    newOutput = string.Concat(_output, " ", prefix, data);
-                return new TestState(_token, newOutput);
-            }
-            public TestState ApplyToken(EventStoreToken token)
-            {
-                return new TestState(token, _output);
-            }
-            public override string ToString()
-            {
-                return string.Concat("Token: ", _token.ToString(), "\r\n", _output);
-            }
-            public override int GetHashCode()
-            {
-                return _output == null ? 0 : _output.GetHashCode();
-            }
-            public override bool Equals(object obj)
-            {
-                var oth = obj as TestState;
-                return oth != null && _token.Equals(oth._token) && string.Equals(_output, oth._output, StringComparison.Ordinal);
-            }
-        }
-
-        protected class TestEvent { public string Partition, Data; }
-        protected class TestEvent1 : TestEvent { }
-        protected class TestEvent2 : TestEvent { }
-        protected class TestEvent3 : TestEvent { }
-        protected class TestEvent4 : TestEvent { }
-
-        protected class TestHandler
-            : IPureProjectionHandler<TestState, TestEvent1>
-            , IPureProjectionHandler<TestState, TestEvent2>
-            , IPureProjectionHandler<TestState, TestEvent3>
-        {
-
-            public string Partition(TestEvent1 evnt)
-            {
-                return evnt.Partition;
-            }
-
-            public TestState ApplyEvent(TestState state, TestEvent1 evnt, EventStoreToken token)
-            {
-                return state.Add("E1:", evnt.Data ?? "");
-            }
-
-            public string Partition(TestEvent2 evnt)
-            {
-                return evnt.Partition;
-            }
-
-            public TestState ApplyEvent(TestState state, TestEvent2 evnt, EventStoreToken token)
-            {
-                return state.Add("E2:", evnt.Data ?? "");
-            }
-
-            public string Partition(TestEvent3 evnt)
-            {
-                return evnt.Partition;
-            }
-
-            public TestState ApplyEvent(TestState state, TestEvent3 evnt, EventStoreToken token)
-            {
-                return state.Add("E3:", evnt.Data ?? "");
-            }
-        }
-    }
-
-    [TestClass]
-    public class PureProjectionDispatcherTests_Base : PureProjectionDispatcherTests_Common
-    {
         [TestMethod]
         public void GetRegisteredTypes()
         {
@@ -131,7 +45,83 @@ namespace ServiceLib.Tests.EventHandlers
                 .ApplyToken(new EventStoreToken("1"));
             Assert.AreEqual(expectedState, actualState, "State");
         }
+    }
 
+    [TestClass]
+    public class PureProjectionDispatcherDeduplicationTests : PureProjectionTestBase
+    {
+        protected TestHandler _handler;
+        protected PureProjectionDispatcher<TestState> _dispatcher;
+        protected PureProjectionDispatcherDeduplication<TestState> _deduplication;
+        protected TestState _state;
 
+        [TestInitialize]
+        public virtual void Initialize()
+        {
+            _state = TestState.Initial;
+            _handler = new TestHandler();
+            _dispatcher = new PureProjectionDispatcher<TestState>();
+            _deduplication = new PureProjectionDispatcherDeduplication<TestState>(_dispatcher, _handler);
+            _deduplication.Register<TestEvent1>(_handler);
+            _deduplication.Register<TestEvent2>(_handler);
+            _deduplication.Register<TestEvent3>(_handler);
+        }
+
+        [TestMethod]
+        public void GetRegisteredTypes()
+        {
+            var expectedTypes = "TestEvent1, TestEvent2, TestEvent3";
+            var actualTypes = string.Join(", ", _deduplication.GetRegisteredTypes().Select(t => t.Name).OrderBy(n => n));
+            Assert.AreEqual(expectedTypes, actualTypes);
+        }
+
+        [TestMethod]
+        public void GetPartition()
+        {
+            var evnt = new TestEvent2 { Partition = "A", Data = "42" };
+            var impl = _deduplication.FindHandler(evnt.GetType());
+            Assert.IsNotNull(impl, "Handler null");
+            Assert.AreEqual(evnt.Partition, impl.Partition(evnt), "Partition");
+        }
+
+        [TestMethod]
+        public void SavesTokenToStateAfterApplyingEvent()
+        {
+            ApplyEvent<TestEvent2>("1", "A", "42");
+            Assert.AreEqual(new TestState("1", "E2:42"), _state);
+        }
+
+        [TestMethod]
+        public void ProcessEventsWithoutDuplicity()
+        {
+            ApplyEvent<TestEvent2>("1", "A", "42");
+            ApplyEvent<TestEvent1>("2", "A", "58");
+            ApplyEvent<TestEvent3>("3", "A", "22");
+            ApplyEvent<TestEvent1>("4", "A", "77");
+            Assert.AreEqual(new TestState("4", "E2:42 E1:58 E3:22 E1:77"), _state);
+        }
+
+        [TestMethod]
+        public void ProcessEventsWithDuplicity()
+        {
+            ApplyEvent<TestEvent2>("1", "A", "42");
+            ApplyEvent<TestEvent1>("2", "A", "58");
+            ApplyEvent<TestEvent3>("3", "A", "22");
+            ApplyEvent<TestEvent1>("2", "A", "58");
+            ApplyEvent<TestEvent3>("3", "A", "22");
+            ApplyEvent<TestEvent1>("4", "A", "77");
+            Assert.AreEqual(new TestState("4", "E2:42 E1:58 E3:22 E1:77"), _state);
+        }
+
+        private void ApplyEvent<TEvent>(string tokenBase, string partition, string data)
+            where TEvent : TestEvent, new()
+        {
+            var handler = _deduplication.FindHandler(typeof(TEvent));
+            var evnt = new TEvent();
+            evnt.Partition = partition;
+            evnt.Data = data;
+            var token = new EventStoreToken(tokenBase);
+            _state = handler.ApplyEvent(_state, evnt, token);
+        }
     }
 }

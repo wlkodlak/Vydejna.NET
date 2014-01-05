@@ -13,6 +13,7 @@ namespace ServiceLib.Tests.TestUtils
         private Dictionary<string, Document> _data;
         private List<Watcher> _watchers;
         private IQueueExecution _executor;
+        private List<string> _log;
 
         private class Watcher : IDisposable
         {
@@ -25,6 +26,10 @@ namespace ServiceLib.Tests.TestUtils
         {
             public int Version;
             public string Contents;
+            public override string ToString()
+            {
+                return string.Format("@{0}: {1}", Version, Contents);
+            }
         }
 
         public TestDocumentFolder(IQueueExecution executor)
@@ -33,6 +38,7 @@ namespace ServiceLib.Tests.TestUtils
             _lock = new object();
             _data = new Dictionary<string, Document>();
             _watchers = new List<Watcher>();
+            _log = new List<string>();
         }
 
         public IDocumentFolder SubFolder(string name)
@@ -45,8 +51,34 @@ namespace ServiceLib.Tests.TestUtils
             lock (_lock)
             {
                 _data.Clear();
+                AddToLog("Clear", null, 0);
                 ScheduleWatchers(null);
+                _executor.Enqueue(onComplete);
             }
+        }
+
+        public void ClearLog()
+        {
+            _log.Clear();
+        }
+        private void AddToLog(string action, string document, int version)
+        {
+            var entry = document != null ? string.Format("{0} {1}@{2}", action, document, version) : action;
+            _log.Add(entry);
+        }
+
+        public string Log
+        {
+            get
+            {
+                var sb = new StringBuilder();
+                _log.ForEach(l => sb.AppendLine(l));
+                return sb.ToString();
+            }
+        }
+        public List<string> LogLines()
+        {
+            return _log;
         }
 
         public void GetDocument(string name, Action<int, string> onFound, Action onMissing, Action<Exception> onError)
@@ -55,9 +87,15 @@ namespace ServiceLib.Tests.TestUtils
             {
                 Document document;
                 if (_data.TryGetValue(name, out document))
+                {
+                    AddToLog("Get", name, document.Version);
                     _executor.Enqueue(new DocumentFound(onFound, document.Version, document.Contents));
+                }
                 else
+                {
+                    AddToLog("Get", name, 0);
                     _executor.Enqueue(onMissing);
+                }
             }
         }
 
@@ -93,11 +131,15 @@ namespace ServiceLib.Tests.TestUtils
                 if (_data.TryGetValue(name, out document))
                 {
                     if (!expectedVersion.VerifyVersion(document.Version))
+                    {
+                        AddToLog("Conflict", name, document.Version);
                         _executor.Enqueue(onConcurrency);
+                    }
                     else
                     {
                         document.Version++;
                         document.Contents = value;
+                        AddToLog("Save", name, document.Version);
                         _executor.Enqueue(onSave);
                         ScheduleWatchers(name);
                     }
@@ -105,12 +147,16 @@ namespace ServiceLib.Tests.TestUtils
                 else
                 {
                     if (!expectedVersion.VerifyVersion(0))
+                    {
+                        AddToLog("Conflict", name, 0);
                         _executor.Enqueue(onConcurrency);
+                    }
                     else
                     {
                         _data[name] = document = new Document();
                         document.Version = 1;
                         document.Contents = value;
+                        AddToLog("Save", name, 1);
                         _executor.Enqueue(onSave);
                         ScheduleWatchers(name);
                     }
