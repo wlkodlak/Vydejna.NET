@@ -64,6 +64,7 @@
     <Compile Include="Documents\NodeLockManagerTests.cs" />
     <Compile Include="Documents\NodeLockTests.cs" />
     <Compile Include="EventHandlers\EventProcessSimpleTests.cs" />
+    <Compile Include="EventHandlers\EventProjectorSimpleTests.cs" />
     <Compile Include="EventHandlers\PureProjectionDispatcherTests.cs" />
     <Compile Include="EventHandlers\PureProjectionProcessTests.cs" />
     <Compile Include="EventHandlers\PureProjectionStateCacheTests.cs" />

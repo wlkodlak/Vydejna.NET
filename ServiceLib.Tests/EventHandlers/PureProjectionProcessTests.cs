@@ -122,6 +122,7 @@ namespace ServiceLib.Tests.EventHandlers
             Assert.AreEqual(new TestState("8", "E1:14 E3:21 E2:39"), _cache.Get("A"), "A");
             Assert.AreEqual(new TestState("6", "E3:88 E2:47 E1:48"), _cache.Get("B"), "B");
             Assert.AreEqual(new TestState("9", "E2:37 E1:92"), _cache.Get("C"), "C");
+            Assert.IsFalse(_locking.IsLocked, "IsLocked");
         }
 
         [TestMethod]
@@ -150,6 +151,25 @@ namespace ServiceLib.Tests.EventHandlers
             Assert.AreEqual(new TestState("8", "E1:14 E3:21 E2:39"), _cache.Get("A"), "A");
             Assert.AreEqual(new TestState("6", "E3:88 E2:47 E1:48"), _cache.Get("B"), "B");
             Assert.AreEqual(new TestState("9", "E2:37 E1:92"), _cache.Get("C"), "C");
+            Assert.IsFalse(_locking.IsLocked, "IsLocked");
+        }
+
+        [TestMethod]
+        public void GracefullyCrashOnSystemError()
+        {
+            _cache.Token = new EventStoreToken("7");
+            _cache.Version = "1.0";
+            _cache.Set("A", new TestState("7", "E1:14 E3:21"));
+            _cache.Set("B", new TestState("6", "E3:88 E2:47 E1:48"));
+            _cache.Set("C", new TestState("3", "E2:37"));
+            _process.Handle(new SystemEvents.SystemInit());
+            _locking.SendLock();
+            _executor.Process();
+            _streaming.AddEvent("7", new TestEvent3() { Partition = "A", Data = "21" });
+            _cache.IsFailing = true;
+            _executor.Process();
+            Assert.IsFalse(_locking.IsLocked, "IsLocked");
+            Assert.IsTrue(_streaming.IsDisposed, "Streaming disposed");
         }
 
         private class TestCache : IPureProjectionStateCache<TestState>

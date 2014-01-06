@@ -49,6 +49,7 @@ namespace ServiceLib
         private IDisposable _waitForLock;
         private string _storedVersion;
         private EventStoreToken _currentToken;
+        private bool _flushNeeded;
 
         public EventProjectorSimple(IEventProjection projection, IMetadataInstance metadata, IEventStreamingDeserialized streaming, ICommandSubscriptionManager subscriptions)
         {
@@ -90,14 +91,19 @@ namespace ServiceLib
                 _lastCompletedToken = token;
                 _version = _projectionInfo.GetVersion();
                 _upgradeMode = _projectionInfo.UpgradeMode(_storedVersion);
+                if (_upgradeMode == EventProjectionUpgradeMode.Rebuild)
+                    _lastCompletedToken = EventStoreToken.Initial;
                 _streaming.Setup(_lastCompletedToken, _subscriptions.GetHandledTypes().ToArray());
                 _flushCounter = 20;
                 if (_upgradeMode == EventProjectionUpgradeMode.Rebuild)
+                {
+                    _flushNeeded = true;
                     CallHandler(new ProjectorMessages.Reset(), SaveNewVersion, OnError);
+                }
                 else if (_upgradeMode == EventProjectionUpgradeMode.Upgrade)
                     CallHandler(new ProjectorMessages.UpgradeFrom(_storedVersion), SaveNewVersion, OnError);
                 else
-                    ProcessNextEvent();
+                    WaitForEvents();
             }
             catch (Exception ex)
             {
@@ -130,7 +136,17 @@ namespace ServiceLib
         }
         private void SaveNewVersion()
         {
-            _metadata.SetVersion(_version, ProcessNextEvent, OnError);
+            if (_upgradeMode == EventProjectionUpgradeMode.Rebuild)
+                _metadata.SetVersion(_version, ProcessNextEvent, OnError);
+            else
+                _metadata.SetVersion(_version, WaitForEvents, OnError);
+        }
+        private void WaitForEvents()
+        {
+            if (!_cancel)
+                _streaming.GetNextEvent(OnEventReceived, OnEventsUsedUp, OnEventsError, false);
+            else
+                SaveToken();
         }
         private void ProcessNextEvent()
         {
@@ -146,6 +162,7 @@ namespace ServiceLib
                 _currentHandler = _subscriptions.FindHandler(evnt.GetType());
                 _currentEvent = evnt;
                 _currentToken = token;
+                _flushNeeded = true;
                 if (_currentHandler != null)
                     _currentHandler.Handle(_currentEvent, OnEventProcessed, OnError);
                 else
@@ -158,6 +175,8 @@ namespace ServiceLib
         }
         private void OnEventsUsedUp()
         {
+            _currentEvent = null;
+            _currentHandler = null;
             SaveToken();
         }
         private void OnEventsError(Exception exception, EventStoreEvent evnt)
@@ -178,11 +197,14 @@ namespace ServiceLib
         {
             if (_metadataDirty)
                 _metadata.SetToken(_lastCompletedToken, TokenSaved, OnError);
+            else if (_flushNeeded)
+                TokenSaved();
             else
-                ProcessNextEvent();
+                FlushReported();
         }
         private void TokenSaved()
         {
+            _flushNeeded = false;
             _metadataDirty = false;
             if (_upgradeMode != EventProjectionUpgradeMode.Rebuild)
             {
@@ -202,9 +224,9 @@ namespace ServiceLib
             if (_cancel)
                 StopRunning();
             else if (_currentEvent != null)
-                _streaming.GetNextEvent(OnEventReceived, OnEventsUsedUp, OnEventsError, true);
+                ProcessNextEvent();
             else
-                _streaming.GetNextEvent(OnEventReceived, OnEventsUsedUp, OnEventsError, false);
+                WaitForEvents();
         }
 
         private void OnError(Exception exception)
