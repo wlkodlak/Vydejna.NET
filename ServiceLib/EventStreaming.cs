@@ -1,9 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
 
 namespace ServiceLib
 {
@@ -15,16 +12,12 @@ namespace ServiceLib
     {
         void GetNextEvent(Action<EventStoreEvent> onComplete, Action<Exception> onError, bool withoutWaiting);
     }
-    public interface IEventStreamingDeserialized : IDisposable
-    {
-        void Setup(EventStoreToken firstToken, IList<Type> types);
-        void GetNextEvent(Action<EventStoreToken, object> onEventRead, Action onEventNotAvailable, Action<Exception, EventStoreEvent> onError, bool nowait);
-    }
 
     public class EventStreaming : IEventStreaming
     {
         private IEventStoreWaitable _store;
         private IQueueExecution _executor;
+        private int _batchSize = 20;
 
         public EventStreaming(IEventStoreWaitable store, IQueueExecution executor)
         {
@@ -32,312 +25,103 @@ namespace ServiceLib
             _executor = executor;
         }
 
+        public EventStreaming BatchSize(int batchSize)
+        {
+            _batchSize = batchSize;
+            return this;
+        }
+
         public IEventStreamer GetStreamer(EventStoreToken token)
         {
             return new EventsStream(this, token);
         }
 
+        private class GetNextEventCompleted : IQueuedExecutionDispatcher
+        {
+            private Action<EventStoreEvent> _onComplete;
+            private EventStoreEvent _completedEvent;
+
+            public GetNextEventCompleted(Action<EventStoreEvent> onComplete, EventStoreEvent completedEvent)
+            {
+                _onComplete = onComplete;
+                _completedEvent = completedEvent;
+            }
+
+            public void Execute()
+            {
+                _onComplete(_completedEvent);
+            }
+        }
+
         private class EventsStream : IEventStreamer
         {
+            private object _lock;
             private IEventStoreWaitable _store;
             private IQueueExecution _executor;
-            private IList<SubStreamer> _substreamers;
-            private object _lock;
-            private CancellationTokenRegistration _cancel;
             private Action<EventStoreEvent> _onComplete;
+            private Action<Exception> _onError;
             private bool _nowait;
-            private bool _isWorking;
-
-            private class GetNextEventCompleted : IQueuedExecutionDispatcher
-            {
-                private Action<EventStoreEvent> _onComplete;
-                private EventStoreEvent _completedEvent;
-
-                public GetNextEventCompleted(Action<EventStoreEvent> onComplete, EventStoreEvent completedEvent)
-                {
-                    _onComplete = onComplete;
-                    _completedEvent = completedEvent;
-                }
-
-                public void Execute()
-                {
-                    _onComplete(_completedEvent);
-                }
-            }
+            private Queue<EventStoreEvent> _queue;
+            private EventStoreToken _token;
+            private int _batchSize;
+            private IDisposable _wait;
 
             public EventsStream(EventStreaming parent, EventStoreToken token)
             {
+                _lock = new object();
+                _token = token;
                 _store = parent._store;
                 _executor = parent._executor;
-                _lock = new object();
-            }
-
-            public void GetNextEvent(Action<EventStoreEvent> onComplete, CancellationToken cancel, bool withoutWaiting)
-            {
-                lock (_lock)
-                {
-                    try
-                    {
-                        _isWorking = true;
-                        _cancel = cancel.Register(OnCancelled);
-                        if (cancel.IsCancellationRequested)
-                            return;
-                        _onComplete = onComplete;
-                        _nowait = withoutWaiting;
-                        foreach (var streamer in _substreamers)
-                            streamer.StartLoading();
-                    }
-                    finally
-                    {
-                        _isWorking = false;
-                    }
-                }
-                OnPotentiallyCompleted();
-            }
-
-            private void OnCancelled()
-            {
-                Action<EventStoreEvent> onComplete;
-                lock (_lock)
-                {
-                    if (_isWorking)
-                        return;
-                    onComplete = _onComplete;
-                    _onComplete = null;
-                    foreach (var streamer in _substreamers)
-                        streamer.Cancel();
-                }
-                _executor.Enqueue(new GetNextEventCompleted(onComplete, null));
-            }
-
-            private void OnPotentiallyCompleted()
-            {
-                bool hasCompleted = false;
-                Action<EventStoreEvent> onComplete = null;
-                EventStoreEvent completedEvent = null;
-                SubStreamer selectedStreamer = null;
-                lock (_lock)
-                {
-                    onComplete = _onComplete;
-                    if (_onComplete == null)
-                        return;
-                    var allWaiting = true;
-                    var anyLoading = false;
-                    foreach (var streamer in _substreamers)
-                    {
-                        allWaiting = allWaiting && streamer.IsWaiting;
-                        anyLoading = anyLoading || streamer.IsLoading;
-                        if (!streamer.IsReady)
-                            continue;
-                        var evt = streamer.AvailableEvent;
-                        if (completedEvent == null || EventStoreToken.Compare(completedEvent.Token, evt.Token) > 1)
-                        {
-                            selectedStreamer = streamer;
-                            completedEvent = evt;
-                        }
-                    }
-                    if (allWaiting && _nowait)
-                    {
-                        hasCompleted = true;
-                        _cancel.Dispose();
-                        _onComplete = null;
-                    }
-                    else if (!anyLoading && completedEvent != null)
-                    {
-                        hasCompleted = true;
-                        _onComplete = null;
-                        _cancel.Dispose();
-                        selectedStreamer.ReportEventUsed();
-                    }
-                }
-                if (hasCompleted)
-                    _executor.Enqueue(new GetNextEventCompleted(onComplete, completedEvent));
-            }
-
-            public void Dispose()
-            {
-                lock (_lock)
-                {
-                    if (_onComplete != null)
-                    {
-                        _onComplete = null;
-                        _cancel.Dispose();
-                    }
-                    foreach (var streamer in _substreamers)
-                        streamer.Cancel();
-                }
-            }
-
-            private enum StreamerStatus { Initial, Ready, Loading, Waiting, Failed }
-
-            private class SubStreamer
-            {
-                private StreamerStatus _status;
-                private EventsStream _parent;
-                private EventStoreToken _token;
-                private string _prefix;
-                private Queue<EventStoreEvent> _readyEvents;
-                private EventStoreEvent _firstEvent;
-                private IDisposable _currentWait;
-
-                public SubStreamer(EventsStream parent, EventStoreToken token, string prefix)
-                {
-                    _parent = parent;
-                    _token = token;
-                    _prefix = prefix;
-                    _status = StreamerStatus.Initial;
-                    _readyEvents = new Queue<EventStoreEvent>();
-                    _firstEvent = null;
-                }
-
-                public bool IsWaiting { get { return _status == StreamerStatus.Waiting; } }
-                public bool IsLoading { get { return _status == StreamerStatus.Loading || _status == StreamerStatus.Failed; } }
-                public bool IsReady { get { return _status == StreamerStatus.Ready; } }
-                public EventStoreEvent AvailableEvent { get { return _firstEvent; } }
-
-                public void StartLoading()
-                {
-                    if (_status == StreamerStatus.Initial || _status == StreamerStatus.Failed)
-                    {
-                        _status = StreamerStatus.Loading;
-                        _parent._store.GetAllEvents(_token, 20, true, LoadCompleted, LoadFailed);
-                    }
-                }
-
-                public void ReportEventUsed()
-                {
-                    if (_status == StreamerStatus.Ready)
-                    {
-                        if (_readyEvents.Count > 0)
-                            _firstEvent = _readyEvents.Dequeue();
-                        else
-                        {
-                            _firstEvent = null;
-                            _status = StreamerStatus.Loading;
-                            _parent._store.GetAllEvents(_token, 20, true, LoadCompleted, LoadFailed);
-                        }
-                    }
-                }
-
-                public void Cancel()
-                {
-                    if (_currentWait != null)
-                        _currentWait.Dispose();
-                }
-
-                private void LoadCompleted(IEventStoreCollection events)
-                {
-                    lock (_parent._lock)
-                    {
-                        _currentWait = null;
-                        foreach (var evt in events.Events)
-                        {
-                            if (_firstEvent == null)
-                                _firstEvent = evt;
-                            else
-                                _readyEvents.Enqueue(evt);
-                        }
-                        _token = events.NextToken;
-                        if (_firstEvent == null)
-                        {
-                            _status = StreamerStatus.Waiting;
-                            _currentWait = _parent._store.WaitForEvents(_token, 20, true, LoadCompleted, LoadFailed);
-                        }
-                        else if (_status == StreamerStatus.Loading)
-                        {
-                            _status = StreamerStatus.Ready;
-                            _parent.OnPotentiallyCompleted();
-                        }
-                    }
-                }
-
-                private void LoadFailed(Exception exception)
-                {
-                    lock (_parent._lock)
-                    {
-                        _currentWait = null;
-                        _status = StreamerStatus.Failed;
-                    }
-                }
+                _batchSize = parent._batchSize;
+                _queue = new Queue<EventStoreEvent>();
             }
 
             public void GetNextEvent(Action<EventStoreEvent> onComplete, Action<Exception> onError, bool withoutWaiting)
             {
-                throw new NotImplementedException();
-            }
-        }
-    }
-
-    public class EventStreamingDeserialized : IEventStreamingDeserialized
-    {
-        private IEventStreaming _streaming;
-        private IEventSourcedSerializer _serializer;
-        private IEventStreamer _streamer;
-        private HashSet<string> _typeFilter;
-        private Action<EventStoreToken, object> _onEventRead;
-        private Action _onEventNotAvailable;
-        private Action<Exception, EventStoreEvent> _onError;
-        private bool _nowait, _isDisposed;
-
-        public EventStreamingDeserialized(IEventStreaming streaming, IEventSourcedSerializer serializer)
-        {
-            _streaming = streaming;
-            _serializer = serializer;
-        }
-
-        public void Setup(EventStoreToken firstToken, IList<Type> types)
-        {
-            _typeFilter = new HashSet<string>(types.Select(_serializer.GetTypeName));
-            _streamer = _streaming.GetStreamer(firstToken);
-            _isDisposed = false;
-        }
-
-        public void GetNextEvent(Action<EventStoreToken, object> onEventRead, Action onEventNotAvailable, Action<Exception, EventStoreEvent> onError, bool nowait)
-        {
-            _onEventRead = onEventRead;
-            _onEventNotAvailable = onEventNotAvailable;
-            _onError = onError;
-            _nowait = nowait;
-            if (_isDisposed)
-                _onError(new ObjectDisposedException("Streamer is disposed"), null);
-            else
-                _streamer.GetNextEvent(RawEventReceived, OnError, _nowait);
-        }
-
-        public void Dispose()
-        {
-            _isDisposed = true;
-            _streamer.Dispose();
-        }
-
-        private void OnError(Exception exception)
-        {
-            _onError(exception, null);
-        }
-
-        private void RawEventReceived(EventStoreEvent rawEvent)
-        {
-            if (rawEvent == null)
-                _onEventNotAvailable();
-            else
-            {
-                if (_typeFilter.Contains(rawEvent.Type))
+                if (_queue.Count == 0)
                 {
-                    object deserialized;
-                    try
-                    {
-                        deserialized = _serializer.Deserialize(rawEvent);
-                    }
-                    catch (Exception exception)
-                    {
-                        _onError(exception, rawEvent);
-                        return;
-                    }
-                    _onEventRead(rawEvent.Token, deserialized);
+                    _onComplete = onComplete;
+                    _onError = onError;
+                    _nowait = withoutWaiting;
+                    if (_nowait)
+                        _store.GetAllEvents(_token, _batchSize, true, OnEventsLoaded, OnError);
+                    else
+                        _wait = _store.WaitForEvents(_token, _batchSize, true, OnEventsLoaded, OnError);
                 }
                 else
-                    _streamer.GetNextEvent(RawEventReceived, OnError, _nowait);
+                    _executor.Enqueue(new GetNextEventCompleted(onComplete, _queue.Dequeue()));
+            }
+
+            private void OnEventsLoaded(IEventStoreCollection events)
+            {
+                _wait = null;
+                _token = events.NextToken;
+                EventStoreEvent firstEvent = null;
+                foreach (var evnt in events.Events)
+                {
+                    if (firstEvent == null)
+                        firstEvent = evnt;
+                    else
+                        _queue.Enqueue(evnt);
+                }
+                _executor.Enqueue(new GetNextEventCompleted(_onComplete, firstEvent));
+            }
+
+            private void OnError(Exception exception)
+            {
+                _wait = null;
+                _executor.Enqueue(_onError, exception);
+            }
+
+            public void Dispose()
+            {
+                var wait = Interlocked.Exchange(ref _wait, null);
+                if (wait == null)
+                    return;
+                wait.Dispose();
+                _executor.Enqueue(new GetNextEventCompleted(_onComplete, null));
             }
         }
     }
+
 }

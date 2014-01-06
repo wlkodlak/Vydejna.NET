@@ -87,6 +87,14 @@ namespace ServiceLib
         public string Type { get; set; }
         public string Format { get; set; }
         public string Body { get; set; }
+        public override string ToString()
+        {
+            return string.Concat(
+                "#", Token.ToString(),
+                " ", Type,
+                " ", StreamName,
+                "@", StreamVersion.ToString());
+        }
     }
     public class EventStoreToken : IComparable<EventStoreToken>, IEquatable<EventStoreToken>
     {

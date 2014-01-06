@@ -68,6 +68,7 @@
     <Compile Include="EventStoreInMemory.cs" />
     <Compile Include="EventStorePostgres.cs" />
     <Compile Include="EventStreaming.cs" />
+    <Compile Include="EventStreamingDeserialized.cs" />
     <Compile Include="HttpClient.cs" />
     <Compile Include="HttpRouteConfig.cs" />
     <Compile Include="HttpRouter.cs" />

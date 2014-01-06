@@ -12,6 +12,7 @@ namespace ServiceLib.Tests.TestUtils
         private object _lock;
         private List<EventStoreEvent> _allEvents;
         private List<Waiter> _waiters;
+        private List<string> _streamingLog;
 
         public TestEventStore(IQueueExecution executor)
         {
@@ -19,6 +20,7 @@ namespace ServiceLib.Tests.TestUtils
             _lock = new object();
             _allEvents = new List<EventStoreEvent>();
             _waiters = new List<Waiter>();
+            _streamingLog = new List<string>();
         }
 
         public void AddToStream(string stream, IEnumerable<EventStoreEvent> events, EventStoreVersion expectedVersion, Action onComplete, Action onConcurrency, Action<Exception> onError)
@@ -63,6 +65,19 @@ namespace ServiceLib.Tests.TestUtils
             }
         }
 
+        public void EndLongPoll()
+        {
+            NotifyWaiters(new EventStoreEvent[0]);
+        }
+
+        public void SendFailure()
+        {
+            var waiters = _waiters.ToList();
+            _waiters.Clear();
+            var exception = new Exception("Simulated failure");
+            waiters.ForEach(w => w.SendError(exception));
+        }
+
         private void NotifyWaiters(IList<EventStoreEvent> newEvents)
         {
             var waiters = _waiters.ToList();
@@ -89,13 +104,18 @@ namespace ServiceLib.Tests.TestUtils
 
         public void LoadBodies(IList<EventStoreEvent> events, Action onComplete, Action<Exception> onError)
         {
+            _streamingLog.AddRange(events.Select(e => "Body " + e.Token.ToString()));
             _executor.Enqueue(onComplete);
         }
+
+        public IList<string> GetStreamingLog() { return _streamingLog; }
+        public void ClearStreamingLog() { _streamingLog.Clear(); }
 
         public void GetAllEvents(EventStoreToken token, int maxCount, bool loadBody, Action<IEventStoreCollection> onComplete, Action<Exception> onError)
         {
             lock (_lock)
             {
+                _streamingLog.Add(string.Format("Get {0} from {1}", maxCount, token.ToString()));
                 int skip = token.IsInitial ? 0 : token.IsCurrent ? _allEvents.Count : int.Parse(token.ToString());
                 var events = _allEvents.Skip(skip).Take(maxCount).ToList();
                 var currentToken = _allEvents.Count == 0 ? EventStoreToken.Initial : _allEvents.Last().Token;
@@ -120,6 +140,7 @@ namespace ServiceLib.Tests.TestUtils
         {
             lock (_lock)
             {
+                _streamingLog.Add(string.Format("Wait {0} from {1}", maxCount, token.ToString()));
                 int skip = token.IsInitial ? 0 : token.IsCurrent ? _allEvents.Count : int.Parse(token.ToString());
                 var events = _allEvents.Skip(skip).Take(maxCount).ToList();
                 var currentToken = _allEvents.Count == 0 ? EventStoreToken.Initial : _allEvents.Last().Token;
@@ -130,7 +151,7 @@ namespace ServiceLib.Tests.TestUtils
                 else if (maxCount == 0)
                     nextToken = token.IsCurrent ? currentToken : token;
                 else
-                    waiter = new Waiter(maxCount, onComplete, _executor);
+                    waiter = new Waiter(maxCount, token, onComplete, onError, _executor);
                 if (waiter == null)
                 {
                     _executor.Enqueue(new EventStoreGetAllEventsComplete(onComplete, events, nextToken));
@@ -147,14 +168,18 @@ namespace ServiceLib.Tests.TestUtils
         private class Waiter : IDisposable
         {
             private int _maxCount;
+            private EventStoreToken _token;
             private Action<IEventStoreCollection> _onComplete;
+            private Action<Exception> _onError;
             private bool _isDisposed;
             private IQueueExecution _executor;
 
-            public Waiter(int maxCount, Action<IEventStoreCollection> onComplete, IQueueExecution executor)
+            public Waiter(int maxCount, EventStoreToken token, Action<IEventStoreCollection> onComplete, Action<Exception> onError, IQueueExecution executor)
             {
                 _maxCount = maxCount;
+                _token = token;
                 _onComplete = onComplete;
+                _onError = onError;
                 _executor = executor;
             }
             
@@ -163,7 +188,14 @@ namespace ServiceLib.Tests.TestUtils
                 if (_isDisposed)
                     return;
                 var selectedEvents = events.Take(_maxCount).ToList();
-                _executor.Enqueue(new EventStoreGetAllEventsComplete(_onComplete, selectedEvents, selectedEvents.Last().Token));
+                if (selectedEvents.Count != 0)
+                    _token = selectedEvents.Last().Token;
+                _executor.Enqueue(new EventStoreGetAllEventsComplete(_onComplete, selectedEvents, _token));
+            }
+
+            public void SendError(Exception exception)
+            {
+                _executor.Enqueue(_onError, exception);
             }
 
             public void Dispose()
