@@ -67,6 +67,7 @@
     <Compile Include="EventHandlers\EventProjectorSimpleTests.cs" />
     <Compile Include="EventHandlers\PureProjectionDispatcherTests.cs" />
     <Compile Include="EventHandlers\PureProjectionProcessTests.cs" />
+    <Compile Include="EventHandlers\PureProjectionReaderTests.cs" />
     <Compile Include="EventHandlers\PureProjectionStateCacheTests.cs" />
     <Compile Include="EventHandlers\PureProjectionTestBase.cs" />
     <Compile Include="EventSourced\AggregateTests.cs" />
