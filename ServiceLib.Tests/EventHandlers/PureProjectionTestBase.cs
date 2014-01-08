@@ -3,11 +3,17 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using ServiceLib.Tests.TestUtils;
 
 namespace ServiceLib.Tests.EventHandlers
 {
     public abstract class PureProjectionTestBase
     {
+        protected void ThrowError(Exception exception)
+        {
+            throw exception.PreserveStackTrace();
+        }
+
         protected class TestState
         {
             private EventStoreToken _token;
