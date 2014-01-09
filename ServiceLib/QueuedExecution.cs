@@ -50,7 +50,7 @@ namespace ServiceLib
         public void Execute() { _onError(_exception); }
     }
 
-    public interface IQueueExecution
+    public interface IQueueExecution : IAttachBusyProcess
     {
         void Enqueue(IQueuedExecutionDispatcher handler);
     }
@@ -77,6 +77,11 @@ namespace ServiceLib
         public void Enqueue(IQueuedExecutionDispatcher handler)
         {
             _bus.Publish(new QueuedExecution(handler));
+        }
+
+        public IDisposable AttachBusyProcess()
+        {
+            return _bus.AttachBusyProcess();
         }
     }
 

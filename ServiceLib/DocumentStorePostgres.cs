@@ -264,7 +264,7 @@ namespace ServiceLib
             {
                 using (var cmd = conn.CreateCommand())
                 {
-                    cmd.CommandText = string.Join("DELETE FROM documents WHERE key LIKE '", _path, "%'; NOTIFY documents;");
+                    cmd.CommandText = string.Concat("DELETE FROM documents WHERE key LIKE '", _path, "%'; NOTIFY documents;");
                     cmd.ExecuteNonQuery();
                     _parent._executor.Enqueue(_onComplete);
                 }
@@ -299,8 +299,9 @@ namespace ServiceLib
             {
                 using (var cmd = conn.CreateCommand())
                 {
+                    var key = string.Concat(_path, "/", _name);
                     cmd.CommandText = "SELECT version, contents FROM documents WHERE key = :key LIMIT 1";
-                    cmd.Parameters.AddWithValue("key", _path);
+                    cmd.Parameters.AddWithValue("key", key);
                     using (var reader = cmd.ExecuteReader(CommandBehavior.SingleRow))
                     {
                         int version;
@@ -363,14 +364,19 @@ namespace ServiceLib
 
             private void DoWork(NpgsqlConnection conn)
             {
-                var key = string.Join(_path, "/", _name);
+                var key = string.Concat(_path, "/", _name);
                 var lockKey = GetLockKey(key);
                 int documentVersion;
                 bool wasSaved;
                 using (var cmd = conn.CreateCommand())
                 {
-                    cmd.CommandText = "SELECT pg_advisory_lock(:lock); SELECT version FROM documents WHERE key = :key LIMIT 1;";
+                    cmd.CommandText = "SELECT pg_advisory_lock(:lock)";
                     cmd.Parameters.AddWithValue("lock", lockKey);
+                    cmd.ExecuteNonQuery();
+                }
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText = "SELECT version FROM documents WHERE key = :key LIMIT 1";
                     cmd.Parameters.AddWithValue("key", key);
                     using (var reader = cmd.ExecuteReader())
                     {
@@ -386,7 +392,7 @@ namespace ServiceLib
                     {
                         using (var cmd = conn.CreateCommand())
                         {
-                            cmd.CommandText = "INSERT INTO documents (key, version, contents) VALUES (:key, :version, :contents);";
+                            cmd.CommandText = "INSERT INTO documents (key, version, contents) VALUES (:key, :version, :contents)";
                             cmd.Parameters.AddWithValue("key", key);
                             cmd.Parameters.AddWithValue("version", 1);
                             cmd.Parameters.AddWithValue("contents", _value);

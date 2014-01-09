@@ -13,13 +13,14 @@ namespace Vydejna.Domain.Tests
     {
         private TestExecutor _executor;
         private TestDocumentFolder _store;
+        private TestNodeLock _locking;
+        private TestStreaming _streaming;
+
         private SeznamNaradiProjection _projekce;
         private SeznamNaradiReader _reader;
-        private TestNodeLock _locking;
         private PureProjectionProcess<SeznamNaradiData> _process;
         private SeznamNaradiSerializer _serializer;
         private IPureProjectionDispatcher<SeznamNaradiData> _dispatcher;
-        private TestStreaming _streaming;
         
         [TestInitialize]
         public void Initialize()
