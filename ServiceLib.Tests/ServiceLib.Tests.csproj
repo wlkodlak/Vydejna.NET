@@ -104,6 +104,7 @@
     <Compile Include="TestUtils\TestRawContext.cs" />
     <Compile Include="TestUtils\TestStagedContext.cs" />
     <Compile Include="TestUtils\TestStreaming.cs" />
+    <Compile Include="TestUtils\VirtualTime.cs" />
   </ItemGroup>
   <ItemGroup />
   <ItemGroup>

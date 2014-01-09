@@ -44,7 +44,7 @@ namespace Vydejna.Gui.SeznamNaradi
 
         public void Zkontrolovat(DefinovatNaradiValidace vstup)
         {
-            _query.Run(new Validace(vstup));
+            _query.Run(new Validace(vstup), () => { });
         }
 
         private bool ZkontrolovatPrazdnaPole(Validace validace)

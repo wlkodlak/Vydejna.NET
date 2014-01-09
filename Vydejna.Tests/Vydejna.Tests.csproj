@@ -62,44 +62,17 @@
     </Otherwise>
   </Choose>
   <ItemGroup>
-    <Compile Include="EventSourcedTests\EventStoreInMemoryTests.cs" />
-    <Compile Include="EventSourcedTests\EventStreamingTestBase.cs" />
-    <Compile Include="EventSourcedTests\EventStreamingTests.cs" />
-    <Compile Include="EventSourcedTests\GenericRepositoryTests.cs" />
-    <Compile Include="EventSourcedTests\ProjectionMetadataTests.cs" />
-    <Compile Include="EventSourcedTests\ProjectionProcessTests.cs" />
-    <Compile Include="EventSourcedTests\ProjectionProxyTests.cs" />
-    <Compile Include="EventSourcedTests\TestMetadata.cs" />
-    <Compile Include="HttpTests\HttpClientTests.cs" />
-    <Compile Include="HttpTests\HttpConfiguratorTests.cs" />
-    <Compile Include="HttpTests\HttpRouterTests.cs" />
-    <Compile Include="HttpTests\HttpServerDispatcherTests.cs" />
-    <Compile Include="HttpTests\HttpServerHeadersTests.cs" />
-    <Compile Include="HttpTests\HttpServerRequestTests.cs" />
-    <Compile Include="HttpTests\HttpServerTests.cs" />
-    <Compile Include="HttpTests\MissingTests.cs" />
-    <Compile Include="HttpTests\ParametrizedUrlTest.cs" />
-    <Compile Include="HttpTests\RestClientTest.cs" />
-    <Compile Include="MessagingTests\DirectBusTests.cs" />
-    <Compile Include="MessagingTests\QueuedBusTests.cs" />
-    <Compile Include="MessagingTests\SubscriptionManagerTests.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="PropertyChangedWatcher.cs" />
-    <Compile Include="PropertyErrorWatcher.cs" />
-    <Compile Include="SerializingOnlineQueryTest.cs" />
-    <Compile Include="SeznamNaradiTests\DefinovatNaradiViewModelTest.cs" />
-    <Compile Include="SeznamNaradiTests\DefinovatNaradiValidatorTest.cs" />
-    <Compile Include="SeznamNaradiTests\ProcesDefiniceNaradiTest.cs" />
-    <Compile Include="SeznamNaradiTests\ReadSeznamNaradiClientTest.cs" />
-    <Compile Include="SeznamNaradiTests\SeznamNaradiProjectionTest.cs" />
-    <Compile Include="SeznamNaradiTests\SeznamNaradiServiceTest_Naradi.cs" />
-    <Compile Include="SeznamNaradiTests\SeznamNaradiServiceTest_Unikatnost.cs" />
-    <Compile Include="SeznamNaradiTests\SeznamNaradiViewModelTest.cs" />
-    <Compile Include="SystemTests\HttpServerTest.cs" />
-    <Compile Include="SystemTests\SystemTest.cs" />
-    <Compile Include="VirtualTime.cs" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\ServiceLib.Tests\ServiceLib.Tests.csproj">
+      <Project>{0c8f5f40-bafc-42f9-a3fb-03bf11433b25}</Project>
+      <Name>ServiceLib.Tests</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\ServiceLib\ServiceLib.csproj">
+      <Project>{8cb4d646-008c-4e91-b860-c32e2db195dd}</Project>
+      <Name>ServiceLib</Name>
+    </ProjectReference>
     <ProjectReference Include="..\Vydejna.Contracts\Vydejna.Contracts.csproj">
       <Project>{1179af67-e0ae-4345-b454-0cb396587270}</Project>
       <Name>Vydejna.Contracts</Name>
@@ -116,7 +89,9 @@
   <ItemGroup>
     <None Include="packages.config" />
   </ItemGroup>
-  <ItemGroup />
+  <ItemGroup>
+    <Folder Include="SeznamNaradiTests\" />
+  </ItemGroup>
   <Choose>
     <When Condition="'$(VisualStudioVersion)' == '10.0' And '$(IsCodedUITest)' == 'True'">
       <ItemGroup>

@@ -73,7 +73,10 @@ namespace Vydejna.Domain
                 try
                 {
                     var naradi = _forNew(_message.Command);
-                    _parent._repoNaradi.Save(naradi, _message.OnCompleted, Konflikt, _message.OnError);
+                    if (naradi != null)
+                        _parent._repoNaradi.Save(naradi, _message.OnCompleted, Konflikt, _message.OnError);
+                    else
+                        _message.OnCompleted();
                 }
                 catch (Exception ex)
                 {
@@ -152,7 +155,7 @@ namespace Vydejna.Domain
                 msg => msg.NaradiId,
                 (log, msg) => log.DebugFormat("AktivovatNaradi: {0}", msg.NaradiId),
                 (msg, naradi) => naradi.Aktivovat(),
-                msg => { throw new ArgumentNullException("NaradiId", string.Format("Naradi {0} neexistuje", msg.NaradiId)); })
+                msg => null)
                 .Execute();
         }
         public void Handle(CommandExecution<DeaktivovatNaradiCommand> message)
@@ -162,7 +165,7 @@ namespace Vydejna.Domain
                 msg => msg.NaradiId,
                 (log, msg) => log.DebugFormat("DeaktivovatNaradi: {0}", msg.NaradiId),
                 (msg, naradi) => naradi.Deaktivovat(),
-                msg => { throw new ArgumentNullException("NaradiId", string.Format("Naradi {0} neexistuje", msg.NaradiId)); })
+                msg => null)
                 .Execute();
         }
 
@@ -172,7 +175,7 @@ namespace Vydejna.Domain
                 this, message,
                 msg => msg.NaradiId,
                 (log, msg) => log.DebugFormat("DefinovatNaradiInternal: {0}, vykres {1}, rozmer {2}, druh {3}", msg.NaradiId, msg.Vykres, msg.Rozmer, msg.Druh),
-                (msg, naradi) => { throw new ArgumentNullException("NaradiId", string.Format("Naradi {0} jiz existuje", msg.NaradiId)); },
+                (msg, naradi) => { },
                 msg => Naradi.Definovat(msg.NaradiId, msg.Vykres, msg.Rozmer, msg.Druh))
                 .Execute();
         }

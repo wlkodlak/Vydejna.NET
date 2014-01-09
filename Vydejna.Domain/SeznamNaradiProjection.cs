@@ -219,7 +219,7 @@ namespace Vydejna.Domain
         }
     }
 
-    public class SeznamNaradiSerializer
+    public class SeznamNaradiSerializer 
     {
         public string Serialize(SeznamNaradiData data)
         {
@@ -242,13 +242,29 @@ namespace Vydejna.Domain
         , IPureProjectionHandler<SeznamNaradiData, AktivovanoNaradiEvent>
         , IPureProjectionHandler<SeznamNaradiData, DeaktivovanoNaradiEvent>
     {
-        private IDocumentFolder _store;
         private SeznamNaradiSerializer _serializer;
+        private IComparer<TypNaradiDto> _dtoComparer;
 
-        public SeznamNaradiProjection(IDocumentFolder store, SeznamNaradiSerializer serializer)
+        public SeznamNaradiProjection(SeznamNaradiSerializer serializer)
         {
-            _store = store;
             _serializer = serializer;
+            _dtoComparer = new TypNaradiDtoPodleVykresu();
+        }
+
+        private class TypNaradiDtoPodleVykresu : IComparer<TypNaradiDto>
+        {
+            public int Compare(TypNaradiDto x, TypNaradiDto y)
+            {
+                int compare;
+                if (ReferenceEquals(x, null))
+                    return ReferenceEquals(y, null) ? 0 : -1;
+                else if (ReferenceEquals(y, null))
+                    return 1;
+                compare = string.CompareOrdinal(x.Vykres, y.Vykres);
+                if (compare != 0)
+                    return compare;
+                return string.CompareOrdinal(x.Rozmer, y.Rozmer);
+            }
         }
 
         public void Subscribe(IPureProjectionDispatcher<SeznamNaradiData> dispatcher)
@@ -268,11 +284,6 @@ namespace Vydejna.Domain
             return storedVersion != "1.0";
         }
 
-        public IList<string> GetStreamPrefixes()
-        {
-            return new[] { "naradi" };
-        }
-
         public string Serialize(SeznamNaradiData state)
         {
             return _serializer.Serialize(state);
@@ -285,7 +296,7 @@ namespace Vydejna.Domain
 
         public SeznamNaradiData InitialState()
         {
-            return new SeznamNaradiData();
+            return _serializer.Deserialize(null);
         }
 
         public SeznamNaradiData SetTokenInState(SeznamNaradiData state, EventStoreToken token)
@@ -314,7 +325,10 @@ namespace Vydejna.Domain
                 naradi = new TypNaradiDto(evnt.NaradiId, evnt.Vykres, evnt.Rozmer, evnt.Druh, true);
                 state.PodleId[naradi.Id] = naradi;
                 state.ExistujiciVykresy.Add(Tuple.Create(evnt.Vykres, evnt.Rozmer));
-                state.Seznam.Add(naradi);
+                var index = state.Seznam.BinarySearch(naradi, _dtoComparer);
+                if (index < 0)
+                    index = ~index;
+                state.Seznam.Insert(index, naradi);
             }
             return state;
         }

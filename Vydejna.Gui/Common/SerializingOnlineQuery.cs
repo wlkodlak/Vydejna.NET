@@ -17,7 +17,7 @@ namespace Vydejna.Gui.Common
         {
             public T State;
             public bool Cancelled;
-            public TaskCompletionSource<object> Task;
+            public Action OnComplete;
         }
 
         public SerializingOnlineQuery(
@@ -32,7 +32,7 @@ namespace Vydejna.Gui.Common
             _cancelMode = cancelMode;
         }
 
-        public Task Run(T state)
+        public void Run(T state, Action onComplete)
         {
             if (_immediateFunc(state))
             {
@@ -46,15 +46,15 @@ namespace Vydejna.Gui.Common
                 }
                 _reportFunc(state);
                 if (finishTask != null)
-                    finishTask.Task.SetResult(null);
-                return TaskResult.GetCompletedTask();
+                    finishTask.OnComplete();
+                onComplete();
             }
             else
             {
                 var info = new QueryInfo
                 {
                     State = state,
-                    Task = new TaskCompletionSource<object>()
+                    OnComplete = onComplete
                 };
                 bool runOnline;
                 QueryInfo finishTask = null;
@@ -74,12 +74,11 @@ namespace Vydejna.Gui.Common
                     }
                 }
                 if (finishTask != null)
-                    finishTask.Task.SetResult(null);
+                    finishTask.OnComplete();
                 if (runOnline)
                 {
                     _onlineFunc(state, FinishOnlineRun);
                 }
-                return info.Task.Task;
             }
         }
 
@@ -104,7 +103,7 @@ namespace Vydejna.Gui.Common
             }
             if (reportCurrent)
                 _reportFunc(originalCurrent.State);
-            originalCurrent.Task.SetResult(null);
+            originalCurrent.OnComplete();
             if (stateForOnline != null)
             {
                 _onlineFunc(_current.State, FinishOnlineRun);
