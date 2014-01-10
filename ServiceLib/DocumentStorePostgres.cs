@@ -19,10 +19,9 @@ namespace ServiceLib
         private DatabasePostgres _db;
         private Regex _pathRegex;
         private object _lock;
-        private NpgsqlConnection _listeningConnection;
-        private bool _isListening;
         private bool _isCheckingChanges;
         private Timer _timer;
+        private IDisposable _notifications;
 
         private class Folder : IDocumentFolder
         {
@@ -50,7 +49,15 @@ namespace ServiceLib
             public void GetDocument(string name, Action<int, string> onFound, Action onMissing, Action<Exception> onError)
             {
                 if (_parent.VerifyPath(name))
-                    new GetDocumentWorker(_parent, _path, name, onFound, onMissing, onError).Execute();
+                    new GetDocumentWorker(_parent, _path, name, 0, onFound, null, onMissing, onError).Execute();
+                else
+                    onError(new ArgumentOutOfRangeException("name", string.Format("Name {0} is not valid", name)));
+            }
+
+            public void GetNewerDocument(string name, int knownVersion, Action<int, string> onFoundNewer, Action onNotModified, Action onMissing, Action<Exception> onError)
+            {
+                if (_parent.VerifyPath(name))
+                    new GetDocumentWorker(_parent, _path, name, knownVersion, onFoundNewer, onNotModified, onMissing, onError).Execute();
                 else
                     onError(new ArgumentOutOfRangeException("name", string.Format("Name {0} is not valid", name)));
             }
@@ -63,11 +70,11 @@ namespace ServiceLib
                     onError(new ArgumentOutOfRangeException("name", string.Format("Name {0} is not valid", name)));
             }
 
-            public IDisposable WatchChanges(string name, Action onSomethingChanged)
+            public IDisposable WatchChanges(string name, int sinceVersion, Action onSomethingChanged)
             {
                 if (!_parent.VerifyPath(name))
                     throw new ArgumentOutOfRangeException("name", string.Format("Name {0} is not valid", name));
-                var watcher = new Watcher(_parent, _parent.GetWatcherKey(), _path + "/" + name, onSomethingChanged);
+                var watcher = new Watcher(_parent, _parent.GetWatcherKey(), _path + "/" + name, sinceVersion, onSomethingChanged);
                 watcher.StartWatching();
                 return watcher;
             }
@@ -82,11 +89,13 @@ namespace ServiceLib
             _pathRegex = new Regex(@"^[a-zA-Z0-9\-._/]+$", RegexOptions.Compiled);
             _lock = new object();
             _timer = new Timer(o => StartCheckingChanges(), null, 30000, 30000);
+            _notifications = _db.Listen("documents", StartCheckingChanges);
         }
 
         public void Dispose()
         {
             _timer.Dispose();
+            _notifications.Dispose();
         }
 
         public void Initialize()
@@ -112,64 +121,6 @@ namespace ServiceLib
             return _pathRegex.IsMatch(path);
         }
 
-        private void StartListening()
-        {
-            lock (_lock)
-            {
-                if (_isListening)
-                    return;
-                _isListening = true;
-            }
-            _db.OpenConnection(OnListenerConnected, OnListenerError);
-        }
-        private void OnListenerConnected(NpgsqlConnection conn)
-        {
-            try
-            {
-                lock (_lock)
-                {
-                    _listeningConnection = conn;
-                    _listeningConnection.StateChange += OnListenerStateChanged;
-                    _listeningConnection.Notification += OnListenerNotification;
-                }
-                using (var cmd = conn.CreateCommand())
-                {
-                    cmd.CommandText = "LISTEN documents";
-                    cmd.ExecuteNonQuery();
-                }
-            }
-            catch (Exception exception)
-            {
-                OnListenerError(exception);
-            }
-        }
-        private void ReleaseListeningConnection()
-        {
-            lock (_lock)
-            {
-                if (_listeningConnection == null)
-                    return;
-                _listeningConnection.StateChange -= OnListenerStateChanged;
-                _listeningConnection.Notification -= OnListenerNotification;
-                _db.ReleaseConnection(_listeningConnection);
-                _isListening = false;
-                _listeningConnection = null;
-            }
-        }
-        private void OnListenerError(Exception exception)
-        {
-            ReleaseListeningConnection();
-        }
-        private void OnListenerStateChanged(object sender, StateChangeEventArgs e)
-        {
-            if (e.CurrentState == ConnectionState.Broken)
-                ReleaseListeningConnection();
-        }
-        private void OnListenerNotification(object sender, NpgsqlNotificationEventArgs e)
-        {
-            if (e.Condition == "documents")
-                _executor.Enqueue(StartCheckingChanges);
-        }
         private void StartCheckingChanges()
         {
             lock (_lock)
@@ -235,9 +186,14 @@ namespace ServiceLib
             _root.SaveDocument(name, value, expectedVersion, onSave, onConcurrency, onError);
         }
 
-        public IDisposable WatchChanges(string name, Action onSomethingChanged)
+        public IDisposable WatchChanges(string name, int sinceVersion, Action onSomethingChanged)
         {
-            return _root.WatchChanges(name, onSomethingChanged);
+            return _root.WatchChanges(name, sinceVersion, onSomethingChanged);
+        }
+
+        public void GetNewerDocument(string name, int knownVersion, Action<int, string> onFoundNewer, Action onNotModified, Action onMissing, Action<Exception> onError)
+        {
+            _root.GetNewerDocument(name, knownVersion, onFoundNewer, onNotModified, onMissing, onError);
         }
 
         private class DeleteAllWorker
@@ -276,26 +232,33 @@ namespace ServiceLib
             private DocumentStorePostgres _parent;
             private string _path;
             private string _name;
+            private int _knownVersion;
             private Action<int, string> _onFound;
+            private Action _onNotModified;
             private Action _onMissing;
             private Action<Exception> _onError;
 
-            public GetDocumentWorker(DocumentStorePostgres parent, string path, string name, Action<int, string> onFound, Action onMissing, Action<Exception> onError)
+            public GetDocumentWorker(DocumentStorePostgres parent, string path, string name, int knownVersion, Action<int, string> onFound, Action onNotModified, Action onMissing, Action<Exception> onError)
             {
                 _parent = parent;
                 _path = path;
                 _name = name;
+                _knownVersion = knownVersion;
                 _onFound = onFound;
+                _onNotModified = onNotModified;
                 _onMissing = onMissing;
                 _onError = onError;
             }
 
             public void Execute()
             {
-                _parent._db.Execute(DoWork, _onError);
+                if (_onNotModified == null)
+                    _parent._db.Execute(DoWorkWithoutVersion, _onError);
+                else
+                    _parent._db.Execute(DoWorkWithVersion, _onError);
             }
 
-            private void DoWork(NpgsqlConnection conn)
+            private void DoWorkWithoutVersion(NpgsqlConnection conn)
             {
                 using (var cmd = conn.CreateCommand())
                 {
@@ -316,6 +279,35 @@ namespace ServiceLib
                             _parent._executor.Enqueue(_onMissing);
                     }
                 }
+            }
+
+            private void DoWorkWithVersion(NpgsqlConnection conn)
+            {
+                using (var cmd = conn.CreateCommand())
+                {
+                    var key = string.Concat(_path, "/", _name);
+                    cmd.CommandText = "SELECT version FROM documents WHERE key = :key LIMIT 1";
+                    cmd.Parameters.AddWithValue("key", key);
+                    using (var reader = cmd.ExecuteReader(CommandBehavior.SingleRow))
+                    {
+                        int version;
+                        if (!reader.Read())
+                        {
+                            _parent._executor.Enqueue(_onMissing);
+                            return;
+                        }
+                        else
+                        {
+                            version = reader.GetInt32(0);
+                            if (version == _knownVersion)
+                            {
+                                _parent._executor.Enqueue(_onNotModified);
+                                return;
+                            }
+                        }
+                    }
+                }
+                DoWorkWithoutVersion(conn);
             }
         }
 
@@ -445,16 +437,17 @@ namespace ServiceLib
             private Action _callback;
             private int _key;
             private int _version;
-            private bool _isReady;
+            private bool _isDisposed;
 
-            public bool IsReady { get { return _isReady; } }
+            public bool IsReady { get { return !_isDisposed; } }
             public string Key { get { return _documentName; } }
 
-            public Watcher(DocumentStorePostgres parent, int key, string documentName, Action callback)
+            public Watcher(DocumentStorePostgres parent, int key, string documentName, int sinceVersion, Action callback)
             {
                 _parent = parent;
                 _key = key;
                 _documentName = documentName;
+                _version = sinceVersion;
                 _callback = callback;
             }
 
@@ -462,13 +455,15 @@ namespace ServiceLib
             {
                 lock (_parent._lock)
                 {
-                    _isReady = false;
+                    _isDisposed = true;
                     _parent._watchers.Remove(_key);
                 }
             }
 
             public void StartWatching()
             {
+                lock (_parent._lock)
+                    _parent._watchers.Add(_key, this);
                 _parent._db.Execute(GetVersion, OnError);
             }
 
@@ -478,8 +473,8 @@ namespace ServiceLib
                 {
                     cmd.CommandText = "SELECT version FROM documents WHERE key = :key LIMIT 1";
                     cmd.Parameters.AddWithValue("key", _documentName);
-                    _version = (int)cmd.ExecuteScalar();
-                    _isReady = true;
+                    var version = (int)cmd.ExecuteScalar();
+                    NotifyVersion(version);
                 }
             }
 
@@ -489,14 +484,13 @@ namespace ServiceLib
 
             public void NotifyVersion(int newVersion)
             {
-                if (_version < newVersion)
+                if (_version != newVersion)
                 {
                     _version = newVersion;
                     _parent._executor.Enqueue(_callback);
                 }
             }
         }
-
     }
 
 }

@@ -7,8 +7,9 @@ namespace ServiceLib
         IDocumentFolder SubFolder(string name);
         void DeleteAll(Action onComplete, Action<Exception> onError);
         void GetDocument(string name, Action<int, string> onFound, Action onMissing, Action<Exception> onError);
+        void GetNewerDocument(string name, int knownVersion, Action<int, string> onFoundNewer, Action onNotModified, Action onMissing, Action<Exception> onError);
         void SaveDocument(string name, string value, DocumentStoreVersion expectedVersion, Action onSave, Action onConcurrency, Action<Exception> onError);
-        IDisposable WatchChanges(string name, Action onSomethingChanged);
+        IDisposable WatchChanges(string name, int sinceVersion, Action onSomethingChanged);
     }
     public interface IDocumentStore : IDocumentFolder
     {

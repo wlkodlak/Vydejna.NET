@@ -65,8 +65,7 @@ namespace ServiceLib
             }
             public void Execute()
             {
-                _documentWatch = _parent._store.WatchChanges(_lockName, OnLockChanged);
-                OnLockChanged();
+                _documentWatch = _parent._store.WatchChanges(_lockName, -1, OnLockChanged);
             }
             private void OnLockChanged()
             {

@@ -20,6 +20,8 @@ namespace ServiceLib.Tests.Documents
     [TestClass]
     public class DocumentStorePostgresTests : DocumentStoreTestBase
     {
+        private List<IDisposable> _disposables = new List<IDisposable>();
+
         private string GetConnectionString()
         {
             var connString = new NpgsqlConnectionStringBuilder();
@@ -33,6 +35,7 @@ namespace ServiceLib.Tests.Documents
         {
             var db = new DatabasePostgres(GetConnectionString(), executor);
             var store = new DocumentStorePostgres(db, executor);
+            _disposables.Add(store);
             store.Initialize();
             db.ExecuteSync(DeleteAllDocuments);
             return store;
@@ -45,6 +48,13 @@ namespace ServiceLib.Tests.Documents
                 cmd.CommandText = "DELETE FROM documents";
                 cmd.ExecuteNonQuery();
             }
+        }
+
+        [TestCleanup]
+        public void Cleanup()
+        {
+            foreach (var disposable in _disposables)
+                disposable.Dispose();
         }
     }
 }

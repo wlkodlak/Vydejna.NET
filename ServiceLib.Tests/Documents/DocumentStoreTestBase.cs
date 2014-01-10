@@ -57,9 +57,14 @@ namespace ServiceLib.Tests.Documents
             SetupDocument("testing", "document", "original");
             int changes = 0;
             var mre = new ManualResetEventSlim();
-            Store.SubFolder("testing").WatchChanges("document", () => { changes++; mre.Set(); });
+            Store.SubFolder("testing").WatchChanges("document", 1, () => { changes++; mre.Set(); });
             SaveDocument("testing", "document", DocumentStoreVersion.Any, "new contents", "saved");
-            mre.Wait(500);
+            for (int i = 0; i < 3; i++)
+            {
+                if (mre.Wait(30))
+                    break;
+                Executor.Process();
+            }
             Assert.AreEqual(1, changes, "Changes count");
         }
 
@@ -70,17 +75,26 @@ namespace ServiceLib.Tests.Documents
             SetupDocument("testing", "document2", "B");
             int changes = 0;
             var mre = new ManualResetEventSlim();
-            Store.SubFolder("testing").WatchChanges("document1", () => { changes++; mre.Set(); });
+            Store.SubFolder("testing").WatchChanges("document1", 1, () => { changes++; mre.Set(); });
             SaveDocument("testing", "document2", DocumentStoreVersion.Any, "new contents", "saved");
-            mre.Wait(500);
+            for (int i = 0; i < 3; i++)
+            {
+                if (mre.Wait(30))
+                    break;
+                Executor.Process();
+            }
             Assert.AreEqual(0, changes, "Changes count");
         }
 
         protected void SetupDocument(string folder, string name, string contents)
         {
-            Store.SubFolder(folder).SaveDocument(name, contents, DocumentStoreVersion.Any,
-                () => { }, () => { }, ex => { });
+            bool isSaved = false;
+            Store.SubFolder(folder).SaveDocument(name, contents, DocumentStoreVersion.New,
+                () => { isSaved = true; }, 
+                () => { throw new InvalidOperationException(string.Format("Document {0} already exists", name)); }, 
+                ex => { throw ex.PreserveStackTrace(); });
             Executor.Process();
+            Assert.IsTrue(isSaved, "Document {0} setup", name);
         }
 
         protected void VerifyDocument(string folder, string name, DocumentStoreVersion expectedVersion, string expectedContents)

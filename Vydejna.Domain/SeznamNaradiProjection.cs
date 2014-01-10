@@ -47,7 +47,6 @@ namespace Vydejna.Domain
 
         private void GetCurrentData(Action<SeznamNaradiData> onComplete, Action<Exception> onError)
         {
-            SledovatZmeny();
             SeznamNaradiData nactenaData = null;
             bool nacistData = false;
             lock (_lock)
@@ -71,13 +70,13 @@ namespace Vydejna.Domain
                 _store.GetDocument("data", NactenDokument, () => NactenDokument(0, null), ChybaNacitani);
         }
 
-        private void SledovatZmeny()
+        private void SledovatZmeny(int verze)
         {
             lock (_lock)
             {
                 if (_sledovani != null)
                     return;
-                _sledovani = _store.WatchChanges("data", InvalidaceCache);
+                _sledovani = _store.WatchChanges("data", verze, InvalidaceCache);
             }
         }
 
@@ -92,6 +91,7 @@ namespace Vydejna.Domain
             List<Action<SeznamNaradiData>> handlers = null;
             List<Action<Exception>> errors = null;
             SeznamNaradiData data = null;
+            SledovatZmeny(version);
             try
             {
                 lock (_lock)

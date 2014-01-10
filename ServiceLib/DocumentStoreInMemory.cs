@@ -25,24 +25,21 @@ namespace ServiceLib
         private class FolderWatcher : IDisposable
         {
             private FolderWatcherCollection _parent;
-            private int _key;
-            private Action _onSomethingChanged;
+            public int Key;
+            public int SinceVersion;
+            public Action OnSomethingChanged;
 
-            public FolderWatcher(FolderWatcherCollection parent, int key, Action onSomethingChanged)
+            public FolderWatcher(FolderWatcherCollection parent, int key, int sinceVersion, Action onSomethingChanged)
             {
-                _key = key;
                 _parent = parent;
-                _onSomethingChanged = onSomethingChanged;
+                Key = key;
+                SinceVersion = sinceVersion;
+                OnSomethingChanged = onSomethingChanged;
             }
 
             public void Dispose()
             {
-                _parent.Remove(_key);
-            }
-
-            public void CallHandler()
-            {
-                _onSomethingChanged();
+                _parent.Remove(Key);
             }
         }
 
@@ -59,18 +56,21 @@ namespace ServiceLib
                 _executor = executor;
             }
 
-            public IDisposable AddWatcher(Action onSomethingChanged)
+            public IDisposable AddWatcher(int sinceVersion, Action onSomethingChanged)
             {
                 Interlocked.Increment(ref _key);
-                var watcher = new FolderWatcher(this, _key, onSomethingChanged);
+                var watcher = new FolderWatcher(this, _key, sinceVersion, onSomethingChanged);
                 _watchers.TryAdd(_key, watcher);
                 return watcher;
             }
 
-            public void CallWatchers()
+            public void CallWatchers(int newVersion)
             {
                 foreach (var watcher in _watchers.Values)
-                    _executor.Enqueue(watcher.CallHandler);
+                {
+                    if (watcher.SinceVersion != newVersion)
+                        _executor.Enqueue(watcher.OnSomethingChanged);
+                }
             }
 
             public void Remove(int key)
@@ -116,7 +116,7 @@ namespace ServiceLib
                 _documents.Clear();
                 _executor.Enqueue(onComplete);
                 foreach (string name in documentNames)
-                    CallWatchers(name);
+                    CallWatchers(name, 0);
             }
 
             public void GetDocument(string name, Action<int, string> onFound, Action onMissing, Action<Exception> onError)
@@ -139,15 +139,38 @@ namespace ServiceLib
                 }
             }
 
+            public void GetNewerDocument(string name, int knownVersion, Action<int, string> onFoundNewer, Action onNotModified, Action onMissing, Action<Exception> onError)
+            {
+                try
+                {
+                    if (!_regex.IsMatch(name))
+                        throw new ArgumentOutOfRangeException(name, "Invalid characters in name");
+                    Document document;
+                    if (!_documents.TryGetValue(name, out document))
+                        _executor.Enqueue(onMissing);
+                    else if (document.Version == 0)
+                        _executor.Enqueue(onMissing);
+                    else if (document.Version == knownVersion)
+                        _executor.Enqueue(onNotModified);
+                    else
+                        _executor.Enqueue(new DocumentFound(onFoundNewer, document.Version, document.Value));
+                }
+                catch (Exception ex)
+                {
+                    _executor.Enqueue(onError, ex);
+                }
+            }
+
             public void SaveDocument(string name, string value, DocumentStoreVersion expectedVersion, Action onSave, Action onConcurrency, Action<Exception> onError)
             {
+                bool wasSaved = false;
+                int newVersion = 0;
                 try
                 {
                     if (!_regex.IsMatch(name))
                         throw new ArgumentOutOfRangeException(name, "Invalid characters in name");
                     var newDocument = new Document(0, null);
                     var existingDocument = _documents.GetOrAdd(name, newDocument);
-                    bool wasSaved = false;
                     lock (existingDocument.Lock)
                     {
                         wasSaved = expectedVersion.VerifyVersion(existingDocument.Version);
@@ -155,6 +178,7 @@ namespace ServiceLib
                         {
                             existingDocument.Version++;
                             existingDocument.Value = value;
+                            newVersion = existingDocument.Version;
                         }
                     }
                     if (wasSaved)
@@ -166,21 +190,33 @@ namespace ServiceLib
                 {
                     _executor.Enqueue(onError, ex);
                 }
-                CallWatchers(name);
+                if (wasSaved)
+                    CallWatchers(name, newVersion);
             }
 
-            public IDisposable WatchChanges(string name, Action onSomethingChanged)
+            public IDisposable WatchChanges(string name, int sinceVersion, Action onSomethingChanged)
             {
+                int currentVersion;
+                Document document;
+                if (!_documents.TryGetValue(name, out document))
+                    currentVersion = 0;
+                else
+                    currentVersion = document.Version;
+
                 var watcherCollection = _watchers.GetOrAdd(name, new FolderWatcherCollection(_executor));
-                return watcherCollection.AddWatcher(onSomethingChanged);
+                var watcher = watcherCollection.AddWatcher(sinceVersion, onSomethingChanged);
+                if (currentVersion != sinceVersion)
+                    _executor.Enqueue(onSomethingChanged);
+                return watcher;
             }
 
-            private void CallWatchers(string name)
+            private void CallWatchers(string name, int version)
             {
                 FolderWatcherCollection collection;
                 if (_watchers.TryGetValue(name, out collection))
-                    collection.CallWatchers();
+                    collection.CallWatchers(version);
             }
+
         }
 
         private readonly DocumentFolder _root;
@@ -205,14 +241,19 @@ namespace ServiceLib
             _root.GetDocument(name, onFound, onMissing, onError);
         }
 
+        public void GetNewerDocument(string name, int knownVersion, Action<int, string> onFoundNewer, Action onNotModified, Action onMissing, Action<Exception> onError)
+        {
+            _root.GetNewerDocument(name, knownVersion, onFoundNewer, onNotModified, onMissing, onError);
+        }
+
         public void SaveDocument(string name, string value, DocumentStoreVersion expectedVersion, Action onSave, Action onConcurrency, Action<Exception> onError)
         {
             _root.SaveDocument(name, value, expectedVersion, onSave, onConcurrency, onError);
         }
 
-        public IDisposable WatchChanges(string name, Action onSomethingChanged)
+        public IDisposable WatchChanges(string name, int sinceVersion, Action onSomethingChanged)
         {
-            return _root.WatchChanges(name, onSomethingChanged);
+            return _root.WatchChanges(name, sinceVersion, onSomethingChanged);
         }
     }
 

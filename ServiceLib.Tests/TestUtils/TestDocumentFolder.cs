@@ -19,6 +19,7 @@ namespace ServiceLib.Tests.TestUtils
         {
             public TestDocumentFolder Parent;
             public string Document;
+            public int SinceVersion;
             public Action OnChange;
             public void Dispose() { Parent.UnWatch(this); }
         }
@@ -52,7 +53,7 @@ namespace ServiceLib.Tests.TestUtils
             {
                 _data.Clear();
                 AddToLog("Clear", null, 0);
-                ScheduleWatchers(null);
+                ScheduleWatchers(null, 0);
                 _executor.Enqueue(onComplete);
             }
         }
@@ -90,6 +91,27 @@ namespace ServiceLib.Tests.TestUtils
                 {
                     AddToLog("Get", name, document.Version);
                     _executor.Enqueue(new DocumentFound(onFound, document.Version, document.Contents));
+                }
+                else
+                {
+                    AddToLog("Get", name, 0);
+                    _executor.Enqueue(onMissing);
+                }
+            }
+        }
+
+        public void GetNewerDocument(string name, int knownVersion, Action<int, string> onFoundNewer, Action onNotModified, Action onMissing, Action<Exception> onError)
+        {
+            lock (_lock)
+            {
+                Document document;
+                if (_data.TryGetValue(name, out document))
+                {
+                    AddToLog("Get", name, document.Version);
+                    if (document.Version == knownVersion)
+                        _executor.Enqueue(onNotModified);
+                    else
+                        _executor.Enqueue(new DocumentFound(onFoundNewer, document.Version, document.Contents));
                 }
                 else
                 {
@@ -141,7 +163,7 @@ namespace ServiceLib.Tests.TestUtils
                         document.Contents = value;
                         AddToLog("Save", name, document.Version);
                         _executor.Enqueue(onSave);
-                        ScheduleWatchers(name);
+                        ScheduleWatchers(name, document.Version);
                     }
                 }
                 else
@@ -158,7 +180,7 @@ namespace ServiceLib.Tests.TestUtils
                         document.Contents = value;
                         AddToLog("Save", name, 1);
                         _executor.Enqueue(onSave);
-                        ScheduleWatchers(name);
+                        ScheduleWatchers(name, document.Version);
                     }
                 }
             }
@@ -173,16 +195,24 @@ namespace ServiceLib.Tests.TestUtils
                     _data[name] = document = new Document();
                 document.Version = (manualVersion >= 0) ? manualVersion : document.Version + 1;
                 document.Contents = value;
-                ScheduleWatchers(name);
+                ScheduleWatchers(name, document.Version);
             }
         }
 
-        public IDisposable WatchChanges(string name, Action onSomethingChanged)
+        public IDisposable WatchChanges(string name, int sinceVersion, Action onSomethingChanged)
         {
             lock (_lock)
             {
-                var watcher = new Watcher { Document = name, OnChange = onSomethingChanged, Parent = this };
+                Document document;
+                int currentVersion;
+                var watcher = new Watcher { Document = name, SinceVersion = sinceVersion, OnChange = onSomethingChanged, Parent = this };
                 _watchers.Add(watcher);
+                if (_data.TryGetValue(name, out document))
+                    currentVersion = document.Version;
+                else
+                    currentVersion = 0;
+                if (currentVersion != sinceVersion)
+                    _executor.Enqueue(onSomethingChanged);
                 return watcher;
             }
         }
@@ -195,12 +225,15 @@ namespace ServiceLib.Tests.TestUtils
             }
         }
 
-        private void ScheduleWatchers(string document)
+        private void ScheduleWatchers(string document, int version)
         {
             foreach (var watcher in _watchers)
             {
                 if (watcher.Document == document || document == null)
-                    _executor.Enqueue(watcher.OnChange);
+                {
+                    if (watcher.SinceVersion != version)
+                        _executor.Enqueue(watcher.OnChange);
+                }
             }
         }
     }

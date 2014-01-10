@@ -34,6 +34,7 @@ namespace ServiceLib
 
             public void OnDocumentFound(int version, string contents)
             {
+                bool watchDocument;
                 List<Action<TState>> waiters;
                 var state = string.IsNullOrEmpty(contents)
                     ? _parent._serializer.InitialState()
@@ -47,7 +48,11 @@ namespace ServiceLib
                     waiters = OnLoadWaiters;
                     OnLoadWaiters = null;
                     OnErrorWaiters = null;
+                    watchDocument = !IsWatched;
+                    IsWatched = true;
                 }
+                if (watchDocument)
+                    Watcher = _parent._store.WatchChanges(Partition, version, DocumentChanged);
                 foreach (var waiter in waiters)
                     _parent._executor.Enqueue(new GetStateFinished(waiter, state));
             }
@@ -158,7 +163,6 @@ namespace ServiceLib
                 _executor.Enqueue(new GetStateFinished(onLoaded, item.State));
             else
             {
-                bool watchDocument = false;
                 bool loadDocument = false;
                 lock (item)
                 {
@@ -175,13 +179,9 @@ namespace ServiceLib
                         item.OnErrorWaiters = new List<Action<Exception>>();
                         item.OnLoadWaiters.Add(onLoaded);
                         item.OnErrorWaiters.Add(onError);
-                        watchDocument = !item.IsWatched;
-                        item.IsWatched = true;
                         item.IsLoading = loadDocument = true;
                     }
                 }
-                if (watchDocument)
-                    item.Watcher = _store.WatchChanges(partition, item.DocumentChanged);
                 if (loadDocument)
                     _store.GetDocument(partition, item.OnDocumentFound, item.OnDocumentMissing, item.OnError);
             }
