@@ -9,7 +9,6 @@ namespace ServiceLib
 {
     public class NetworkBusInMemory : INetworkBus
     {
-        private string _nodeId;
         private ConcurrentDictionary<MessageDestination, DestinationContents> _destinations;
         private IQueueExecution _executor;
 
@@ -17,7 +16,6 @@ namespace ServiceLib
         {
             _executor = executor;
             _destinations = new ConcurrentDictionary<MessageDestination, DestinationContents>();
-            _nodeId = nodeId;
         }
 
         private class DestinationContents
@@ -55,14 +53,9 @@ namespace ServiceLib
         {
             message.Destination = destination;
             message.MessageId = Guid.NewGuid().ToString("N");
-            message.Source = _nodeId;
+            message.Source = "local";
             message.CreatedOn = DateTime.UtcNow;
-            if (destination == MessageDestination.Everyone)
-            {
-                foreach (var target in _destinations.Values)
-                    Enqueue(target, message);
-            }
-            else if (destination == MessageDestination.Processed)
+            if (destination == MessageDestination.Processed)
             {
             }
             else if (destination == MessageDestination.Subscribers)

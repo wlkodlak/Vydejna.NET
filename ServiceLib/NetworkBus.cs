@@ -31,7 +31,6 @@ namespace ServiceLib
             ProcessName = processName;
             NodeId = nodeId;
         }
-        public static readonly MessageDestination Everyone = new MessageDestination("__SPECIAL__", "everyone");
         public static readonly MessageDestination Subscribers = new MessageDestination("__SPECIAL__", "subscribers");
         public static readonly MessageDestination Processed = new MessageDestination("__SPECIAL__", "processed");
         public static readonly MessageDestination DeadLetters = new MessageDestination("__SPECIAL__", "deadletters");
@@ -80,15 +79,18 @@ namespace ServiceLib
 
     public class NetworkBusReceiveFinished : IQueuedExecutionDispatcher
     {
-        private Action<Message> onReceived;
-        private Message message;
+        private Action<Message> _onReceived;
+        private Message _message;
 
         public NetworkBusReceiveFinished(Action<Message> onReceived, Message message)
         {
-            // TODO: Complete member initialization
-            this.onReceived = onReceived;
-            this.message = message;
+            _onReceived = onReceived;
+            _message = message;
         }
 
+        public void Execute()
+        {
+            _onReceived(_message);
+        }
     }
 }

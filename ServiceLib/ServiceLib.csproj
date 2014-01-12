@@ -83,6 +83,7 @@
     <Compile Include="IHandle.cs" />
     <Compile Include="NetworkBus.cs" />
     <Compile Include="NetworkBusInMemory.cs" />
+    <Compile Include="NetworkBusPostgres.cs" />
     <Compile Include="NodeLockManager.cs" />
     <Compile Include="ParametrizedUrl.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
