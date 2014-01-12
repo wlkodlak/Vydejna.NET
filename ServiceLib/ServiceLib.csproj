@@ -54,7 +54,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Bus.cs" />
+    <Compile Include="LocalBus.cs" />
     <Compile Include="ContractTypes.cs" />
     <Compile Include="DatabasePostgres.cs" />
     <Compile Include="DocumentStore.cs" />
@@ -81,6 +81,8 @@
     <Compile Include="HttpServerStagedContextHeaders.cs" />
     <Compile Include="HttpServerStagedParameters.cs" />
     <Compile Include="IHandle.cs" />
+    <Compile Include="NetworkBus.cs" />
+    <Compile Include="NetworkBusInMemory.cs" />
     <Compile Include="NodeLockManager.cs" />
     <Compile Include="ParametrizedUrl.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

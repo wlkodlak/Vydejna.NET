@@ -8,14 +8,14 @@ namespace ServiceLib.Tests.Documents
     {
         private TestExecutor _executor;
         private TestDocumentFolder _folder;
-        private NodeLockManager _mgr;
+        private NodeLockManagerDocument _mgr;
         
         [TestInitialize]
         public void Initialize()
         {
             _executor = new TestExecutor();
             _folder = new TestDocumentFolder(_executor);
-            _mgr = new NodeLockManager(_folder, "node1");
+            _mgr = new NodeLockManagerDocument(_folder, "node1");
         }
 
         [TestMethod]

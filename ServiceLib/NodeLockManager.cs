@@ -19,7 +19,7 @@ namespace ServiceLib
         void Unlock();
     }
 
-    public class NodeLockManager : INodeLockManager
+    public class NodeLockManagerDocument : INodeLockManager
     {
         private IDocumentFolder _store;
         private string _nodeName;
@@ -27,7 +27,7 @@ namespace ServiceLib
         private HashSet<string> _ownedLocks;
         private List<IDisposable> _lockers;
 
-        public NodeLockManager(IDocumentFolder store, string nodeName)
+        public NodeLockManagerDocument(IDocumentFolder store, string nodeName)
         {
             _store = store;
             _nodeName = nodeName;
@@ -45,7 +45,7 @@ namespace ServiceLib
 
         private class LockExecutor : IDisposable
         {
-            private NodeLockManager _parent;
+            private NodeLockManagerDocument _parent;
             private string _lockName;
             private Action _onLocked;
             private Action _cannotLock;
@@ -55,7 +55,7 @@ namespace ServiceLib
             private bool _pendingChange;
             private IDisposable _documentWatch;
 
-            public LockExecutor(NodeLockManager parent, string lockName, Action onLocked, Action cannotLock, bool nowait)
+            public LockExecutor(NodeLockManagerDocument parent, string lockName, Action onLocked, Action cannotLock, bool nowait)
             {
                 _parent = parent;
                 _lockName = lockName;
@@ -191,13 +191,37 @@ namespace ServiceLib
         }
     }
 
+    public class NodeLockManagerNull : INodeLockManager
+    {
+        private NullDispose _disposable = new NullDispose();
+
+        private class NullDispose : IDisposable
+        {
+            public void Dispose() { }
+        }
+
+        public IDisposable Lock(string lockName, Action onLocked, Action cannotLock, bool nowait)
+        {
+            onLocked();
+            return _disposable;
+        }
+
+        public void Unlock(string lockName)
+        {
+        }
+
+        public void Dispose()
+        {
+        }
+    }
+
     public class NodeLock : INodeLock
     {
         private INodeLockManager _manager;
         private string _lockName;
         private IDisposable _wait;
         private Action _onLocked;
-        
+
         public NodeLock(INodeLockManager manager, string lockName)
         {
             _manager = manager;
@@ -228,4 +252,5 @@ namespace ServiceLib
             _wait = null;
         }
     }
+
 }
