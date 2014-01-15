@@ -3,12 +3,14 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Globalization;
 
 namespace ServiceLib
 {
     public interface INodeLockManager
     {
         IDisposable Lock(string lockName, Action onLocked, Action cannotLock, bool nowait);
+        bool IsLocked(string lockName);
         void Unlock(string lockName);
         void Dispose();
     }
@@ -17,30 +19,155 @@ namespace ServiceLib
     {
         void Lock(Action onLocked, Action cannotLock);
         void Unlock();
+        bool IsLocked { get; }
     }
 
     public class NodeLockManagerDocument : INodeLockManager
     {
         private IDocumentFolder _store;
         private string _nodeName;
+        private ITime _timeService;
         private object _lock;
-        private HashSet<string> _ownedLocks;
+        private Dictionary<string, OwnedLock> _ownedLocks;
         private List<IDisposable> _lockers;
+        private const int TimerInterval = 30000;
+        private IDisposable _nextTimer;
 
-        public NodeLockManagerDocument(IDocumentFolder store, string nodeName)
+        public NodeLockManagerDocument(IDocumentFolder store, string nodeName, ITime timer)
         {
             _store = store;
             _nodeName = nodeName;
+            _timeService = timer;
             _lock = new object();
-            _ownedLocks = new HashSet<string>();
+            _ownedLocks = new Dictionary<string, OwnedLock>();
             _lockers = new List<IDisposable>();
         }
 
         public IDisposable Lock(string lockName, Action onLocked, Action cannotLock, bool nowait)
         {
+            lock (_lock)
+            {
+                if (_nextTimer == null)
+                    _nextTimer = _timeService.Delay(TimerInterval, OnTimer);
+            }
             var locker = new LockExecutor(this, lockName, onLocked, cannotLock, nowait);
             locker.Execute();
             return locker;
+        }
+
+        public bool IsLocked(string lockName)
+        {
+            lock (_lock)
+            {
+                OwnedLock ownedLock;
+                if (!_ownedLocks.TryGetValue(lockName, out ownedLock))
+                    return false;
+                return ownedLock.IsActive;
+            }
+        }
+
+        private void OnTimer()
+        {
+            lock (_lock)
+            {
+                _nextTimer = _timeService.Delay(TimerInterval, OnTimer);
+                foreach (var ownedLock in _ownedLocks.Values)
+                    ownedLock.Update();
+            }
+        }
+
+        private string ContentsToWrite()
+        {
+            return string.Format("{0:yyyy-MM-dd HH:mm:ss};{1}",
+                _timeService.GetUtcTime().AddMilliseconds(2 * TimerInterval),
+                _nodeName);
+        }
+
+        private class OwnedLock
+        {
+            private NodeLockManagerDocument _parent;
+            public string LockName;
+            public int DocumentVersion;
+            public DateTime LastWrite;
+            public bool IsActive;
+            private bool _isBusy;
+            public bool IsDisposed;
+
+            public OwnedLock(NodeLockManagerDocument parent, string lockName, int version)
+            {
+                _parent = parent;
+                LockName = lockName;
+                DocumentVersion = version;
+                LastWrite = parent._timeService.GetUtcTime();
+                IsActive = true;
+            }
+
+            public void Update()
+            {
+                if (_isBusy)
+                    return;
+                _isBusy = true;
+                _parent._store.SaveDocument(
+                    LockName, _parent.ContentsToWrite(), DocumentStoreVersion.At(DocumentVersion),
+                    OnSaved, OnConcurrency, OnError);
+            }
+
+            private void OnSaved()
+            {
+                lock (_parent._lock)
+                {
+                    _isBusy = false;
+                    LastWrite = _parent._timeService.GetUtcTime();
+                    DocumentVersion++;
+                    if (IsDisposed)
+                    {
+                        _isBusy = false;
+                        IsActive = false;
+                        _parent._ownedLocks.Remove(LockName);
+                        _parent._store.SaveDocument(
+                            LockName, "", DocumentStoreVersion.At(DocumentVersion),
+                            Unlocked, Unlocked, OnError);
+                    }
+                }
+            }
+
+            private void OnConcurrency()
+            {
+                lock (_parent._lock)
+                {
+                    _isBusy = false;
+                    IsActive = false;
+                    _parent._ownedLocks.Remove(LockName);
+                }
+            }
+
+            private void OnError(Exception obj)
+            {
+                lock (_parent._lock)
+                {
+                    _isBusy = false;
+                    IsActive = false;
+                    _parent._ownedLocks.Remove(LockName);
+                }
+            }
+
+            public void Dispose()
+            {
+                lock (_parent._lock)
+                {
+                    IsDisposed = true;
+                    if (!IsActive || _isBusy)
+                        return;
+                    IsActive = false;
+                    _parent._store.SaveDocument(
+                        LockName, "", DocumentStoreVersion.At(DocumentVersion),
+                        Unlocked, Unlocked, OnError);
+                }
+            }
+
+            private void Unlocked()
+            {
+            }
         }
 
         private class LockExecutor : IDisposable
@@ -51,9 +178,8 @@ namespace ServiceLib
             private Action _cannotLock;
             private bool _nowait;
             private bool _cancel;
-            private bool _busy;
-            private bool _pendingChange;
-            private IDisposable _documentWatch;
+            private int _savedVersion;
+            private IDisposable _wait;
 
             public LockExecutor(NodeLockManagerDocument parent, string lockName, Action onLocked, Action cannotLock, bool nowait)
             {
@@ -65,7 +191,7 @@ namespace ServiceLib
             }
             public void Execute()
             {
-                _documentWatch = _parent._store.WatchChanges(_lockName, -1, OnLockChanged);
+                OnLockChanged();
             }
             private void OnLockChanged()
             {
@@ -73,68 +199,63 @@ namespace ServiceLib
                 {
                     if (_cancel)
                         return;
-                    if (_busy)
-                    {
-                        _pendingChange = true;
-                        return;
-                    }
-                    else
-                    {
-                        _pendingChange = false;
-                        _busy = true;
-                    }
                 }
                 _parent._store.GetDocument(_lockName, OnLockFound, OnLockMissing, OnError);
             }
-            private void OnLockFound(int version, string owningNode)
+            private void OnLockFound(int version, string existingContents)
             {
                 bool cancel;
                 lock (_parent._lock)
                 {
+                    _savedVersion = version + 1;
                     cancel = _cancel;
-                    if (_cancel)
-                        _busy = false;
                 }
                 if (cancel)
                     _cannotLock();
-                else if (string.IsNullOrEmpty(owningNode))
-                    _parent._store.SaveDocument(_lockName, _parent._nodeName, DocumentStoreVersion.At(version), OnLockObtained, OnLockBusy, OnError);
-                else if (owningNode == _parent._nodeName)
+                else if (string.IsNullOrEmpty(existingContents))
+                    _parent._store.SaveDocument(_lockName, _parent.ContentsToWrite(), DocumentStoreVersion.At(version), OnLockObtained, OnLockBusy, OnError);
+                else if (existingContents == _parent._nodeName)
                     OnLockObtained();
                 else
                     OnLockBusy();
             }
             private void OnLockMissing()
             {
-                _parent._store.SaveDocument(_lockName, _parent._nodeName, DocumentStoreVersion.New, OnLockObtained, OnLockBusy, OnError);
+                _savedVersion = 1;
+                _parent._store.SaveDocument(_lockName, _parent.ContentsToWrite(), DocumentStoreVersion.New, OnLockObtained, OnLockBusy, OnError);
+            }
+            private bool IsFree(string contents)
+            {
+                if (string.IsNullOrEmpty(contents))
+                    return true;
+                var parts = contents.Split(';');
+                if (parts.Length != 2 || string.Equals(parts[1], _parent._nodeName, StringComparison.Ordinal))
+                    return true;
+                DateTime expiration;
+                if (!DateTime.TryParseExact(parts[0], "yyyy-MM-dd hh:mm:ss", CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out expiration))
+                    return true;
+                var now = _parent._timeService.GetUtcTime();
+                return expiration <= now;
             }
             private void OnLockBusy()
             {
-                bool tryAgain;
                 bool reportCannotLock;
                 lock (_parent._lock)
                 {
-                    tryAgain = _pendingChange && !_cancel && !_nowait;
-                    _pendingChange = false;
-                    if (!tryAgain)
-                        _busy = false;
+                    bool scheduleNextAttempt = !_cancel && !_nowait;
                     reportCannotLock = _nowait;
+                    if (scheduleNextAttempt)
+                        _wait = _parent._timeService.Delay(TimerInterval, OnLockChanged);
                 }
-                if (tryAgain)
-                    _parent._store.GetDocument(_lockName, OnLockFound, OnLockMissing, OnError);
-                else if (reportCannotLock)
+                if (reportCannotLock)
                     _cannotLock();
             }
             private void OnError(Exception exception)
             {
                 lock (_parent._lock)
                 {
-                    _busy = false;
                     if (!_cancel)
-                    {
                         _cancel = true;
-                        _documentWatch.Dispose();
-                    }
                 }
                 _cannotLock();
             }
@@ -142,11 +263,10 @@ namespace ServiceLib
             {
                 lock (_parent._lock)
                 {
-                    _parent._ownedLocks.Add(_lockName);
+                    _parent._ownedLocks[_lockName] = new OwnedLock(_parent, _lockName, _savedVersion);
                     if (!_cancel)
                     {
                         _cancel = true;
-                        _documentWatch.Dispose();
                     }
                 }
                 _onLocked();
@@ -158,7 +278,9 @@ namespace ServiceLib
                     if (_cancel)
                         return;
                     _cancel = true;
-                    _documentWatch.Dispose();
+                    if (_wait != null)
+                        _wait.Dispose();
+                    _wait = null;
                 }
                 _cannotLock();
             }
@@ -166,9 +288,12 @@ namespace ServiceLib
 
         public void Unlock(string lockName)
         {
-            _store.SaveDocument(lockName, "", DocumentStoreVersion.Any, NoAction, NoAction, IgnoreError);
             lock (_lock)
-                _ownedLocks.Remove(lockName);
+            {
+                OwnedLock ownedLock;
+                if (_ownedLocks.TryGetValue(lockName, out ownedLock))
+                    ownedLock.Dispose();
+            }
         }
 
         public void Dispose()
@@ -178,8 +303,10 @@ namespace ServiceLib
                 foreach (var locker in _lockers)
                     locker.Dispose();
                 _lockers.Clear();
-                foreach (var lockName in _ownedLocks)
-                    _store.SaveDocument(lockName, "", DocumentStoreVersion.Any, NoAction, NoAction, IgnoreError);
+                if (_nextTimer != null)
+                    _nextTimer.Dispose();
+                foreach (var ownedLock in _ownedLocks.Values)
+                    ownedLock.Dispose();
                 _ownedLocks.Clear();
             }
         }
@@ -194,6 +321,7 @@ namespace ServiceLib
     public class NodeLockManagerNull : INodeLockManager
     {
         private NullDispose _disposable = new NullDispose();
+        private HashSet<string> _ownedLocks = new HashSet<string>();
 
         private class NullDispose : IDisposable
         {
@@ -202,16 +330,30 @@ namespace ServiceLib
 
         public IDisposable Lock(string lockName, Action onLocked, Action cannotLock, bool nowait)
         {
-            onLocked();
-            return _disposable;
+            lock (_ownedLocks)
+            {
+                _ownedLocks.Add(lockName);
+                onLocked();
+                return _disposable;
+            }
         }
 
         public void Unlock(string lockName)
         {
+            lock (_ownedLocks)
+                _ownedLocks.Remove(lockName);
         }
 
         public void Dispose()
         {
+            lock (_ownedLocks)
+                _ownedLocks.Clear();
+        }
+
+        public bool IsLocked(string lockName)
+        {
+            lock (_ownedLocks)
+                return _ownedLocks.Contains(lockName);
         }
     }
 
@@ -250,6 +392,11 @@ namespace ServiceLib
             if (_wait != null)
                 _wait.Dispose();
             _wait = null;
+        }
+
+        public bool IsLocked
+        {
+            get { return _manager.IsLocked(_lockName); }
         }
     }
 

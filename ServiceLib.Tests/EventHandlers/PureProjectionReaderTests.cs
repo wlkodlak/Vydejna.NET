@@ -12,6 +12,7 @@ namespace ServiceLib.Tests.EventHandlers
         private TestDocumentFolder _folder;
         private TestSerializer _serializer;
         private PureProjectionReader<TestState> _reader;
+        private VirtualTime _time;
 
         [TestInitialize]
         public void Initialize()
@@ -19,7 +20,9 @@ namespace ServiceLib.Tests.EventHandlers
             _executor = new TestExecutor();
             _folder = new TestDocumentFolder(_executor);
             _serializer = new TestSerializer();
-            _reader = new PureProjectionReader<TestState>(_folder, _serializer, _executor);
+            _time = new VirtualTime();
+            _time.SetTime(new DateTime(2013, 10, 11, 18, 22, 22));
+            _reader = new PureProjectionReader<TestState>(_folder, _serializer, _executor, _time);
         }
 
         [TestMethod]
@@ -108,6 +111,7 @@ namespace ServiceLib.Tests.EventHandlers
             _reader.Get("doc", s => { }, ThrowError);
             _executor.Process();
             _folder.SaveDocument("doc", "999\r\nE2: 87", 2);
+            _time.SetTime(new DateTime(2013, 10, 11, 18, 22, 24));
             _executor.Process();
             _folder.ClearLog();
 

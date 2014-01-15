@@ -51,41 +51,6 @@ namespace ServiceLib.Tests.Documents
             VerifyDocument("testing", "document", DocumentStoreVersion.New, null);
         }
 
-        [TestMethod]
-        public void WatchChanges_SameDocument()
-        {
-            SetupDocument("testing", "document", "original");
-            int changes = 0;
-            var mre = new ManualResetEventSlim();
-            Store.SubFolder("testing").WatchChanges("document", 1, () => { changes++; mre.Set(); });
-            SaveDocument("testing", "document", DocumentStoreVersion.Any, "new contents", "saved");
-            for (int i = 0; i < 3; i++)
-            {
-                if (mre.Wait(30))
-                    break;
-                Executor.Process();
-            }
-            Assert.AreEqual(1, changes, "Changes count");
-        }
-
-        [TestMethod]
-        public void WatchChanges_DifferentDocument()
-        {
-            SetupDocument("testing", "document1", "A");
-            SetupDocument("testing", "document2", "B");
-            int changes = 0;
-            var mre = new ManualResetEventSlim();
-            Store.SubFolder("testing").WatchChanges("document1", 1, () => { changes++; mre.Set(); });
-            SaveDocument("testing", "document2", DocumentStoreVersion.Any, "new contents", "saved");
-            for (int i = 0; i < 3; i++)
-            {
-                if (mre.Wait(30))
-                    break;
-                Executor.Process();
-            }
-            Assert.AreEqual(0, changes, "Changes count");
-        }
-
         protected void SetupDocument(string folder, string name, string contents)
         {
             bool isSaved = false;

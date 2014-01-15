@@ -9,24 +9,17 @@ namespace Vydejna.Domain
 {
     public class SeznamNaradiReader : IReadSeznamNaradi
     {
-        private IDocumentFolder _store;
-        private SeznamNaradiSerializer _serializer;
-        private object _lock;
-        private IComparer<TypNaradiDto> _comparer;
-        private bool _isLoading;
-        private SeznamNaradiData _data;
-        private List<Action<Exception>> _waitingOnError;
-        private List<Action<SeznamNaradiData>> _waitingOnComplete;
-        private IDisposable _sledovani;
+        private PureProjectionReader<SeznamNaradiData> _reader;
 
-        public SeznamNaradiReader(IDocumentFolder store, SeznamNaradiSerializer serializer)
+        public SeznamNaradiReader(IDocumentFolder store, SeznamNaradiSerializer serializer, IQueueExecution executor, ITime time)
         {
-            _store = store;
-            _serializer = serializer;
-            _lock = new object();
-            _comparer = new VykresRozmerComparer();
-            _waitingOnComplete = new List<Action<SeznamNaradiData>>();
-            _waitingOnError = new List<Action<Exception>>();
+            _reader = new PureProjectionReader<SeznamNaradiData>(store, serializer, executor, time);
+        }
+
+        public SeznamNaradiReader SetupFreshness(int timeLimit)
+        {
+            _reader.Setup(freshTimeLimit: timeLimit);
+            return this;
         }
 
         public void Handle(QueryExecution<ZiskatSeznamNaradiRequest, ZiskatSeznamNaradiResponse> request)
@@ -41,105 +34,7 @@ namespace Vydejna.Domain
 
         public void Dispose()
         {
-            if (_sledovani != null)
-                _sledovani.Dispose();
-        }
-
-        private void GetCurrentData(Action<SeznamNaradiData> onComplete, Action<Exception> onError)
-        {
-            SeznamNaradiData nactenaData = null;
-            bool nacistData = false;
-            lock (_lock)
-            {
-                if (_data != null)
-                    nactenaData = _data;
-                else
-                {
-                    _waitingOnComplete.Add(onComplete);
-                    _waitingOnError.Add(onError);
-                    if (!_isLoading)
-                    {
-                        _isLoading = true;
-                        nacistData = true;
-                    }
-                }
-            }
-            if (nactenaData != null)
-                onComplete(nactenaData);
-            else if (nacistData)
-                _store.GetDocument("data", NactenDokument, () => NactenDokument(0, null), ChybaNacitani);
-        }
-
-        private void SledovatZmeny(int verze)
-        {
-            lock (_lock)
-            {
-                if (_sledovani != null)
-                    return;
-                _sledovani = _store.WatchChanges("data", verze, InvalidaceCache);
-            }
-        }
-
-        private void InvalidaceCache()
-        {
-            lock (_lock)
-                _data = null;
-        }
-
-        private void NactenDokument(int version, string contents)
-        {
-            List<Action<SeznamNaradiData>> handlers = null;
-            List<Action<Exception>> errors = null;
-            SeznamNaradiData data = null;
-            SledovatZmeny(version);
-            try
-            {
-                lock (_lock)
-                {
-                    _isLoading = false;
-                    handlers = _waitingOnComplete.ToList();
-                    errors = _waitingOnError.ToList();
-                    _waitingOnComplete.Clear();
-                    _waitingOnError.Clear();
-                    data = _data = _serializer.Deserialize(contents);
-                }
-                foreach (var handler in handlers)
-                    handler(data);
-            }
-            catch (Exception ex)
-            {
-                foreach (var handler in errors)
-                    handler(ex);
-            }
-        }
-
-        private void ChybaNacitani(Exception exception)
-        {
-            List<Action<Exception>> errors = null;
-            lock (_lock)
-            {
-                _isLoading = false;
-                errors = _waitingOnError.ToList();
-                _waitingOnComplete.Clear();
-                _waitingOnError.Clear();
-            }
-            foreach (var handler in errors)
-                handler(exception);
-        }
-
-        private class VykresRozmerComparer : IComparer<TypNaradiDto>
-        {
-            public int Compare(TypNaradiDto x, TypNaradiDto y)
-            {
-                int compare;
-                compare = string.CompareOrdinal(x.Vykres, y.Vykres);
-                if (compare != 0)
-                    return compare;
-                compare = string.CompareOrdinal(x.Rozmer, y.Rozmer);
-                if (compare != 0)
-                    return compare;
-                return 0;
-            }
+            _reader.Dispose();
         }
 
         private class ZiskatSeznamNaradiWorker
@@ -155,7 +50,7 @@ namespace Vydejna.Domain
 
             public void Execute()
             {
-                _parent.GetCurrentData(DataLoaded, OnError);
+                _parent._reader.Get("data", DataLoaded, OnError);
             }
 
             private void DataLoaded(SeznamNaradiData data)
@@ -186,7 +81,7 @@ namespace Vydejna.Domain
 
             public void Execute()
             {
-                _parent.GetCurrentData(DataLoaded, OnError);
+                _parent._reader.Get("data", DataLoaded, OnError);
             }
 
             private void DataLoaded(SeznamNaradiData data)
@@ -219,7 +114,7 @@ namespace Vydejna.Domain
         }
     }
 
-    public class SeznamNaradiSerializer 
+    public class SeznamNaradiSerializer : IPureProjectionSerializer<SeznamNaradiData>
     {
         public string Serialize(SeznamNaradiData data)
         {
@@ -233,6 +128,11 @@ namespace Vydejna.Domain
             data.PodleId = data.Seznam.ToDictionary(n => n.Id);
             data.LastToken = new EventStoreToken(data.Token);
             return data;
+        }
+
+        public SeznamNaradiData InitialState()
+        {
+            return Deserialize(null);
         }
     }
 

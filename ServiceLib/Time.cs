@@ -9,34 +9,30 @@ namespace ServiceLib
 {
     public interface ITime
     {
-        DateTime GetTime();
-        void Delay(int milliseconds, CancellationToken cancel, Action onTimer);
+        DateTime GetUtcTime();
+        IDisposable Delay(int milliseconds, Action onTimer);
     }
 
     public class RealTime : ITime
     {
-        public DateTime GetTime()
+        public DateTime GetUtcTime()
         {
-            return DateTime.Now;
+            return DateTime.UtcNow;
         }
 
-        public void Delay(int milliseconds, CancellationToken cancel, Action onTimer)
+        public IDisposable Delay(int milliseconds, Action onTimer)
         {
-            new DelayHandler(milliseconds, cancel, onTimer);
+            return new DelayHandler(milliseconds, onTimer);
         }
 
         private class DelayHandler : IDisposable
         {
-            private CancellationToken _cancel;
             private Action _onTimer;
             private Timer _timer;
-            private CancellationTokenRegistration _registration;
 
-            public DelayHandler(int milliseconds, CancellationToken cancel, Action onTimer)
+            public DelayHandler(int milliseconds, Action onTimer)
             {
-                _cancel = cancel;
                 _onTimer = onTimer;
-                _registration = cancel.Register(Dispose);
                 _timer = new Timer(Callback, null, milliseconds, Timeout.Infinite);
             }
 
@@ -51,14 +47,12 @@ namespace ServiceLib
                 }
                 finally
                 {
-                    _registration.Dispose();
                     _timer.Dispose();
                 }
             }
 
             public void Dispose()
             {
-                _registration.Dispose();
                 _timer.Dispose();
             }
 

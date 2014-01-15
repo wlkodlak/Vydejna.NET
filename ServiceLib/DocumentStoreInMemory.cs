@@ -22,71 +22,12 @@ namespace ServiceLib
             }
         }
 
-        private class FolderWatcher : IDisposable
-        {
-            private FolderWatcherCollection _parent;
-            public int Key;
-            public int SinceVersion;
-            public Action OnSomethingChanged;
-
-            public FolderWatcher(FolderWatcherCollection parent, int key, int sinceVersion, Action onSomethingChanged)
-            {
-                _parent = parent;
-                Key = key;
-                SinceVersion = sinceVersion;
-                OnSomethingChanged = onSomethingChanged;
-            }
-
-            public void Dispose()
-            {
-                _parent.Remove(Key);
-            }
-        }
-
-        private class FolderWatcherCollection
-        {
-            private int _key;
-            private ConcurrentDictionary<int, FolderWatcher> _watchers;
-            private IQueueExecution _executor;
-
-            public FolderWatcherCollection(IQueueExecution executor)
-            {
-                _key = 0;
-                _watchers = new ConcurrentDictionary<int, FolderWatcher>();
-                _executor = executor;
-            }
-
-            public IDisposable AddWatcher(int sinceVersion, Action onSomethingChanged)
-            {
-                Interlocked.Increment(ref _key);
-                var watcher = new FolderWatcher(this, _key, sinceVersion, onSomethingChanged);
-                _watchers.TryAdd(_key, watcher);
-                return watcher;
-            }
-
-            public void CallWatchers(int newVersion)
-            {
-                foreach (var watcher in _watchers.Values)
-                {
-                    if (watcher.SinceVersion != newVersion)
-                        _executor.Enqueue(watcher.OnSomethingChanged);
-                }
-            }
-
-            public void Remove(int key)
-            {
-                FolderWatcher removed;
-                _watchers.TryRemove(key, out removed);
-            }
-        }
-
         private class DocumentFolder : IDocumentFolder
         {
             private static readonly Regex _regex = new Regex(@"^[a-zA-Z0-9_\-.]+$", RegexOptions.Compiled);
             private IQueueExecution _executor;
             private ConcurrentDictionary<string, DocumentFolder> _folders = new ConcurrentDictionary<string, DocumentFolder>();
             private ConcurrentDictionary<string, Document> _documents = new ConcurrentDictionary<string, Document>();
-            private ConcurrentDictionary<string, FolderWatcherCollection> _watchers = new ConcurrentDictionary<string, FolderWatcherCollection>();
 
             public DocumentFolder(IQueueExecution executor)
             {
@@ -115,8 +56,6 @@ namespace ServiceLib
                 _folders.Clear();
                 _documents.Clear();
                 _executor.Enqueue(onComplete);
-                foreach (string name in documentNames)
-                    CallWatchers(name, 0);
             }
 
             public void GetDocument(string name, Action<int, string> onFound, Action onMissing, Action<Exception> onError)
@@ -190,33 +129,7 @@ namespace ServiceLib
                 {
                     _executor.Enqueue(onError, ex);
                 }
-                if (wasSaved)
-                    CallWatchers(name, newVersion);
             }
-
-            public IDisposable WatchChanges(string name, int sinceVersion, Action onSomethingChanged)
-            {
-                int currentVersion;
-                Document document;
-                if (!_documents.TryGetValue(name, out document))
-                    currentVersion = 0;
-                else
-                    currentVersion = document.Version;
-
-                var watcherCollection = _watchers.GetOrAdd(name, new FolderWatcherCollection(_executor));
-                var watcher = watcherCollection.AddWatcher(sinceVersion, onSomethingChanged);
-                if (currentVersion != sinceVersion)
-                    _executor.Enqueue(onSomethingChanged);
-                return watcher;
-            }
-
-            private void CallWatchers(string name, int version)
-            {
-                FolderWatcherCollection collection;
-                if (_watchers.TryGetValue(name, out collection))
-                    collection.CallWatchers(version);
-            }
-
         }
 
         private readonly DocumentFolder _root;
@@ -249,11 +162,6 @@ namespace ServiceLib
         public void SaveDocument(string name, string value, DocumentStoreVersion expectedVersion, Action onSave, Action onConcurrency, Action<Exception> onError)
         {
             _root.SaveDocument(name, value, expectedVersion, onSave, onConcurrency, onError);
-        }
-
-        public IDisposable WatchChanges(string name, int sinceVersion, Action onSomethingChanged)
-        {
-            return _root.WatchChanges(name, sinceVersion, onSomethingChanged);
         }
     }
 

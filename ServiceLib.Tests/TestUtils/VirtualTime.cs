@@ -13,7 +13,7 @@ namespace ServiceLib.Tests.TestUtils
         private DateTime _now = new DateTime(2000, 1, 1);
         private List<DelayedTask> _delayedTasks = new List<DelayedTask>();
 
-        private class DelayedTask : IComparable
+        private class DelayedTask : IComparable, IDisposable
         {
             public DateTime Time;
             public Action TaskCompletion;
@@ -30,6 +30,11 @@ namespace ServiceLib.Tests.TestUtils
                 var oth = obj as DelayedTask;
                 return oth == null ? 1 : Time.CompareTo(oth.Time);
             }
+
+            public void Dispose()
+            {
+                Cancelled = true;
+            }
         }
 
         public void SetTime(DateTime now)
@@ -45,12 +50,12 @@ namespace ServiceLib.Tests.TestUtils
                 task.TaskCompletion();
         }
 
-        public DateTime GetTime()
+        public DateTime GetUtcTime()
         {
             return _now;
         }
 
-        public void Delay(int milliseconds, CancellationToken cancel, Action onTimer)
+        public IDisposable Delay(int milliseconds, Action onTimer)
         {
             if (milliseconds < 0)
                 milliseconds = 0;
@@ -62,7 +67,7 @@ namespace ServiceLib.Tests.TestUtils
                     _delayedTasks.Insert(~index, task);
                 else
                     _delayedTasks.Insert(index, task);
-                cancel.Register(() => { task.Cancelled = true; });
+                return task;
             }
         }
     }

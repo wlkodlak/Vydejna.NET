@@ -11,18 +11,9 @@ namespace ServiceLib.Tests.TestUtils
     {
         private object _lock;
         private Dictionary<string, Document> _data;
-        private List<Watcher> _watchers;
         private IQueueExecution _executor;
         private List<string> _log;
 
-        private class Watcher : IDisposable
-        {
-            public TestDocumentFolder Parent;
-            public string Document;
-            public int SinceVersion;
-            public Action OnChange;
-            public void Dispose() { Parent.UnWatch(this); }
-        }
         private class Document
         {
             public int Version;
@@ -38,7 +29,6 @@ namespace ServiceLib.Tests.TestUtils
             _executor = executor;
             _lock = new object();
             _data = new Dictionary<string, Document>();
-            _watchers = new List<Watcher>();
             _log = new List<string>();
         }
 
@@ -53,7 +43,6 @@ namespace ServiceLib.Tests.TestUtils
             {
                 _data.Clear();
                 AddToLog("Clear", null, 0);
-                ScheduleWatchers(null, 0);
                 _executor.Enqueue(onComplete);
             }
         }
@@ -163,7 +152,6 @@ namespace ServiceLib.Tests.TestUtils
                         document.Contents = value;
                         AddToLog("Save", name, document.Version);
                         _executor.Enqueue(onSave);
-                        ScheduleWatchers(name, document.Version);
                     }
                 }
                 else
@@ -180,7 +168,6 @@ namespace ServiceLib.Tests.TestUtils
                         document.Contents = value;
                         AddToLog("Save", name, 1);
                         _executor.Enqueue(onSave);
-                        ScheduleWatchers(name, document.Version);
                     }
                 }
             }
@@ -195,45 +182,6 @@ namespace ServiceLib.Tests.TestUtils
                     _data[name] = document = new Document();
                 document.Version = (manualVersion >= 0) ? manualVersion : document.Version + 1;
                 document.Contents = value;
-                ScheduleWatchers(name, document.Version);
-            }
-        }
-
-        public IDisposable WatchChanges(string name, int sinceVersion, Action onSomethingChanged)
-        {
-            lock (_lock)
-            {
-                Document document;
-                int currentVersion;
-                var watcher = new Watcher { Document = name, SinceVersion = sinceVersion, OnChange = onSomethingChanged, Parent = this };
-                _watchers.Add(watcher);
-                if (_data.TryGetValue(name, out document))
-                    currentVersion = document.Version;
-                else
-                    currentVersion = 0;
-                if (currentVersion != sinceVersion)
-                    _executor.Enqueue(onSomethingChanged);
-                return watcher;
-            }
-        }
-
-        private void UnWatch(Watcher watcher)
-        {
-            lock (_lock)
-            {
-                _watchers.Remove(watcher);
-            }
-        }
-
-        private void ScheduleWatchers(string document, int version)
-        {
-            foreach (var watcher in _watchers)
-            {
-                if (watcher.Document == document || document == null)
-                {
-                    if (watcher.SinceVersion != version)
-                        _executor.Enqueue(watcher.OnChange);
-                }
             }
         }
     }

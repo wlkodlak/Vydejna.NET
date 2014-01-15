@@ -34,7 +34,9 @@ namespace ServiceLib.Tests.Documents
             string result = null;
             _lock.Lock(() => result = "got", () => result = "fail");
             Assert.IsNotNull(_mgr.OnLocked, "OnLocked null");
+            _mgr.IsLocked = true;
             _mgr.OnLocked();
+            Assert.IsTrue(_lock.IsLocked, "IsLocked");
             Assert.AreEqual("testlock", _mgr.LockName, "LockName");
             Assert.IsFalse(_mgr.Nowait, "Nowait");
             Assert.AreEqual("got", result, "Result");
@@ -45,9 +47,11 @@ namespace ServiceLib.Tests.Documents
         {
             _lock.Lock(() => { }, () => { });
             Assert.IsNotNull(_mgr.OnLocked, "OnLocked null");
+            _mgr.IsLocked = true;
             _mgr.OnLocked();
             _lock.Dispose();
             Assert.IsFalse(_mgr.IsDisposed, "IsDisposed");
+            Assert.IsTrue(_lock.IsLocked, "IsLocked");
         }
 
         [TestMethod]
@@ -61,6 +65,7 @@ namespace ServiceLib.Tests.Documents
             Assert.IsFalse(_mgr.Nowait, "Nowait");
             Assert.IsTrue(_mgr.IsDisposed, "IsDisposed");
             Assert.AreEqual("fail", result, "Result");
+            Assert.IsFalse(_lock.IsLocked, "IsLocked");
         }
 
         [TestMethod]
@@ -68,6 +73,7 @@ namespace ServiceLib.Tests.Documents
         {
             _lock.Unlock();
             Assert.AreEqual("testlock", _mgr.UnlockCalled);
+            Assert.IsFalse(_lock.IsLocked, "IsLocked");
         }
 
         private class TestLockMgr : INodeLockManager
@@ -77,6 +83,7 @@ namespace ServiceLib.Tests.Documents
             public bool Nowait;
             public string UnlockCalled;
             public bool IsDisposed;
+            public bool IsLocked;
 
             public IDisposable Lock(string lockName, Action onLocked, Action cannotLock, bool nowait)
             {
@@ -90,10 +97,16 @@ namespace ServiceLib.Tests.Documents
             public void Unlock(string lockName)
             {
                 UnlockCalled = lockName;
+                IsLocked = false;
             }
 
             public void Dispose()
             {
+            }
+
+            bool INodeLockManager.IsLocked(string lockName)
+            {
+                return IsLocked;
             }
         }
     }

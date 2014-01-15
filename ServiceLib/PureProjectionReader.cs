@@ -8,7 +8,7 @@ using System.Threading;
 
 namespace ServiceLib
 {
-    public interface IPureProjectionReader<TState>
+    public interface IPureProjectionReader<TState> : IDisposable
     {
         void Get(string partition, Action<TState> onLoaded, Action<Exception> onError);
     }
@@ -19,12 +19,12 @@ namespace ServiceLib
             private PureProjectionReader<TState> _parent;
             public string Partition;
             public TState State;
-            public bool IsLoading, IsLoaded, IsEvicted, IsWatched;
-            public int Version, InvalidatedVersion;
-            public IDisposable Watcher;
+            public bool IsLoading, IsLoaded, IsEvicted;
+            public int Version, InvalidatedVersion, LastLoadedVersion;
             public int CacheHits, CacheScore;
             public List<Action<TState>> OnLoadWaiters;
             public List<Action<Exception>> OnErrorWaiters;
+            public DateTime FreshUntil;
 
             public Item(PureProjectionReader<TState> parent, string partition)
             {
@@ -34,7 +34,6 @@ namespace ServiceLib
 
             public void OnDocumentFound(int version, string contents)
             {
-                bool watchDocument;
                 List<Action<TState>> waiters;
                 var state = string.IsNullOrEmpty(contents)
                     ? _parent._serializer.InitialState()
@@ -48,11 +47,10 @@ namespace ServiceLib
                     waiters = OnLoadWaiters;
                     OnLoadWaiters = null;
                     OnErrorWaiters = null;
-                    watchDocument = !IsWatched;
-                    IsWatched = true;
+                    InvalidatedVersion = 0;
+                    LastLoadedVersion = version;
+                    FreshUntil = _parent._timeService.GetUtcTime().AddMilliseconds(500);
                 }
-                if (watchDocument)
-                    Watcher = _parent._store.WatchChanges(Partition, version, DocumentChanged);
                 foreach (var waiter in waiters)
                     _parent._executor.Enqueue(new GetStateFinished(waiter, state));
             }
@@ -64,6 +62,25 @@ namespace ServiceLib
                     InvalidatedVersion = Version;
                     IsLoaded = false;
                 }
+            }
+
+            public void OnDocumentSame()
+            {
+                List<Action<TState>> waiters;
+                TState state;
+                lock (this)
+                {
+                    state = State;
+                    IsLoading = false;
+                    IsLoaded = Version != InvalidatedVersion;
+                    waiters = OnLoadWaiters;
+                    OnLoadWaiters = null;
+                    OnErrorWaiters = null;
+                    InvalidatedVersion = 0;
+                    FreshUntil = _parent._timeService.GetUtcTime().AddMilliseconds(500);
+                }
+                foreach (var waiter in waiters)
+                    _parent._executor.Enqueue(new GetStateFinished(waiter, state));
             }
 
             public void OnDocumentMissing()
@@ -109,8 +126,6 @@ namespace ServiceLib
             public void NotifyRemoval()
             {
                 IsEvicted = true;
-                if (Watcher != null)
-                    Watcher.Dispose();
             }
         }
 
@@ -136,37 +151,44 @@ namespace ServiceLib
         private int _increment;
         private int _roundLimit;
         private int _roundShift;
+        private ITime _timeService;
+        private int _freshTimeLimit;
 
-        public PureProjectionReader(IDocumentFolder store, IPureProjectionSerializer<TState> serializer, IQueueExecution executor)
+        public PureProjectionReader(IDocumentFolder store, IPureProjectionSerializer<TState> serializer, IQueueExecution executor, ITime timeService)
         {
             _store = store;
             _serializer = serializer;
             _executor = executor;
+            _timeService = timeService;
             _cache = new ConcurrentDictionary<string, Item>();
             _increment = 32;
             _roundLimit = 32;
             _roundShift = 3;
+            _freshTimeLimit = 500;
         }
 
-        public PureProjectionReader<TState> Setup(int increment = 32, int roundLimit = 32, int roundShift = 3)
+        public PureProjectionReader<TState> Setup(int increment = 32, int roundLimit = 32, int roundShift = 3, int freshTimeLimit = 500)
         {
             _increment = increment;
             _roundLimit = roundLimit;
             _roundShift = roundShift;
+            _freshTimeLimit = freshTimeLimit;
             return this;
         }
 
         public void Get(string partition, Action<TState> onLoaded, Action<Exception> onError)
         {
             Item item = GetItem(partition);
-            if (item.IsLoaded)
+            var now = _timeService.GetUtcTime();
+            if (item.IsLoaded && now < item.FreshUntil)
                 _executor.Enqueue(new GetStateFinished(onLoaded, item.State));
             else
             {
                 bool loadDocument = false;
+                int knownVersion = 0;
                 lock (item)
                 {
-                    if (item.IsLoaded)
+                    if (item.IsLoaded && now < item.FreshUntil)
                         _executor.Enqueue(new GetStateFinished(onLoaded, item.State));
                     else if (item.IsLoading)
                     {
@@ -175,6 +197,7 @@ namespace ServiceLib
                     }
                     else
                     {
+                        knownVersion = item.LastLoadedVersion;
                         item.OnLoadWaiters = new List<Action<TState>>();
                         item.OnErrorWaiters = new List<Action<Exception>>();
                         item.OnLoadWaiters.Add(onLoaded);
@@ -183,7 +206,7 @@ namespace ServiceLib
                     }
                 }
                 if (loadDocument)
-                    _store.GetDocument(partition, item.OnDocumentFound, item.OnDocumentMissing, item.OnError);
+                    _store.GetNewerDocument(partition, knownVersion, item.OnDocumentFound, item.OnDocumentSame, item.OnDocumentMissing, item.OnError);
             }
         }
 
@@ -206,6 +229,10 @@ namespace ServiceLib
                         removed.NotifyRemoval();
                 }
             }
+        }
+
+        public void Dispose()
+        {
         }
     }
 }

@@ -198,10 +198,9 @@ namespace ServiceLib
                 {
                     cmd.CommandText =
                         "INSERT INTO messages (messageid, corellationid, createdon, source, node, destination, type, format, body) " +
-                        "VALUES (messageid, corellationid, createdon, source, node, destination, type, format, body)";
+                        "VALUES (messageid, corellationid, 'now'::timestamp, source, node, destination, type, format, body)";
                     cmd.Parameters.AddWithValue("messageid", messageId);
                     cmd.Parameters.AddWithValue("corellationid", _message.CorellationId);
-                    cmd.Parameters.AddWithValue("createdon", _message.CreatedOn);
                     cmd.Parameters.AddWithValue("source", _message.Source);
                     cmd.Parameters.AddWithValue("node", destination.NodeId);
                     cmd.Parameters.AddWithValue("destination", destination.ProcessName);
