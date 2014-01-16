@@ -18,6 +18,10 @@ namespace ServiceLib
             _destinations = new ConcurrentDictionary<MessageDestination, DestinationContents>();
         }
 
+        public void Dispose()
+        {
+        }
+
         private class DestinationContents
         {
             public readonly MessageDestination Destination;

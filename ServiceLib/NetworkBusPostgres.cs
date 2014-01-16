@@ -70,6 +70,10 @@ namespace ServiceLib
             _database.Execute(worker.DoWork, onError);
         }
 
+        public void Dispose()
+        {
+        }
+
         private void InitializeDatabase(NpgsqlConnection conn)
         {
             bool tableMessagesExists = false;
@@ -102,9 +106,9 @@ namespace ServiceLib
                         "CREATE TABLE IF NOT EXISTS messages (" +
                         "id serial PRIMARY KEY, " +
                         "messageid varchar NOT NULL, " +
-                        "corellationid varchar NOT NULL, " +
+                        "corellationid varchar, " +
                         "createdon timestamp NOT NULL, " +
-                        "source varchar NOT NULL, " +
+                        "source varchar, " +
                         "node varchar NOT NULL, " +
                         "destination varchar NOT NULL, " +
                         "original varchar, " +
@@ -168,11 +172,13 @@ namespace ServiceLib
                     foreach (var destination in destinations)
                         InsertMessage(conn, Guid.NewGuid().ToString("N"), destination);
                     Notify(conn);
+                    _executor.Enqueue(_onComplete);
                 }
                 else
                 {
                     InsertMessage(conn, _message.MessageId, _destination);
                     Notify(conn);
+                    _executor.Enqueue(_onComplete);
                 }
             }
 
@@ -198,7 +204,7 @@ namespace ServiceLib
                 {
                     cmd.CommandText =
                         "INSERT INTO messages (messageid, corellationid, createdon, source, node, destination, type, format, body) " +
-                        "VALUES (messageid, corellationid, 'now'::timestamp, source, node, destination, type, format, body)";
+                        "VALUES (:messageid, :corellationid, 'now'::timestamp, :source, :node, :destination, :type, :format, :body)";
                     cmd.Parameters.AddWithValue("messageid", messageId);
                     cmd.Parameters.AddWithValue("corellationid", _message.CorellationId);
                     cmd.Parameters.AddWithValue("source", _message.Source);
@@ -312,7 +318,10 @@ namespace ServiceLib
                         }
                         RemoveEmptyWaiters();
                         if (_isNotified)
+                        {
                             needsNewLoad = true;
+                            _isNotified = false;
+                        }
                         else
                             _isLoading = false;
                     }
@@ -329,7 +338,7 @@ namespace ServiceLib
                 using (var cmd = conn.CreateCommand())
                 {
                     cmd.CommandText =
-                        "SELECT messageid, corellationid, createdon, source, type, format, body " +
+                        "SELECT messageid, corellationid, createdon, source, type, format, body, original " +
                         "FROM messages WHERE node = :node AND destination = :destination " + 
                         "AND processing IS NULL ORDER BY id LIMIT 20 FOR UPDATE";
                     cmd.Parameters.AddWithValue("node", _destination.NodeId);
@@ -341,9 +350,9 @@ namespace ServiceLib
                         {
                             var message = new Message();
                             message.MessageId = reader.GetString(0);
-                            message.CorellationId = reader.GetString(1);
+                            message.CorellationId = reader.IsDBNull(1) ? null : reader.GetString(1);
                             message.CreatedOn = reader.GetDateTime(2);
-                            message.Source = reader.GetString(3);
+                            message.Source = reader.IsDBNull(3) ? null : reader.GetString(3);
                             message.Destination = _destination;
                             message.Type = reader.GetString(4);
                             message.Format = reader.GetString(5);

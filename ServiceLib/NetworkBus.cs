@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace ServiceLib
 {
-    public interface INetworkBus
+    public interface INetworkBus : IDisposable
     {
         void Send(MessageDestination destination, Message message, Action onComplete, Action<Exception> onError);
         void Receive(MessageDestination destination, bool nowait, Action<Message> onReceived, Action nothingNew, Action<Exception> onError);
@@ -17,7 +17,7 @@ namespace ServiceLib
     public class Message
     {
         public string Source;
-        public MessageDestination Destination, OriginalDestination;
+        public MessageDestination Destination;
         public string Type, Format, Body;
         public string MessageId, CorellationId;
         public DateTime CreatedOn;
