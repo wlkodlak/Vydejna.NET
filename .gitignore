@@ -5,3 +5,4 @@ bin/
 TestResult.xml
 *.sln.VisualState.xml
 *.jmx
+/TestResults

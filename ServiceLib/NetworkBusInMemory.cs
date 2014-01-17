@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Concurrent;
 
@@ -9,13 +10,43 @@ namespace ServiceLib
 {
     public class NetworkBusInMemory : INetworkBus
     {
+        private int _collectingIsSetup;
         private ConcurrentDictionary<MessageDestination, DestinationContents> _destinations;
         private IQueueExecution _executor;
+        private ITime _timeService;
+        private int _collectInterval, _collectTimeout;
 
-        public NetworkBusInMemory(IQueueExecution executor, string nodeId)
+        public NetworkBusInMemory(string nodeId, IQueueExecution executor, ITime timeService)
         {
             _executor = executor;
+            _timeService = timeService;
             _destinations = new ConcurrentDictionary<MessageDestination, DestinationContents>();
+            _collectInterval = 60;
+            _collectTimeout = 600;
+        }
+
+        private void StartCollecting()
+        {
+            if (Interlocked.CompareExchange(ref _collectingIsSetup, 1, 0) == 0)
+                _timeService.Delay(1000 * _collectInterval, DoCollect);
+        }
+
+        private void DoCollect()
+        {
+            DateTime removedDateTime;
+            Message removedMessage;
+            var limit = _timeService.GetUtcTime().AddSeconds(-_collectTimeout);
+            foreach (var destination in _destinations.Values)
+            {
+                var old = destination.DeliveredOn.Where(p => p.Value <= limit).Select(p => p.Key).ToList();
+                foreach (var oldKey in old)
+                {
+                    destination.DeliveredOn.TryRemove(oldKey, out removedDateTime);
+                    if (destination.InProgress.TryRemove(oldKey, out removedMessage))
+                        destination.Incoming.Enqueue(removedMessage);
+                }
+            }
+            _timeService.Delay(1000 * _collectInterval, DoCollect);
         }
 
         public void Dispose()
@@ -27,6 +58,7 @@ namespace ServiceLib
             public readonly MessageDestination Destination;
             public ConcurrentQueue<Message> Incoming;
             public ConcurrentDictionary<string, Message> InProgress;
+            public ConcurrentDictionary<string, DateTime> DeliveredOn;
             public ConcurrentDictionary<string, bool> Subscriptions;
             public ConcurrentBag<Waiter> Waiters;
             public DestinationContents(MessageDestination destination)
@@ -34,6 +66,7 @@ namespace ServiceLib
                 Destination = destination;
                 Incoming = new ConcurrentQueue<Message>();
                 InProgress = new ConcurrentDictionary<string, Message>();
+                DeliveredOn = new ConcurrentDictionary<string, DateTime>();
                 Subscriptions = new ConcurrentDictionary<string, bool>();
                 Waiters = new ConcurrentBag<Waiter>();
             }
@@ -84,6 +117,7 @@ namespace ServiceLib
             if (contents.Waiters.TryTake(out waiter))
             {
                 contents.InProgress[message.MessageId] = message;
+                contents.DeliveredOn[message.MessageId] = _timeService.GetUtcTime();
                 _executor.Enqueue(new NetworkBusReceiveFinished(waiter.OnReceived, message));
             }
             else
@@ -93,6 +127,7 @@ namespace ServiceLib
                     if (contents.Waiters.TryTake(out waiter))
                     {
                         contents.InProgress[message.MessageId] = message;
+                        contents.DeliveredOn[message.MessageId] = _timeService.GetUtcTime();
                         _executor.Enqueue(new NetworkBusReceiveFinished(waiter.OnReceived, message)); 
                     }
                     else
@@ -103,6 +138,7 @@ namespace ServiceLib
 
         public void Receive(MessageDestination destination, bool nowait, Action<Message> onReceived, Action nothingNew, Action<Exception> onError)
         {
+            StartCollecting();
             DestinationContents contents;
             Message message;
             if (!_destinations.TryGetValue(destination, out contents))
@@ -110,6 +146,7 @@ namespace ServiceLib
             if (contents.Incoming.TryDequeue(out message))
             {
                 contents.InProgress[message.MessageId] = message;
+                contents.DeliveredOn[message.MessageId] = _timeService.GetUtcTime();
                 _executor.Enqueue(new NetworkBusReceiveFinished(onReceived, message));
             }
             else if (nowait)
@@ -121,6 +158,7 @@ namespace ServiceLib
                     if (contents.Incoming.TryDequeue(out message))
                     {
                         contents.InProgress[message.MessageId] = message;
+                        contents.DeliveredOn[message.MessageId] = _timeService.GetUtcTime();
                         _executor.Enqueue(new NetworkBusReceiveFinished(onReceived, message));
                     }
                     else
@@ -145,6 +183,12 @@ namespace ServiceLib
                 contents = _destinations.GetOrAdd(message.Destination, new DestinationContents(message.Destination));
             Message removed;
             contents.InProgress.TryRemove(message.MessageId, out removed);
+            if (newDestination == MessageDestination.DeadLetters)
+            {
+                if (!_destinations.TryGetValue(newDestination, out contents))
+                    contents = _destinations.GetOrAdd(newDestination, new DestinationContents(newDestination));
+                contents.Incoming.Enqueue(removed);
+            }
             _executor.Enqueue(onComplete);
         }
 
@@ -156,6 +200,22 @@ namespace ServiceLib
             contents.InProgress = new ConcurrentDictionary<string, Message>();
             contents.Incoming = new ConcurrentQueue<Message>();
             _executor.Enqueue(onComplete);
+        }
+
+        public List<Message> GetContents(MessageDestination destination)
+        {
+            DestinationContents contents;
+            if (!_destinations.TryGetValue(destination, out contents))
+                contents = _destinations.GetOrAdd(destination, new DestinationContents(destination));
+            return contents.Incoming.ToList();
+        }
+
+        public List<Message> GetContentsInProgress(MessageDestination destination)
+        {
+            DestinationContents contents;
+            if (!_destinations.TryGetValue(destination, out contents))
+                contents = _destinations.GetOrAdd(destination, new DestinationContents(destination));
+            return contents.InProgress.Values.ToList();
         }
     }
 }

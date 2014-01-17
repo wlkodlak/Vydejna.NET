@@ -17,15 +17,23 @@ namespace ServiceLib.Tests.Messaging
         protected INetworkBus Bus;
         protected Message NullMessage;
         protected ManualResetEventSlim Mre;
-        private Message LastMessage;
+        protected Message LastMessage;
+        protected VirtualTime TimeService;
 
         [TestInitialize]
-        public virtual void Initialize()
+        public void Initialize()
         {
             Executor = new TestExecutor();
             NullMessage = CreateMessage("NULL", "");
-            Bus = CreateBus();
+            TimeService = new VirtualTime();
             Mre = new ManualResetEventSlim();
+            InitializeCore();
+            Bus = CreateBus();
+        }
+
+        protected virtual void InitializeCore()
+        {
+
         }
 
         [TestMethod]
@@ -62,8 +70,87 @@ namespace ServiceLib.Tests.Messaging
             ExpectMessage("Msg", "Awaited");
         }
 
+        [TestMethod]
+        public void SubscribedMessagesAreDeliveredToAllSubscribers()
+        {
+            Subscribe("Msg", "Queue1");
+            Subscribe("Msg", "Queue2");
+            SendMessage("Msg", "Body", "SUBSCRIBE");
+            StartReceiving("Queue1", true);
+            ExpectMessage("Msg", "Body");
+            StartReceiving("Queue2", true);
+            ExpectMessage("Msg", "Body");
+        }
 
+        [TestMethod]
+        public void DeleteAllRemovesQueueContents()
+        {
+            SendMessage("Msg", "Body1", "Queue1");
+            SendMessage("Msg", "Body2", "Queue2");
+            SendMessage("Msg", "Body3", "Queue1");
+            SendMessage("Msg", "Body4", "Queue1");
 
+            DeleteAll("Queue1");
+
+            StartReceiving("Queue1", true);
+            ExpectMessage(null, null);
+            StartReceiving("Queue2", true);
+            ExpectMessage("Msg", "Body2");
+        }
+
+        [TestMethod]
+        public void DeadLettersAreFoundInDeadLetterQueue()
+        {
+            SendMessage("Msg", "DeadMessage", "Queue");
+            StartReceiving("Queue", true);
+            var msg = EndReceiving();
+
+            MarkAsDeadLetter(msg);
+
+            var deadlist = GetAllDeadLetters();
+            Assert.AreEqual(1, deadlist.Count, "Deadlist.Count");
+            Assert.AreEqual("DeadMessage", deadlist[0].Body, "Deadlist[0].Body");
+        }
+
+        [TestMethod]
+        public void ProcessedMessagesAreDeleted()
+        {
+            SendMessage("Msg", "Processed1", "Queue");
+            SendMessage("Msg", "Processed2", "Queue");
+            SendMessage("Msg", "Processed3", "Queue");
+            StartReceiving("Queue", true);
+            EndReceiving();
+
+            MarkAsProcessed(LastMessage);
+
+            StartReceiving("Queue", true);
+            EndReceiving();
+
+            var remaining = GetReadyInQueue(MessageDestination.For("Queue", "thisnode"));
+            var inprogress = GetPartialQueue(MessageDestination.For("Queue", "thisnode"));
+            var notprocessed = string.Join(", ", remaining.Concat(inprogress).Select(m => m.Body).OrderBy(b => b));
+            Assert.AreEqual("Processed2, Processed3", notprocessed);
+        }
+
+        [TestMethod]
+        public void UnprocessedMessageIsDeliveredAgain()
+        {
+            SendMessage("Msg", "Processed1", "Queue");
+            SendMessage("Msg", "Processed2", "Queue");
+            SendMessage("Msg", "Processed3", "Queue");
+            StartReceiving("Queue", true);
+            EndReceiving();
+            MarkAsProcessed(LastMessage);
+            StartReceiving("Queue", true);
+            EndReceiving();
+
+            AdvanceTime(400);
+            StartReceiving("Queue", true);
+            ExpectMessage("Msg", "Processed3");
+            AdvanceTime(200);
+            StartReceiving("Queue", true);
+            ExpectMessage("Msg", "Processed2");
+        }
 
 
         protected abstract INetworkBus CreateBus();
@@ -83,9 +170,33 @@ namespace ServiceLib.Tests.Messaging
             throw ex.PreserveStackTrace();
         }
 
+        protected void AdvanceTime(int seconds)
+        {
+            TimeService.SetTime(TimeService.GetUtcTime().AddSeconds(seconds));
+            Executor.Process();
+        }
+
+        protected void MarkAsDeadLetter(Message msg)
+        {
+            var mre = new ManualResetEventSlim();
+            Bus.MarkProcessed(msg, MessageDestination.DeadLetters, () => mre.Set(), ThrowError);
+            Executor.Process();
+        }
+
+        protected void MarkAsProcessed(Message msg)
+        {
+            var mre = new ManualResetEventSlim();
+            Bus.MarkProcessed(msg, MessageDestination.Processed, () => mre.Set(), ThrowError);
+            Executor.Process();
+        }
+
+        protected abstract List<Message> GetAllDeadLetters();
+        protected abstract List<Message> GetReadyInQueue(MessageDestination queue);
+        protected abstract List<Message> GetPartialQueue(MessageDestination queue);
+
         protected void SendMessage(string type, string body, string target)
         {
-            var destination = MessageDestination.For(target, "thisnode");
+            var destination = target == "SUBSCRIBE" ? MessageDestination.Subscribers : MessageDestination.For(target, "thisnode");
             var message = CreateMessage(type, body);
             var sendMre = new ManualResetEventSlim();
             Bus.Send(destination, message, () => sendMre.Set(), ThrowError);
@@ -93,11 +204,32 @@ namespace ServiceLib.Tests.Messaging
             Assert.IsTrue(sendMre.Wait(100), "Message sent");
         }
 
+        protected void Subscribe(string type, string target)
+        {
+            var mre = new ManualResetEventSlim();
+            var destination = MessageDestination.For(target, "thisnode");
+            Bus.Subscribe(type, destination, false, () => mre.Set(), ThrowError);
+            Executor.Process();
+            Assert.IsTrue(mre.Wait(100), "Subscribed");
+        }
+
+        protected void DeleteAll(string target)
+        {
+            var mre = new ManualResetEventSlim();
+            var destination = MessageDestination.For(target, "thisnode");
+            Bus.DeleteAll(destination, () => mre.Set(), ThrowError);
+            Executor.Process();
+            Assert.IsTrue(mre.Wait(100), "Everything deleted");
+        }
+
         protected void StartReceiving(string target, bool nowait)
         {
-            Bus.Receive(MessageDestination.For(target, "thisnode"), nowait,
+            Mre.Reset();
+            LastMessage = null;
+            var destination = MessageDestination.For(target, "thisnode");
+            Bus.Receive(destination, nowait,
                 msg => { LastMessage = msg; Mre.Set(); },
-                () => { LastMessage = NullMessage; Mre.Set(); }, 
+                () => { LastMessage = NullMessage; Mre.Set(); },
                 ThrowError);
             Executor.Process();
         }
@@ -119,7 +251,10 @@ namespace ServiceLib.Tests.Messaging
         {
             var message = EndReceiving();
             if (type == null)
-                Assert.AreSame(NullMessage, message, "Expected null message");
+            {
+                Assert.IsNotNull(message, "No result");
+                Assert.AreEqual("NULL", message.Type, "Expected null message");
+            }
             else
             {
                 Assert.IsNotNull(message, "Null message");
@@ -134,7 +269,25 @@ namespace ServiceLib.Tests.Messaging
     {
         protected override INetworkBus CreateBus()
         {
-            return new NetworkBusInMemory(Executor, "thisnode");
+            return new NetworkBusInMemory("thisnode", Executor, TimeService);
+        }
+
+        protected override List<Message> GetAllDeadLetters()
+        {
+            var rawBus = (NetworkBusInMemory)Bus;
+            return rawBus.GetContents(MessageDestination.DeadLetters);
+        }
+
+        protected override List<Message> GetPartialQueue(MessageDestination queue)
+        {
+            var rawBus = (NetworkBusInMemory)Bus;
+            return rawBus.GetContentsInProgress(queue);
+        }
+
+        protected override List<Message> GetReadyInQueue(MessageDestination queue)
+        {
+            var rawBus = (NetworkBusInMemory)Bus;
+            return rawBus.GetContents(queue);
         }
     }
 
@@ -142,6 +295,7 @@ namespace ServiceLib.Tests.Messaging
     public class NetworkBusTestsPostgres : NetworkBusTestsBase
     {
         private List<IDisposable> _disposables;
+        private DatabasePostgres _db;
 
         private string GetConnectionString()
         {
@@ -153,20 +307,18 @@ namespace ServiceLib.Tests.Messaging
             return connString.ToString();
         }
 
-        [TestInitialize]
-        public override void Initialize()
+        protected override void InitializeCore()
         {
+            _db = new DatabasePostgres(GetConnectionString(), Executor);
             _disposables = new List<IDisposable>();
-            base.Initialize();
         }
 
         protected override INetworkBus CreateBus()
         {
-            var db = new DatabasePostgres(GetConnectionString(), Executor);
-            var bus = new NetworkBusPostgres("thisnode", Executor, db);
+            var bus = new NetworkBusPostgres("thisnode", Executor, _db, TimeService);
             _disposables.Add(bus);
             bus.Initialize();
-            db.ExecuteSync(DeleteAllDocuments);
+            _db.ExecuteSync(DeleteAllDocuments);
             return bus;
         }
 
@@ -184,6 +336,64 @@ namespace ServiceLib.Tests.Messaging
         {
             foreach (var disposable in _disposables)
                 disposable.Dispose();
+        }
+
+        private MessageDestination LoadDestination;
+        private bool LoadPartial;
+        private List<Message> LastLoad;
+
+        protected override List<Message> GetAllDeadLetters()
+        {
+            LoadDestination = MessageDestination.DeadLetters;
+            LoadPartial = false;
+            _db.ExecuteSync(PerformLoad);
+            return LastLoad;
+        }
+
+        protected override List<Message> GetPartialQueue(MessageDestination queue)
+        {
+            LoadDestination = queue;
+            LoadPartial = true;
+            _db.ExecuteSync(PerformLoad);
+            return LastLoad;
+        }
+
+        protected override List<Message> GetReadyInQueue(MessageDestination queue)
+        {
+            LoadDestination = queue;
+            LoadPartial = false;
+            _db.ExecuteSync(PerformLoad);
+            return LastLoad;
+        }
+
+        private void PerformLoad(NpgsqlConnection conn)
+        {
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText =
+                    "SELECT messageid, corellationid, createdon, source, type, format, body, original " +
+                    "FROM messages WHERE node = :node AND destination = :destination " +
+                    "AND processing IS " + (LoadPartial ? "NOT " : "") + "NULL ORDER BY id";
+                cmd.Parameters.AddWithValue("node", LoadDestination.NodeId);
+                cmd.Parameters.AddWithValue("destination", LoadDestination.ProcessName);
+                using (var reader = cmd.ExecuteReader())
+                {
+                    LastLoad = new List<Message>();
+                    while (reader.Read())
+                    {
+                        var message = new Message();
+                        message.MessageId = reader.GetString(0);
+                        message.CorellationId = reader.IsDBNull(1) ? null : reader.GetString(1);
+                        message.CreatedOn = reader.GetDateTime(2);
+                        message.Source = reader.IsDBNull(3) ? null : reader.GetString(3);
+                        message.Destination = LoadDestination;
+                        message.Type = reader.GetString(4);
+                        message.Format = reader.GetString(5);
+                        message.Body = reader.GetString(6);
+                        LastLoad.Add(message);
+                    }
+                }
+            }
         }
     }
 }

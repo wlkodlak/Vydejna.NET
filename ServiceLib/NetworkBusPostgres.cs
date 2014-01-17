@@ -13,14 +13,18 @@ namespace ServiceLib
         private string _nodeId;
         private IQueueExecution _executor;
         private DatabasePostgres _database;
+        private ITime _timeService;
         private ConcurrentDictionary<MessageDestination, DestinationCache> _receiving;
+        public int _deliveryTimeout;
 
-        public NetworkBusPostgres(string nodeId, IQueueExecution executor, DatabasePostgres database)
+        public NetworkBusPostgres(string nodeId, IQueueExecution executor, DatabasePostgres database, ITime timeService)
         {
             _nodeId = nodeId;
             _executor = executor;
             _database = database;
+            _timeService = timeService;
             _receiving = new ConcurrentDictionary<MessageDestination, DestinationCache>();
+            _deliveryTimeout = 600;
         }
 
         public void Initialize()
@@ -115,7 +119,7 @@ namespace ServiceLib
                         "type varchar NOT NULL, " +
                         "format varchar NOT NULL, " +
                         "body text NOT NULL, " +
-                        "processing varchar)";
+                        "processing timestamp)";
                     cmd.ExecuteNonQuery();
                 }
                 using (var cmd = conn.CreateCommand())
@@ -337,12 +341,14 @@ namespace ServiceLib
             {
                 using (var cmd = conn.CreateCommand())
                 {
+                    var processingLimit = _parent._timeService.GetUtcTime().AddSeconds(-_parent._deliveryTimeout);
                     cmd.CommandText =
                         "SELECT messageid, corellationid, createdon, source, type, format, body, original " +
                         "FROM messages WHERE node = :node AND destination = :destination " + 
-                        "AND processing IS NULL ORDER BY id LIMIT 20 FOR UPDATE";
+                        "AND (processing IS NULL OR processing <= :processing) ORDER BY id LIMIT 20 FOR UPDATE";
                     cmd.Parameters.AddWithValue("node", _destination.NodeId);
                     cmd.Parameters.AddWithValue("destination", _destination.ProcessName);
+                    cmd.Parameters.AddWithValue("processing", processingLimit);
                     using (var reader = cmd.ExecuteReader())
                     {
                         var list = new List<Message>();
@@ -369,7 +375,7 @@ namespace ServiceLib
                 using (var cmd = conn.CreateCommand())
                 {
                     cmd.CommandText = "UPDATE messages SET processing = :processing WHERE messageid = :messageid";
-                    cmd.Parameters.AddWithValue("processing", _parent._nodeId);
+                    cmd.Parameters.AddWithValue("processing", _parent._timeService.GetUtcTime());
                     var paramMessageId = cmd.Parameters.Add("messageid", NpgsqlTypes.NpgsqlDbType.Varchar);
                     foreach (var message in newMessages)
                     {

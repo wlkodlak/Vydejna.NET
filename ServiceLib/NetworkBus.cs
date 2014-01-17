@@ -31,9 +31,9 @@ namespace ServiceLib
             ProcessName = processName;
             NodeId = nodeId;
         }
-        public static readonly MessageDestination Subscribers = new MessageDestination("__SPECIAL__", "subscribers");
-        public static readonly MessageDestination Processed = new MessageDestination("__SPECIAL__", "processed");
-        public static readonly MessageDestination DeadLetters = new MessageDestination("__SPECIAL__", "deadletters");
+        public static readonly MessageDestination Subscribers = new MessageDestination("subscribers", "__SPECIAL__");
+        public static readonly MessageDestination Processed = new MessageDestination("processed", "__SPECIAL__");
+        public static readonly MessageDestination DeadLetters = new MessageDestination("deadletters", "__SPECIAL__");
         public static MessageDestination For(string processName, string nodeId)
         {
             return new MessageDestination(processName, nodeId);
