@@ -52,7 +52,7 @@ namespace ServiceLib
                 {
                     SetProcessState(ProcessState.Running);
                     _token = token;
-                    _streaming.Setup(_token, _subscriptions.GetHandledTypes().ToArray());
+                    _streaming.Setup(_token, _subscriptions.GetHandledTypes().ToArray(), _metadata.ProcessName);
                     _streaming.GetNextEvent(EventReceived, NoNewEvents, CannotReceiveEvents, false);
                 }
                 catch (Exception ex)
@@ -108,7 +108,7 @@ namespace ServiceLib
 
         private void OnHandlerError(Exception exception)
         {
-            EventHandled();
+            _streaming.MarkAsDeadLetter(EventHandled, OnError);
         }
 
         private void EventHandled()

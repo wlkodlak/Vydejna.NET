@@ -9,6 +9,7 @@ namespace ServiceLib.Tests.TestUtils
         public bool WaitsForLock;
         public bool IsLocked;
         public bool FailMode;
+        public string ProcessName { get; set; }
         private Action _onLockObtained;
 
         public TestMetadataInstance()

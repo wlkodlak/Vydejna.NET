@@ -32,7 +32,7 @@ namespace ServiceLib.Tests.EventHandlers
             _dispatcher.Register<TestEvent1>(_handler);
             _dispatcher.Register<TestEvent2>(_handler);
             _dispatcher.Register<TestEvent3>(_handler);
-            _process = new PureProjectionProcess<TestState>(_handler, _locking, _cache, _dispatcher, _streaming);
+            _process = new PureProjectionProcess<TestState>("TestProjection", _handler, _locking, _cache, _dispatcher, _streaming);
         }
 
         [TestMethod]

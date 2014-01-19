@@ -17,6 +17,8 @@ namespace ServiceLib.Tests.TestUtils
         private Action _onEventNotAvailable;
         private Action<Exception, EventStoreEvent> _onError;
         private bool _nowait;
+        public List<string> DeadLetters;
+        private string ProcessName;
 
         private class EventReadCompleted : IQueuedExecutionDispatcher
         {
@@ -46,6 +48,7 @@ namespace ServiceLib.Tests.TestUtils
         {
             _executor = executor;
             _events = new List<Tuple<string, object>>();
+            DeadLetters = new List<string>();
         }
 
         public void MarkEndOfStream()
@@ -61,8 +64,14 @@ namespace ServiceLib.Tests.TestUtils
             TryProcess();
         }
 
-        public void Setup(EventStoreToken firstToken, IList<Type> types)
+        public void MarkAsDeadLetter(Action onComplete, Action<Exception> onError)
         {
+            DeadLetters.Add(_events[_position - 1].Item1);
+        }
+
+        public void Setup(EventStoreToken firstToken, IList<Type> types, string processName)
+        {
+            ProcessName = processName;
             CurrentToken = firstToken;
             _types = new HashSet<Type>(types);
             if (CurrentToken.IsInitial)

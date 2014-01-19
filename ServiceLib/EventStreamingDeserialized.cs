@@ -6,8 +6,9 @@ namespace ServiceLib
 {
     public interface IEventStreamingDeserialized : IDisposable
     {
-        void Setup(EventStoreToken firstToken, IList<Type> types);
+        void Setup(EventStoreToken firstToken, IList<Type> types, string processName);
         void GetNextEvent(Action<EventStoreToken, object> onEventRead, Action onEventNotAvailable, Action<Exception, EventStoreEvent> onError, bool nowait);
+        void MarkAsDeadLetter(Action onComplete, Action<Exception> onError);
     }
 
     public class EventStreamingDeserialized : IEventStreamingDeserialized
@@ -27,10 +28,10 @@ namespace ServiceLib
             _serializer = serializer;
         }
 
-        public void Setup(EventStoreToken firstToken, IList<Type> types)
+        public void Setup(EventStoreToken firstToken, IList<Type> types, string processName)
         {
             _typeFilter = new HashSet<string>(types.Select(_serializer.GetTypeName));
-            _streamer = _streaming.GetStreamer(firstToken);
+            _streamer = _streaming.GetStreamer(firstToken, processName);
             _isDisposed = false;
         }
 
@@ -44,6 +45,11 @@ namespace ServiceLib
                 _onError(new ObjectDisposedException("Streamer is disposed"), null);
             else
                 _streamer.GetNextEvent(RawEventReceived, OnError, _nowait);
+        }
+
+        public void MarkAsDeadLetter(Action onComplete, Action<Exception> onError)
+        {
+            _streamer.MarkAsDeadLetter(onComplete, onError);
         }
 
         public void Dispose()

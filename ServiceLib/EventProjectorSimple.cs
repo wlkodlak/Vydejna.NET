@@ -93,7 +93,7 @@ namespace ServiceLib
                 _upgradeMode = _projectionInfo.UpgradeMode(_storedVersion);
                 if (_upgradeMode == EventProjectionUpgradeMode.Rebuild)
                     _lastCompletedToken = EventStoreToken.Initial;
-                _streaming.Setup(_lastCompletedToken, _subscriptions.GetHandledTypes().ToArray());
+                _streaming.Setup(_lastCompletedToken, _subscriptions.GetHandledTypes().ToArray(), _metadata.ProcessName);
                 _flushCounter = 20;
                 if (_upgradeMode == EventProjectionUpgradeMode.Rebuild)
                 {

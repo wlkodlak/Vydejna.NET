@@ -32,14 +32,14 @@ namespace ServiceLib.Tests.EventSourced
         [TestMethod]
         public void SetupCreatesStreamer()
         {
-            _deserialized.Setup(new EventStoreToken("4493"), _types);
+            _deserialized.Setup(new EventStoreToken("4493"), _types, "TestProcess");
             Assert.AreEqual(new EventStoreToken("4493"), _streamer.LastProcessedToken);
         }
 
         [TestMethod]
         public void DisposeDisposesStreamer()
         {
-            _deserialized.Setup(new EventStoreToken("4493"), _types);
+            _deserialized.Setup(new EventStoreToken("4493"), _types, "TestProcess");
             _deserialized.Dispose();
             Assert.IsTrue(_streamer.Disposed);
         }
@@ -47,7 +47,7 @@ namespace ServiceLib.Tests.EventSourced
         [TestMethod]
         public void GetNextEventToStreamer()
         {
-            _deserialized.Setup(new EventStoreToken("4493"), _types);
+            _deserialized.Setup(new EventStoreToken("4493"), _types, "TestProcess");
             _deserialized.GetNextEvent((t, e) => { }, () => { }, (x, e) => { }, true);
             Assert.IsTrue(_streamer.Processing, "Processing");
             Assert.IsTrue(_streamer.Nowait, "Nowait");
@@ -56,7 +56,7 @@ namespace ServiceLib.Tests.EventSourced
         [TestMethod]
         public void WhenEventIsNotAvailable()
         {
-            _deserialized.Setup(new EventStoreToken("4493"), _types);
+            _deserialized.Setup(new EventStoreToken("4493"), _types, "TestProcess");
             _deserialized.GetNextEvent(OnEventRead, OnEventNotAvailable, OnError, true);
             _streamer.SendEmptyEvent();
             ExpectEventNotAvailable();
@@ -65,7 +65,7 @@ namespace ServiceLib.Tests.EventSourced
         [TestMethod]
         public void WhenSupportedEventArrives()
         {
-            _deserialized.Setup(new EventStoreToken("4493"), _types);
+            _deserialized.Setup(new EventStoreToken("4493"), _types, "TestProcess");
             _deserialized.GetNextEvent(OnEventRead, OnEventNotAvailable, OnError, true);
             _streamer.SendEvent("4496", "TestEvent1", "EventData");
             ExpectEvent("4496", "TestEvent1", "EventData");
@@ -74,7 +74,7 @@ namespace ServiceLib.Tests.EventSourced
         [TestMethod]
         public void WhenUnsupportedEventArrives()
         {
-            _deserialized.Setup(new EventStoreToken("4493"), _types);
+            _deserialized.Setup(new EventStoreToken("4493"), _types, "TestProcess");
             _deserialized.GetNextEvent(OnEventRead, OnEventNotAvailable, OnError, true);
             _streamer.SendEvent("4496", "TestEvent3", "EventData");
             ExpectNoCall();
@@ -85,7 +85,7 @@ namespace ServiceLib.Tests.EventSourced
         [TestMethod]
         public void WhenDeserializationFails()
         {
-            _deserialized.Setup(new EventStoreToken("4493"), _types);
+            _deserialized.Setup(new EventStoreToken("4493"), _types, "TestProcess");
             _deserialized.GetNextEvent(OnEventRead, OnEventNotAvailable, OnError, true);
             _streamer.SendEvent("4496", "TestEvent2", "FAIL");
             ExpectError();
@@ -95,7 +95,7 @@ namespace ServiceLib.Tests.EventSourced
         [TestMethod]
         public void WhenRetrievalFails()
         {
-            _deserialized.Setup(new EventStoreToken("4493"), _types);
+            _deserialized.Setup(new EventStoreToken("4493"), _types, "TestProcess");
             _deserialized.GetNextEvent(OnEventRead, OnEventNotAvailable, OnError, true);
             _streamer.SendError(new NotSupportedException("Sent error"));
             ExpectError();
@@ -156,9 +156,9 @@ namespace ServiceLib.Tests.EventSourced
                 _streamer = streamer;
             }
 
-            public IEventStreamer GetStreamer(EventStoreToken token)
+            public IEventStreamer GetStreamer(EventStoreToken token, string processName)
             {
-                _streamer.Setup(token);
+                _streamer.Setup(token, processName);
                 return _streamer;
             }
         }
@@ -228,10 +228,12 @@ namespace ServiceLib.Tests.EventSourced
             public bool Nowait;
             private Action<EventStoreEvent> _onComplete;
             private Action<Exception> _onError;
+            private string LastProcessName;
 
-            public void Setup(EventStoreToken token)
+            public void Setup(EventStoreToken token, string processName)
             {
                 LastProcessedToken = token;
+                LastProcessName = processName;
                 Disposed = false;
             }
 
@@ -242,6 +244,11 @@ namespace ServiceLib.Tests.EventSourced
                 Nowait = withoutWaiting;
                 _onComplete = onComplete;
                 _onError = onError;
+            }
+
+            public void MarkAsDeadLetter(Action onComplete, Action<Exception> onError)
+            {
+
             }
 
             public void Dispose()
@@ -261,6 +268,11 @@ namespace ServiceLib.Tests.EventSourced
                 if (evnt != null)
                     LastProcessedToken = evnt.Token;
                 _onComplete(evnt);
+            }
+
+            public void SendMessage(Message msg)
+            {
+
             }
 
             public void SendEvent(string token, string type, string body)

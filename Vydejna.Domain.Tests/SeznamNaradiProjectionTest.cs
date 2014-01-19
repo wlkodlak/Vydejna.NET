@@ -47,7 +47,7 @@ namespace Vydejna.Domain.Tests
             _dispatcher.Register<DeaktivovanoNaradiEvent>(_projekce);
             _projectionCache = new PureProjectionStateCache<SeznamNaradiData>(_store, _projekce);
             _projectionCache.SetupNotificator(_notifier);
-            _process = new PureProjectionProcess<SeznamNaradiData>(_projekce, _locking,
+            _process = new PureProjectionProcess<SeznamNaradiData>("SeznamNaradiProjection", _projekce, _locking,
                 _projectionCache, _dispatcher, _streaming);
             _process.Handle(new SystemEvents.SystemInit());
             _locking.SendLock();

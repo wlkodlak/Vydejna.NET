@@ -12,13 +12,17 @@ namespace ServiceLib.Tests.EventSourced
         private TestExecutor _executor;
         private TestEventStore _store;
         private EventStreaming _streaming;
+        private VirtualTime _time;
+        private NetworkBusInMemory _messaging;
 
         [TestInitialize]
         public void Initialize()
         {
             _executor = new TestExecutor();
             _store = new TestEventStore(_executor);
-            _streaming = new EventStreaming(_store, _executor).BatchSize(5);
+            _time = new VirtualTime();
+            _messaging = new NetworkBusInMemory("localnode", _executor, _time);
+            _streaming = new EventStreaming(_store, _executor, _messaging).BatchSize(5);
         }
 
         [TestMethod]
@@ -32,7 +36,7 @@ namespace ServiceLib.Tests.EventSourced
                 Create("Type2", "5475"),
                 Create("Type2", "5475")
             });
-            var streamer = _streaming.GetStreamer(new EventStoreToken("3"));
+            var streamer = _streaming.GetStreamer(new EventStoreToken("3"), "TestProcess");
             EventStoreEvent evnt = null;
             streamer.GetNextEvent(e => evnt = e, ThrowError, true);
             _executor.Process();
@@ -50,7 +54,7 @@ namespace ServiceLib.Tests.EventSourced
                 Create("Type2", "5475"),
                 Create("Type2", "00000"),
             });
-            var streamer = _streaming.GetStreamer(new EventStoreToken("3"));
+            var streamer = _streaming.GetStreamer(new EventStoreToken("3"), "TestProcess");
             EventStoreEvent evnt = null;
             streamer.GetNextEvent(e => evnt = e, ThrowError, true);
             _executor.Process();
@@ -70,7 +74,7 @@ namespace ServiceLib.Tests.EventSourced
         [TestMethod]
         public void ErrorWhenRetrieving()
         {
-            var streamer = _streaming.GetStreamer(EventStoreToken.Initial);
+            var streamer = _streaming.GetStreamer(EventStoreToken.Initial, "TestProcess");
             Exception exception = null;
             streamer.GetNextEvent(e => { }, ex => exception = ex, false);
             _store.SendFailure();
@@ -81,7 +85,7 @@ namespace ServiceLib.Tests.EventSourced
         [TestMethod]
         public void RetryingAfterErrorIsPossible()
         {
-            var streamer = _streaming.GetStreamer(EventStoreToken.Initial);
+            var streamer = _streaming.GetStreamer(EventStoreToken.Initial, "TestProcess");
             Exception exception = null;
             streamer.GetNextEvent(e => { }, ex => exception = ex, false);
             _store.SendFailure();
@@ -98,7 +102,7 @@ namespace ServiceLib.Tests.EventSourced
         [TestMethod]
         public void NullEventOnNowaitWithoutAvailableEvents()
         {
-            var streamer = _streaming.GetStreamer(EventStoreToken.Initial);
+            var streamer = _streaming.GetStreamer(EventStoreToken.Initial, "TestProcess");
             EventStoreEvent evnt = Create("FAIL", "FAIL");
             streamer.GetNextEvent(e => evnt = e, ThrowError, true);
             _executor.Process();
@@ -108,9 +112,10 @@ namespace ServiceLib.Tests.EventSourced
         [TestMethod]
         public void WaitingCallReturnsNullOnDispose()
         {
-            var streamer = _streaming.GetStreamer(EventStoreToken.Initial);
+            var streamer = _streaming.GetStreamer(EventStoreToken.Initial, "TestProcess");
             EventStoreEvent evnt = Create("FAIL", "FAIL");
             streamer.GetNextEvent(e => evnt = e, ThrowError, false);
+            _executor.Process();
             streamer.Dispose();
             _executor.Process();
             Assert.IsNull(evnt, "Received event");
@@ -119,9 +124,10 @@ namespace ServiceLib.Tests.EventSourced
         [TestMethod]
         public void WaitingCallReturnsNullOnEmptyLongPoll()
         {
-            var streamer = _streaming.GetStreamer(EventStoreToken.Initial);
+            var streamer = _streaming.GetStreamer(EventStoreToken.Initial, "TestProcess");
             EventStoreEvent evnt = Create("FAIL", "FAIL");
             streamer.GetNextEvent(e => evnt = e, ThrowError, false);
+            _executor.Process();
             _store.EndLongPoll();
             _executor.Process();
             Assert.IsNull(evnt, "Received event");
@@ -140,7 +146,7 @@ namespace ServiceLib.Tests.EventSourced
                     Create("Evt2", "327d0"),
                     Create("Evt3", "5484."),
                 });
-            var streamer = _streaming.GetStreamer(EventStoreToken.Initial);
+            var streamer = _streaming.GetStreamer(EventStoreToken.Initial, "TestProcess");
 
             streamer.GetNextEvent(e => received.Add(e), ThrowError, false);
             _executor.Process();

@@ -13,6 +13,7 @@ namespace ServiceLib
 
     public interface IMetadataInstance
     {
+        string ProcessName { get; }
         void GetToken(Action<EventStoreToken> onCompleted, Action<Exception> onError);
         void SetToken(EventStoreToken token, Action onCompleted, Action<Exception> onError);
         void GetVersion(Action<string> onCompleted, Action<Exception> onError);
@@ -45,24 +46,37 @@ namespace ServiceLib
         private string _tokenDoc;
         private IDocumentFolder _store;
         private INodeLockManager _locking;
+        private int _versionVer;
+        private int _tokenVer;
 
         public MetadataInstance(string lockName, string versionDoc, string tokenDoc, IDocumentFolder store, INodeLockManager locking)
         {
             this._lockName = lockName;
             this._versionDoc = versionDoc;
             this._tokenDoc = tokenDoc;
+            this._versionVer = 0;
+            this._tokenVer = 0;
             this._store = store;
             this._locking = locking;
         }
 
+        public string ProcessName
+        {
+            get { return _lockName; }
+        }
+
         public void GetToken(Action<EventStoreToken> onCompleted, Action<Exception> onError)
         {
-            _store.GetDocument(_tokenDoc, (v, c) => onCompleted(new EventStoreToken(c)), () => onCompleted(EventStoreToken.Initial), onError);
+            _store.GetDocument(_tokenDoc, 
+                (v, c) => { _tokenVer = v; onCompleted(new EventStoreToken(c)); },
+                () => { _tokenVer = 0; onCompleted(EventStoreToken.Initial); }, 
+                onError);
         }
 
         public void SetToken(EventStoreToken token, Action onCompleted, Action<Exception> onError)
         {
-            _store.SaveDocument(_tokenDoc, token.ToString(), DocumentStoreVersion.Any, onCompleted, onCompleted, onError);
+            _store.SaveDocument(_tokenDoc, token.ToString(), DocumentStoreVersion.At(_tokenVer), onCompleted, 
+                () => onError(new MetadataInstanceConcurrencyException()), onError);
         }
 
         public void GetVersion(Action<string> onCompleted, Action<Exception> onError)
@@ -70,7 +84,10 @@ namespace ServiceLib
             if (string.IsNullOrEmpty(_versionDoc))
                 onCompleted(null);
             else
-                _store.GetDocument(_versionDoc, (v, c) => onCompleted(c), () => onCompleted(null), onError);
+                _store.GetDocument(_versionDoc,
+                    (v, c) => { _versionVer = v; onCompleted(c); },
+                    () => { _versionVer = 0; onCompleted(null); }, 
+                    onError);
         }
 
         public void SetVersion(string version, Action onCompleted, Action<Exception> onError)
@@ -78,7 +95,8 @@ namespace ServiceLib
             if (string.IsNullOrEmpty(_versionDoc))
                 onCompleted();
             else
-                _store.SaveDocument(_versionDoc, version, DocumentStoreVersion.Any, onCompleted, onCompleted, onError);
+                _store.SaveDocument(_versionDoc, version, DocumentStoreVersion.At(_versionVer), onCompleted, 
+                    () => onError(new MetadataInstanceConcurrencyException()), onError);
         }
 
         public IDisposable Lock(Action onLockObtained)
@@ -90,5 +108,17 @@ namespace ServiceLib
         {
             _locking.Unlock(_lockName);
         }
+    }
+
+    [Serializable]
+    public class MetadataInstanceConcurrencyException : Exception
+    {
+        public MetadataInstanceConcurrencyException() { }
+        public MetadataInstanceConcurrencyException(string message) : base(message) { }
+        public MetadataInstanceConcurrencyException(string message, Exception inner) : base(message, inner) { }
+        protected MetadataInstanceConcurrencyException(
+          System.Runtime.Serialization.SerializationInfo info,
+          System.Runtime.Serialization.StreamingContext context)
+            : base(info, context) { }
     }
 }

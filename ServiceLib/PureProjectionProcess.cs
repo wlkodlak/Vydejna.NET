@@ -33,14 +33,17 @@ namespace ServiceLib
         private object _currentEvent;
         private IPureProjectionHandler<TState, object> _currentHandler;
         private string _currentPartition;
+        private string _processName;
 
         public PureProjectionProcess(
+            string processName,
             IPureProjectionVersionControl versioning, 
             INodeLock locking,
             IPureProjectionStateCache<TState> store, 
             IPureProjectionDispatcher<TState> dispatcher, 
             IEventStreamingDeserialized streaming)
         {
+            _processName = processName;
             _versioning = versioning;
             _locking = locking;
             _store = store;
@@ -76,12 +79,12 @@ namespace ServiceLib
                 StopWorking();
             else if (string.IsNullOrEmpty(version) || _versioning.NeedsRebuild(version))
             {
-                _streaming.Setup(EventStoreToken.Initial, _dispatcher.GetRegisteredTypes());
+                _streaming.Setup(EventStoreToken.Initial, _dispatcher.GetRegisteredTypes(), _processName);
                 _store.Reset(_versioning.GetVersion(), ProcessEvents, OnError);
             }
             else
             {
-                _streaming.Setup(token, _dispatcher.GetRegisteredTypes());
+                _streaming.Setup(token, _dispatcher.GetRegisteredTypes(), _processName);
                 _streaming.GetNextEvent(OnEventReceived, OnEventUnavailable, OnEventError, false);
             }
         }
