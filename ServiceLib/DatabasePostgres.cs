@@ -56,6 +56,14 @@ namespace ServiceLib
             return listener;
         }
 
+        public IDisposable Listen(string listenName, Action<string> onNotify)
+        {
+            var listener = new Listener(_notifications, Interlocked.Increment(ref _listenerKey), listenName, onNotify);
+            _notifications.OpenListener();
+            _notifications.AddListener(listener);
+            return listener;
+        }
+
         public void Dispose()
         {
             _notifications.Dispose();
@@ -73,6 +81,7 @@ namespace ServiceLib
             public readonly string Name;
             public readonly int Key;
             public ListenerState State;
+            private Action<string> _onNotifyExt;
 
             public Listener(NotificationWatcher notifications, int key, string listenName, Action onNotify)
             {
@@ -82,15 +91,32 @@ namespace ServiceLib
                 Name = listenName;
             }
 
-            public void Notify()
+            public Listener(NotificationWatcher notifications, int key, string listenName, Action<string> onNotify)
             {
-                _onNotify();
+                _notifications = notifications;
+                _onNotifyExt = onNotify;
+                Key = key;
+                Name = listenName;
+            }
+
+            public void Notify(string payload)
+            {
+                if (_onNotify != null)
+                    _onNotify();
+                else
+                    _onNotifyExt(payload);
             }
 
             public void Dispose()
             {
                 _notifications.RemoveListener(this);
             }
+        }
+
+        private struct Notification
+        {
+            public string Name;
+            public string Payload;
         }
 
         private class OpenConnectionWorker
@@ -188,11 +214,27 @@ namespace ServiceLib
             }
         }
 
+        private class NotificationDispatcher : IQueuedExecutionDispatcher
+        {
+            private Action<string> _onNotify;
+            private string _payload;
+            public NotificationDispatcher(Action<string> onNotify, string payload)
+            {
+                _onNotify = onNotify;
+                _payload = payload;
+            }
+            public void Execute()
+            {
+                _onNotify(_payload);
+            }
+        }
+
         private class NotificationWatcher : IDisposable
         {
             private DatabasePostgres _parent;
             private object _lock;
             private Dictionary<int, Listener> _listeners;
+            private List<Notification> _notifications;
             private NpgsqlConnection _connection;
             private bool _isBusy, _isDisposed;
             private ConnectionState _state;
@@ -202,6 +244,7 @@ namespace ServiceLib
                 _parent = parent;
                 _lock = new object();
                 _listeners = new Dictionary<int, Listener>();
+                _notifications = new List<Notification>();
                 _connection = new NpgsqlConnection();
                 _connection.Notification += OnNotified;
                 var connString = new NpgsqlConnectionStringBuilder(parent._connectionString);
@@ -216,8 +259,9 @@ namespace ServiceLib
                 {
                     foreach (var listener in _listeners.Values)
                     {
+                        var dispatcher = new NotificationDispatcher(listener.Notify, e.AdditionalInformation);
                         if (listener.Name == e.Condition)
-                            _parent._executor.Enqueue(listener.Notify);
+                            _parent._executor.Enqueue(dispatcher);
                     }
                 }
             }
@@ -279,12 +323,25 @@ namespace ServiceLib
                 RefreshNotifications();
             }
 
+            public void Notify(string name, string payload)
+            {
+                lock (_lock)
+                {
+                    _notifications.Add(new Notification { Name = name, Payload = payload });
+                    if (_isBusy)
+                        return;
+                    _isBusy = true;
+                }
+                RefreshNotifications();
+            }
+
             private void RefreshNotifications()
             {
                 while (true)
                 {
                     var anythingToProcess = false;
                     var commands = new StringBuilder();
+                    var parameters = new List<string>();
                     lock (_lock)
                     {
                         if (!_isDisposed)
@@ -306,11 +363,20 @@ namespace ServiceLib
                                 else if (listener.Value.State == ListenerState.BeingAdded)
                                 {
                                     listener.Value.State = ListenerState.Active;
-                                    _parent._executor.Enqueue(listener.Value.Notify);
+                                    var dispatcher = new NotificationDispatcher(listener.Value.Notify, string.Empty);
+                                    _parent._executor.Enqueue(dispatcher);
                                 }
                                 else if (listener.Value.State == ListenerState.BeingRemoved)
                                     listener.Value.State = ListenerState.Removed;
                             }
+                            foreach (var notification in _notifications)
+                            {
+                                commands.Append("NOTIFY ").Append(notification.Name).Append(", :p");
+                                commands.Append(parameters.Count);
+                                commands.Append(";");
+                                parameters.Add(notification.Payload);
+                            }
+                            _notifications.Clear();
                         }
                         if (!anythingToProcess)
                         {
@@ -324,6 +390,8 @@ namespace ServiceLib
                         using (var cmd = _connection.CreateCommand())
                         {
                             cmd.CommandText = commands.ToString();
+                            for (int i = 0; i < parameters.Count; i++)
+                                cmd.Parameters.AddWithValue("p" + i.ToString(), parameters[i]);
                             cmd.ExecuteNonQuery();
                         }
                     }
@@ -364,6 +432,12 @@ namespace ServiceLib
                 }
                 _connection.Close();
             }
+        }
+
+        public void Notify(string name, string payload)
+        {
+            _notifications.OpenListener();
+            _notifications.Notify(name, payload);
         }
     }
 }
