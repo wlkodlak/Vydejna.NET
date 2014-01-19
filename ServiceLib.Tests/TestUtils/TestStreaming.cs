@@ -67,6 +67,7 @@ namespace ServiceLib.Tests.TestUtils
         public void MarkAsDeadLetter(Action onComplete, Action<Exception> onError)
         {
             DeadLetters.Add(_events[_position - 1].Item1);
+            onComplete();
         }
 
         public void Setup(EventStoreToken firstToken, IList<Type> types, string processName)

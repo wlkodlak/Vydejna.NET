@@ -39,12 +39,13 @@ namespace ServiceLib.Tests.EventHandlers
         [TestMethod]
         public void WaitingForLockEndsOnShutdown()
         {
-            _process.Handle(new SystemEvents.SystemInit());
+            _process.Start();
             _executor.Process();
-            _process.Handle(new SystemEvents.SystemShutdown());
+            _process.Pause();
             _executor.Process();
             Assert.IsFalse(_metadata.WaitsForLock, "WaitsForLock");
             Assert.IsFalse(_metadata.IsLocked, "IsLocked");
+            Assert.AreEqual(ProcessState.Inactive, _process.State, "Process state");
         }
 
         [TestMethod]
@@ -52,7 +53,7 @@ namespace ServiceLib.Tests.EventHandlers
         {
             _metadata.Version = "0.8";
             _metadata.Token = new EventStoreToken("333");
-            _process.Handle(new SystemEvents.SystemInit());
+            _process.Start();
             
             _metadata.SendLock();
             _executor.Process();
@@ -70,7 +71,7 @@ namespace ServiceLib.Tests.EventHandlers
         {
             _metadata.Version = "0.9";
             _metadata.Token = new EventStoreToken("333");
-            _process.Handle(new SystemEvents.SystemInit());
+            _process.Start();
 
             _metadata.SendLock();
             _executor.Process();
@@ -88,7 +89,7 @@ namespace ServiceLib.Tests.EventHandlers
         {
             _metadata.Version = "1.0";
             _metadata.Token = new EventStoreToken("333");
-            _process.Handle(new SystemEvents.SystemInit());
+            _process.Start();
 
             _metadata.SendLock();
             _executor.Process();
@@ -104,22 +105,23 @@ namespace ServiceLib.Tests.EventHandlers
         [TestMethod]
         public void UnlockOnShutdown()
         {
-            _process.Handle(new SystemEvents.SystemInit());
+            _process.Start();
             _metadata.SendLock();
             _streaming.AddEvent("3", new TestEvent1 { Data = "75" });
             _streaming.MarkEndOfStream();
             _executor.Process();
-            _process.Handle(new SystemEvents.SystemShutdown());
+            _process.Pause();
             _executor.Process();
             Assert.IsFalse(_metadata.IsLocked, "IsLocked");
             Assert.IsFalse(_streaming.IsReading, "IsReading");
             Assert.IsTrue(_streaming.IsDisposed, "Streaming IsDisposed");
+            Assert.AreEqual(ProcessState.Inactive, _process.State, "Process state");
         }
 
         [TestMethod]
         public void NotifyAboutFinishedRebuild()
         {
-            _process.Handle(new SystemEvents.SystemInit());
+            _process.Start();
             _metadata.SendLock();
             _executor.Process();
 
@@ -139,7 +141,7 @@ namespace ServiceLib.Tests.EventHandlers
         {
             _metadata.Version = "1.0";
             _metadata.Token = EventStoreToken.Initial;
-            _process.Handle(new SystemEvents.SystemInit());
+            _process.Start();
             _metadata.SendLock();
             _executor.Process();
 
@@ -159,7 +161,7 @@ namespace ServiceLib.Tests.EventHandlers
         {
             _metadata.Version = "1.0";
             _metadata.Token = EventStoreToken.Initial;
-            _process.Handle(new SystemEvents.SystemInit());
+            _process.Start();
             _metadata.SendLock();
             _executor.Process();
 
@@ -184,7 +186,7 @@ namespace ServiceLib.Tests.EventHandlers
         [TestMethod]
         public void StopOnError()
         {
-            _process.Handle(new SystemEvents.SystemInit());
+            _process.Start();
             _metadata.SendLock();
             _executor.Process();
             _streaming.AddEvent("1", new TestEvent1 { Data = "47" });
@@ -201,7 +203,7 @@ namespace ServiceLib.Tests.EventHandlers
         [TestMethod]
         public void CallsEventHandlers()
         {
-            _process.Handle(new SystemEvents.SystemInit());
+            _process.Start();
             _metadata.SendLock();
             _executor.Process();
             _streaming.AddEvent("1", new TestEvent1 { Data = "47" });
@@ -212,13 +214,14 @@ namespace ServiceLib.Tests.EventHandlers
             _streaming.AddEvent("4", new TestEvent1 { Data = "14" });
             _streaming.MarkEndOfStream();
             _executor.Process();
-            _process.Handle(new SystemEvents.SystemShutdown());
+            _process.Pause();
             _executor.Process();
 
             Assert.AreEqual(
                 "Reset\r\nTestEvent1: 47\r\nTestEvent2: 75\r\nRebuildFinished\r\n" +
                 "TestEvent2: 32\r\nTestEvent1: 14\r\nFlush", 
                 _projection.LogText);
+            Assert.AreEqual(ProcessState.Inactive, _process.State, "Process state");
         }
 
         private class TestEvent { public string Data;}

@@ -199,21 +199,14 @@ namespace ServiceLib
 
         private void Stop(bool immediatelly)
         {
-            if (_processState == ProcessState.Running)
-            {
-                if (immediatelly)
-                    SetProcessState(ProcessState.Stopping);
-                else
-                    SetProcessState(ProcessState.Pausing);
-                _streaming.Dispose();
-                _waitForLock.Dispose();
-            }
-            else
-            {
+            if (_processState != ProcessState.Running)
                 SetProcessState(ProcessState.Inactive);
-                _streaming.Dispose();
-                _waitForLock.Dispose();
-            }
+            else if (immediatelly)
+                SetProcessState(ProcessState.Stopping);
+            else
+                SetProcessState(ProcessState.Pausing);
+            _streaming.Dispose();
+            _waitForLock.Dispose();
         }
 
         public void Dispose()

@@ -19,8 +19,7 @@ namespace ServiceLib
     }
 
     public class PureProjectionProcess<TState>
-        : IHandle<SystemEvents.SystemInit>
-        , IHandle<SystemEvents.SystemShutdown>
+        : IProcessWorker
     {
         private readonly IPureProjectionVersionControl _versioning;
         private readonly INodeLock _locking;
@@ -28,19 +27,20 @@ namespace ServiceLib
         private readonly IPureProjectionDispatcher<TState> _dispatcher;
         private readonly IEventStreamingDeserialized _streaming;
 
-        private bool _cancel;
         private EventStoreToken _currentToken;
         private object _currentEvent;
         private IPureProjectionHandler<TState, object> _currentHandler;
         private string _currentPartition;
         private string _processName;
+        private ProcessState _processState;
+        private Action<ProcessState> _onStateChanged;
 
         public PureProjectionProcess(
             string processName,
-            IPureProjectionVersionControl versioning, 
+            IPureProjectionVersionControl versioning,
             INodeLock locking,
-            IPureProjectionStateCache<TState> store, 
-            IPureProjectionDispatcher<TState> dispatcher, 
+            IPureProjectionStateCache<TState> store,
+            IPureProjectionDispatcher<TState> dispatcher,
             IEventStreamingDeserialized streaming)
         {
             _processName = processName;
@@ -51,54 +51,40 @@ namespace ServiceLib
             _streaming = streaming;
         }
 
-        public void Subscribe(IBus bus)
-        {
-            bus.Subscribe<SystemEvents.SystemInit>(this);
-            bus.Subscribe<SystemEvents.SystemShutdown>(this);
-        }
-
-        public void Handle(SystemEvents.SystemInit message)
-        {
-            _locking.Lock(OnLockObtained, EmptyAction);
-        }
-
-        public void Handle(SystemEvents.SystemShutdown message)
-        {
-            _cancel = true;
-            _locking.Dispose();
-            _streaming.Dispose();
-        }
-
         private void OnLockObtained()
         {
             _store.LoadMetadata(OnMetadataLoaded, OnError);
         }
         private void OnMetadataLoaded(string version, EventStoreToken token)
         {
-            if (_cancel)
-                StopWorking();
-            else if (string.IsNullOrEmpty(version) || _versioning.NeedsRebuild(version))
+            if (_processState == ProcessState.Starting)
             {
-                _streaming.Setup(EventStoreToken.Initial, _dispatcher.GetRegisteredTypes(), _processName);
-                _store.Reset(_versioning.GetVersion(), ProcessEvents, OnError);
+                SetProcessState(ProcessState.Running);
+                if (string.IsNullOrEmpty(version) || _versioning.NeedsRebuild(version))
+                {
+                    _streaming.Setup(EventStoreToken.Initial, _dispatcher.GetRegisteredTypes(), _processName);
+                    _store.Reset(_versioning.GetVersion(), ProcessEvents, OnError);
+                }
+                else
+                {
+                    _streaming.Setup(token, _dispatcher.GetRegisteredTypes(), _processName);
+                    _streaming.GetNextEvent(OnEventReceived, OnEventUnavailable, OnEventError, false);
+                }
             }
             else
-            {
-                _streaming.Setup(token, _dispatcher.GetRegisteredTypes(), _processName);
-                _streaming.GetNextEvent(OnEventReceived, OnEventUnavailable, OnEventError, false);
-            }
+                StopWorking(ProcessState.Inactive);
         }
         private void ProcessEvents()
         {
-            if (_cancel)
-                StopWorking();
-            else
+            if (_processState == ProcessState.Pausing || _processState == ProcessState.Stopping)
+                StopWorking(ProcessState.Inactive);
+            else if (_processState == ProcessState.Running)
                 _streaming.GetNextEvent(OnEventReceived, OnEventUnavailable, OnEventError, true);
         }
         private void OnEventReceived(EventStoreToken token, object evnt)
         {
-            if (_cancel)
-                StopWorking();
+            if (_processState == ProcessState.Pausing || _processState == ProcessState.Stopping)
+                StopWorking(ProcessState.Inactive);
             else
             {
                 _currentToken = token;
@@ -114,9 +100,9 @@ namespace ServiceLib
         }
         private void OnStoreFlushed()
         {
-            if (_cancel)
-                StopWorking();
-            else
+            if (_processState == ProcessState.Pausing || _processState == ProcessState.Stopping)
+                StopWorking(ProcessState.Inactive);
+            else if (_processState == ProcessState.Running)
                 _streaming.GetNextEvent(OnEventReceived, OnEventUnavailable, OnEventError, false);
         }
         private void PartitionLoaded(TState state)
@@ -144,16 +130,68 @@ namespace ServiceLib
         }
         private void OnError(Exception exception)
         {
-            _cancel = true;
-            StopWorking();
+            StopWorking(ProcessState.Faulted);
         }
-        private void StopWorking()
+        private void StopWorking(ProcessState newState)
         {
             _streaming.Dispose();
             _locking.Unlock();
+            if (_processState != ProcessState.Faulted)
+                SetProcessState(newState);
         }
         private void EmptyAction()
         {
+        }
+
+        public ProcessState State
+        {
+            get { return _processState; }
+        }
+
+        public void Init(Action<ProcessState> onStateChanged)
+        {
+            _onStateChanged = onStateChanged;
+        }
+
+        private void SetProcessState(ProcessState state)
+        {
+            _processState = state;
+            if (_onStateChanged != null)
+                _onStateChanged(state);
+        }
+
+        public void Start()
+        {
+            SetProcessState(ProcessState.Starting);
+            _locking.Lock(OnLockObtained, EmptyAction);
+        }
+
+        public void Pause()
+        {
+            Stop(false);
+        }
+
+        public void Stop()
+        {
+            Stop(true);
+        }
+
+        private void Stop(bool immediatelly)
+        {
+            if (_processState != ProcessState.Running)
+                SetProcessState(ProcessState.Inactive);
+            else if (immediatelly)
+                SetProcessState(ProcessState.Stopping);
+            else
+                SetProcessState(ProcessState.Pausing);
+            _locking.Dispose();
+            _streaming.Dispose();
+        }
+
+        public void Dispose()
+        {
+            _onStateChanged = null;
+            _processState = ProcessState.Uninitialized;
         }
     }
 }

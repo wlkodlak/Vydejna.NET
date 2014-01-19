@@ -238,49 +238,68 @@ namespace ServiceLib
         }
     }
 
-    public class QueuedBusProcess : IDisposable
+    public class QueuedBusProcess : IProcessWorker
     {
         private QueuedBus _bus;
-        private bool _isRunning;
         private Task _task;
+        private ProcessState _processState;
+        private Action<ProcessState> _onStateChanged;
         private CancellationTokenSource _cancel;
 
         public QueuedBusProcess(QueuedBus bus)
         {
             _bus = bus;
-            _isRunning = true;
         }
 
         public void Start()
         {
-            _isRunning = true;
+            State = ProcessState.Running;
             _cancel = new CancellationTokenSource();
             _task = Task.Factory.StartNew(ProcessCore, TaskCreationOptions.LongRunning);
         }
 
+        public void Pause()
+        {
+            State = ProcessState.Pausing;
+            _cancel.Cancel();
+        }
+
         public void Stop()
         {
-            if (_isRunning)
-            {
-                _isRunning = false;
-                _cancel.Cancel();
-            }
+            State = ProcessState.Stopping;
+            _cancel.Cancel();
         }
 
         public void Dispose()
         {
-            Stop();
-            _cancel.Dispose();
+            State = ProcessState.Stopping;
             _task.Wait();
         }
 
         private void ProcessCore()
         {
-            while (_isRunning)
+            while (_processState == ProcessState.Running)
             {
                 _bus.WaitForMessages(_cancel.Token);
                 while (_bus.HandleNext()) ;
             }
         }
+
+        public ProcessState State
+        {
+            get { return _processState; }
+            private set
+            {
+                _processState = value;
+                if (_onStateChanged != null)
+                    _onStateChanged(_processState);
+            }
+        }
+
+        public void Init(Action<ProcessState> onStateChanged)
+        {
+            _onStateChanged = onStateChanged;
+        }
+
     }
 }

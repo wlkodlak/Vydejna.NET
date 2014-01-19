@@ -15,16 +15,15 @@ namespace ServiceLib
         void DispatchRequest(IHttpServerRawContext context);
     }
 
-    public class HttpServer : IDisposable
+    public class HttpServer : IProcessWorker
     {
-        private log4net.ILog _log = log4net.LogManager.GetLogger(typeof(HttpServer));
         private HttpListener _listener;
-        private CancellationTokenSource _cancel;
         private List<Task> _workers;
         private IHttpServerDispatcher _dispatcher;
         private List<string> _prefixes;
-        private bool _isRunning;
         private int _workerCount;
+        private ProcessState _processState;
+        private Action<ProcessState> _onStateChanged;
 
         public HttpServer(IEnumerable<string> prefixes, IHttpServerDispatcher dispatcher)
         {
@@ -40,40 +39,37 @@ namespace ServiceLib
         }
         public void Start()
         {
+            SetProcessState(ProcessState.Starting);
             try
             {
                 _prefixes.ForEach(_listener.Prefixes.Add);
                 _listener.Start();
-                _cancel = new CancellationTokenSource();
-                _isRunning = true;
+                SetProcessState(ProcessState.Running);
                 _workers =
                     Enumerable.Range(0, _workerCount).Select(i =>
-                        Task.Factory.StartNew(WorkerFunc, _cancel.Token, TaskCreationOptions.LongRunning, TaskScheduler.Current))
+                        Task.Factory.StartNew(WorkerFunc, TaskCreationOptions.LongRunning))
                     .ToList();
-                _log.Debug("HttpServer started");
             }
-            catch (Exception ex)
+            catch
             {
-                _log.Error("Could not start HttpServer", ex);
-                throw;
+                SetProcessState(ProcessState.Faulted);
             }
         }
 
-        public void Stop()
+        public void Stop(bool immediatelly)
         {
-            if (!_isRunning)
-                return;
-            _listener.Stop();
-            _cancel.Cancel();
-            _cancel.Dispose();
-            Task.WaitAll(_workers.ToArray(), 1000);
-            _isRunning = false;
-            _log.Debug("HttpServer stopped");
+            if (_processState == ProcessState.Running || _processState == ProcessState.Starting)
+            {
+                SetProcessState(immediatelly ? ProcessState.Stopping : ProcessState.Pausing);
+                _listener.Stop();
+                Task.WaitAll(_workers.ToArray(), 1000);
+                SetProcessState(ProcessState.Inactive);
+            }
         }
 
         void IDisposable.Dispose()
         {
-            Stop();
+            Stop(true);
             _listener.Close();
         }
 
@@ -81,7 +77,7 @@ namespace ServiceLib
         {
             try
             {
-                while (!_cancel.IsCancellationRequested)
+                while (_processState == ProcessState.Running)
                 {
                     new RequestHandler(this, _listener.GetContext()).Run();
                 }
@@ -119,8 +115,35 @@ namespace ServiceLib
             private void OnCompleted()
             {
                 _stopwatch.Stop();
-                _parent._log.DebugFormat("Request took {0} ms", _stopwatch.ElapsedMilliseconds);
+                Debug.WriteLine(string.Format("Request took {0} ms", _stopwatch.ElapsedMilliseconds));
             }
+        }
+
+        public ProcessState State
+        {
+            get { return _processState; }
+        }
+
+        public void Init(Action<ProcessState> onStateChanged)
+        {
+            _onStateChanged = onStateChanged;
+        }
+
+        public void Pause()
+        {
+            Stop(false);
+        }
+
+        public void Stop()
+        {
+            Stop(true);
+        }
+
+        private void SetProcessState(ProcessState state)
+        {
+            _processState = state;
+            if (_onStateChanged != null)
+                _onStateChanged(state);
         }
     }
 

@@ -32,7 +32,7 @@ namespace ServiceLib
         public class Flush { }
     }
 
-    public class EventProjectorSimple : IEventProjector, IHandle<SystemEvents.SystemInit>, IHandle<SystemEvents.SystemShutdown>
+    public class EventProjectorSimple : IEventProjector, IProcessWorker
     {
         private readonly IMetadataInstance _metadata;
         private readonly IEventStreamingDeserialized _streaming;
@@ -41,7 +41,6 @@ namespace ServiceLib
         private EventStoreToken _lastCompletedToken;
         private string _version;
         private EventProjectionUpgradeMode _upgradeMode;
-        private bool _cancel;
         private int _flushCounter;
         private bool _metadataDirty;
         private ICommandSubscription _currentHandler;
@@ -50,6 +49,8 @@ namespace ServiceLib
         private string _storedVersion;
         private EventStoreToken _currentToken;
         private bool _flushNeeded;
+        private ProcessState _processState;
+        private Action<ProcessState> _onStateChanged;
 
         public EventProjectorSimple(IEventProjection projection, IMetadataInstance metadata, IEventStreamingDeserialized streaming, ICommandSubscriptionManager subscriptions)
         {
@@ -64,16 +65,6 @@ namespace ServiceLib
             return _subscriptions.Register(handler);
         }
 
-        public void Subscribe(IBus bus)
-        {
-            bus.Subscribe<SystemEvents.SystemInit>(this);
-            bus.Subscribe<SystemEvents.SystemShutdown>(this);
-        }
-
-        public void Handle(SystemEvents.SystemInit message)
-        {
-            _waitForLock = _metadata.Lock(OnProjectionLocked);
-        }
 
         private void OnProjectionLocked()
         {
@@ -95,6 +86,7 @@ namespace ServiceLib
                     _lastCompletedToken = EventStoreToken.Initial;
                 _streaming.Setup(_lastCompletedToken, _subscriptions.GetHandledTypes().ToArray(), _metadata.ProcessName);
                 _flushCounter = 20;
+                SetProcessState(ProcessState.Running);
                 if (_upgradeMode == EventProjectionUpgradeMode.Rebuild)
                 {
                     _flushNeeded = true;
@@ -143,17 +135,21 @@ namespace ServiceLib
         }
         private void WaitForEvents()
         {
-            if (!_cancel)
+            if (_processState == ProcessState.Running)
                 _streaming.GetNextEvent(OnEventReceived, OnEventsUsedUp, OnEventsError, false);
-            else
+            else if (_processState == ProcessState.Pausing)
                 SaveToken();
+            else
+                StopRunning(ProcessState.Inactive);
         }
         private void ProcessNextEvent()
         {
-            if (!_cancel)
+            if (_processState == ProcessState.Running)
                 _streaming.GetNextEvent(OnEventReceived, OnEventsUsedUp, OnEventsError, true);
-            else
+            else if (_processState == ProcessState.Pausing)
                 SaveToken();
+            else
+                StopRunning(ProcessState.Inactive);
         }
         private void OnEventReceived(EventStoreToken token, object evnt)
         {
@@ -221,8 +217,8 @@ namespace ServiceLib
         }
         private void FlushReported()
         {
-            if (_cancel)
-                StopRunning();
+            if (_processState == ProcessState.Pausing || _processState == ProcessState.Stopping)
+                StopRunning(ProcessState.Inactive);
             else if (_currentEvent != null)
                 ProcessNextEvent();
             else
@@ -231,8 +227,7 @@ namespace ServiceLib
 
         private void OnError(Exception exception)
         {
-            _cancel = true;
-            StopRunning();
+            StopRunning(ProcessState.Faulted);
         }
 
         private void OnNotifyError(Exception exception)
@@ -240,17 +235,63 @@ namespace ServiceLib
             FlushReported();
         }
 
-        private void StopRunning()
+        private void StopRunning(ProcessState newState)
         {
             _streaming.Dispose();
             _metadata.Unlock();
+            if (_processState != ProcessState.Faulted)
+                SetProcessState(newState);
         }
 
-        public void Handle(SystemEvents.SystemShutdown message)
+        public ProcessState State
         {
-            _cancel = true;
+            get { return _processState; }
+        }
+
+        public void Init(Action<ProcessState> onStateChanged)
+        {
+            _onStateChanged = onStateChanged;
+        }
+
+        private void SetProcessState(ProcessState state)
+        {
+            _processState = state;
+            if (_onStateChanged != null)
+                _onStateChanged(state);
+        }
+
+        public void Start()
+        {
+            SetProcessState(ProcessState.Starting);
+            _waitForLock = _metadata.Lock(OnProjectionLocked);
+        }
+
+        public void Pause()
+        {
+            Stop(false);
+        }
+
+        public void Stop()
+        {
+            Stop(true);
+        }
+
+        private void Stop(bool immediatelly)
+        {
+            if (_processState != ProcessState.Running)
+                SetProcessState(ProcessState.Inactive);
+            else if (immediatelly)
+                SetProcessState(ProcessState.Stopping);
+            else
+                SetProcessState(ProcessState.Pausing);
             _streaming.Dispose();
             _waitForLock.Dispose();
+        }
+
+        public void Dispose()
+        {
+            _onStateChanged = null;
+            _processState = ProcessState.Uninitialized;
         }
     }
 }

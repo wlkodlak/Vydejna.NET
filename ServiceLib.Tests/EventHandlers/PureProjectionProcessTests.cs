@@ -38,15 +38,18 @@ namespace ServiceLib.Tests.EventHandlers
         [TestMethod]
         public void AttemptToLockedCancelledOnShutdown()
         {
-            _process.Handle(new SystemEvents.SystemInit());
-            _process.Handle(new SystemEvents.SystemShutdown());
-            Assert.IsFalse(_locking.IsWaiting);
+            _process.Start();
+            _executor.Process();
+            _process.Pause();
+            _executor.Process();
+            Assert.IsFalse(_locking.IsWaiting, "IsWaiting");
+            Assert.AreEqual(ProcessState.Inactive, _process.State, "Process state");
         }
 
         [TestMethod]
         public void RebuildWhenVersionEmpty()
         {
-            _process.Handle(new SystemEvents.SystemInit());
+            _process.Start();
             _locking.SendLock();
             _executor.Process();
             Assert.IsTrue(_cache.WasReset, "WasReset");
@@ -60,7 +63,7 @@ namespace ServiceLib.Tests.EventHandlers
         {
             _cache.Version = "0.8";
             _cache.Token = new EventStoreToken("447");
-            _process.Handle(new SystemEvents.SystemInit());
+            _process.Start();
             _locking.SendLock();
             _executor.Process();
             Assert.IsTrue(_cache.WasReset, "WasReset");
@@ -74,7 +77,7 @@ namespace ServiceLib.Tests.EventHandlers
         {
             _cache.Version = "1.0";
             _cache.Token = new EventStoreToken("447");
-            _process.Handle(new SystemEvents.SystemInit());
+            _process.Start();
             _locking.SendLock();
             _executor.Process();
             Assert.IsFalse(_cache.WasReset, "WasReset");
@@ -86,7 +89,7 @@ namespace ServiceLib.Tests.EventHandlers
         [TestMethod]
         public void ProcessSingleEventInRebuild()
         {
-            _process.Handle(new SystemEvents.SystemInit());
+            _process.Start();
             _locking.SendLock();
             _streaming.AddEvent("1", new TestEvent1() { Partition = "A", Data = "14" });
             _executor.Process();
@@ -99,7 +102,7 @@ namespace ServiceLib.Tests.EventHandlers
         [TestMethod]
         public void CompleteInitialBuild()
         {
-            _process.Handle(new SystemEvents.SystemInit());
+            _process.Start();
             _locking.SendLock();
             _executor.Process();
             _streaming.AddEvent("1", new TestEvent1() { Partition = "A", Data = "14" });
@@ -114,7 +117,7 @@ namespace ServiceLib.Tests.EventHandlers
             _streaming.AddEvent("9", new TestEvent1() { Partition = "C", Data = "92" });
             _streaming.MarkEndOfStream();
             _executor.Process();
-            _process.Handle(new SystemEvents.SystemShutdown());
+            _process.Pause();
             _executor.Process();
             Assert.AreEqual(new EventStoreToken("9"), _cache.Token, "Token");
             Assert.AreEqual("1.0", _cache.Version, "Version");
@@ -123,6 +126,7 @@ namespace ServiceLib.Tests.EventHandlers
             Assert.AreEqual(new TestState("6", "E3:88 E2:47 E1:48"), _cache.Get("B"), "B");
             Assert.AreEqual(new TestState("9", "E2:37 E1:92"), _cache.Get("C"), "C");
             Assert.IsFalse(_locking.IsLocked, "IsLocked");
+            Assert.AreEqual(ProcessState.Inactive, _process.State, "State");
         }
 
         [TestMethod]
@@ -133,7 +137,7 @@ namespace ServiceLib.Tests.EventHandlers
             _cache.Set("A", new TestState("7", "E1:14 E3:21"));
             _cache.Set("B", new TestState("6", "E3:88 E2:47 E1:48"));
             _cache.Set("C", new TestState("3", "E2:37"));
-            _process.Handle(new SystemEvents.SystemInit());
+            _process.Start();
             _locking.SendLock();
             _executor.Process();
             _streaming.AddEvent("7", new TestEvent3() { Partition = "A", Data = "21" });
@@ -143,7 +147,7 @@ namespace ServiceLib.Tests.EventHandlers
             _streaming.AddEvent("9", new TestEvent1() { Partition = "C", Data = "92" });
             _streaming.MarkEndOfStream();
             _executor.Process();
-            _process.Handle(new SystemEvents.SystemShutdown());
+            _process.Pause();
             _executor.Process();
             Assert.AreEqual(new EventStoreToken("9"), _cache.Token, "Token");
             Assert.AreEqual("1.0", _cache.Version, "Version");
@@ -152,6 +156,7 @@ namespace ServiceLib.Tests.EventHandlers
             Assert.AreEqual(new TestState("6", "E3:88 E2:47 E1:48"), _cache.Get("B"), "B");
             Assert.AreEqual(new TestState("9", "E2:37 E1:92"), _cache.Get("C"), "C");
             Assert.IsFalse(_locking.IsLocked, "IsLocked");
+            Assert.AreEqual(ProcessState.Inactive, _process.State, "Process state");
         }
 
         [TestMethod]
@@ -162,7 +167,7 @@ namespace ServiceLib.Tests.EventHandlers
             _cache.Set("A", new TestState("7", "E1:14 E3:21"));
             _cache.Set("B", new TestState("6", "E3:88 E2:47 E1:48"));
             _cache.Set("C", new TestState("3", "E2:37"));
-            _process.Handle(new SystemEvents.SystemInit());
+            _process.Start();
             _locking.SendLock();
             _executor.Process();
             _streaming.AddEvent("7", new TestEvent3() { Partition = "A", Data = "21" });

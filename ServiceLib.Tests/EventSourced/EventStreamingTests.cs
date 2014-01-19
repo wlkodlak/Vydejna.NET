@@ -77,6 +77,7 @@ namespace ServiceLib.Tests.EventSourced
             var streamer = _streaming.GetStreamer(EventStoreToken.Initial, "TestProcess");
             Exception exception = null;
             streamer.GetNextEvent(e => { }, ex => exception = ex, false);
+            _executor.Process();
             _store.SendFailure();
             _executor.Process();
             Assert.IsNotNull(exception, "Exception caught");
@@ -88,6 +89,7 @@ namespace ServiceLib.Tests.EventSourced
             var streamer = _streaming.GetStreamer(EventStoreToken.Initial, "TestProcess");
             Exception exception = null;
             streamer.GetNextEvent(e => { }, ex => exception = ex, false);
+            _executor.Process();
             _store.SendFailure();
             _executor.Process();
 
