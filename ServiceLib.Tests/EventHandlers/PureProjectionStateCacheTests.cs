@@ -15,16 +15,22 @@ namespace ServiceLib.Tests.EventHandlers
         private TestDocumentFolder _folder;
         private TestSerializer _serializer;
         private PureProjectionStateCache<TestState> _cache;
+        private NotifyChangeDirect _notifier;
+        private List<string> _notifications;
 
         [TestInitialize]
         public void Initialize()
         {
+            _notifications = new List<string>();
             _executor = new TestExecutor();
             _folder = new TestDocumentFolder(_executor);
             _serializer = new TestSerializer();
+            _notifier = new NotifyChangeDirect(_executor);
             _cache = new PureProjectionStateCache<TestState>(_folder, _serializer);
             _cache.SetupFlushing(true, false, 3);
             _cache.SetupMruLimit(1);
+            _cache.SetupNotificator(_notifier);
+            _notifier.Register((s, v) => _notifications.Add(s));
         }
 
         [TestMethod]
@@ -102,6 +108,8 @@ namespace ServiceLib.Tests.EventHandlers
 
             Assert.IsTrue(saveFinished, "Finished");
             Assert.AreEqual("47\r\nE2:22", _folder.GetDocument("C"), "Contents");
+            var notifications = string.Concat(_notifications.OrderBy(s => s));
+            Assert.AreEqual("C", notifications, "Notifications");
         }
 
         [TestMethod]
@@ -195,6 +203,8 @@ namespace ServiceLib.Tests.EventHandlers
             Assert.AreEqual(3, _folder.GetVersion("A"), "A");
             Assert.AreEqual(2, _folder.GetVersion("B"), "B");
             Assert.AreEqual(1, _folder.GetVersion("C"), "C");
+            var notifications = string.Concat(_notifications.OrderBy(s => s));
+            Assert.AreEqual("AAABBC", notifications, "Notifications");
         }
 
         [TestMethod]

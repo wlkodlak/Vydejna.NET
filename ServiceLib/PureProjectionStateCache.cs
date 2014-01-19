@@ -38,6 +38,7 @@ namespace ServiceLib
         private int _autoFlushInitial, _autoFlushLeft;
         private int _mruLimit;
         private bool _deleteAll;
+        private INotifyChange _notifier;
 
         public PureProjectionStateCache(IDocumentFolder store, IPureProjectionSerializer<TState> serializer)
         {
@@ -59,6 +60,11 @@ namespace ServiceLib
         public void SetupMruLimit(int mruLimit)
         {
             _mruLimit = mruLimit;
+        }
+
+        public void SetupNotificator(INotifyChange notifier)
+        {
+            _notifier = notifier;
         }
 
         private CacheItem FindOrCreate(string partition)
@@ -252,7 +258,11 @@ namespace ServiceLib
             private void ProcessNextDirtyItem()
             {
                 if (_currentDirtyItem != null)
+                {
                     _currentDirtyItem.Dirty = false;
+                    if (_parent._notifier != null)
+                        _parent._notifier.Notify(_currentDirtyItem.Partition, 0);
+                }
                 _currentDirtyItem = GetNextDirtyItem();
                 if (_currentDirtyItem != null)
                 {

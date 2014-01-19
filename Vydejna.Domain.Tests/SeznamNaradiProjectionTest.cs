@@ -23,6 +23,7 @@ namespace Vydejna.Domain.Tests
         private IPureProjectionDispatcher<SeznamNaradiData> _dispatcher;
         private VirtualTime _time;
         private NotifyChangeDirect _notifier;
+        private PureProjectionStateCache<SeznamNaradiData> _projectionCache;
         
         [TestInitialize]
         public void Initialize()
@@ -44,9 +45,10 @@ namespace Vydejna.Domain.Tests
             _dispatcher.Register<DefinovanoNaradiEvent>(_projekce);
             _dispatcher.Register<AktivovanoNaradiEvent>(_projekce);
             _dispatcher.Register<DeaktivovanoNaradiEvent>(_projekce);
+            _projectionCache = new PureProjectionStateCache<SeznamNaradiData>(_store, _projekce);
+            _projectionCache.SetupNotificator(_notifier);
             _process = new PureProjectionProcess<SeznamNaradiData>(_projekce, _locking,
-                new PureProjectionStateCache<SeznamNaradiData>(_store, _projekce),
-                _dispatcher, _streaming);
+                _projectionCache, _dispatcher, _streaming);
             _process.Handle(new SystemEvents.SystemInit());
             _locking.SendLock();
         }
