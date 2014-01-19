@@ -34,22 +34,24 @@ namespace ServiceLib.Tests.EventHandlers
         [TestMethod]
         public void LockNotAvailable()
         {
-            _process.Handle(new SystemEvents.SystemInit());
+            _process.Start();
             _executor.Process();
             Assert.IsTrue(_metadata.WaitsForLock, "Waits for lock");
-            _process.Handle(new SystemEvents.SystemShutdown());
+            _process.Pause();
             _executor.Process();
+            Assert.AreEqual(ProcessState.Inactive, _process.State, "Process state");
             Assert.IsFalse(_metadata.WaitsForLock, "Does not wait for lock anymore");
         }
 
         [TestMethod]
         public void LockedWhenShuttingDown()
         {
-            _process.Handle(new SystemEvents.SystemInit());
+            _process.Start();
             _metadata.SendLock();
             _executor.Process();
-            _process.Handle(new SystemEvents.SystemShutdown());
+            _process.Pause();
             _executor.Process();
+            Assert.AreEqual(ProcessState.Inactive, _process.State, "Process state");
             Assert.IsFalse(_metadata.IsLocked, "Lock released");
         }
 
@@ -57,7 +59,7 @@ namespace ServiceLib.Tests.EventHandlers
         public void ErrorWhenReadingMetadata()
         {
             _metadata.FailMode = true;
-            _process.Handle(new SystemEvents.SystemInit());
+            _process.Start();
             _metadata.SendLock();
             _executor.Process();
             Assert.IsFalse(_metadata.IsLocked, "Lock released");
@@ -66,7 +68,7 @@ namespace ServiceLib.Tests.EventHandlers
         [TestMethod]
         public void StartReadingStreamFromStart()
         {
-            _process.Handle(new SystemEvents.SystemInit());
+            _process.Start();
             _metadata.SendLock();
             _executor.Process();
             Assert.IsTrue(_streaming.IsReading, "Reading");
@@ -77,7 +79,7 @@ namespace ServiceLib.Tests.EventHandlers
         [TestMethod]
         public void StartReadingStreamFromToken()
         {
-            _process.Handle(new SystemEvents.SystemInit());
+            _process.Start();
             _metadata.Token = new EventStoreToken("10");
             _metadata.SendLock();
             _executor.Process();
@@ -89,7 +91,7 @@ namespace ServiceLib.Tests.EventHandlers
         [TestMethod]
         public void WhenOnlyOneEventArrives()
         {
-            _process.Handle(new SystemEvents.SystemInit());
+            _process.Start();
             _metadata.SendLock();
             _streaming.AddEvent("1", new TestEvent1());
             _streaming.MarkEndOfStream();
@@ -104,7 +106,7 @@ namespace ServiceLib.Tests.EventHandlers
         [TestMethod]
         public void AfterProcessingFlushNumberEvents()
         {
-            _process.Handle(new SystemEvents.SystemInit());
+            _process.Start();
             _metadata.SendLock();
             _streaming.AddEvent("1", new TestEvent1());
             _streaming.AddEvent("2", new TestEvent3());
@@ -122,13 +124,13 @@ namespace ServiceLib.Tests.EventHandlers
         [TestMethod]
         public void ShutdownWhileProcessingEvents()
         {
-            _process.Handle(new SystemEvents.SystemInit());
+            _process.Start();
             _metadata.SendLock();
             _streaming.AddEvent("1", new TestEvent1());
             _streaming.AddEvent("2", new TestEvent3());
             _streaming.AddEvent("3", new TestEvent2());
             _executor.Process();
-            _process.Handle(new SystemEvents.SystemShutdown());
+            _process.Pause();
             _executor.Process();
             _streaming.AddEvent("4", new TestEvent2());
             _streaming.AddEvent("5", new TestEvent1());
@@ -139,12 +141,13 @@ namespace ServiceLib.Tests.EventHandlers
             Assert.IsFalse(_streaming.IsWaiting, "Waiting");
             Assert.IsFalse(_metadata.IsLocked, "IsLocked");
             Assert.AreEqual(new EventStoreToken("3"), _metadata.Token, "Metadata token");
+            Assert.AreEqual(ProcessState.Inactive, _process.State, "Process state");
         }
 
         [TestMethod]
         public void ErrorInHandler()
         {
-            _process.Handle(new SystemEvents.SystemInit());
+            _process.Start();
             _metadata.SendLock();
             _streaming.AddEvent("1", new TestEvent1());
             _streaming.AddEvent("2", new TestEvent3());
