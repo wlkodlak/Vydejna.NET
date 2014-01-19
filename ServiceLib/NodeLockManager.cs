@@ -182,6 +182,7 @@ namespace ServiceLib
 
             private void Unlocked()
             {
+                _parent._notificator.Notify(LockName, 0);
             }
         }
 
