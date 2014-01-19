@@ -29,30 +29,45 @@ namespace ServiceLib
         private ITime _timeService;
         private object _lock;
         private Dictionary<string, OwnedLock> _ownedLocks;
-        private List<IDisposable> _lockers;
+        private List<LockExecutor> _lockers;
         private const int TimerInterval = 30000;
         private IDisposable _nextTimer;
+        private INotifyChange _notificator;
+        private IDisposable _listener;
 
-        public NodeLockManagerDocument(IDocumentFolder store, string nodeName, ITime timer)
+        public NodeLockManagerDocument(IDocumentFolder store, string nodeName, ITime timer, INotifyChange notificator)
         {
             _store = store;
             _nodeName = nodeName;
             _timeService = timer;
+            _notificator = notificator;
             _lock = new object();
             _ownedLocks = new Dictionary<string, OwnedLock>();
-            _lockers = new List<IDisposable>();
+            _lockers = new List<LockExecutor>();
         }
 
         public IDisposable Lock(string lockName, Action onLocked, Action cannotLock, bool nowait)
         {
+            var locker = new LockExecutor(this, lockName, onLocked, cannotLock, nowait);
             lock (_lock)
             {
+                if (_listener == null)
+                    _listener = _notificator.Register(OnNotify);
                 if (_nextTimer == null)
                     _nextTimer = _timeService.Delay(TimerInterval, OnTimer);
+                _lockers.Add(locker);
             }
-            var locker = new LockExecutor(this, lockName, onLocked, cannotLock, nowait);
             locker.Execute();
             return locker;
+        }
+
+        private void OnNotify(string lockName, int version)
+        {
+            lock (_lock)
+            {
+                foreach (var lck in _lockers)
+                    lck.Notify();
+            }
         }
 
         public bool IsLocked(string lockName)
@@ -284,6 +299,11 @@ namespace ServiceLib
                 }
                 _cannotLock();
             }
+
+            public void Notify()
+            {
+                OnLockChanged();
+            }
         }
 
         public void Unlock(string lockName)
@@ -308,6 +328,8 @@ namespace ServiceLib
                 foreach (var ownedLock in _ownedLocks.Values)
                     ownedLock.Dispose();
                 _ownedLocks.Clear();
+                if (_listener != null)
+                    _listener.Dispose();
             }
         }
         private void NoAction()

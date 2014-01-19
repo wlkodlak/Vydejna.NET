@@ -11,9 +11,9 @@ namespace Vydejna.Domain
     {
         private PureProjectionReader<SeznamNaradiData> _reader;
 
-        public SeznamNaradiReader(IDocumentFolder store, SeznamNaradiSerializer serializer, IQueueExecution executor, ITime time)
+        public SeznamNaradiReader(IDocumentFolder store, SeznamNaradiSerializer serializer, IQueueExecution executor, ITime time, INotifyChange notifier)
         {
-            _reader = new PureProjectionReader<SeznamNaradiData>(store, serializer, executor, time);
+            _reader = new PureProjectionReader<SeznamNaradiData>(store, serializer, executor, time, notifier);
         }
 
         public SeznamNaradiReader SetupFreshness(int timeLimit)

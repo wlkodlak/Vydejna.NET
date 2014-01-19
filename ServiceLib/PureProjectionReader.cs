@@ -153,13 +153,17 @@ namespace ServiceLib
         private int _roundShift;
         private ITime _timeService;
         private int _freshTimeLimit;
+        private INotifyChange _notification;
+        private int _isListening;
+        private IDisposable _listener;
 
-        public PureProjectionReader(IDocumentFolder store, IPureProjectionSerializer<TState> serializer, IQueueExecution executor, ITime timeService)
+        public PureProjectionReader(IDocumentFolder store, IPureProjectionSerializer<TState> serializer, IQueueExecution executor, ITime timeService, INotifyChange notification)
         {
             _store = store;
             _serializer = serializer;
             _executor = executor;
             _timeService = timeService;
+            _notification = notification;
             _cache = new ConcurrentDictionary<string, Item>();
             _increment = 32;
             _roundLimit = 32;
@@ -178,6 +182,8 @@ namespace ServiceLib
 
         public void Get(string partition, Action<TState> onLoaded, Action<Exception> onError)
         {
+            if (Interlocked.CompareExchange(ref _isListening, 1, 0) == 0)
+                _listener = _notification.Register(OnNotify);
             Item item = GetItem(partition);
             var now = _timeService.GetUtcTime();
             if (item.IsLoaded && now < item.FreshUntil)
@@ -210,6 +216,13 @@ namespace ServiceLib
             }
         }
 
+        private void OnNotify(string partition, int version)
+        {
+            Item item;
+            if (_cache.TryGetValue(partition, out item))
+                item.DocumentChanged();
+        }
+
         private Item GetItem(string partition)
         {
             var item = _cache.GetOrAdd(partition, new Item(this, partition));
@@ -233,6 +246,8 @@ namespace ServiceLib
 
         public void Dispose()
         {
+            if (_listener != null)
+                _listener.Dispose();
         }
     }
 }

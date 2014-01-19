@@ -13,6 +13,7 @@ namespace ServiceLib.Tests.EventHandlers
         private TestSerializer _serializer;
         private PureProjectionReader<TestState> _reader;
         private VirtualTime _time;
+        private NotifyChangeDirect _notify;
 
         [TestInitialize]
         public void Initialize()
@@ -22,7 +23,8 @@ namespace ServiceLib.Tests.EventHandlers
             _serializer = new TestSerializer();
             _time = new VirtualTime();
             _time.SetTime(new DateTime(2013, 10, 11, 18, 22, 22));
-            _reader = new PureProjectionReader<TestState>(_folder, _serializer, _executor, _time);
+            _notify = new NotifyChangeDirect(_executor);
+            _reader = new PureProjectionReader<TestState>(_folder, _serializer, _executor, _time, _notify);
         }
 
         [TestMethod]

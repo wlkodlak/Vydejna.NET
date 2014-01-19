@@ -11,6 +11,7 @@ namespace ServiceLib.Tests.Documents
         private TestDocumentFolder _folder;
         private NodeLockManagerDocument _mgr;
         private VirtualTime _time;
+        private NotifyChangeDirect _notify;
         
         [TestInitialize]
         public void Initialize()
@@ -19,7 +20,8 @@ namespace ServiceLib.Tests.Documents
             _folder = new TestDocumentFolder(_executor);
             _time = new VirtualTime();
             _time.SetTime(new DateTime(2013, 12, 22, 18, 22, 14));
-            _mgr = new NodeLockManagerDocument(_folder, "node1", _time);
+            _notify = new NotifyChangeDirect(_executor);
+            _mgr = new NodeLockManagerDocument(_folder, "node1", _time, _notify);
         }
 
         [TestMethod]

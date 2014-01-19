@@ -10,13 +10,11 @@ namespace ServiceLib
     {
         private object _lock;
         private Dictionary<string, ProcessInfo> _processes;
-        private ProcessState _state;
 
         public ProcessManagerSimple()
         {
             _lock = new object();
             _processes = new Dictionary<string, ProcessInfo>();
-            _state = ProcessState.Inactive;
         }
 
         public void RegisterLocal(string name, IProcessWorker worker)
@@ -46,14 +44,12 @@ namespace ServiceLib
 
         public void Handle(SystemEvents.SystemInit msg)
         {
-            _state = ProcessState.Running;
             foreach (var process in _processes)
                 process.Value.Worker.Start();
         }
 
         public void Handle(SystemEvents.SystemShutdown msg)
         {
-            _state = ProcessState.Stopping;
             foreach (var process in _processes)
             {
                 var worker = process.Value.Worker;

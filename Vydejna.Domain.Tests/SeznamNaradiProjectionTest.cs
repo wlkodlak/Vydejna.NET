@@ -22,6 +22,7 @@ namespace Vydejna.Domain.Tests
         private SeznamNaradiSerializer _serializer;
         private IPureProjectionDispatcher<SeznamNaradiData> _dispatcher;
         private VirtualTime _time;
+        private NotifyChangeDirect _notifier;
         
         [TestInitialize]
         public void Initialize()
@@ -32,7 +33,8 @@ namespace Vydejna.Domain.Tests
             _projekce = new SeznamNaradiProjection(_serializer);
             _time = new VirtualTime();
             _time.SetTime(new DateTime(2014, 1, 8, 17, 22, 16));
-            _reader = new SeznamNaradiReader(_store, _serializer, _executor, _time);
+            _notifier = new NotifyChangeDirect(_executor);
+            _reader = new SeznamNaradiReader(_store, _serializer, _executor, _time, _notifier);
             _reader.SetupFreshness(0);
             _locking = new TestNodeLock();
             _streaming = new TestStreaming(_executor);
