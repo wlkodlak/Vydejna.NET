@@ -16,7 +16,7 @@ namespace ServiceLib
         private ITime _timeService;
         private int _collectInterval, _collectTimeout;
 
-        public NetworkBusInMemory(string nodeId, IQueueExecution executor, ITime timeService)
+        public NetworkBusInMemory(IQueueExecution executor, ITime timeService)
         {
             _executor = executor;
             _timeService = timeService;

@@ -21,7 +21,7 @@ namespace ServiceLib.Tests.EventSourced
             _executor = new TestExecutor();
             _store = new TestEventStore(_executor);
             _time = new VirtualTime();
-            _messaging = new NetworkBusInMemory("localnode", _executor, _time);
+            _messaging = new NetworkBusInMemory(_executor, _time);
             _streaming = new EventStreaming(_store, _executor, _messaging).BatchSize(5);
         }
 

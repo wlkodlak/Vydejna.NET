@@ -94,7 +94,7 @@ namespace ServiceLib
         }
     }
 
-    public class NotifyChangePostgres
+    public class NotifyChangePostgres : INotifyChange
     {
         private IQueueExecution _executor;
         private int _key;

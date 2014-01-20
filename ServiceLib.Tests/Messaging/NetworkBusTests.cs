@@ -269,7 +269,7 @@ namespace ServiceLib.Tests.Messaging
     {
         protected override INetworkBus CreateBus()
         {
-            return new NetworkBusInMemory("thisnode", Executor, TimeService);
+            return new NetworkBusInMemory(Executor, TimeService);
         }
 
         protected override List<Message> GetAllDeadLetters()

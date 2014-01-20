@@ -8,6 +8,7 @@ using Moq;
 using Vydejna.Contracts;
 using Vydejna.Domain;
 using ServiceLib;
+using ServiceLib.Tests.TestUtils;
 
 namespace Vydejna.Domain.Tests
 {
@@ -17,6 +18,7 @@ namespace Vydejna.Domain.Tests
         private MockIHandle<DefinovatNaradiCommand> _mockDefinice;
         private MockIHandle<AktivovatNaradiCommand> _mockAktivace;
         private MockIHandle<DokoncitDefiniciNaradiInternalCommand> _mockDokonceni;
+        private ProcesDefiniceNaradi _proces;
 
         [TestInitialize]
         public void Inicialize()
@@ -26,7 +28,7 @@ namespace Vydejna.Domain.Tests
             _mockDokonceni = new MockIHandle<DokoncitDefiniciNaradiInternalCommand>();
         }
 
-        private class MockIHandle<T> : IHandle<T>
+        private class MockIHandle<T> : IHandle<CommandExecution<T>>
         {
             private Action<T> _action = null;
 
@@ -35,21 +37,30 @@ namespace Vydejna.Domain.Tests
                 _action = action;
             }
 
-            public void Handle(T message)
+            public void Handle(CommandExecution<T> execution)
             {
                 if (_action == null)
                     throw new AssertFailedException(
                         string.Format("Unexpected call to IHandle<{0}>", typeof(T).Name));
                 else
                 {
-                    _action(message);
+                    _action(execution.Command);
+                    execution.OnCompleted();
                 }
             }
         }
 
-        private ProcesDefiniceNaradi VytvoritProces()
+        private void VytvoritProces()
         {
-            return new ProcesDefiniceNaradi(_mockDefinice, _mockAktivace, _mockDokonceni);
+            _proces = new ProcesDefiniceNaradi(_mockDefinice, _mockAktivace, _mockDokonceni);
+        }
+
+        private void Vykonat<T>(T evnt)
+        {
+            bool completed = false;
+            var handler = _proces as IHandle<CommandExecution<T>>;
+            handler.Handle(new CommandExecution<T>(evnt, () => completed = true, ex => { throw ex.PreserveStackTrace(); }));
+            Assert.IsTrue(completed, "Handler dokoncen");
         }
 
         [TestMethod]
@@ -58,8 +69,8 @@ namespace Vydejna.Domain.Tests
             var naradiId = Guid.NewGuid();
             DefinovatNaradiCommand cmd = null;
             _mockDefinice.SetHandler(c => cmd = c);
-            var proces = VytvoritProces();
-            proces.Handle(new ZahajenaDefiniceNaradiEvent { NaradiId = naradiId, Vykres = "884-55558", Rozmer = "50x5x3", Druh = "" });
+            VytvoritProces();
+            Vykonat(new ZahajenaDefiniceNaradiEvent { NaradiId = naradiId, Vykres = "884-55558", Rozmer = "50x5x3", Druh = "" });
             Assert.IsNotNull(cmd, "Ocekavan DefinovatNaradiCommand");
             Assert.AreEqual(naradiId, cmd.NaradiId, "NaradiId");
             Assert.AreEqual("884-55558", cmd.Vykres, "Vykres");
@@ -73,8 +84,8 @@ namespace Vydejna.Domain.Tests
             var naradiId = Guid.NewGuid();
             AktivovatNaradiCommand cmd = null;
             _mockAktivace.SetHandler(c => cmd = c);
-            var proces = VytvoritProces();
-            proces.Handle(new ZahajenaAktivaceNaradiEvent { NaradiId = naradiId });
+            VytvoritProces();
+            Vykonat(new ZahajenaAktivaceNaradiEvent { NaradiId = naradiId });
             Assert.IsNotNull(cmd, "Ocekavan AktivovatNaradiCommand");
             Assert.AreEqual(naradiId, cmd.NaradiId, "NaradiId");
         }
@@ -85,8 +96,8 @@ namespace Vydejna.Domain.Tests
             var naradiId = Guid.NewGuid();
             DokoncitDefiniciNaradiInternalCommand cmd = null;
             _mockDokonceni.SetHandler(c => cmd = c);
-            var proces = VytvoritProces();
-            proces.Handle(new DefinovanoNaradiEvent { NaradiId = naradiId, Vykres = "884-55558", Rozmer = "50x5x3", Druh = "" });
+            VytvoritProces();
+            Vykonat(new DefinovanoNaradiEvent { NaradiId = naradiId, Vykres = "884-55558", Rozmer = "50x5x3", Druh = "" });
             Assert.IsNotNull(cmd, "Ocekavan DokoncitDefiniciNaradiInternalCommand");
             Assert.AreEqual(naradiId, cmd.NaradiId, "NaradiId");
             Assert.AreEqual("884-55558", cmd.Vykres, "Vykres");
