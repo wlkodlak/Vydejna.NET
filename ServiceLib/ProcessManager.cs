@@ -10,7 +10,9 @@ namespace ServiceLib
     {
         void RegisterLocal(string name, IProcessWorker worker);
         void RegisterGlobal(string name, IProcessWorker worker, int processingCost, int transitionCost);
-        void Subscribe(IBus bus);
+        void RegisterBus(string name, IBus bus, IProcessWorker worker);
+        void Start();
+        void Stop();
     }
 
     public enum ProcessState

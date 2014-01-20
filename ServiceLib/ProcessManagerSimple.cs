@@ -10,11 +10,35 @@ namespace ServiceLib
     {
         private object _lock;
         private Dictionary<string, ProcessInfo> _processes;
+        private IBus _bus;
+        private IProcessWorker _primaryWorker;
 
         public ProcessManagerSimple()
         {
             _lock = new object();
             _processes = new Dictionary<string, ProcessInfo>();
+        }
+
+        public void RegisterBus(string name, IBus bus, IProcessWorker worker)
+        {
+            _bus = bus;
+            _primaryWorker = worker;
+            bus.Subscribe<SystemEvents.SystemInit>(this);
+            bus.Subscribe<SystemEvents.SystemShutdown>(this);
+        }
+
+        public void Start()
+        {
+            _bus.Publish(new SystemEvents.SystemInit());
+            if (_primaryWorker != null)
+                _primaryWorker.Start();
+        }
+
+        public void Stop()
+        {
+            _bus.Publish(new SystemEvents.SystemShutdown());
+            if (_primaryWorker != null)
+                _primaryWorker.Pause();
         }
 
         public void RegisterLocal(string name, IProcessWorker worker)
@@ -34,12 +58,6 @@ namespace ServiceLib
                 Worker = worker
             };
             Register(process);
-        }
-
-        public void Subscribe(IBus bus)
-        {
-            bus.Subscribe<SystemEvents.SystemInit>(this);
-            bus.Subscribe<SystemEvents.SystemShutdown>(this);
         }
 
         public void Handle(SystemEvents.SystemInit msg)

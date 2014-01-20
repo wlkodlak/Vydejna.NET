@@ -155,10 +155,12 @@ namespace ServiceLib
         private string _clientAddress;
         private IList<RequestParameter> _routeParameters;
         private Action _onCompleted;
+        private string _url;
 
         public HttpServerListenerContext(HttpListenerContext listenerContext, Action onCompleted)
         {
             _request = listenerContext.Request;
+            _url = _request.Url.OriginalString;
             _response = listenerContext.Response;
             _clientAddress = _request.RemoteEndPoint.Address.ToString();
             _routeParameters = new List<RequestParameter>();
@@ -169,7 +171,7 @@ namespace ServiceLib
         }
 
         public string Method { get { return _request.HttpMethod; } }
-        public string Url { get { return _request.RawUrl; } }
+        public string Url { get { return _url; } }
         public string ClientAddress { get { return _clientAddress; } }
         public int StatusCode { get { return _response.StatusCode; } set { _response.StatusCode = value; } }
         public Stream InputStream { get { return _inputStream; } }

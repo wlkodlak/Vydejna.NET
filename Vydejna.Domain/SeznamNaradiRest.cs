@@ -23,6 +23,8 @@ namespace Vydejna.Domain
             config.Route("AktivovatNaradi").To(AktivovatNaradi);
             config.Route("DeaktivovatNaradi").To(DeaktivovatNaradi);
             config.Route("DefinovatNaradi").To(DefinovatNaradi);
+            config.Route("SeznamNaradi").To(NacistSeznamNaradi);
+            config.Route("OveritUnikatnost").To(OveritUnikatnost);
         }
 
         public void AktivovatNaradi(IHttpServerStagedContext context)

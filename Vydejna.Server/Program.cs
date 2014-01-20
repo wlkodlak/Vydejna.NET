@@ -13,7 +13,7 @@ namespace Vydejna.Server
     {
         private ProcessManagerSimple _processes;
         private IBus _bus;
-        private IHttpRouteCommonConfiguratorExtended _router;
+        private IHttpRouteCommonConfigurator _router;
 
         private void Initialize()
         {
@@ -28,24 +28,24 @@ namespace Vydejna.Server
             _bus = ObjectFactory.GetInstance<IBus>();
 
             _processes = new ProcessManagerSimple();
-            _processes.Subscribe(_bus);
-            _processes.RegisterLocal("MainBus", ObjectFactory.GetNamedInstance<IProcessWorker>("MainBusProcess"));
+            _processes.RegisterBus("MainBus", _bus, ObjectFactory.GetNamedInstance<IProcessWorker>("MainBusProcess"));
             _processes.RegisterLocal("HttpServer", ObjectFactory.GetNamedInstance<IProcessWorker>("HttpServerProcess"));
             _processes.RegisterGlobal("ProcesDefiniceNaradi", ObjectFactory.GetNamedInstance<IProcessWorker>("ProcesDefiniceNaradi"), 0, 0);
             _processes.RegisterGlobal("SeznamNaradiProjection", ObjectFactory.GetNamedInstance<IProcessWorker>("SeznamNaradiProjection"), 0, 0);
 
-            _router = ObjectFactory.GetNamedInstance<IHttpRouteCommonConfiguratorExtended>("HttpConfigRoot");
+            _router = ObjectFactory.GetNamedInstance<IHttpRouteCommonConfigurator>("HttpConfigRoot");
             ObjectFactory.GetInstance<SeznamNaradiRest>().RegisterHttpHandlers(_router);
+            _router.Commit();
         }
 
         private void Start()
         {
-            _bus.Publish(new SystemEvents.SystemInit());
+            _processes.Start();
         }
 
         private void Stop()
         {
-            _bus.Publish(new SystemEvents.SystemShutdown());
+            _processes.Stop();
         }
 
         private void WaitForExit()
@@ -81,8 +81,12 @@ namespace Vydejna.Server
             For<HttpRouter>().Singleton().Use<HttpRouter>().Named("HttpRouter");
             Forward<HttpRouter, IHttpRouter>();
             Forward<HttpRouter, IHttpAddRoute>();
-            For<IHttpRouteCommonConfiguratorExtended>().Singleton()
-                .Use(x => new HttpRouterCommon(x.GetInstance<IHttpAddRoute>())).Named("HttpConfigRoot");
+            For<IHttpRouteCommonConfigurator>().Singleton()
+                .Use(x => { 
+                    IHttpRouteCommonConfigurator cfg = new HttpRouterCommon(x.GetInstance<IHttpAddRoute>());
+                    cfg.WithSerializer(new HttpSerializerJson()).WithSerializer(new HttpSerializerXml()).WithPicker(new HttpSerializerPicker());
+                    return cfg;
+                }).Named("HttpConfigRoot");
             For<IHttpServerDispatcher>().Add<HttpServerDispatcher>().Named("HttpDispatcher");
             For<IProcessWorker>().Use<HttpServer>()
                 .Ctor<string[]>("prefixes").Is(new[] { ConfigurationManager.AppSettings["prefix"] })
