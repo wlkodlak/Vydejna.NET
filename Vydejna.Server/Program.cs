@@ -13,6 +13,7 @@ namespace Vydejna.Server
     {
         private ProcessManagerSimple _processes;
         private IBus _bus;
+        private IHttpRouteCommonConfiguratorExtended _router;
 
         private void Initialize()
         {
@@ -20,7 +21,7 @@ namespace Vydejna.Server
             {
                 x.AddRegistry<CoreRegistry>();
                 x.AddRegistry<PostgresStoreRegistry>();
-                x.AddRegistry<MultiNodePostgresRegistry>();
+                x.AddRegistry(new MultiNodePostgresRegistry(Guid.NewGuid().ToString("N")));
                 x.AddRegistry<VydejnaRegistry>();
             });
 
@@ -32,6 +33,9 @@ namespace Vydejna.Server
             _processes.RegisterLocal("HttpServer", ObjectFactory.GetNamedInstance<IProcessWorker>("HttpServerProcess"));
             _processes.RegisterGlobal("ProcesDefiniceNaradi", ObjectFactory.GetNamedInstance<IProcessWorker>("ProcesDefiniceNaradi"), 0, 0);
             _processes.RegisterGlobal("SeznamNaradiProjection", ObjectFactory.GetNamedInstance<IProcessWorker>("SeznamNaradiProjection"), 0, 0);
+
+            _router = ObjectFactory.GetNamedInstance<IHttpRouteCommonConfiguratorExtended>("HttpConfigRoot");
+            ObjectFactory.GetInstance<SeznamNaradiRest>().RegisterHttpHandlers(_router);
         }
 
         private void Start()
@@ -58,6 +62,7 @@ namespace Vydejna.Server
             Console.ReadLine();
             Console.WriteLine("Stopping...");
             program.Stop();
+            Console.WriteLine("Waiting for exit...");
             program.WaitForExit();
         }
     }
@@ -66,70 +71,77 @@ namespace Vydejna.Server
     {
         public CoreRegistry()
         {
-            For<string>().Use(Guid.NewGuid().ToString("N")).Named("NodeName");
-            For<QueuedBus>().Singleton().Use(() => new QueuedBus(new SubscriptionManager(), "MainBus"));
-            For<IQueueExecution>().Use<QueuedExecutionWorker>();
-            For<IBus>().Add<QueuedBus>();
+            For<QueuedBus>().Singleton().Use(() => new QueuedBus(new SubscriptionManager(), "MainBus")).Named("MainBus");
+            For<IQueueExecution>().Singleton().Use<QueuedExecutionWorker>().Named("Executor");
+            Forward<QueuedBus, IBus>();
             For<IProcessWorker>().Add<QueuedBusProcess>().Named("MainBusProcess");
+            For<ISubscriptionManager>().AlwaysUnique().Add<SubscriptionManager>();
+            For<ICommandSubscriptionManager>().AlwaysUnique().Add<CommandSubscriptionManager>();
 
-            For<IHttpRouter>().Singleton().Add<HttpRouter>();
-            For<IHttpAddRoute>().Singleton().Add<HttpRouter>();
-            For<HttpRouterCommon>().Singleton();
+            For<HttpRouter>().Singleton().Use<HttpRouter>().Named("HttpRouter");
+            Forward<HttpRouter, IHttpRouter>();
+            Forward<HttpRouter, IHttpAddRoute>();
+            For<IHttpRouteCommonConfiguratorExtended>().Singleton()
+                .Use(x => new HttpRouterCommon(x.GetInstance<IHttpAddRoute>())).Named("HttpConfigRoot");
+            For<IHttpServerDispatcher>().Add<HttpServerDispatcher>().Named("HttpDispatcher");
             For<IProcessWorker>().Use<HttpServer>()
                 .Ctor<string[]>("prefixes").Is(new[] { ConfigurationManager.AppSettings["prefix"] })
                 .Named("HttpServerProcess");
 
-            For<ITime>().Singleton().Use<RealTime>();
+            For<ITime>().Singleton().Use<RealTime>().Named("TimeService");
             For<IMetadataManager>().Singleton().Use(x => new MetadataManager(
-                x.GetInstance<IDocumentStore>().SubFolder("Metadata"), 
-                x.GetInstance<INodeLockManager>()));
-            For<IEventStreaming>().Singleton().Use<EventStreaming>();
-            For<IEventStreamingDeserialized>().Transient().Use<EventStreamingDeserialized>();
-            /*
-             * routing to read and write services
-             */
+                x.GetInstance<IDocumentStore>().SubFolder("Metadata"),
+                x.GetInstance<INodeLockManager>())).Named("MetadataManager");
+            For<IEventStreaming>().Singleton().Use<EventStreaming>().Named("EventStreamingRaw");
+            For<IEventStreamingDeserialized>().AlwaysUnique().Use<EventStreamingDeserialized>();
         }
     }
     public class SingleNodeRegistry : Registry
     {
         public SingleNodeRegistry()
         {
-            For<INodeLockManager>().Singleton().Use<NodeLockManagerNull>();
-            For<INetworkBus>().Singleton().Use<NetworkBusInMemory>();
+            For<INodeLockManager>().Singleton().Use<NodeLockManagerNull>().Named("LockManager");
+            For<INetworkBus>().Singleton().Use<NetworkBusInMemory>().Named("NetworkBus");
+            For<INotifyChange>().Singleton().MissingNamedInstanceIs.ConstructedBy(
+                x => new NotifyChangeDirect(x.GetInstance<IQueueExecution>()));
         }
     }
     public class MultiNodePostgresRegistry : Registry
     {
-        public MultiNodePostgresRegistry()
+        public MultiNodePostgresRegistry(string nodeName)
         {
             For<INodeLockManager>().Singleton().Use(x => new NodeLockManagerDocument(
                 x.GetInstance<IDocumentStore>().SubFolder("Locking"),
-                x.GetInstance<string>("NodeName"),
+                nodeName,
                 x.GetInstance<ITime>(),
-                new NotifyChangePostgres(x.GetInstance<DatabasePostgres>(), x.GetInstance<IQueueExecution>(), "Locking")));
-            For<INetworkBus>().Singleton().Use<NetworkBusPostgres>()
-                .Ctor<string>("nodeId").Named("NodeName");
+                x.GetInstance<INotifyChange>("NotifyLocking"))).Named("LockManager");
+            For<INetworkBus>().Singleton().Use<NetworkBusPostgres>().Named("NetworkBus")
+                .Ctor<string>("nodeId").Is(nodeName);
+            For<INotifyChange>().AddInstances(i =>
+                {
+                    i.ConstructedBy(x => new NotifyChangePostgres(x.GetInstance<DatabasePostgres>(), x.GetInstance<IQueueExecution>(), "Locking")).Named("NotifyLocking");
+                    i.ConstructedBy(x => new NotifyChangePostgres(x.GetInstance<DatabasePostgres>(), x.GetInstance<IQueueExecution>(), "SeznamNaradi")).Named("NotifySeznamNaradi");
+                });
         }
     }
     public class MemoryStoreRegistry : Registry
     {
         public MemoryStoreRegistry()
         {
-            For<IEventStore>().Singleton().Use<EventStoreInMemory>();
-            For<IEventStoreWaitable>().Singleton().Use<EventStoreInMemory>();
-            For<IDocumentStore>().Singleton().Use<DocumentStoreInMemory>();
-            For<INotifyChange>().Transient().Use<NotifyChangeDirect>();
+            For<IEventStoreWaitable>().Singleton().Use<EventStoreInMemory>().Named("EventStore");
+            Forward<IEventStoreWaitable, IEventStore>();
+            For<IDocumentStore>().Singleton().Use<DocumentStoreInMemory>().Named("DocumentStore");
         }
     }
     public class PostgresStoreRegistry : Registry
     {
         public PostgresStoreRegistry()
         {
-            For<DatabasePostgres>().Singleton().Use<DatabasePostgres>()
+            For<DatabasePostgres>().Singleton().Use<DatabasePostgres>().Named("PrimaryPostgresDatabase")
                 .Ctor<string>("connectionString").Is(ConfigurationManager.AppSettings["database"]);
-            For<IEventStore>().Singleton().Use<EventStorePostgres>();
-            For<IEventStoreWaitable>().Singleton().Use<EventStorePostgres>();
-            For<IDocumentStore>().Singleton().Use<DocumentStorePostgres>();
+            For<IEventStoreWaitable>().Singleton().Use<EventStorePostgres>().Named("EventStore");
+            Forward<IEventStoreWaitable, IEventStore>();
+            For<IDocumentStore>().Singleton().Use<DocumentStorePostgres>().Named("DocumentStore");
         }
     }
     public class VydejnaRegistry : Registry
@@ -159,25 +171,29 @@ namespace Vydejna.Server
                     var dispatcher = new PureProjectionDispatcherDeduplication<SeznamNaradiData>(
                         new PureProjectionDispatcher<SeznamNaradiData>(), projekce);
                     var cache = new PureProjectionStateCache<SeznamNaradiData>(store, serializer);
-                    var notificator = x.TryGetInstance<INotifyChange>();
+                    var notificator = x.TryGetInstance<INotifyChange>("NotifySeznamNaradi");
                     if (notificator != null)
                         cache.SetupNotificator(notificator);
                     var proces = new PureProjectionProcess<SeznamNaradiData>(
-                        "ProcesDefiniceNaradi", projekce, locking, cache,
+                        "SeznamNaradiProjection", projekce, locking, cache,
                         dispatcher, x.GetInstance<IEventStreamingDeserialized>());
                     return proces;
-                }).Named("ProcesDefiniceNaradi");
+                }).Named("SeznamNaradiProjection");
 
-            For<SeznamNaradiRest>().Singleton();
-            For<SeznamNaradiSerializer>().Singleton();
-            For<IReadSeznamNaradi>().Use<SeznamNaradiReader>()
-                .Ctor<IDocumentFolder>("store").Is(x => x.GetInstance<IDocumentStore>().SubFolder("SeznamNaradi"));
-            For<IWriteSeznamNaradi>().Use<SeznamNaradiService>();
-            For<INaradiRepository>().Use<NaradiRepository>()
+            For<SeznamNaradiSerializer>().Singleton().Use<SeznamNaradiSerializer>().Named("SeznamNaradiSerializer");
+            For<IReadSeznamNaradi>().Singleton().Use<SeznamNaradiReader>().Named("ViewServiceSeznamNaradi")
+                .Ctor<IDocumentFolder>("store").Is(x => x.GetInstance<IDocumentStore>().SubFolder("SeznamNaradi"))
+                .Ctor<INotifyChange>("notifier").Is(x => x.GetInstance<INotifyChange>("NotifySeznamNaradi"));
+
+            For<IWriteSeznamNaradi>().Use<SeznamNaradiService>().Named("DomainServiceSeznamNaradi");
+            For<INaradiRepository>().Use<NaradiRepository>().Named("RepositoryNaradi")
                 .Ctor<string>("prefix").Is("naradi");
-            For<IUnikatnostNaradiRepository>().Use<UnikatnostNaradiRepository>()
+            For<IUnikatnostNaradiRepository>().Use<UnikatnostNaradiRepository>().Named("RepositoryUnikatnost")
                 .Ctor<string>("prefix").Is("unikatnost_naradi");
-            
+
+            For<SeznamNaradiRest>().Singleton().Use<SeznamNaradiRest>().Named("RestServiceSeznamNaradi");
+            For<IEventSourcedSerializer>().Add<EventSourcedJsonSerializer>().Named("EventSourcedSerializerPrimary");
+            For<ITypeMapper>().Use<TypeMapper>().OnCreation(m => VydejnaTypeMapperConfigurator.Configure(m)).Named("TypeMapperPrimary");
         }
     }
 }

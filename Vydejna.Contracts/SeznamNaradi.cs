@@ -18,6 +18,28 @@ namespace Vydejna.Contracts
     {
     }
 
+    public static class VydejnaTypeMapperConfigurator
+    {
+        public static void Configure(TypeMapper mapper)
+        {
+            mapper.Register<ZiskatSeznamNaradiRequest>();
+            mapper.Register<ZiskatSeznamNaradiResponse>();
+            mapper.Register<TypNaradiDto>();
+            mapper.Register<OvereniUnikatnostiRequest>();
+            mapper.Register<OvereniUnikatnostiResponse>();
+            mapper.Register<AktivovatNaradiCommand>();
+            mapper.Register<DeaktivovatNaradiCommand>();
+            mapper.Register<DefinovatNaradiInternalCommand>();
+            mapper.Register<DokoncitDefiniciNaradiInternalCommand>();
+            mapper.Register<DefinovanoNaradiEvent>();
+            mapper.Register<AktivovanoNaradiEvent>();
+            mapper.Register<DeaktivovanoNaradiEvent>();
+            mapper.Register<ZahajenaDefiniceNaradiEvent>();
+            mapper.Register<DokoncenaDefiniceNaradiEvent>();
+            mapper.Register<ZahajenaAktivaceNaradiEvent>();
+        }
+    }
+
     public static class DtoUtils
     {
         public static int GetHashCode<T>(T obj)
