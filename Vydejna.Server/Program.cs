@@ -72,8 +72,14 @@ namespace Vydejna.Server
         public CoreRegistry()
         {
             For<QueuedBus>().Singleton().Use(() => new QueuedBus(new SubscriptionManager(), "MainBus")).Named("MainBus");
-            For<IQueueExecution>().Singleton().Use<QueuedExecutionWorker>().Named("Executor");
             Forward<QueuedBus, IBus>();
+            For<IQueueExecution>().Singleton().Use(x =>
+            {
+                var bus = x.GetInstance<IBus>();
+                var worker = new QueuedExecutionWorker(bus);
+                worker.Subscribe(bus);
+                return worker;
+            }).Named("Executor");
             For<IProcessWorker>().Add<QueuedBusProcess>().Named("MainBusProcess");
             For<ISubscriptionManager>().AlwaysUnique().Add<SubscriptionManager>();
             For<ICommandSubscriptionManager>().AlwaysUnique().Add<CommandSubscriptionManager>();
@@ -120,7 +126,8 @@ namespace Vydejna.Server
                 x.GetInstance<ITime>(),
                 x.GetInstance<INotifyChange>("NotifyLocking"))).Named("LockManager");
             For<INetworkBus>().Singleton().Use<NetworkBusPostgres>().Named("NetworkBus")
-                .Ctor<string>("nodeId").Is(nodeName);
+                .Ctor<string>("nodeId").Is(nodeName)
+                .OnCreation(n => n.Initialize());
             For<INotifyChange>().AddInstances(i =>
                 {
                     i.ConstructedBy(x => new NotifyChangePostgres(x.GetInstance<DatabasePostgres>(), x.GetInstance<IQueueExecution>(), "Locking")).Named("NotifyLocking");
@@ -143,9 +150,9 @@ namespace Vydejna.Server
         {
             For<DatabasePostgres>().Singleton().Use<DatabasePostgres>().Named("PrimaryPostgresDatabase")
                 .Ctor<string>("connectionString").Is(ConfigurationManager.AppSettings["database"]);
-            For<IEventStoreWaitable>().Singleton().Use<EventStorePostgres>().Named("EventStore");
+            For<IEventStoreWaitable>().Singleton().Use<EventStorePostgres>().Named("EventStore").OnCreation(e => e.Initialize());
             Forward<IEventStoreWaitable, IEventStore>();
-            For<IDocumentStore>().Singleton().Use<DocumentStorePostgres>().Named("DocumentStore");
+            For<IDocumentStore>().Singleton().Use<DocumentStorePostgres>().Named("DocumentStore").OnCreation(e => e.Initialize());
         }
     }
     public class VydejnaRegistry : Registry

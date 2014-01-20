@@ -66,6 +66,7 @@ namespace ServiceLib.Tests.Http
             hdr.Add("Content-Length", "588");
             hdr.Add("Content-Type", "application/json");
             hdr.Add("Accept", "application/json, text/xml, */*");
+            hdr.Add("Accept-Language", "en-us");
             hdr.Add("Referer", "http://referer/path");
             hdr.Add("X-Custom", "custom value");
 

@@ -66,7 +66,7 @@ namespace ServiceLib
                     _acceptTypes.RawValue = value;
                     break;
                 case "Accept-Language":
-                    _acceptTypes.RawValue = value;
+                    _acceptLanguages.RawValue = value;
                     break;
                 case "Referer":
                     _referer = value;

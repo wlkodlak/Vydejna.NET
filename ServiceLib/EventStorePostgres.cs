@@ -330,7 +330,7 @@ namespace ServiceLib
                 this.OnComplete = onComplete;
                 this.OnError = onError;
                 this.Nowait = nowait;
-                this.StartingId = int.Parse(token.ToString());
+                this.StartingId = token.IsInitial ? 0 : int.Parse(token.ToString());
             }
 
             public void ExecuteIndependently()
