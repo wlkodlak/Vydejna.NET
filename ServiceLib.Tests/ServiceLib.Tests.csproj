@@ -82,6 +82,7 @@
     <Compile Include="EventHandlers\PureProjectionTestBase.cs" />
     <Compile Include="EventSourced\AggregateTests.cs" />
     <Compile Include="EventSourced\EventStoreInMemoryTests.cs" />
+    <Compile Include="EventSourced\EventStoreTestBase.cs" />
     <Compile Include="EventSourced\EventStoreTokenTests.cs" />
     <Compile Include="EventSourced\EventStoreVersionTests.cs" />
     <Compile Include="EventSourced\EventStreamingDeserializedTests.cs" />

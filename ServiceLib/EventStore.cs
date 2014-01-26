@@ -199,10 +199,10 @@ namespace ServiceLib
     {
         private readonly int _version;
         private readonly int _hint;
-        private List<EventStoreEvent> _events;
-        public EventStoreStream(List<EventStoreEvent> events, int version, int hint)
+        private readonly IList<EventStoreEvent> _events;
+        public EventStoreStream(IList<EventStoreEvent> events, int version, int hint)
         {
-            _events = events.ToList();
+            _events = events;
             _version = version;
             _hint = hint;
         }
