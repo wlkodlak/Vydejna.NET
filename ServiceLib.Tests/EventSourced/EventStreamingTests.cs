@@ -124,7 +124,7 @@ namespace ServiceLib.Tests.EventSourced
         }
 
         [TestMethod]
-        public void WaitingCallReturnsNullOnEmptyLongPoll()
+        public void WaitingCallCanHandleNullOnLongPoll()
         {
             var streamer = _streaming.GetStreamer(EventStoreToken.Initial, "TestProcess");
             EventStoreEvent evnt = Create("FAIL", "FAIL");
@@ -132,7 +132,6 @@ namespace ServiceLib.Tests.EventSourced
             _executor.Process();
             _store.EndLongPoll();
             _executor.Process();
-            Assert.IsNull(evnt, "Received event");
         }
 
         [TestMethod]
@@ -167,6 +166,56 @@ namespace ServiceLib.Tests.EventSourced
             Assert.AreEqual(new EventStoreToken("2"), received[1].Token, "Received[1]");
             Assert.AreEqual(new EventStoreToken("3"), received[2].Token, "Received[2]");
             Assert.AreEqual(new EventStoreToken("4"), received[3].Token, "Received[3]");
+        }
+
+        [TestMethod]
+        public void ReceiveReadyMessageFromBroker()
+        {
+            var received = new List<EventStoreEvent>();
+            _store.AddToStream("aaa", new[]
+                {
+                    Create("Evt1", "65444"),
+                    Create("Evt2", "54654"),
+                    Create("Evt3", "23124"),
+                    Create("Evt2", "8754"),
+                    Create("Evt2", "327d0"),
+                    Create("Evt3", "5484."),
+                });
+
+            var dest = MessageDestination.For("TestProcess", "__ANY__");
+            var msg = new Message { Body = "3\r\n23124", Type = "Evt2", Format = "text" };
+            _messaging.Send(dest, msg, () => { }, ThrowError);
+            _executor.Process();
+            var streamer = _streaming.GetStreamer(new EventStoreToken("7"), "TestProcess");
+            streamer.GetNextEvent(e => received.Add(e), ThrowError, false);
+            _executor.Process();
+            Assert.AreEqual(1, received.Count, "Received.Count");
+            Assert.AreEqual(new EventStoreToken("3"), received[0].Token, "Received[0]");
+        }
+
+        [TestMethod]
+        public void ReceiveMessageWhileWaiting()
+        {
+            var received = new List<EventStoreEvent>();
+            _store.AddToStream("aaa", new[]
+                {
+                    Create("Evt1", "65444"),
+                    Create("Evt2", "54654"),
+                    Create("Evt3", "23124"),
+                    Create("Evt2", "8754"),
+                    Create("Evt2", "327d0"),
+                    Create("Evt3", "5484."),
+                });
+
+            var dest = MessageDestination.For("TestProcess", "__ANY__");
+            var msg = new Message { Body = "3\r\n23124", Type = "Evt2", Format = "text" };
+            var streamer = _streaming.GetStreamer(new EventStoreToken("7"), "TestProcess");
+            streamer.GetNextEvent(e => received.Add(e), ThrowError, false);
+            _executor.Process();
+            _messaging.Send(dest, msg, () => { }, ThrowError);
+            _executor.Process();
+            Assert.AreEqual(1, received.Count, "Received.Count");
+            Assert.AreEqual(new EventStoreToken("3"), received[0].Token, "Received[0]");
         }
 
         private void ThrowError(Exception ex)

@@ -47,13 +47,14 @@ namespace ServiceLib
             }
         }
 
-        public void Receive(MessageDestination destination, bool nowait, Action<Message> onReceived, Action nothingNew, Action<Exception> onError)
+        public IDisposable Receive(MessageDestination destination, bool nowait, Action<Message> onReceived, Action nothingNew, Action<Exception> onError)
         {
             DestinationCache cache;
             if (!_receiving.TryGetValue(destination, out cache))
                 cache = _receiving.GetOrAdd(destination, new DestinationCache(this, destination));
-            var worker = new ReceiveWorker(nowait, onReceived, nothingNew, onError);
+            var worker = new ReceiveWorker(cache, nowait, onReceived, nothingNew, onError);
             cache.Receive(worker);
+            return worker;
         }
 
         public void Subscribe(string type, MessageDestination destination, bool unsubscribe, Action onComplete, Action<Exception> onError)
@@ -236,7 +237,7 @@ namespace ServiceLib
             private Queue<Message> _cachedMessages;
             private bool _isLoading;
             private List<ReceiveWorker> _waiters;
-            private NetworkBusPostgres _parent;
+            public NetworkBusPostgres Parent;
             private MessageDestination _destination;
             private bool _isListening;
             private bool _isNotified;
@@ -245,7 +246,7 @@ namespace ServiceLib
             {
                 _cachedMessages = new Queue<Message>();
                 _waiters = new List<ReceiveWorker>();
-                _parent = parent;
+                Parent = parent;
                 _destination = destination;
             }
 
@@ -257,7 +258,7 @@ namespace ServiceLib
                     if (_cachedMessages.Count > 0)
                     {
                         var message = _cachedMessages.Dequeue();
-                        _parent._executor.Enqueue(new NetworkBusReceiveFinished(worker.OnReceived, message));
+                        Parent._executor.Enqueue(new NetworkBusReceiveFinished(worker.OnReceived, message));
                         return;
                     }
                     if (!_isListening)
@@ -271,8 +272,8 @@ namespace ServiceLib
                     _isLoading = true;
                 }
                 if (startListening)
-                    _parent._database.Listen("messages", OnNotify);
-                _parent._database.Execute(TryRetrieve, ErrorRetrieve);
+                    Parent._database.Listen("messages", OnNotify);
+                Parent._database.Execute(TryRetrieve, ErrorRetrieve);
             }
 
             private void OnNotify()
@@ -285,7 +286,7 @@ namespace ServiceLib
                     _isLoading = true;
                     _isNotified = false;
                 }
-                _parent._database.Execute(TryRetrieve, ErrorRetrieve);
+                Parent._database.Execute(TryRetrieve, ErrorRetrieve);
             }
 
             private void TryRetrieve(NpgsqlConnection conn)
@@ -312,12 +313,13 @@ namespace ServiceLib
                             {
                                 var message = _cachedMessages.Dequeue();
                                 _waiters[i] = null;
-                                _parent._executor.Enqueue(new NetworkBusReceiveFinished(waiter.OnReceived, message));
+                                if (waiter.TryToUse())
+                                    Parent._executor.Enqueue(new NetworkBusReceiveFinished(waiter.OnReceived, message));
                             }
                             else if (waiter.Nowait)
                             {
                                 _waiters[i] = null;
-                                _parent._executor.Enqueue(waiter.NothingNew);
+                                Parent._executor.Enqueue(waiter.NothingNew);
                             }
                         }
                         RemoveEmptyWaiters();
@@ -341,7 +343,7 @@ namespace ServiceLib
             {
                 using (var cmd = conn.CreateCommand())
                 {
-                    var processingLimit = _parent._timeService.GetUtcTime().AddSeconds(-_parent._deliveryTimeout);
+                    var processingLimit = Parent._timeService.GetUtcTime().AddSeconds(-Parent._deliveryTimeout);
                     cmd.CommandText =
                         "SELECT messageid, corellationid, createdon, source, type, format, body, original " +
                         "FROM messages WHERE node = :node AND destination = :destination " + 
@@ -375,7 +377,7 @@ namespace ServiceLib
                 using (var cmd = conn.CreateCommand())
                 {
                     cmd.CommandText = "UPDATE messages SET processing = :processing WHERE messageid = :messageid";
-                    cmd.Parameters.AddWithValue("processing", _parent._timeService.GetUtcTime());
+                    cmd.Parameters.AddWithValue("processing", Parent._timeService.GetUtcTime());
                     var paramMessageId = cmd.Parameters.Add("messageid", NpgsqlTypes.NpgsqlDbType.Varchar);
                     foreach (var message in newMessages)
                     {
@@ -391,25 +393,49 @@ namespace ServiceLib
                 {
                     _isLoading = false;
                     foreach (var waiter in _waiters)
-                        _parent._executor.Enqueue(waiter.OnError, exception);
+                        Parent._executor.Enqueue(waiter.OnError, exception);
                     _waiters.Clear();
                 }
             }
         }
 
-        private class ReceiveWorker
+        private class ReceiveWorker : IDisposable
         {
+            public readonly DestinationCache Parent;
             public readonly bool Nowait;
             public readonly Action<Message> OnReceived;
             public readonly Action NothingNew;
             public readonly Action<Exception> OnError;
+            public bool Used, Disposed;
 
-            public ReceiveWorker(bool nowait, Action<Message> onReceived, Action nothingNew, Action<Exception> onError)
+            public ReceiveWorker(DestinationCache parent, bool nowait, Action<Message> onReceived, Action nothingNew, Action<Exception> onError)
             {
+                Parent = parent;
                 Nowait = nowait;
                 OnReceived = onReceived;
                 NothingNew = nothingNew;
                 OnError = onError;
+            }
+
+            public void Dispose()
+            {
+                lock (Parent)
+                {
+                    Disposed = true;
+                    if (!Used)
+                        Parent.Parent._executor.Enqueue(NothingNew);
+                }
+            }
+
+            public bool TryToUse()
+            {
+                if (Disposed || Used)
+                    return false;
+                else
+                {
+                    Used = true;
+                    return true;
+                }
             }
         }
 

@@ -68,10 +68,11 @@ namespace ServiceLib
             private Queue<EventStoreEvent> _outputQueue;
             private EventStoreToken _token;
             private int _batchSize;
-            private IDisposable _wait;
             private MessageDestination _inputQueue;
             private Message _processedMessage;
             private EventStoreEvent _processedEvent;
+            private bool _waitsForMessage, _waitsForEventsStore, _getNextEventActive;
+            private IDisposable _cancellableEventStoreWait, _cancellableMessagingWait;
 
             public EventsStream(EventStreaming parent, EventStoreToken token, string processName)
             {
@@ -87,38 +88,81 @@ namespace ServiceLib
 
             public void GetNextEvent(Action<EventStoreEvent> onComplete, Action<Exception> onError, bool withoutWaiting)
             {
-                if (_outputQueue.Count == 0)
+                lock (_lock)
                 {
+                    _getNextEventActive = true;
                     _onComplete = onComplete;
                     _onError = onError;
                     _nowait = withoutWaiting;
                     if (_processedMessage != null)
-                        _messaging.MarkProcessed(_processedMessage, MessageDestination.Processed, LoadNextEvents, OnError);
+                        _messaging.MarkProcessed(_processedMessage, MessageDestination.Processed, OnMessageMarkedAsProcessed, OnMessagingError);
                     else
-                        LoadNextEvents();
+                        GetOrLoadNextEvent();
                 }
-                else
+            }
+
+            private void OnMessageMarkedAsProcessed()
+            {
+                lock (_lock)
                 {
+                    _processedMessage = null;
+                    GetOrLoadNextEvent();
+                }
+            }
+
+            private void GetOrLoadNextEvent()
+            {
+                if (_outputQueue.Count == 0)
+                    LoadNextEvents();
+                else if (_getNextEventActive)
+                {
+                    _getNextEventActive = false;
                     _processedEvent = _outputQueue.Dequeue();
-                    _executor.Enqueue(new GetNextEventCompleted(onComplete, _processedEvent));
+                    _executor.Enqueue(new GetNextEventCompleted(_onComplete, _processedEvent));
                 }
             }
 
             private void LoadNextEvents()
             {
-                _messaging.Receive(_inputQueue, true, OnMessageReceived, ReadFromEventStore, OnError);
+                lock (_lock)
+                {
+                    if (!_getNextEventActive)
+                        return;
+                    if (!_waitsForMessage)
+                    {
+                        _waitsForMessage = true;
+                        _cancellableMessagingWait = _messaging.Receive(_inputQueue, _nowait, OnMessageReceived, OnMessagesEmpty, OnMessagingError);
+                    }
+                    if (!_waitsForEventsStore)
+                    {
+                        _waitsForEventsStore = true;
+                        if (_nowait)
+                            _store.GetAllEvents(_token, _batchSize, true, OnEventsLoaded, OnEventStoreError);
+                        else
+                            _cancellableEventStoreWait = _store.WaitForEvents(_token, _batchSize, true, OnEventsLoaded, OnEventStoreError);
+                    }
+                }
             }
 
             private void OnMessageReceived(Message msg)
             {
-                _processedMessage = msg;
-                EventStoreEvent evnt = EventFromMessage(msg);
-                if (evnt == null)
-                    _messaging.MarkProcessed(msg, MessageDestination.DeadLetters, LoadNextEvents, OnError);
-                else
+                lock (_lock)
                 {
-                    _token = evnt.Token;
-                    _executor.Enqueue(new GetNextEventCompleted(_onComplete, evnt));
+                    _waitsForMessage = false;
+                    _cancellableMessagingWait = null;
+                    _processedMessage = msg;
+                    EventStoreEvent evnt = EventFromMessage(msg);
+                    if (evnt == null)
+                        _messaging.MarkProcessed(msg, MessageDestination.DeadLetters, OnMessageMarkedAsProcessed, OnMessagingError);
+                    else if (_getNextEventActive)
+                    {
+                        _getNextEventActive = false;
+                        _executor.Enqueue(new GetNextEventCompleted(_onComplete, evnt));
+                    }
+                    else
+                    {
+                        _outputQueue.Enqueue(evnt);
+                    }
                 }
             }
 
@@ -127,13 +171,13 @@ namespace ServiceLib
                 var evnt = new EventStoreEvent();
                 evnt.Format = msg.Format;
                 evnt.Type = msg.Type;
-                var endLine = evnt.Body.IndexOf("\r\n");
+                var endLine = msg.Body.IndexOf("\r\n");
                 if (endLine == -1)
                     return null;
                 else
                 {
-                    evnt.Token = new EventStoreToken(evnt.Body.Substring(0, endLine));
-                    evnt.Body = evnt.Body.Substring(endLine + 2);
+                    evnt.Token = new EventStoreToken(msg.Body.Substring(0, endLine));
+                    evnt.Body = msg.Body.Substring(endLine + 2);
                 }
                 return evnt;
             }
@@ -147,34 +191,87 @@ namespace ServiceLib
                 return msg;
             }
 
-            private void ReadFromEventStore()
-            {
-                if (_nowait)
-                    _store.GetAllEvents(_token, _batchSize, true, OnEventsLoaded, OnError);
-                else
-                    _wait = _store.WaitForEvents(_token, _batchSize, true, OnEventsLoaded, OnError);
-            }
-
             private void OnEventsLoaded(IEventStoreCollection events)
             {
-                _wait = null;
-                _token = events.NextToken;
-                EventStoreEvent firstEvent = null;
-                foreach (var evnt in events.Events)
+                lock (_lock)
                 {
-                    if (firstEvent == null)
-                        firstEvent = evnt;
-                    else
-                        _outputQueue.Enqueue(evnt);
+                    _cancellableEventStoreWait = null;
+                    _waitsForEventsStore = false;
+                    _token = events.NextToken;
+                    EventStoreEvent firstEvent = null;
+                    foreach (var evnt in events.Events)
+                    {
+                        if (firstEvent == null && _getNextEventActive)
+                            firstEvent = evnt;
+                        else
+                            _outputQueue.Enqueue(evnt);
+                    }
+                    if (firstEvent != null)
+                    {
+                        if (_getNextEventActive)
+                        {
+                            _getNextEventActive = false;
+                            _processedEvent = firstEvent;
+                            _executor.Enqueue(new GetNextEventCompleted(_onComplete, firstEvent));
+                        }
+                    }
+                    else if (_getNextEventActive)
+                    {
+                        if (_nowait)
+                            OnNothingReceivedNowait();
+                        else
+                            LoadNextEvents();
+                    }
                 }
-                _processedEvent = firstEvent;
-                _executor.Enqueue(new GetNextEventCompleted(_onComplete, firstEvent));
             }
 
-            private void OnError(Exception exception)
+            private void OnMessagesEmpty()
             {
-                _wait = null;
-                _executor.Enqueue(_onError, exception);
+                lock (_lock)
+                {
+                    _waitsForMessage = false;
+                    if (!_getNextEventActive)
+                        return;
+                    if (_nowait)
+                        OnNothingReceivedNowait();
+                    else
+                        LoadNextEvents();
+                }
+            }
+
+            private void OnNothingReceivedNowait()
+            {
+                if (_waitsForMessage || _waitsForEventsStore)
+                    return;
+                _getNextEventActive = false;
+                _processedEvent = null;
+                _executor.Enqueue(new GetNextEventCompleted(_onComplete, null));
+            }
+
+            private void OnMessagingError(Exception exception)
+            {
+                lock (_lock)
+                {
+                    _waitsForMessage = false;
+                    if (_getNextEventActive)
+                    {
+                        _getNextEventActive = false;
+                        _executor.Enqueue(_onError, exception);
+                    }
+                }
+            }
+
+            private void OnEventStoreError(Exception exception)
+            {
+                lock (_lock)
+                {
+                    _waitsForEventsStore = false;
+                    if (_getNextEventActive)
+                    {
+                        _getNextEventActive = false;
+                        _executor.Enqueue(_onError, exception);
+                    }
+                }
             }
 
             public void MarkAsDeadLetter(Action onComplete, Action<Exception> onError)
@@ -196,11 +293,25 @@ namespace ServiceLib
 
             public void Dispose()
             {
-                var wait = Interlocked.Exchange(ref _wait, null);
-                if (wait == null)
-                    return;
-                wait.Dispose();
-                _executor.Enqueue(new GetNextEventCompleted(_onComplete, null));
+                lock (_lock)
+                {
+                    if (_getNextEventActive)
+                    {
+                        _getNextEventActive = false;
+                        if (_cancellableMessagingWait != null)
+                            _cancellableMessagingWait.Dispose();
+                        if (_cancellableEventStoreWait != null)
+                            _cancellableEventStoreWait.Dispose();
+                        _executor.Enqueue(new GetNextEventCompleted(_onComplete, null));
+                    }
+                    else
+                    {
+                        if (_cancellableMessagingWait != null)
+                            _cancellableMessagingWait.Dispose();
+                        if (_cancellableEventStoreWait != null)
+                            _cancellableEventStoreWait.Dispose();
+                    }
+                }
             }
         }
     }

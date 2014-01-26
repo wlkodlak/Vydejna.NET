@@ -19,6 +19,7 @@ namespace ServiceLib.Tests.Messaging
         protected ManualResetEventSlim Mre;
         protected Message LastMessage;
         protected VirtualTime TimeService;
+        private IDisposable CurrentWait;
 
         [TestInitialize]
         public void Initialize()
@@ -59,6 +60,14 @@ namespace ServiceLib.Tests.Messaging
         public void NullMessageIfNowaitAndNoMessagesReady()
         {
             StartReceiving("testprocess", true);
+            ExpectMessage(null, null);
+        }
+
+        [TestMethod]
+        public void NullMessageIfCancelledAndNoMessagesReady()
+        {
+            StartReceiving("testprocess", false);
+            CurrentWait.Dispose();
             ExpectMessage(null, null);
         }
 
@@ -227,10 +236,11 @@ namespace ServiceLib.Tests.Messaging
             Mre.Reset();
             LastMessage = null;
             var destination = MessageDestination.For(target, "thisnode");
-            Bus.Receive(destination, nowait,
+            CurrentWait = Bus.Receive(destination, nowait,
                 msg => { LastMessage = msg; Mre.Set(); },
                 () => { LastMessage = NullMessage; Mre.Set(); },
                 ThrowError);
+            Assert.IsNotNull(CurrentWait, "Cancellation option");
             Executor.Process();
         }
 

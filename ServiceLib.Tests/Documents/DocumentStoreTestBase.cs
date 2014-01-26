@@ -12,15 +12,21 @@ namespace ServiceLib.Tests.Documents
     [TestClass]
     public abstract class DocumentStoreTestBase
     {
+        protected string CurrentPartition;
+        protected HashSet<string> InitializedPartitions;
         protected IDocumentStore Store;
         protected TestExecutor Executor;
 
         [TestInitialize]
         public void Initialize()
         {
+            InitializedPartitions = new HashSet<string>();
             Executor = new TestExecutor();
-            Store = CreateEmptyDocumentStore(Executor);
+            InitializeCore();
+            SetPartition("documents");
         }
+
+        protected virtual void InitializeCore() { }
 
         [TestMethod]
         public void GettingNonexistentDocument()
@@ -49,6 +55,18 @@ namespace ServiceLib.Tests.Documents
             SetupDocument("testing", "document", "original");
             DeleteFolderContents("testing");
             VerifyDocument("testing", "document", DocumentStoreVersion.New, null);
+        }
+
+        [TestMethod]
+        public void DocumentWithSameNameInDifferentPartitionsAreIndependent()
+        {
+            SetPartition("documents");
+            SetupDocument("testing", "document", "original");
+            SaveDocument("testing", "document", DocumentStoreVersion.At(1), "first", "saved");
+            SetPartition("documents2");
+            SaveDocument("testing", "document", DocumentStoreVersion.New, "second", "saved");
+            SetPartition("documents");
+            VerifyDocument("testing", "document", DocumentStoreVersion.At(2), "first");
         }
 
         protected void SetupDocument(string folder, string name, string contents)
@@ -90,6 +108,18 @@ namespace ServiceLib.Tests.Documents
             Assert.AreEqual(expectedOutcome, resultSave, "Outcome for {0}", name);
         }
 
-        protected abstract IDocumentStore CreateEmptyDocumentStore(IQueueExecution executor);
+        protected void SetPartition(string name)
+        {
+            if (name == CurrentPartition)
+                return;
+            CurrentPartition = name;
+            if (InitializedPartitions.Add(name))
+                Store = CreateEmptyDocumentStore();
+            else
+                Store = GetExistingDocumentStore();
+        }
+
+        protected abstract IDocumentStore GetExistingDocumentStore();
+        protected abstract IDocumentStore CreateEmptyDocumentStore();
     }
 }

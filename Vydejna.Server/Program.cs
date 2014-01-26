@@ -152,7 +152,9 @@ namespace Vydejna.Server
                 .Ctor<string>("connectionString").Is(ConfigurationManager.AppSettings["database"]);
             For<IEventStoreWaitable>().Singleton().Use<EventStorePostgres>().Named("EventStore").OnCreation(e => e.Initialize());
             Forward<IEventStoreWaitable, IEventStore>();
-            For<IDocumentStore>().Singleton().Use<DocumentStorePostgres>().Named("DocumentStore").OnCreation(e => e.Initialize());
+            For<IDocumentStore>().Singleton().Use<DocumentStorePostgres>().Named("DocumentStore")
+                .Ctor<string>("partition").Is("documents")
+                .OnCreation(e => e.Initialize());
         }
     }
     public class VydejnaRegistry : Registry

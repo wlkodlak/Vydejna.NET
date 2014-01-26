@@ -17,6 +17,7 @@ namespace ServiceLib
         private DatabasePostgres _db;
         private Regex _pathRegex;
         private object _lock;
+        private string _partition;
 
         private class Folder : IDocumentFolder
         {
@@ -66,12 +67,13 @@ namespace ServiceLib
             }
         }
 
-        public DocumentStorePostgres(DatabasePostgres db, IQueueExecution executor)
+        public DocumentStorePostgres(DatabasePostgres db, IQueueExecution executor, string partition)
         {
             _db = db;
             _executor = executor;
             _root = new Folder(this, "");
             _pathRegex = new Regex(@"^[a-zA-Z0-9\-._/]+$", RegexOptions.Compiled);
+            _partition = partition;
             _lock = new object();
         }
 
@@ -87,7 +89,9 @@ namespace ServiceLib
         {
             using (var cmd = conn.CreateCommand())
             {
-                cmd.CommandText = "CREATE TABLE IF NOT EXISTS documents (key varchar PRIMARY KEY, version integer NOT NULL, contents text NOT NULL)";
+                cmd.CommandText = string.Concat(
+                    "CREATE TABLE IF NOT EXISTS ", _partition, 
+                    " (key varchar PRIMARY KEY, version integer NOT NULL, contents text NOT NULL)");
                 cmd.ExecuteNonQuery();
             }
         }
@@ -146,7 +150,7 @@ namespace ServiceLib
             {
                 using (var cmd = conn.CreateCommand())
                 {
-                    cmd.CommandText = string.Concat("DELETE FROM documents WHERE key LIKE '", _path, "%'; NOTIFY documents;");
+                    cmd.CommandText = string.Concat("DELETE FROM ", _parent._partition, " WHERE key LIKE '", _path, "%'; NOTIFY ", _parent._partition, ";");
                     cmd.ExecuteNonQuery();
                     _parent._executor.Enqueue(_onComplete);
                 }
@@ -189,7 +193,7 @@ namespace ServiceLib
                 using (var cmd = conn.CreateCommand())
                 {
                     var key = string.Concat(_path, "/", _name);
-                    cmd.CommandText = "SELECT version, contents FROM documents WHERE key = :key LIMIT 1";
+                    cmd.CommandText = "SELECT version, contents FROM " + _parent._partition + " WHERE key = :key LIMIT 1";
                     cmd.Parameters.AddWithValue("key", key);
                     using (var reader = cmd.ExecuteReader(CommandBehavior.SingleRow))
                     {
@@ -212,7 +216,7 @@ namespace ServiceLib
                 using (var cmd = conn.CreateCommand())
                 {
                     var key = string.Concat(_path, "/", _name);
-                    cmd.CommandText = "SELECT version FROM documents WHERE key = :key LIMIT 1";
+                    cmd.CommandText = "SELECT version FROM " + _parent._partition + " WHERE key = :key LIMIT 1";
                     cmd.Parameters.AddWithValue("key", key);
                     using (var reader = cmd.ExecuteReader(CommandBehavior.SingleRow))
                     {
@@ -265,90 +269,71 @@ namespace ServiceLib
                 _parent._db.Execute(DoWork, _onError);
             }
 
-            private static long GetLockKey(string key)
-            {
-                unchecked
-                {
-                    var bytes = Encoding.ASCII.GetBytes(key);
-                    uint result = 0;
-                    for (int i = 0; i < bytes.Length; i++)
-                    {
-                        result = (result << 11) | (result >> 21);
-                        result |= bytes[i];
-                    }
-                    return (long)result;
-                }
-            }
-
             private void DoWork(NpgsqlConnection conn)
             {
                 var key = string.Concat(_path, "/", _name);
-                var lockKey = GetLockKey(key);
-                int documentVersion;
-                bool wasSaved;
-                using (var cmd = conn.CreateCommand())
+                bool retry = true;
+                int documentVersion = -1;
+                bool wasSaved = false;
+                while (retry)
                 {
-                    cmd.CommandText = "SELECT pg_advisory_lock(:lock)";
-                    cmd.Parameters.AddWithValue("lock", lockKey);
-                    cmd.ExecuteNonQuery();
-                }
-                using (var cmd = conn.CreateCommand())
-                {
-                    cmd.CommandText = "SELECT version FROM documents WHERE key = :key LIMIT 1";
-                    cmd.Parameters.AddWithValue("key", key);
-                    using (var reader = cmd.ExecuteReader())
+                    retry = false;
+                    try
                     {
-                        if (reader.Read())
-                            documentVersion = reader.GetInt32(0);
+                        using (var tran = conn.BeginTransaction())
+                        {
+
+                            using (var cmd = conn.CreateCommand())
+                            {
+                                cmd.CommandText = "SELECT version FROM " + _parent._partition + " WHERE key = :key LIMIT 1 FOR UPDATE";
+                                cmd.Parameters.AddWithValue("key", key);
+                                using (var reader = cmd.ExecuteReader())
+                                {
+                                    if (reader.Read())
+                                        documentVersion = reader.GetInt32(0);
+                                    else
+                                        documentVersion = -1;
+                                }
+                            }
+
+                            if (documentVersion == -1)
+                            {
+                                using (var cmd = conn.CreateCommand())
+                                {
+                                    cmd.CommandText = "INSERT INTO " + _parent._partition + " (key, version, contents) VALUES (:key, 1, :contents)";
+                                    cmd.Parameters.AddWithValue("key", key);
+                                    cmd.Parameters.AddWithValue("contents", _value);
+                                    cmd.ExecuteNonQuery();
+                                }
+                                wasSaved = true;
+                                tran.Commit();
+                            }
+                            else if (_expectedVersion.VerifyVersion(documentVersion))
+                            {
+                                using (var cmd = conn.CreateCommand())
+                                {
+                                    cmd.CommandText = "UPDATE " + _parent._partition + " SET version = :version, contents = :contents WHERE key = :key";
+                                    cmd.Parameters.AddWithValue("key", key);
+                                    cmd.Parameters.AddWithValue("version", documentVersion + 1);
+                                    cmd.Parameters.AddWithValue("contents", _value);
+                                    cmd.ExecuteNonQuery();
+                                }
+                                wasSaved = true;
+                                tran.Commit();
+                            }
+                            else
+                                wasSaved = false;
+                        }
+                    }
+                    catch (NpgsqlException ex)
+                    {
+                        if (ex.Code == "23505")
+                            retry = true;
                         else
-                            documentVersion = 0;
+                            throw;
                     }
                 }
-                try
-                {
-                    if (documentVersion == 0)
-                    {
-                        using (var cmd = conn.CreateCommand())
-                        {
-                            cmd.CommandText = "INSERT INTO documents (key, version, contents) VALUES (:key, :version, :contents)";
-                            cmd.Parameters.AddWithValue("key", key);
-                            cmd.Parameters.AddWithValue("version", 1);
-                            cmd.Parameters.AddWithValue("contents", _value);
-                            cmd.ExecuteNonQuery();
-                        }
-                        wasSaved = true;
-                    }
-                    else if (_expectedVersion.VerifyVersion(documentVersion))
-                    {
-                        using (var cmd = conn.CreateCommand())
-                        {
-                            cmd.CommandText = "UPDATE documents SET version = :version, contents = :contents WHERE key = :key";
-                            cmd.Parameters.AddWithValue("key", key);
-                            cmd.Parameters.AddWithValue("version", documentVersion + 1);
-                            cmd.Parameters.AddWithValue("contents", _value);
-                            cmd.ExecuteNonQuery();
-                        }
-                        wasSaved = true;
-                    }
-                    else
-                        wasSaved = false;
-                    using (var cmd = conn.CreateCommand())
-                    {
-                        cmd.CommandText = "SELECT pg_advisory_unlock(:lock); NOTIFY documents;";
-                        cmd.Parameters.AddWithValue("lock", lockKey);
-                        cmd.ExecuteNonQuery();
-                    }
-                }
-                catch
-                {
-                    using (var cmd = conn.CreateCommand())
-                    {
-                        cmd.CommandText = "SELECT pg_advisory_unlock(:lock)";
-                        cmd.Parameters.AddWithValue("lock", lockKey);
-                        cmd.ExecuteNonQuery();
-                    }
-                    throw;
-                }
+
                 if (wasSaved)
                     _parent._executor.Enqueue(_onSave);
                 else

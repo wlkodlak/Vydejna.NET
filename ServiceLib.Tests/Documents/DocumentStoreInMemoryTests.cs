@@ -11,16 +11,37 @@ namespace ServiceLib.Tests.Documents
     [TestClass]
     public class DocumentStoreInMemoryTests : DocumentStoreTestBase
     {
-        protected override IDocumentStore CreateEmptyDocumentStore(IQueueExecution executor)
+        private Dictionary<string, DocumentStoreInMemory> Partitions;
+
+        protected override void InitializeCore()
         {
-            return new DocumentStoreInMemory(executor);
+            base.InitializeCore();
+            Partitions = new Dictionary<string, DocumentStoreInMemory>();
+        }
+
+        protected override IDocumentStore CreateEmptyDocumentStore()
+        {
+            return Partitions[CurrentPartition] = new DocumentStoreInMemory(Executor);
+        }
+
+        protected override IDocumentStore GetExistingDocumentStore()
+        {
+            return Partitions[CurrentPartition];
         }
     }
 
     [TestClass]
     public class DocumentStorePostgresTests : DocumentStoreTestBase
     {
-        private List<IDisposable> _disposables = new List<IDisposable>();
+        private DatabasePostgres _db;
+        private List<IDisposable> _disposables;
+
+        protected override void InitializeCore()
+        {
+            base.InitializeCore();
+            _disposables = new List<IDisposable>();
+            _db = new DatabasePostgres(GetConnectionString(), Executor);
+        }
 
         private string GetConnectionString()
         {
@@ -31,13 +52,18 @@ namespace ServiceLib.Tests.Documents
             connString.Password = "postgres";
             return connString.ToString();
         }
-        protected override IDocumentStore CreateEmptyDocumentStore(IQueueExecution executor)
+        protected override IDocumentStore CreateEmptyDocumentStore()
         {
-            var db = new DatabasePostgres(GetConnectionString(), executor);
-            var store = new DocumentStorePostgres(db, executor);
+            var store = new DocumentStorePostgres(_db, Executor, CurrentPartition);
             _disposables.Add(store);
             store.Initialize();
-            db.ExecuteSync(DeleteAllDocuments);
+            _db.ExecuteSync(DeleteAllDocuments);
+            return store;
+        }
+        protected override IDocumentStore GetExistingDocumentStore()
+        {
+            var store = new DocumentStorePostgres(_db, Executor, CurrentPartition);
+            _disposables.Add(store);
             return store;
         }
 
@@ -45,7 +71,7 @@ namespace ServiceLib.Tests.Documents
         {
             using (var cmd = conn.CreateCommand())
             {
-                cmd.CommandText = "DELETE FROM documents";
+                cmd.CommandText = "DELETE FROM " + CurrentPartition;
                 cmd.ExecuteNonQuery();
             }
         }

@@ -15,6 +15,7 @@ namespace ServiceLib
         private IQueueExecution _executor;
         private ITime _timeService;
         private int _collectInterval, _collectTimeout;
+        private IDisposable _emptyDisposable;
 
         public NetworkBusInMemory(IQueueExecution executor, ITime timeService)
         {
@@ -23,6 +24,7 @@ namespace ServiceLib
             _destinations = new ConcurrentDictionary<MessageDestination, DestinationContents>();
             _collectInterval = 60;
             _collectTimeout = 600;
+            _emptyDisposable = new EmptyDisposable();
         }
 
         private void StartCollecting()
@@ -55,14 +57,16 @@ namespace ServiceLib
 
         private class DestinationContents
         {
+            public readonly NetworkBusInMemory Parent;
             public readonly MessageDestination Destination;
             public ConcurrentQueue<Message> Incoming;
             public ConcurrentDictionary<string, Message> InProgress;
             public ConcurrentDictionary<string, DateTime> DeliveredOn;
             public ConcurrentDictionary<string, bool> Subscriptions;
             public ConcurrentBag<Waiter> Waiters;
-            public DestinationContents(MessageDestination destination)
+            public DestinationContents(NetworkBusInMemory parent, MessageDestination destination)
             {
+                Parent = parent;
                 Destination = destination;
                 Incoming = new ConcurrentQueue<Message>();
                 InProgress = new ConcurrentDictionary<string, Message>();
@@ -72,18 +76,47 @@ namespace ServiceLib
             }
         }
 
-        private class Waiter
+        private class Waiter : IDisposable
         {
+            public readonly DestinationContents Contents;
             public readonly Action<Message> OnReceived;
             public readonly Action NothingNew;
             public readonly Action<Exception> OnError;
+            public bool Disposed, Used;
 
-            public Waiter(Action<Message> onReceived, Action nothingNew, Action<Exception> onError)
+            public Waiter(DestinationContents contents, Action<Message> onReceived, Action nothingNew, Action<Exception> onError)
             {
+                Contents = contents;
                 OnReceived = onReceived;
                 NothingNew = nothingNew;
                 OnError = onError;
             }
+
+            public void Dispose()
+            {
+                lock (this)
+                {
+                    Disposed = true;
+                    if (!Used)
+                        Contents.Parent._executor.Enqueue(NothingNew);
+                }
+            }
+
+            public bool TryToUse()
+            {
+                lock (this)
+                {
+                    if (Used || Disposed)
+                        return false;
+                    Used = true;
+                    return true;
+                }
+            }
+        }
+
+        private class EmptyDisposable : IDisposable
+        {
+            public void Dispose() { }
         }
 
         public void Send(MessageDestination destination, Message message, Action onComplete, Action<Exception> onError)
@@ -105,7 +138,7 @@ namespace ServiceLib
             {
                 DestinationContents contents;
                 if (!_destinations.TryGetValue(destination, out contents))
-                    contents = _destinations.GetOrAdd(destination, new DestinationContents(destination));
+                    contents = _destinations.GetOrAdd(destination, new DestinationContents(this, destination));
                 Enqueue(contents, message);
             }
             _executor.Enqueue(onComplete);
@@ -114,43 +147,62 @@ namespace ServiceLib
         private void Enqueue(DestinationContents contents, Message message)
         {
             Waiter waiter;
-            if (contents.Waiters.TryTake(out waiter))
+            bool wasEnqueued = false;
+            while (!wasEnqueued)
             {
-                contents.InProgress[message.MessageId] = message;
-                contents.DeliveredOn[message.MessageId] = _timeService.GetUtcTime();
-                _executor.Enqueue(new NetworkBusReceiveFinished(waiter.OnReceived, message));
-            }
-            else
-            {
-                lock (contents)
+                if (contents.Waiters.TryTake(out waiter))
                 {
-                    if (contents.Waiters.TryTake(out waiter))
+                    if (waiter.TryToUse())
                     {
+                        wasEnqueued = true;
                         contents.InProgress[message.MessageId] = message;
                         contents.DeliveredOn[message.MessageId] = _timeService.GetUtcTime();
-                        _executor.Enqueue(new NetworkBusReceiveFinished(waiter.OnReceived, message)); 
+                        _executor.Enqueue(new NetworkBusReceiveFinished(waiter.OnReceived, message));
                     }
-                    else
-                        contents.Incoming.Enqueue(message);
+                }
+                else
+                {
+                    lock (contents)
+                    {
+                        if (contents.Waiters.TryTake(out waiter))
+                        {
+                            if (waiter.TryToUse())
+                            {
+                                wasEnqueued = true;
+                                contents.InProgress[message.MessageId] = message;
+                                contents.DeliveredOn[message.MessageId] = _timeService.GetUtcTime();
+                                _executor.Enqueue(new NetworkBusReceiveFinished(waiter.OnReceived, message));
+                            }
+                        }
+                        else
+                        {
+                            wasEnqueued = true;
+                            contents.Incoming.Enqueue(message);
+                        }
+                    }
                 }
             }
         }
 
-        public void Receive(MessageDestination destination, bool nowait, Action<Message> onReceived, Action nothingNew, Action<Exception> onError)
+        public IDisposable Receive(MessageDestination destination, bool nowait, Action<Message> onReceived, Action nothingNew, Action<Exception> onError)
         {
             StartCollecting();
             DestinationContents contents;
             Message message;
             if (!_destinations.TryGetValue(destination, out contents))
-                contents = _destinations.GetOrAdd(destination, new DestinationContents(destination));
+                contents = _destinations.GetOrAdd(destination, new DestinationContents(this, destination));
             if (contents.Incoming.TryDequeue(out message))
             {
                 contents.InProgress[message.MessageId] = message;
                 contents.DeliveredOn[message.MessageId] = _timeService.GetUtcTime();
                 _executor.Enqueue(new NetworkBusReceiveFinished(onReceived, message));
+                return _emptyDisposable;
             }
             else if (nowait)
+            {
                 _executor.Enqueue(nothingNew);
+                return _emptyDisposable;
+            }
             else
             {
                 lock (contents)
@@ -160,9 +212,14 @@ namespace ServiceLib
                         contents.InProgress[message.MessageId] = message;
                         contents.DeliveredOn[message.MessageId] = _timeService.GetUtcTime();
                         _executor.Enqueue(new NetworkBusReceiveFinished(onReceived, message));
+                        return _emptyDisposable;
                     }
                     else
-                        contents.Waiters.Add(new Waiter(onReceived, nothingNew, onError));
+                    {
+                        var waiter = new Waiter(contents, onReceived, nothingNew, onError);
+                        contents.Waiters.Add(waiter);
+                        return waiter;
+                    }
                 }
             }
         }
@@ -171,7 +228,7 @@ namespace ServiceLib
         {
             DestinationContents contents;
             if (!_destinations.TryGetValue(destination, out contents))
-                contents = _destinations.GetOrAdd(destination, new DestinationContents(destination));
+                contents = _destinations.GetOrAdd(destination, new DestinationContents(this, destination));
             contents.Subscriptions[type] = !unsubscribe;
             _executor.Enqueue(onComplete);
         }
@@ -180,13 +237,13 @@ namespace ServiceLib
         {
             DestinationContents contents;
             if (!_destinations.TryGetValue(message.Destination, out contents))
-                contents = _destinations.GetOrAdd(message.Destination, new DestinationContents(message.Destination));
+                contents = _destinations.GetOrAdd(message.Destination, new DestinationContents(this, message.Destination));
             Message removed;
             contents.InProgress.TryRemove(message.MessageId, out removed);
             if (newDestination == MessageDestination.DeadLetters)
             {
                 if (!_destinations.TryGetValue(newDestination, out contents))
-                    contents = _destinations.GetOrAdd(newDestination, new DestinationContents(newDestination));
+                    contents = _destinations.GetOrAdd(newDestination, new DestinationContents(this, newDestination));
                 contents.Incoming.Enqueue(removed);
             }
             _executor.Enqueue(onComplete);
@@ -196,7 +253,7 @@ namespace ServiceLib
         {
             DestinationContents contents;
             if (!_destinations.TryGetValue(destination, out contents))
-                contents = _destinations.GetOrAdd(destination, new DestinationContents(destination));
+                contents = _destinations.GetOrAdd(destination, new DestinationContents(this, destination));
             contents.InProgress = new ConcurrentDictionary<string, Message>();
             contents.Incoming = new ConcurrentQueue<Message>();
             _executor.Enqueue(onComplete);
@@ -206,7 +263,7 @@ namespace ServiceLib
         {
             DestinationContents contents;
             if (!_destinations.TryGetValue(destination, out contents))
-                contents = _destinations.GetOrAdd(destination, new DestinationContents(destination));
+                contents = _destinations.GetOrAdd(destination, new DestinationContents(this, destination));
             return contents.Incoming.ToList();
         }
 
@@ -214,7 +271,7 @@ namespace ServiceLib
         {
             DestinationContents contents;
             if (!_destinations.TryGetValue(destination, out contents))
-                contents = _destinations.GetOrAdd(destination, new DestinationContents(destination));
+                contents = _destinations.GetOrAdd(destination, new DestinationContents(this, destination));
             return contents.InProgress.Values.ToList();
         }
     }
