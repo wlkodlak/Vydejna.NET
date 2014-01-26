@@ -27,6 +27,7 @@ namespace ServiceLib.Tests.EventSourced
             base.InitializeCore();
             _disposables = new List<IDisposable>();
             _db = new DatabasePostgres(GetConnectionString(), Executor);
+            _db.ExecuteSync(Drop);
         }
 
         private string GetConnectionString()
@@ -44,15 +45,14 @@ namespace ServiceLib.Tests.EventSourced
             var store = new EventStorePostgres(_db, Executor);
             _disposables.Add(store);
             store.Initialize();
-            _db.ExecuteSync(DeleteAllEvents);
             return store;
         }
 
-        private void DeleteAllEvents(NpgsqlConnection conn)
+        private void Drop(NpgsqlConnection conn)
         {
             using (var cmd = conn.CreateCommand())
             {
-                cmd.CommandText = "DELETE FROM eventstore_streams; DELETE FROM eventstore_events; SELECT setval('eventstore_events_id_seq', 1);";
+                cmd.CommandText = "DROP TABLE IF EXISTS eventstore_streams; DROP TABLE IF EXISTS eventstore_events;";
                 cmd.ExecuteNonQuery();
             }
         }

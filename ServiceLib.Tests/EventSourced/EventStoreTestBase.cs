@@ -3,6 +3,7 @@ using ServiceLib.Tests.TestUtils;
 using System;
 using System.Linq;
 using System.Collections.Generic;
+using System.Threading;
 
 namespace ServiceLib.Tests.EventSourced
 {
@@ -63,6 +64,7 @@ namespace ServiceLib.Tests.EventSourced
 
             Assert.AreEqual("saved", outcome, "Outcome");
             var allEvents = ReadStream("stream-01", 1, int.MaxValue);
+            Assert.IsNotNull(allEvents, "Returned stream NULL");
             Assert.AreEqual(3, allEvents.Events.Count, "All events count");
         }
 
@@ -80,6 +82,7 @@ namespace ServiceLib.Tests.EventSourced
 
             Assert.AreEqual("conflict", outcome, "Outcome");
             var allEvents = ReadStream("stream-01", 1, int.MaxValue);
+            Assert.IsNotNull(allEvents, "Returned stream NULL");
             Assert.AreEqual(2, allEvents.Events.Count, "All events count");
         }
 
@@ -300,24 +303,44 @@ namespace ServiceLib.Tests.EventSourced
 
         private IEventStoreCollection _waitResult;
         private IDisposable _currentWait;
+        private Exception _waitException;
+        private ManualResetEventSlim _waitMre;
 
         protected void StartWaitingForEvents(EventStoreToken token)
         {
+            _waitMre = new ManualResetEventSlim();
             _waitResult = null;
-            _currentWait = Store.WaitForEvents(token, int.MaxValue, false, r => _waitResult = r, ThrowError);
+            _waitException = null;
+            _currentWait = Store.WaitForEvents(token, int.MaxValue, false, 
+                r => { _waitResult = r; _waitMre.Set(); }, 
+                ex => { _waitException = ex; _waitMre.Set(); });
             Executor.Process();
         }
 
         protected IEventStoreCollection GetAwaitedEvents()
         {
-            Executor.Process();
+            for (int i = 0; i < 3; i++)
+            {
+                Executor.Process();
+                if (_waitMre.Wait(30))
+                    break;
+            }
+            if (_waitException != null)
+                ThrowError(_waitException);
             return _waitResult;
         }
 
         protected void StopWaiting()
         {
             _currentWait.Dispose();
-            Executor.Process();
+            for (int i = 0; i < 3; i++)
+            {
+                Executor.Process();
+                if (_waitMre.Wait(30))
+                    break;
+            }
+            if (_waitException != null)
+                ThrowError(_waitException);
         }
 
         protected void ThrowError(Exception ex)

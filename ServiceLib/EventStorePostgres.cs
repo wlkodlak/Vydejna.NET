@@ -14,11 +14,14 @@ namespace ServiceLib
     {
         private DatabasePostgres _db;
         private IQueueExecution _executor;
+        private ListeningManager _changes;
+        private static EventStoreEvent[] EmptyList = new EventStoreEvent[0];
 
         public EventStorePostgres(DatabasePostgres db, IQueueExecution executor)
         {
             _db = db;
             _executor = executor;
+            _changes = new ListeningManager(this);
         }
 
         public void Initialize()
@@ -28,6 +31,7 @@ namespace ServiceLib
 
         public void Dispose()
         {
+
         }
 
         private void InitializeDatabase(NpgsqlConnection conn)
@@ -84,16 +88,86 @@ namespace ServiceLib
 
         private static EventStoreToken TokenFromId(long id)
         {
-            return new EventStoreToken(id.ToString());
+            if (id == 0)
+                return EventStoreToken.Initial;
+            else
+                return new EventStoreToken(id.ToString());
         }
         private static long IdFromToken(EventStoreToken token)
         {
             if (token.IsInitial)
                 return 0;
             else if (token.IsCurrent)
-                return long.MaxValue;
+                return -1;
             else
                 return long.Parse(token.ToString());
+        }
+
+        private class Listener : IDisposable, IQueuedExecutionDispatcher
+        {
+            private ListeningManager _parent;
+            public int Key;
+            public Action Handler;
+
+            public Listener(ListeningManager parent, int key, Action handler)
+            {
+                _parent = parent;
+                Key = key;
+                Handler = handler;
+            }
+
+            public void Execute()
+            {
+                Handler();
+            }
+
+            public void Dispose()
+            {
+                _parent.Unregister(Key);
+            }
+        }
+
+        private class ListeningManager
+        {
+            private EventStorePostgres _parent;
+            private IDisposable _listening;
+            private int _listenerKey;
+            private Dictionary<int, Listener> _listeners;
+
+            public ListeningManager(EventStorePostgres parent)
+            {
+                _parent = parent;
+                _listeners = new Dictionary<int, Listener>();
+            }
+
+            public IDisposable Register(Action handler)
+            {
+                lock (this)
+                {
+                    if (_listening == null)
+                        _listening = _parent._db.Listen("eventstore", OnNotified);
+                    var listener = new Listener(this, Interlocked.Increment(ref _listenerKey), handler);
+                    _listeners[listener.Key] = listener;
+                    return listener;
+                }
+            }
+
+            public void Unregister(int key)
+            {
+                lock (this)
+                {
+                    _listeners.Remove(key);
+                }
+            }
+
+            private void OnNotified()
+            {
+                lock (this)
+                {
+                    foreach (var listener in _listeners.Values)
+                        _parent._executor.Enqueue(listener);
+                }
+            }
         }
 
         private class AddToStreamWorker
@@ -135,7 +209,7 @@ namespace ServiceLib
                     }
                     if (rawVersion == -1)
                     {
-                        if (CreateStream(conn))
+                        if (CreateStream(conn, tran))
                         {
                             rawVersion = GetStreamVersion(conn);
                             _realVersion = rawVersion == -1 ? 0 : rawVersion;
@@ -146,20 +220,14 @@ namespace ServiceLib
                             }
                         }
                     }
-                    _realVersion = InsertNewEvents(conn);
+                    InsertNewEvents(conn);
                     UpdateStreamVersion(conn);
+                    NotifyChanges(conn);
                     tran.Commit();
+                    _parent._executor.Enqueue(_onComplete);
                 }
-                /*
-                 * Get stream version and lock
-                 * Verify version
-                 * If stream does not exist, create and lock it (use savepoint)
-                 * In case of conflict verify version again
-                 * Insert new events
-                 * Update stream version
-                 * Commit
-                 */
             }
+
             private bool GetVersionAndVerify(NpgsqlConnection conn)
             {
                 var rawVersion = GetStreamVersion(conn);
@@ -171,6 +239,94 @@ namespace ServiceLib
                 }
                 else
                     return true;
+            }
+
+            private int GetStreamVersion(NpgsqlConnection conn)
+            {
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText = "SELECT version FROM eventstore_streams WHERE streamname = :streamname FOR UPDATE";
+                    cmd.Parameters.AddWithValue("streamname", _stream);
+                    using (var reader = cmd.ExecuteReader())
+                    {
+                        if (reader.Read())
+                            return reader.GetInt32(0);
+                        else
+                            return -1;
+                    }
+                }
+            }
+
+            private bool CreateStream(NpgsqlConnection conn, NpgsqlTransaction tran)
+            {
+                tran.Save("createstream");
+                try
+                {
+                    using (var cmd = conn.CreateCommand())
+                    {
+                        cmd.CommandText = "INSERT INTO eventstore_streams (streamname, version) VALUES (:streamname, 0)";
+                        cmd.Parameters.AddWithValue("streamname", _stream);
+                        cmd.ExecuteNonQuery();
+                        return false;
+                    }
+                }
+                catch (NpgsqlException ex)
+                {
+                    if (ex.Code == "23505")
+                    {
+                        tran.Rollback("createstream");
+                        return true;
+                    }
+                    else
+                        throw;
+                }
+            }
+
+            private void InsertNewEvents(NpgsqlConnection conn)
+            {
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText =
+                        "INSERT INTO eventstore_events (streamname, version, format, eventtype, contents) " +
+                        "VALUES (:streamname, :version, :format, :eventtype, :contents) RETURNING id";
+                    var paramStream = cmd.Parameters.Add("streamname", NpgsqlDbType.Varchar);
+                    var paramVersion = cmd.Parameters.Add("version", NpgsqlDbType.Integer);
+                    var paramFormat = cmd.Parameters.Add("format", NpgsqlDbType.Varchar);
+                    var paramType = cmd.Parameters.Add("eventtype", NpgsqlDbType.Varchar);
+                    var paramBody = cmd.Parameters.Add("contents", NpgsqlDbType.Text);
+                    foreach (var evnt in _events)
+                    {
+                        evnt.StreamName = _stream;
+                        evnt.StreamVersion = ++_realVersion;
+                        paramStream.Value = evnt.StreamName;
+                        paramVersion.Value = evnt.StreamVersion;
+                        paramFormat.Value = evnt.Format;
+                        paramType.Value = evnt.Type;
+                        paramBody.Value = evnt.Body;
+                        var id = (long)cmd.ExecuteScalar();
+                        evnt.Token = TokenFromId(id);
+                    }
+                }
+            }
+
+            private void UpdateStreamVersion(NpgsqlConnection conn)
+            {
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText = "UPDATE eventstore_streams SET version = :version WHERE streamname = :streamname";
+                    cmd.Parameters.AddWithValue("streamname", _stream);
+                    cmd.Parameters.AddWithValue("version", _realVersion);
+                    cmd.ExecuteNonQuery();
+                }
+            }
+
+            private void NotifyChanges(NpgsqlConnection conn)
+            {
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText = "NOTIFY eventstore";
+                    cmd.ExecuteNonQuery();
+                }
             }
         }
         private class ReadStreamWorker
@@ -190,11 +346,17 @@ namespace ServiceLib
                 this._parent = parent;
                 this._stream = stream;
                 this._minVersion = Math.Max(1, minVersion);
-                this._maxVersion = this._minVersion - 1 + Math.Max(0, maxCount);
-                this._maxCount = maxCount;
+                this._maxCount = Math.Max(0, maxCount);
+                this._maxVersion = GetMaxVersion(_minVersion, _maxCount);
                 this._loadBody = loadBody;
                 this._onComplete = onComplete;
                 this._onError = onError;
+            }
+
+            private static int GetMaxVersion(int minVersion, int maxCount)
+            {
+                var maxVersion = minVersion - 1 + maxCount;
+                return maxVersion >= minVersion ? maxVersion : int.MaxValue;
             }
 
             public void Execute()
@@ -253,7 +415,7 @@ namespace ServiceLib
                     cmd.Parameters.AddWithValue("maxversion", maxVersion);
                     using (var reader = cmd.ExecuteReader())
                     {
-                        var list = new List<EventStoreEvent(expectedCount);
+                        var list = new List<EventStoreEvent>(expectedCount);
                         while (reader.Read())
                         {
                             var evnt = new EventStoreEvent();
@@ -324,12 +486,13 @@ namespace ServiceLib
                                 evnt.Body = body;
                         }
                     }
+                    _parent._executor.Enqueue(_onComplete);
                 }
             }
         }
         private class GetAllEventsWorker : IDisposable
         {
-            public int StartingId;
+            public long StartingId;
             public EventStoreToken PublicToken;
             public int MaxCount;
             public bool LoadBody;
@@ -337,25 +500,167 @@ namespace ServiceLib
             public Action<Exception> OnError;
             public bool Nowait;
             private EventStorePostgres _parent;
+            private IDisposable _listening;
+            private bool _busy;
+            private bool _notified;
 
             public GetAllEventsWorker(EventStorePostgres parent, bool nowait, EventStoreToken token, int maxCount, bool loadBody, Action<IEventStoreCollection> onComplete, Action<Exception> onError)
             {
                 this._parent = parent;
                 this.PublicToken = token;
-                this.MaxCount = maxCount;
+                this.MaxCount = Math.Max(0, Math.Min(1000, maxCount));
                 this.LoadBody = loadBody;
                 this.OnComplete = onComplete;
                 this.OnError = onError;
                 this.Nowait = nowait;
-                this.StartingId = token.IsInitial ? 0 : int.Parse(token.ToString());
+                this.StartingId = IdFromToken(token);
             }
 
             public void Execute()
             {
+                _parent._db.Execute(ExecuteDb, OnError);
+            }
+
+            private void ExecuteDb(NpgsqlConnection conn)
+            {
+                if (MaxCount == 0)
+                {
+                    var version = GetLastId(conn);
+                    _parent._executor.Enqueue(new EventStoreGetAllEventsComplete(
+                        OnComplete, EmptyList, TokenFromId(version)));
+                }
+                else if (StartingId == -1)
+                {
+                    StartingId = GetLastId(conn);
+                    if (Nowait)
+                    {
+                        _parent._executor.Enqueue(new EventStoreGetAllEventsComplete(
+                            OnComplete, EmptyList, TokenFromId(StartingId)));
+                    }
+                    else
+                        _listening = _parent._changes.Register(OnNotified);
+                }
+                else
+                {
+                    var events = GetEvents(conn);
+                    if (events.Count > 0)
+                    {
+                        _parent._executor.Enqueue(new EventStoreGetAllEventsComplete(
+                            OnComplete, events, events.Last().Token));
+                    }
+                    else if (Nowait)
+                    {
+                        var version = GetLastId(conn);
+                        if (version == StartingId)
+                        {
+                            _parent._executor.Enqueue(new EventStoreGetAllEventsComplete(
+                                OnComplete, EmptyList, TokenFromId(version)));
+                        }
+                        else
+                        {
+                            events = GetEvents(conn);
+                            if (events.Count > 0)
+                            {
+                                _parent._executor.Enqueue(new EventStoreGetAllEventsComplete(
+                                    OnComplete, events, events.Last().Token));
+                            }
+                            else
+                            {
+                                _parent._executor.Enqueue(new EventStoreGetAllEventsComplete(
+                                    OnComplete, EmptyList, TokenFromId(version)));
+                            }
+                        }
+                    }
+                    else
+                        _listening = _parent._changes.Register(OnNotified);
+                }
+            }
+
+            private void OnNotified()
+            {
+                lock (this)
+                {
+                    _notified = true;
+                    if (_busy)
+                        return;
+                    _busy = true;
+                    _notified = false;
+                }
+                _parent._db.Execute(OnNotifiedDb, OnError);
+            }
+
+            private void OnNotifiedDb(NpgsqlConnection conn)
+            {
+                bool repeat = true;
+                while (repeat)
+                {
+                    repeat = false;
+                    var events = GetEvents(conn);
+                    if (events.Count > 0)
+                    {
+                        _listening.Dispose();
+                        _parent._executor.Enqueue(new EventStoreGetAllEventsComplete(
+                            OnComplete, events, events.Last().Token));
+                        return;
+                    }
+                    else
+                    {
+                        lock (this)
+                        {
+                            if (_notified)
+                                repeat = true;
+                            else
+                                _busy = false;
+                        }
+                    }
+                }
             }
 
             public void Dispose()
             {
+                if (_listening != null)
+                    _listening.Dispose();
+            }
+
+            private long GetLastId(NpgsqlConnection conn)
+            {
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText = "SELECT id FROM eventstore_events ORDER BY id DESC LIMIT 1";
+                    using (var reader = cmd.ExecuteReader())
+                    {
+                        if (reader.Read())
+                            return reader.GetInt64(0);
+                        else
+                            return 0;
+                    }
+                }
+            }
+
+            private List<EventStoreEvent> GetEvents(NpgsqlConnection conn)
+            {
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText = string.Concat(
+                        "SELECT id, streamname, version, format, eventtype, contents FROM eventstore_events WHERE id > ",
+                        StartingId.ToString(), " ORDER BY id LIMIT ", MaxCount.ToString());
+                    using (var reader = cmd.ExecuteReader())
+                    {
+                        var list = new List<EventStoreEvent>(MaxCount);
+                        while (reader.Read())
+                        {
+                            var evnt = new EventStoreEvent();
+                            evnt.Token = TokenFromId(reader.GetInt64(0));
+                            evnt.StreamName = reader.GetString(1);
+                            evnt.StreamVersion = reader.GetInt32(2);
+                            evnt.Format = reader.GetString(3);
+                            evnt.Type = reader.GetString(4);
+                            evnt.Body = reader.GetString(5);
+                            list.Add(evnt);
+                        }
+                        return list;
+                    }
+                }
             }
         }
     }
