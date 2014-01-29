@@ -306,6 +306,8 @@ namespace ServiceLib.Tests.Messaging
     {
         private List<IDisposable> _disposables;
         private DatabasePostgres _db;
+        private string _tableMessages = "bus_messages";
+        private string _tableSubscriptions = "bus_messages";
 
         private string GetConnectionString()
         {
@@ -336,7 +338,7 @@ namespace ServiceLib.Tests.Messaging
         {
             using (var cmd = conn.CreateCommand())
             {
-                cmd.CommandText = "DELETE FROM messages; DELETE FROM messages_subscriptions;";
+                cmd.CommandText = "DELETE FROM " + _tableMessages + "; DELETE FROM " + _tableSubscriptions + ";";
                 cmd.ExecuteNonQuery();
             }
         }
@@ -382,7 +384,7 @@ namespace ServiceLib.Tests.Messaging
             {
                 cmd.CommandText =
                     "SELECT messageid, corellationid, createdon, source, type, format, body, original " +
-                    "FROM messages WHERE node = :node AND destination = :destination " +
+                    "FROM " + _tableMessages + " WHERE node = :node AND destination = :destination " +
                     "AND processing IS " + (LoadPartial ? "NOT " : "") + "NULL ORDER BY id";
                 cmd.Parameters.AddWithValue("node", LoadDestination.NodeId);
                 cmd.Parameters.AddWithValue("destination", LoadDestination.ProcessName);

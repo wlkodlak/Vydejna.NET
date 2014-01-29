@@ -31,7 +31,7 @@ namespace ServiceLib
 
         public void Dispose()
         {
-
+            _changes.Dispose();
         }
 
         private void InitializeDatabase(NpgsqlConnection conn)
@@ -133,6 +133,7 @@ namespace ServiceLib
             private IDisposable _listening;
             private int _listenerKey;
             private Dictionary<int, Listener> _listeners;
+            private bool _disposed;
 
             public ListeningManager(EventStorePostgres parent)
             {
@@ -144,7 +145,7 @@ namespace ServiceLib
             {
                 lock (this)
                 {
-                    if (_listening == null)
+                    if (_listening == null && !_disposed)
                         _listening = _parent._db.Listen("eventstore", OnNotified);
                     var listener = new Listener(this, Interlocked.Increment(ref _listenerKey), handler);
                     _listeners[listener.Key] = listener;
@@ -166,6 +167,16 @@ namespace ServiceLib
                 {
                     foreach (var listener in _listeners.Values)
                         _parent._executor.Enqueue(listener);
+                }
+            }
+
+            public void Dispose()
+            {
+                lock (this)
+                {
+                    _disposed = true;
+                    if (_listening != null)
+                        _listening.Dispose();
                 }
             }
         }

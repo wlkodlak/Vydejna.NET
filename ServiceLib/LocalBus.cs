@@ -241,21 +241,25 @@ namespace ServiceLib
     public class QueuedBusProcess : IProcessWorker
     {
         private QueuedBus _bus;
-        private Task _task;
+        private Task[] _tasks;
         private ProcessState _processState;
         private Action<ProcessState> _onStateChanged;
         private CancellationTokenSource _cancel;
+        private int _workerCount;
 
         public QueuedBusProcess(QueuedBus bus)
         {
             _bus = bus;
+            _workerCount = Environment.ProcessorCount * 2;
         }
 
         public void Start()
         {
             State = ProcessState.Running;
             _cancel = new CancellationTokenSource();
-            _task = Task.Factory.StartNew(ProcessCore, TaskCreationOptions.LongRunning);
+            _tasks = Enumerable.Range(0, _workerCount)
+                .Select(i => Task.Factory.StartNew(ProcessCore, TaskCreationOptions.LongRunning))
+                .ToArray();
         }
 
         public void Pause()
@@ -273,7 +277,7 @@ namespace ServiceLib
         public void Dispose()
         {
             State = ProcessState.Stopping;
-            _task.Wait();
+            Task.WaitAll(_tasks);
         }
 
         private void ProcessCore()

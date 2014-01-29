@@ -30,7 +30,7 @@ namespace ServiceLib
             _listener = new HttpListener();
             _prefixes = prefixes.ToList();
             _dispatcher = dispatcher;
-            _workerCount = Environment.ProcessorCount * 4;
+            _workerCount = Environment.ProcessorCount * 2;
         }
         public HttpServer SetupWorkerCount(int totalCount)
         {

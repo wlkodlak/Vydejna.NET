@@ -24,6 +24,7 @@ namespace Vydejna.Server
                 x.AddRegistry(new MultiNodePostgresRegistry(Guid.NewGuid().ToString("N")));
                 x.AddRegistry<VydejnaRegistry>();
             });
+            ObjectFactory.AssertConfigurationIsValid();
 
             _bus = ObjectFactory.GetInstance<IBus>();
 
@@ -50,6 +51,8 @@ namespace Vydejna.Server
 
         private void WaitForExit()
         {
+            _processes.WaitForStop();
+            ObjectFactory.Container.Dispose();
         }
 
         public static void Main(string[] args)
@@ -64,6 +67,7 @@ namespace Vydejna.Server
             program.Stop();
             Console.WriteLine("Waiting for exit...");
             program.WaitForExit();
+            Console.WriteLine("Processes stopped.");
         }
     }
 

@@ -16,6 +16,9 @@ namespace ServiceLib
         private ITime _timeService;
         private ConcurrentDictionary<MessageDestination, DestinationCache> _receiving;
         public int _deliveryTimeout;
+        private string _tableMessages = "bus_messages";
+        private string _tableSubscriptions = "bus_subscriptions";
+        private string _notificationName = "bus";
 
         public NetworkBusPostgres(string nodeId, IQueueExecution executor, DatabasePostgres database, ITime timeService)
         {
@@ -42,7 +45,7 @@ namespace ServiceLib
                 message.CreatedOn = DateTime.UtcNow;
                 message.MessageId = Guid.NewGuid().ToString("N");
                 message.Source = _nodeId;
-                var worker = new SendWorker(_executor, destination, message, onComplete, onError);
+                var worker = new SendWorker(this, destination, message, onComplete, onError);
                 _database.Execute(worker.DoWork, onError);
             }
         }
@@ -59,19 +62,19 @@ namespace ServiceLib
 
         public void Subscribe(string type, MessageDestination destination, bool unsubscribe, Action onComplete, Action<Exception> onError)
         {
-            var worker = new SubscribeWorker(_executor, type, destination, unsubscribe, onComplete, onError);
+            var worker = new SubscribeWorker(this, type, destination, unsubscribe, onComplete, onError);
             _database.Execute(worker.DoWork, onError);
         }
 
         public void MarkProcessed(Message message, MessageDestination newDestination, Action onComplete, Action<Exception> onError)
         {
-            var worker = new MarkProcessedWorker(_executor, message, newDestination, onComplete, onError);
+            var worker = new MarkProcessedWorker(this, message, newDestination, onComplete, onError);
             _database.Execute(worker.DoWork, onError);
         }
 
         public void DeleteAll(MessageDestination destination, Action onComplete, Action<Exception> onError)
         {
-            var worker = new DeleteAllWorker(_executor, destination, onComplete, onError);
+            var worker = new DeleteAllWorker(this, destination, onComplete, onError);
             _database.Execute(worker.DoWork, onError);
         }
 
@@ -85,20 +88,18 @@ namespace ServiceLib
             bool tableSubscriptionsExists = false;
             using (var cmd = conn.CreateCommand())
             {
-                cmd.CommandText = "SELECT relname FROM pg_catalog.pg_class WHERE relkind = 'r' AND relname IN ('messages', 'messages_subscriptions')";
+                cmd.CommandText = string.Concat(
+                    "SELECT relname FROM pg_catalog.pg_class WHERE relkind = 'r' AND relname IN ('",
+                    _tableMessages, "', '", _tableSubscriptions, "')");
                 using (var reader = cmd.ExecuteReader())
                 {
                     while (reader.Read())
                     {
-                        switch (reader.GetString(0))
-                        {
-                            case "messages":
-                                tableMessagesExists = true;
-                                break;
-                            case "messages_subscriptions":
-                                tableSubscriptionsExists = true;
-                                break;
-                        }
+                        var tableName = reader.GetString(0);
+                        if (tableName == _tableMessages)
+                            tableMessagesExists = true;
+                        else if (tableName == _tableSubscriptions)
+                            tableSubscriptionsExists = true;
                     }
                 }
             }
@@ -108,7 +109,7 @@ namespace ServiceLib
                 using (var cmd = conn.CreateCommand())
                 {
                     cmd.CommandText =
-                        "CREATE TABLE IF NOT EXISTS messages (" +
+                        "CREATE TABLE IF NOT EXISTS " + _tableMessages + " (" +
                         "id serial PRIMARY KEY, " +
                         "messageid varchar NOT NULL, " +
                         "corellationid varchar, " +
@@ -125,12 +126,12 @@ namespace ServiceLib
                 }
                 using (var cmd = conn.CreateCommand())
                 {
-                    cmd.CommandText = "CREATE UNIQUE INDEX ON messages (node, destination, id)";
+                    cmd.CommandText = "CREATE UNIQUE INDEX ON " + _tableMessages + " (node, destination, id)";
                     cmd.ExecuteNonQuery();
                 }
                 using (var cmd = conn.CreateCommand())
                 {
-                    cmd.CommandText = "CREATE UNIQUE INDEX ON messages (messageid)";
+                    cmd.CommandText = "CREATE UNIQUE INDEX ON " + _tableMessages + " (messageid)";
                     cmd.ExecuteNonQuery();
                 }
             }
@@ -140,7 +141,7 @@ namespace ServiceLib
                 using (var cmd = conn.CreateCommand())
                 {
                     cmd.CommandText =
-                        "CREATE TABLE IF NOT EXISTS messages_subscriptions (" +
+                        "CREATE TABLE IF NOT EXISTS " + _tableSubscriptions + " (" +
                         "type varchar NOT NULL, " +
                         "node varchar NOT NULL, " +
                         "destination varchar NOT NULL, " +
@@ -152,15 +153,17 @@ namespace ServiceLib
 
         private class SendWorker
         {
+            private NetworkBusPostgres _parent;
             private IQueueExecution _executor;
             private MessageDestination _destination;
             private Message _message;
             private Action _onComplete;
             private Action<Exception> _onError;
 
-            public SendWorker(IQueueExecution executor, MessageDestination destination, Message message, Action onComplete, Action<Exception> onError)
+            public SendWorker(NetworkBusPostgres parent, MessageDestination destination, Message message, Action onComplete, Action<Exception> onError)
             {
-                _executor = executor;
+                _parent = parent;
+                _executor = parent._executor;
                 _destination = destination;
                 _message = message;
                 _onComplete = onComplete;
@@ -192,7 +195,7 @@ namespace ServiceLib
                 var list = new List<MessageDestination>();
                 using (var cmd = conn.CreateCommand())
                 {
-                    cmd.CommandText = "SELECT destination, node FROM messages_subscriptions WHERE type = :type";
+                    cmd.CommandText = "SELECT destination, node FROM " + _parent._tableSubscriptions + " WHERE type = :type";
                     cmd.Parameters.AddWithValue("type", type);
                     using (var reader = cmd.ExecuteReader())
                     {
@@ -208,7 +211,7 @@ namespace ServiceLib
                 using (var cmd = conn.CreateCommand())
                 {
                     cmd.CommandText =
-                        "INSERT INTO messages (messageid, corellationid, createdon, source, node, destination, type, format, body) " +
+                        "INSERT INTO " + _parent._tableMessages + " (messageid, corellationid, createdon, source, node, destination, type, format, body) " +
                         "VALUES (:messageid, :corellationid, 'now'::timestamp, :source, :node, :destination, :type, :format, :body)";
                     cmd.Parameters.AddWithValue("messageid", messageId);
                     cmd.Parameters.AddWithValue("corellationid", _message.CorellationId);
@@ -222,11 +225,11 @@ namespace ServiceLib
                 }
             }
 
-            private static void Notify(NpgsqlConnection conn)
+            private void Notify(NpgsqlConnection conn)
             {
                 using (var cmd = conn.CreateCommand())
                 {
-                    cmd.CommandText = "NOTIFY messages";
+                    cmd.CommandText = "NOTIFY " + _parent._notificationName;
                     cmd.ExecuteNonQuery();
                 }
             }
@@ -272,7 +275,7 @@ namespace ServiceLib
                     _isLoading = true;
                 }
                 if (startListening)
-                    Parent._database.Listen("messages", OnNotify);
+                    Parent._database.Listen(Parent._notificationName, OnNotify);
                 Parent._database.Execute(TryRetrieve, ErrorRetrieve);
             }
 
@@ -346,7 +349,7 @@ namespace ServiceLib
                     var processingLimit = Parent._timeService.GetUtcTime().AddSeconds(-Parent._deliveryTimeout);
                     cmd.CommandText =
                         "SELECT messageid, corellationid, createdon, source, type, format, body, original " +
-                        "FROM messages WHERE node = :node AND destination = :destination " + 
+                        "FROM " + Parent._tableMessages + " WHERE node = :node AND destination = :destination " +
                         "AND (processing IS NULL OR processing <= :processing) ORDER BY id LIMIT 20 FOR UPDATE";
                     cmd.Parameters.AddWithValue("node", _destination.NodeId);
                     cmd.Parameters.AddWithValue("destination", _destination.ProcessName);
@@ -376,7 +379,7 @@ namespace ServiceLib
             {
                 using (var cmd = conn.CreateCommand())
                 {
-                    cmd.CommandText = "UPDATE messages SET processing = :processing WHERE messageid = :messageid";
+                    cmd.CommandText = "UPDATE " + Parent._tableMessages + " SET processing = :processing WHERE messageid = :messageid";
                     cmd.Parameters.AddWithValue("processing", Parent._timeService.GetUtcTime());
                     var paramMessageId = cmd.Parameters.Add("messageid", NpgsqlTypes.NpgsqlDbType.Varchar);
                     foreach (var message in newMessages)
@@ -442,15 +445,17 @@ namespace ServiceLib
         private class SubscribeWorker
         {
             private IQueueExecution _executor;
+            private string _tableSubscriptions;
             private string _type;
             private MessageDestination _destination;
             private bool _unsubscribe;
             private Action _onComplete;
             private Action<Exception> _onError;
 
-            public SubscribeWorker(IQueueExecution executor, string type, MessageDestination destination, bool unsubscribe, Action onComplete, Action<Exception> onError)
+            public SubscribeWorker(NetworkBusPostgres parent, string type, MessageDestination destination, bool unsubscribe, Action onComplete, Action<Exception> onError)
             {
-                _executor = executor;
+                _executor = parent._executor;
+                _tableSubscriptions = parent._tableSubscriptions;
                 _type = type;
                 _destination = destination;
                 _unsubscribe = unsubscribe;
@@ -464,7 +469,7 @@ namespace ServiceLib
                 {
                     using (var cmd = conn.CreateCommand())
                     {
-                        cmd.CommandText = "DELETE FROM messages_subscriptions WHERE type = :type AND node = :node AND destination = :destination";
+                        cmd.CommandText = "DELETE FROM " + _tableSubscriptions + " WHERE type = :type AND node = :node AND destination = :destination";
                         cmd.Parameters.AddWithValue("type", _type);
                         cmd.Parameters.AddWithValue("node", _destination.NodeId);
                         cmd.Parameters.AddWithValue("destination", _destination.ProcessName);
@@ -478,7 +483,7 @@ namespace ServiceLib
                     {
                         using (var cmd = conn.CreateCommand())
                         {
-                            cmd.CommandText = "INSERT INTO messages_subscriptions (type, node, destination) VALUES (:type, :node, :destination)";
+                            cmd.CommandText = "INSERT INTO " + _tableSubscriptions + " (type, node, destination) VALUES (:type, :node, :destination)";
                             cmd.Parameters.AddWithValue("type", _type);
                             cmd.Parameters.AddWithValue("node", _destination.NodeId);
                             cmd.Parameters.AddWithValue("destination", _destination.ProcessName);
@@ -500,14 +505,16 @@ namespace ServiceLib
         private class MarkProcessedWorker
         {
             private IQueueExecution _executor;
+            private string _tableMessages;
             private Message _message;
             private MessageDestination _newDestination;
             private Action _onComplete;
             private Action<Exception> _onError;
 
-            public MarkProcessedWorker(IQueueExecution executor, Message message, MessageDestination newDestination, Action onComplete, Action<Exception> onError)
+            public MarkProcessedWorker(NetworkBusPostgres parent, Message message, MessageDestination newDestination, Action onComplete, Action<Exception> onError)
             {
-                _executor = executor;
+                _executor = parent._executor;
+                _tableMessages = parent._tableMessages;
                 _message = message;
                 _newDestination = newDestination;
                 _onComplete = onComplete;
@@ -520,7 +527,7 @@ namespace ServiceLib
                 {
                     using (var cmd = conn.CreateCommand())
                     {
-                        cmd.CommandText = "DELETE FROM messages WHERE messageid = :messageid";
+                        cmd.CommandText = "DELETE FROM " + _tableMessages + " WHERE messageid = :messageid";
                         cmd.Parameters.AddWithValue("messageid", _message.MessageId);
                         cmd.ExecuteNonQuery();
                     }
@@ -530,7 +537,7 @@ namespace ServiceLib
                     using (var cmd = conn.CreateCommand())
                     {
                         cmd.CommandText =
-                            "UPDATE messages SET original = destination, node = '__SPECIAL__', " +
+                            "UPDATE " + _tableMessages + " SET original = destination, node = '__SPECIAL__', " +
                             "destination = 'deadletters', processing = NULL WHERE messageid = :messageid";
                         cmd.Parameters.AddWithValue("messageid", _message.MessageId);
                         cmd.Parameters.AddWithValue("node", _newDestination.NodeId);
@@ -542,7 +549,7 @@ namespace ServiceLib
                 {
                     using (var cmd = conn.CreateCommand())
                     {
-                        cmd.CommandText = "UPDATE messages SET node = :node, destination = :destination, processing = NULL WHERE messageid = :messageid";
+                        cmd.CommandText = "UPDATE " + _tableMessages + " SET node = :node, destination = :destination, processing = NULL WHERE messageid = :messageid";
                         cmd.Parameters.AddWithValue("messageid", _message.MessageId);
                         cmd.Parameters.AddWithValue("node", _newDestination.NodeId);
                         cmd.Parameters.AddWithValue("destination", _newDestination.ProcessName);
@@ -555,14 +562,16 @@ namespace ServiceLib
 
         private class DeleteAllWorker
         {
+            private string _tableMessages;
             private IQueueExecution _executor;
             private MessageDestination _destination;
             private Action _onComplete;
             private Action<Exception> _onError;
 
-            public DeleteAllWorker(IQueueExecution executor, MessageDestination destination, Action onComplete, Action<Exception> onError)
+            public DeleteAllWorker(NetworkBusPostgres parent, MessageDestination destination, Action onComplete, Action<Exception> onError)
             {
-                _executor = executor;
+                _executor = parent._executor;
+                _tableMessages = parent._tableMessages;
                 _destination = destination;
                 _onComplete = onComplete;
                 _onError = onError;
@@ -572,7 +581,7 @@ namespace ServiceLib
             {
                 using (var cmd = conn.CreateCommand())
                 {
-                    cmd.CommandText = "DELETE FROM messages WHERE node = :node AND destination = :destination";
+                    cmd.CommandText = "DELETE FROM " + _tableMessages + " WHERE node = :node AND destination = :destination";
                     cmd.Parameters.AddWithValue("node", _destination.NodeId);
                     cmd.Parameters.AddWithValue("destination", _destination.ProcessName);
                     cmd.ExecuteNonQuery();

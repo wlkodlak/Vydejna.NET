@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace ServiceLib
@@ -45,7 +46,9 @@ namespace ServiceLib
         {
             var process = new ProcessInfo
             {
-                Name = name, Worker = worker
+                Name = name,
+                Worker = worker,
+                StopEvent = new ManualResetEventSlim()
             };
             Register(process);
         }
@@ -55,7 +58,8 @@ namespace ServiceLib
             var process = new ProcessInfo
             {
                 Name = name,
-                Worker = worker
+                Worker = worker,
+                StopEvent = new ManualResetEventSlim()
             };
             Register(process);
         }
@@ -63,7 +67,10 @@ namespace ServiceLib
         public void Handle(SystemEvents.SystemInit msg)
         {
             foreach (var process in _processes)
+            {
+                process.Value.StopEvent.Reset();
                 process.Value.Worker.Start();
+            }
         }
 
         public void Handle(SystemEvents.SystemShutdown msg)
@@ -88,11 +95,29 @@ namespace ServiceLib
         {
             public string Name;
             public IProcessWorker Worker;
+            public ManualResetEventSlim StopEvent;
 
             public void OnStateChanged(ProcessState newState)
             {
+                System.Diagnostics.Debug.WriteLine(string.Format("Process {0}: {1}", Name, newState.ToString()));
+                if (newState == ProcessState.Inactive || newState == ProcessState.Faulted)
+                    StopEvent.Set();
             }
         }
 
+        public bool WaitForStop(int timeout = 2000)
+        {
+            var endTime = DateTime.UtcNow.AddMilliseconds(timeout);
+            bool allStopped = true;
+            foreach (var process in _processes.Values)
+            {
+                var state = process.Worker.State;
+                if (state == ProcessState.Uninitialized || state == ProcessState.Inactive || state == ProcessState.Faulted)
+                    continue;
+                var waitMs = Math.Max(1, (int)(endTime - DateTime.UtcNow).TotalMilliseconds);
+                allStopped = allStopped | process.StopEvent.Wait(waitMs);
+            }
+            return allStopped;
+        }
     }
 }
