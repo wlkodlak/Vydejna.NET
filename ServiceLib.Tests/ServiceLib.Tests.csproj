@@ -67,6 +67,7 @@
     </Otherwise>
   </Choose>
   <ItemGroup>
+    <Compile Include="Caching\MemoryCacheTest.cs" />
     <Compile Include="Documents\DocumentStoreInMemoryTests.cs" />
     <Compile Include="Documents\DocumentStoreTestBase.cs" />
     <Compile Include="Documents\DocumentStoreVersionTests.cs" />

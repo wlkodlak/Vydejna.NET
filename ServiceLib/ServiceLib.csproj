@@ -81,6 +81,7 @@
     <Compile Include="HttpServerStagedContextHeaders.cs" />
     <Compile Include="HttpServerStagedParameters.cs" />
     <Compile Include="IHandle.cs" />
+    <Compile Include="MemoryCache.cs" />
     <Compile Include="NetworkBus.cs" />
     <Compile Include="NetworkBusInMemory.cs" />
     <Compile Include="NetworkBusPostgres.cs" />
