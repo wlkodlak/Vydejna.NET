@@ -187,6 +187,14 @@ namespace ServiceLib.Tests.Caching
             ExpectLoading("01", 2, "Value");
         }
 
+        [TestMethod]
+        public void InsertValueOutsideGettingValue()
+        {
+            SetValue("01", 3, "Value3", 200, 60000);
+            StartGetting("01", l => { });
+            ExpectNoLoading();
+            ExpectValue("01", 3, "Value3");
+        }
 
         private void StartGetting(string key, Action<IMemoryCacheLoad<string>> loader)
         {
@@ -195,6 +203,11 @@ namespace ServiceLib.Tests.Caching
                 e => _loadResults.Add(LoadResult.Error(key, e)),
                 l => { _loadings.Add(Loading.Check(key, l.OldVersion, l.OldValue)); loader(l); });
             _executor.Process();
+        }
+
+        private void SetValue(string key, int version, string value, int validity, int expiration)
+        {
+            _cache.Insert(key, version, value, validity, expiration);
         }
 
         private void ExpectValue(string key, int version, string value)

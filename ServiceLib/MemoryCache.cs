@@ -11,6 +11,7 @@ namespace ServiceLib
     public interface IMemoryCache<T>
     {
         void Get(string key, Action<int, T> onLoaded, Action<Exception> onError, Action<IMemoryCacheLoad<T>> onLoading);
+        void Insert(string key, int version, T value, int validity = -1, int expiration = -1);
         void Evict(string key);
         void Invalidate(string key);
     }
@@ -123,6 +124,18 @@ namespace ServiceLib
                 _executor.Enqueue(immediateLoaded);
             if (startLoading)
                 onLoading(item);
+        }
+
+        public void Insert(string key, int version, T value, int validity = -1, int expiration = -1)
+        {
+            MemoryCacheItem item;
+            if (!_contents.TryGetValue(key, out item))
+                item = _contents.GetOrAdd(key, new MemoryCacheItem(this, key));
+            lock (item)
+            {
+                item.NotifyUsage();
+                item.Insert(version, value, validity, expiration);
+            }
         }
 
         public void Evict(string key)
@@ -251,8 +264,8 @@ namespace ServiceLib
 
             public IMemoryCacheLoad<T> Expires(int validity, int expiration)
             {
-                _loadingExpiration = expiration * 10000L;
-                _loadingValidity = validity * 10000L;
+                _loadingExpiration = expiration == -1 ? _parent._defaultExpiration : expiration * 10000L;
+                _loadingValidity = validity == -1 ? _parent._defaultValidity : validity * 10000L;
                 return this;
             }
 
@@ -309,6 +322,14 @@ namespace ServiceLib
             {
                 lock (this)
                     _validUntil = 0;
+            }
+
+            public void Insert(int version, T value, int validity, int expiration)
+            {
+                if (_loadInProgress)
+                    return;
+                Expires(validity, expiration);
+                SetLoadedValue(version, value);
             }
         }
 
