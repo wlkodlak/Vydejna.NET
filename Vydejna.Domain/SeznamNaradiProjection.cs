@@ -13,12 +13,12 @@ namespace Vydejna.Domain
 
         public SeznamNaradiReader(IDocumentFolder store, SeznamNaradiSerializer serializer, IQueueExecution executor, ITime time, INotifyChange notifier)
         {
-            _reader = new PureProjectionReader<SeznamNaradiData>(store, serializer, executor, time, notifier);
+            _reader = new PureProjectionReader<SeznamNaradiData>(store, serializer, notifier, executor, time);
         }
 
-        public SeznamNaradiReader SetupFreshness(int timeLimit)
+        public SeznamNaradiReader SetupFreshness(int validityMs, int expirationMs)
         {
-            _reader.Setup(freshTimeLimit: timeLimit);
+            _reader.SetupExpiration(validityMs, expirationMs);
             return this;
         }
 

@@ -12,7 +12,7 @@ namespace ServiceLib
     {
         void Get(string key, Action<int, T> onLoaded, Action<Exception> onError, Action<IMemoryCacheLoad<T>> onLoading);
         void Evict(string key);
-        void EvictOldEntries(int ticks);
+        void Invalidate(string key);
     }
 
     public interface IMemoryCacheLoad<T>
@@ -20,12 +20,11 @@ namespace ServiceLib
         string Key { get; }
         int OldVersion { get; }
         T OldValue { get; }
-        int Validity { get; set; }
-        int Expiration { get; set; }
+        bool OldValueAvailable { get; }
         void SetLoadedValue(int version, T value);
         void ValueIsStillValid();
         void LoadingFailed(Exception exception);
-        IMemoryCacheLoad<T> Expires(int validity, int expiration);
+        IMemoryCacheLoad<T> Expires(int validityMs, int expirationMs);
     }
 
     public class MemoryCacheLoaded<T> : IQueuedExecutionDispatcher
@@ -49,36 +48,40 @@ namespace ServiceLib
 
     public class MemoryCache<T> : IMemoryCache<T>
     {
-        private ConcurrentDictionary<string, MemoryCacheItem> _contents;
-        private IQueueExecution _executor;
+        private readonly ConcurrentDictionary<string, MemoryCacheItem> _contents;
+        private readonly IQueueExecution _executor;
+        private readonly ITime _timeService;
 
-        private int _accessIncrement, _ticksPerRound, _agingShift, _roundLimit;
-        private int _defaultExpiration, _defaultValidity;
-        private int _ticksCounter;
+        private int _accessIncrement, _agingShift, _roundLimit;
+        private long _defaultExpiration, _defaultValidity, _ticksPerRound;
+        private long _lastEvictTime, _nextEvictTime;
         private int _evicting;
         private int _maxCacheSize, _cleanedCacheSize, _minScore, _minCacheSize;
 
-        public MemoryCache(IQueueExecution executor)
+        public MemoryCache(IQueueExecution executor, ITime timeService)
         {
             _contents = new ConcurrentDictionary<string, MemoryCacheItem>();
             _executor = executor;
+            _timeService = timeService;
             _evicting = 0;
+            _lastEvictTime = GetTime();
             SetupScoring();
             SetupSizing();
             SetupExpiration();
         }
 
-        public MemoryCache<T> SetupExpiration(int validity = 1, int expiration = 1000)
+        public MemoryCache<T> SetupExpiration(int validity = 1, int expiration = 60000, int msPerRound = 1000)
         {
-            _defaultValidity = validity;
-            _defaultExpiration = expiration;
+            _defaultValidity = validity * 10000L;
+            _defaultExpiration = expiration * 10000L;
+            _ticksPerRound = msPerRound * 10000L;
+            _nextEvictTime = _lastEvictTime + _ticksPerRound;
             return this;
         }
 
-        public MemoryCache<T> SetupScoring(int accessIncrement = 1 << 24, int roundLimit = 1 << 30, int ticksPerRound = 1000, int agingShift = 4, int minScore = 1 << 8)
+        public MemoryCache<T> SetupScoring(int accessIncrement = 1 << 24, int roundLimit = 1 << 30, int agingShift = 4, int minScore = 1 << 8)
         {
             _accessIncrement = accessIncrement;
-            _ticksPerRound = ticksPerRound;
             _agingShift = agingShift;
             _roundLimit = roundLimit;
             _minScore = minScore;
@@ -100,10 +103,11 @@ namespace ServiceLib
                 item = _contents.GetOrAdd(key, new MemoryCacheItem(this, key));
             bool startLoading = false;
             IQueuedExecutionDispatcher immediateLoaded = null;
+            var currentTime = GetTime();
             lock (item)
             {
                 item.NotifyUsage();
-                if (item.ShouldReturnImmediately(onLoading == null))
+                if (item.ShouldReturnImmediately(onLoading == null, currentTime))
                     immediateLoaded = new MemoryCacheLoaded<T>(onLoaded, item.OldVersion, item.OldValue);
                 else
                 {
@@ -112,7 +116,9 @@ namespace ServiceLib
                 }
             }
             if (_contents.Count > _maxCacheSize)
-                EvictionInternal(0, _cleanedCacheSize);
+                EvictionInternal(currentTime, _cleanedCacheSize);
+            else if (_nextEvictTime <= currentTime)
+                EvictionInternal(currentTime, _maxCacheSize);
             if (immediateLoaded != null)
                 _executor.Enqueue(immediateLoaded);
             if (startLoading)
@@ -125,7 +131,15 @@ namespace ServiceLib
             _contents.TryRemove(key, out item);
         }
 
-        private void EvictionInternal(int ticks, int maxCount)
+        public void Invalidate(string key)
+        {
+            MemoryCacheItem item;
+            if (!_contents.TryGetValue(key, out item))
+                return;
+            item.Invalidate();
+        }
+
+        private void EvictionInternal(long currentTime, int maxCount)
         {
             if (Interlocked.CompareExchange(ref _evicting, 1, 0) == 1)
                 return;
@@ -134,14 +148,16 @@ namespace ServiceLib
                 MemoryCacheItem removed;
                 int minScore = (_contents.Count < _minCacheSize) ? 0 : _minScore;
                 int shift = 0;
-                if (Interlocked.Add(ref _ticksCounter, ticks) > _ticksPerRound)
+                if (currentTime >= _nextEvictTime)
                 {
-                    shift = _agingShift * (_ticksCounter / _ticksPerRound);
-                    _ticksCounter = 0;
+                    var rounds = (int)((currentTime - _lastEvictTime) / _ticksPerRound);
+                    shift = Math.Min(64, rounds *_agingShift);
+                    _lastEvictTime = currentTime;
+                    _nextEvictTime = currentTime + _ticksPerRound;
                 }
                 foreach (var item in _contents.Values)
                 {
-                    if (item.Eviction(ticks, shift, minScore))
+                    if (item.Eviction(currentTime, shift, minScore))
                         _contents.TryRemove(item.Key, out removed);
                 }
                 if (_contents.Count > maxCount)
@@ -157,11 +173,6 @@ namespace ServiceLib
             }
         }
 
-        public void EvictOldEntries(int ticks)
-        {
-            EvictionInternal(ticks, _maxCacheSize);
-        }
-
         private struct Waiter
         {
             public Action<int, T> OnLoaded;
@@ -174,8 +185,8 @@ namespace ServiceLib
             private readonly string _key;
             private bool _loadInProgress, _hasValue;
             private int _version;
-            private int _remainingValidity, _remainingExpiration;
-            private int _loadingValidity, _loadingExpiration;
+            private long _validUntil, _expiresOn;
+            private long _loadingValidity, _loadingExpiration;
             private T _value;
             private int _roundScore, _totalScore;
             private List<Waiter> _waiters;
@@ -187,32 +198,23 @@ namespace ServiceLib
                 _waiters = new List<Waiter>();
                 _loadingExpiration = _parent._defaultExpiration;
                 _loadingValidity = _parent._defaultValidity;
+                _version = -1;
             }
 
             public int Score { get { return _totalScore; } }
             public string Key { get { return _key; } }
             public int OldVersion { get { return _version; } }
             public T OldValue { get { return _value; } }
-
-            public int Validity
-            {
-                get { return _loadingValidity; }
-                set { _loadingValidity = value; }
-            }
-
-            public int Expiration
-            {
-                get { return _loadingExpiration; }
-                set { _loadingExpiration = value; }
-            }
+            public bool OldValueAvailable { get { return _version != -1; } }
 
             public void SetLoadedValue(int version, T value)
             {
                 lock (this)
                 {
                     _loadInProgress = false;
-                    _remainingExpiration = _loadingExpiration;
-                    _remainingValidity = _loadingValidity;
+                    var currentTime = _parent.GetTime();
+                    _expiresOn = currentTime + _loadingExpiration;
+                    _validUntil = currentTime + _loadingValidity;
                     _version = version;
                     _value = value;
                     _hasValue = true;
@@ -227,8 +229,9 @@ namespace ServiceLib
                 lock (this)
                 {
                     _loadInProgress = false;
-                    _remainingExpiration = _loadingExpiration;
-                    _remainingValidity = _loadingValidity;
+                    var currentTime = _parent.GetTime();
+                    _expiresOn = currentTime + _loadingExpiration;
+                    _validUntil = currentTime + _loadingValidity;
                     foreach (var waiter in _waiters)
                         _parent._executor.Enqueue(new MemoryCacheLoaded<T>(waiter.OnLoaded, _version, _value));
                     _waiters.Clear();
@@ -248,8 +251,8 @@ namespace ServiceLib
 
             public IMemoryCacheLoad<T> Expires(int validity, int expiration)
             {
-                _loadingExpiration = expiration;
-                _loadingValidity = validity;
+                _loadingExpiration = expiration * 10000L;
+                _loadingValidity = validity * 10000L;
                 return this;
             }
 
@@ -260,16 +263,16 @@ namespace ServiceLib
                 _totalScore += increment;
             }
 
-            public bool ShouldReturnImmediately(bool nowait)
+            public bool ShouldReturnImmediately(bool nowait, long currentTime)
             {
-                if (_remainingExpiration == 0)
+                if (_expiresOn <= currentTime)
                 {
                     _version = -1;
                     _value = default(T);
                     return false;
                 }
                 else
-                    return _hasValue && _remainingValidity > 0;
+                    return _hasValue && _validUntil > currentTime;
             }
 
             public void AddWaiter(Action<int, T> onLoaded, Action<Exception> onError)
@@ -285,13 +288,11 @@ namespace ServiceLib
                 return true;
             }
 
-            public bool Eviction(int ticks, int shift, int minScore)
+            public bool Eviction(long currentTime, int shift, int minScore)
             {
                 lock (this)
                 {
-                    _remainingExpiration = _remainingExpiration > ticks ? _remainingExpiration - ticks : 0;
-                    _remainingValidity = _remainingValidity > ticks ? _remainingValidity - ticks : 0;
-                    if (_remainingExpiration == 0)
+                    if (_expiresOn <= currentTime)
                         return true;
                     if (shift > 0)
                     {
@@ -303,6 +304,17 @@ namespace ServiceLib
                     return false;
                 }
             }
+
+            public void Invalidate()
+            {
+                lock (this)
+                    _validUntil = 0;
+            }
+        }
+
+        private long GetTime()
+        {
+            return _timeService.GetUtcTime().Ticks;
         }
     }
 }

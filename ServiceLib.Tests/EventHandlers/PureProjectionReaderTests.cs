@@ -24,7 +24,8 @@ namespace ServiceLib.Tests.EventHandlers
             _time = new VirtualTime();
             _time.SetTime(new DateTime(2013, 10, 11, 18, 22, 22));
             _notify = new NotifyChangeDirect(_executor);
-            _reader = new PureProjectionReader<TestState>(_folder, _serializer, _executor, _time, _notify);
+            _reader = new PureProjectionReader<TestState>(_folder, _serializer, _notify, _executor, _time);
+            _reader.SetupExpiration(200, 5000);
         }
 
         [TestMethod]
@@ -74,7 +75,7 @@ namespace ServiceLib.Tests.EventHandlers
             _folder.SaveDocument("doc", "875\r\nE1: 44", 1);
             _reader.Get("doc", s => { }, ThrowError);
             _executor.Process();
-            _reader.EndCycle();
+            _time.SetTime(_time.GetUtcTime().AddMilliseconds(100));
             _executor.Process();
             _folder.ClearLog();
 
@@ -94,7 +95,7 @@ namespace ServiceLib.Tests.EventHandlers
             _reader.Get("doc", s => { }, ThrowError);
             _executor.Process();
             for (int i = 0; i < 20; i++)
-                _reader.EndCycle();
+                _time.SetTime(_time.GetUtcTime().AddMilliseconds(1000));
             _folder.ClearLog();
 
             _reader.Get("doc", s => loadedState = s, ThrowError);

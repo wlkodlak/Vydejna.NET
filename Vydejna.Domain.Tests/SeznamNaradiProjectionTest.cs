@@ -36,7 +36,7 @@ namespace Vydejna.Domain.Tests
             _time.SetTime(new DateTime(2014, 1, 8, 17, 22, 16));
             _notifier = new NotifyChangeDirect(_executor);
             _reader = new SeznamNaradiReader(_store, _serializer, _executor, _time, _notifier);
-            _reader.SetupFreshness(0);
+            _reader.SetupFreshness(0, 5000);
             _locking = new TestNodeLock();
             _streaming = new TestStreaming(_executor);
             _dispatcher = new PureProjectionDispatcherDeduplication<SeznamNaradiData>(

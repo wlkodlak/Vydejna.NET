@@ -18,12 +18,16 @@ namespace ServiceLib.Tests.Caching
         private int _loadResultIdx;
         private int _loadingIdx;
         private TestExecutor _executor;
+        private VirtualTime _time;
 
         [TestInitialize]
         public void Initialize()
         {
             _executor = new TestExecutor();
-            _cache = new MemoryCache<string>(_executor);
+            _time = new VirtualTime();
+            _time.SetTime(new DateTime(2014, 1, 14, 18, 20, 14));
+            _cache = new MemoryCache<string>(_executor, _time);
+            _cache.SetupExpiration(200, 60000, 1000);
             _loadingIdx = _loadResultIdx = 0;
             _loadResults = new List<LoadResult>();
             _loadings = new List<Loading>();
@@ -73,7 +77,7 @@ namespace ServiceLib.Tests.Caching
         [TestMethod]
         public void FreshValueIsReturnedImmediatelly()
         {
-            StartGetting("01", l => l.Expires(2, 8).SetLoadedValue(2, "Value"));
+            StartGetting("01", l => l.Expires(200, 60000).SetLoadedValue(2, "Value"));
             ExpectValue("01", 2, "Value");
             Tick();
             StartGetting("01", l => { });
@@ -84,11 +88,11 @@ namespace ServiceLib.Tests.Caching
         [TestMethod]
         public void NonfreshValueUsesOptionalLoad()
         {
-            StartGetting("01", l => l.Expires(2, 8).SetLoadedValue(2, "Value"));
+            StartGetting("01", l => l.Expires(200, 60000).SetLoadedValue(2, "Value"));
             ExpectValue("01", 2, "Value");
             for (int i = 0; i < 4; i++)
                 Tick();
-            StartGetting("01", l => l.Expires(1, 8).SetLoadedValue(3, "Value2"));
+            StartGetting("01", l => l.Expires(200, 60000).SetLoadedValue(3, "Value2"));
             ExpectLoading("01", 2, "Value");
             ExpectValue("01", 3, "Value2");
         }
@@ -96,7 +100,7 @@ namespace ServiceLib.Tests.Caching
         [TestMethod]
         public void NonfreshLoadCanLoadNewValue()
         {
-            StartGetting("01", l => l.Expires(2, 8).SetLoadedValue(2, "Value"));
+            StartGetting("01", l => l.Expires(200, 60000).SetLoadedValue(2, "Value"));
             ExpectValue("01", 2, "Value");
             for (int i = 0; i < 4; i++)
                 Tick();
@@ -107,7 +111,7 @@ namespace ServiceLib.Tests.Caching
         [TestMethod]
         public void NonfreshLoadCanKeepValue()
         {
-            StartGetting("01", l => l.Expires(2, 8).SetLoadedValue(2, "Value"));
+            StartGetting("01", l => l.Expires(200, 60000).SetLoadedValue(2, "Value"));
             ExpectValue("01", 2, "Value");
             for (int i = 0; i < 4; i++)
                 Tick();
@@ -119,11 +123,11 @@ namespace ServiceLib.Tests.Caching
         [TestMethod]
         public void RefreshedValueStartsNewUncheckedPeriod()
         {
-            StartGetting("01", l => l.Expires(2, 8).SetLoadedValue(2, "Value"));
+            StartGetting("01", l => l.Expires(200, 60000).SetLoadedValue(2, "Value"));
             ExpectValue("01", 2, "Value");
             for (int i = 0; i < 4; i++)
                 Tick();
-            StartGetting("01", l => l.Expires(2, 8).ValueIsStillValid());
+            StartGetting("01", l => l.Expires(200, 60000).ValueIsStillValid());
             ExpectValue("01", 2, "Value");
             Tick();
             StartGetting("01", l => l.LoadingFailed(new InvalidOperationException()));
@@ -133,7 +137,7 @@ namespace ServiceLib.Tests.Caching
         [TestMethod]
         public void OnlyOneRefreshIsPerformedAtOnceForSameKey()
         {
-            StartGetting("01", l => l.Expires(2, 8).SetLoadedValue(2, "Value"));
+            StartGetting("01", l => l.Expires(200, 60000).SetLoadedValue(2, "Value"));
             ExpectValue("01", 2, "Value");
             for (int i = 0; i < 4; i++)
                 Tick();
@@ -155,9 +159,9 @@ namespace ServiceLib.Tests.Caching
         [TestMethod]
         public void ExpiredKeyCausesFullLoad()
         {
-            StartGetting("01", l => l.Expires(2, 8).SetLoadedValue(2, "Value"));
+            StartGetting("01", l => l.Expires(200, 5000).SetLoadedValue(2, "Value"));
             ExpectValue("01", 2, "Value");
-            for (int i = 0; i < 10; i++)
+            for (int i = 0; i < 60; i++)
                 Tick();
             StartGetting("01", l => { });
             ExpectLoading("01", -1, null);
@@ -166,11 +170,21 @@ namespace ServiceLib.Tests.Caching
         [TestMethod]
         public void EvictedKeyCausesFullLoad()
         {
-            StartGetting("01", l => l.Expires(2, 8).SetLoadedValue(2, "Value"));
+            StartGetting("01", l => l.Expires(200, 60000).SetLoadedValue(2, "Value"));
             ExpectValue("01", 2, "Value");
-            Evict("01");
+            Evict("01", false);
             StartGetting("01", l => { });
             ExpectLoading("01", -1, null);
+        }
+
+        [TestMethod]
+        public void InvalidatedKeyCausesRefresh()
+        {
+            StartGetting("01", l => l.Expires(200, 60000).SetLoadedValue(2, "Value"));
+            ExpectValue("01", 2, "Value");
+            Evict("01", true);
+            StartGetting("01", l => { });
+            ExpectLoading("01", 2, "Value");
         }
 
 
@@ -203,13 +217,16 @@ namespace ServiceLib.Tests.Caching
 
         private void Tick()
         {
-            _cache.EvictOldEntries(1);
+            _time.SetTime(_time.GetUtcTime().AddMilliseconds(100));
             _executor.Process();
         }
 
-        private void Evict(string key)
+        private void Evict(string key, bool onlyInvalidate)
         {
-            _cache.Evict(key);
+            if (onlyInvalidate)
+                _cache.Invalidate(key);
+            else
+                _cache.Evict(key);
             _executor.Process();
         }
 
@@ -242,11 +259,11 @@ namespace ServiceLib.Tests.Caching
             public int Version;
             public Type Exception;
             private string Mode;
-            
+
             public static LoadResult Loaded(string key, int version, string value) { return new LoadResult { Key = key, Mode = "Result", Version = version, Value = value }; }
             public static LoadResult Error(string key, Exception exception) { return new LoadResult { Key = key, Mode = "Error", Exception = exception.GetType() }; }
             public static LoadResult Error(string key, Type exception) { return new LoadResult { Key = key, Mode = "Error", Exception = exception }; }
-            
+
             public override int GetHashCode()
             {
                 if (Exception != null)
@@ -277,7 +294,7 @@ namespace ServiceLib.Tests.Caching
         {
             public string Key, Value;
             public int Version;
-            
+
             public static Loading Full(string key) { return new Loading { Key = key, Version = -1, Value = null }; }
             public static Loading Check(string key, int version, string value) { return new Loading { Key = key, Version = version, Value = value }; }
 
@@ -296,7 +313,7 @@ namespace ServiceLib.Tests.Caching
             public override string ToString()
             {
                 if (Version == -1)
-                    return string.Format("{0}: full");
+                    return string.Format("{0}: full", Key);
                 else
                     return string.Format("{0}: {1}@{2}", Key, Version, Value);
             }

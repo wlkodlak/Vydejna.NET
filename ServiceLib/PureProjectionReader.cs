@@ -14,121 +14,6 @@ namespace ServiceLib
     }
     public class PureProjectionReader<TState> : IPureProjectionReader<TState>
     {
-        private class Item
-        {
-            private PureProjectionReader<TState> _parent;
-            public string Partition;
-            public TState State;
-            public bool IsLoading, IsLoaded, IsEvicted;
-            public int Version, InvalidatedVersion, LastLoadedVersion;
-            public int CacheHits, CacheScore;
-            public List<Action<TState>> OnLoadWaiters;
-            public List<Action<Exception>> OnErrorWaiters;
-            public DateTime FreshUntil;
-
-            public Item(PureProjectionReader<TState> parent, string partition)
-            {
-                _parent = parent;
-                Partition = partition;
-            }
-
-            public void OnDocumentFound(int version, string contents)
-            {
-                List<Action<TState>> waiters;
-                var state = string.IsNullOrEmpty(contents)
-                    ? _parent._serializer.InitialState()
-                    : _parent._serializer.Deserialize(contents);
-                lock (this)
-                {
-                    Version = version;
-                    State = state;
-                    IsLoading = false;
-                    IsLoaded = Version != InvalidatedVersion;
-                    waiters = OnLoadWaiters;
-                    OnLoadWaiters = null;
-                    OnErrorWaiters = null;
-                    InvalidatedVersion = 0;
-                    LastLoadedVersion = version;
-                    FreshUntil = _parent._timeService.GetUtcTime().AddMilliseconds(500);
-                }
-                foreach (var waiter in waiters)
-                    _parent._executor.Enqueue(new GetStateFinished(waiter, state));
-            }
-
-            public void DocumentChanged()
-            {
-                lock (this)
-                {
-                    InvalidatedVersion = Version;
-                    IsLoaded = false;
-                }
-            }
-
-            public void OnDocumentSame()
-            {
-                List<Action<TState>> waiters;
-                TState state;
-                lock (this)
-                {
-                    state = State;
-                    IsLoading = false;
-                    IsLoaded = Version != InvalidatedVersion;
-                    waiters = OnLoadWaiters;
-                    OnLoadWaiters = null;
-                    OnErrorWaiters = null;
-                    InvalidatedVersion = 0;
-                    FreshUntil = _parent._timeService.GetUtcTime().AddMilliseconds(500);
-                }
-                foreach (var waiter in waiters)
-                    _parent._executor.Enqueue(new GetStateFinished(waiter, state));
-            }
-
-            public void OnDocumentMissing()
-            {
-                OnDocumentFound(0, "");
-            }
-
-            public void OnError(Exception exception)
-            {
-                List<Action<Exception>> waiters;
-                lock (this)
-                {
-                    IsLoading = false;
-                    IsLoaded = false;
-                    waiters = OnErrorWaiters;
-                    OnLoadWaiters = null;
-                    OnErrorWaiters = null;
-                }
-                foreach (var waiter in waiters)
-                    _parent._executor.Enqueue(waiter, exception);
-            }
-
-            public void NotifyUsage()
-            {
-                if (Interlocked.Increment(ref CacheHits) < _parent._roundLimit)
-                    Interlocked.Add(ref CacheScore, _parent._increment);
-            }
-
-            public void EndCycle()
-            {
-                if (IsLoaded)
-                {
-                    CacheScore = CacheScore >> _parent._roundShift;
-                    CacheHits = 0;
-                }
-            }
-
-            public bool EvictIfNeeded()
-            {
-                return IsLoaded && CacheScore == 0;
-            }
-
-            public void NotifyRemoval()
-            {
-                IsEvicted = true;
-            }
-        }
-
         private class GetStateFinished : IQueuedExecutionDispatcher
         {
             private Action<TState> _onLoaded;
@@ -144,110 +29,98 @@ namespace ServiceLib
             }
         }
 
-        private readonly ConcurrentDictionary<string, Item> _cache;
+        private readonly MemoryCache<TState> _cache;
         private readonly IDocumentFolder _store;
         private readonly IPureProjectionSerializer<TState> _serializer;
-        private readonly IQueueExecution _executor;
-        private int _increment;
-        private int _roundLimit;
-        private int _roundShift;
-        private ITime _timeService;
-        private int _freshTimeLimit;
         private INotifyChange _notification;
         private int _isListening;
         private IDisposable _listener;
+        public int _validity;
+        public int _expiration;
 
-        public PureProjectionReader(IDocumentFolder store, IPureProjectionSerializer<TState> serializer, IQueueExecution executor, ITime timeService, INotifyChange notification)
+        public PureProjectionReader(IDocumentFolder store, IPureProjectionSerializer<TState> serializer, INotifyChange notification, IQueueExecution executor, ITime time)
         {
             _store = store;
             _serializer = serializer;
-            _executor = executor;
-            _timeService = timeService;
             _notification = notification;
-            _cache = new ConcurrentDictionary<string, Item>();
-            _increment = 32;
-            _roundLimit = 32;
-            _roundShift = 3;
-            _freshTimeLimit = 500;
-        }
-
-        public PureProjectionReader<TState> Setup(int increment = 32, int roundLimit = 32, int roundShift = 3, int freshTimeLimit = 500)
-        {
-            _increment = increment;
-            _roundLimit = roundLimit;
-            _roundShift = roundShift;
-            _freshTimeLimit = freshTimeLimit;
-            return this;
+            _cache = new MemoryCache<TState>(executor, time);
+            _validity = 0;
+            _expiration = 60000;
         }
 
         public void Get(string partition, Action<TState> onLoaded, Action<Exception> onError)
         {
             if (Interlocked.CompareExchange(ref _isListening, 1, 0) == 0)
                 _listener = _notification.Register(OnNotify);
-            Item item = GetItem(partition);
-            var now = _timeService.GetUtcTime();
-            if (item.IsLoaded && now < item.FreshUntil)
-                _executor.Enqueue(new GetStateFinished(onLoaded, item.State));
-            else
+            _cache.Get(partition, (v, s) => onLoaded(s), onError, LoadPartition);
+        }
+
+        private class LoadPartitionWorker
+        {
+            private PureProjectionReader<TState> _parent;
+            private IMemoryCacheLoad<TState> _load;
+
+            public LoadPartitionWorker(PureProjectionReader<TState> parent, IMemoryCacheLoad<TState> load)
             {
-                bool loadDocument = false;
-                int knownVersion = 0;
-                lock (item)
-                {
-                    if (item.IsLoaded && now < item.FreshUntil)
-                        _executor.Enqueue(new GetStateFinished(onLoaded, item.State));
-                    else if (item.IsLoading)
-                    {
-                        item.OnLoadWaiters.Add(onLoaded);
-                        item.OnErrorWaiters.Add(onError);
-                    }
-                    else
-                    {
-                        knownVersion = item.LastLoadedVersion;
-                        item.OnLoadWaiters = new List<Action<TState>>();
-                        item.OnErrorWaiters = new List<Action<Exception>>();
-                        item.OnLoadWaiters.Add(onLoaded);
-                        item.OnErrorWaiters.Add(onError);
-                        item.IsLoading = loadDocument = true;
-                    }
-                }
-                if (loadDocument)
-                    _store.GetNewerDocument(partition, knownVersion, item.OnDocumentFound, item.OnDocumentSame, item.OnDocumentMissing, item.OnError);
+                _parent = parent;
+                _load = load;
             }
+
+            public void Execute()
+            {
+                if (_load.OldValueAvailable)
+                    _parent._store.GetNewerDocument(_load.Key, _load.OldVersion, OnLoaded, OnNotChanged, OnMissing, OnRefreshError);
+                else
+                    _parent._store.GetDocument(_load.Key, OnLoaded, OnMissing, OnLoadError);
+            }
+
+            private void OnLoaded(int version, string contents)
+            {
+                var value = _parent._serializer.Deserialize(contents);
+                _load.Expires(_parent._validity, _parent._expiration).SetLoadedValue(version, value);                
+            }
+
+            private void OnNotChanged()
+            {
+                _load.Expires(_parent._validity, _parent._expiration).ValueIsStillValid();
+            }
+
+            private void OnMissing()
+            {
+                _load.SetLoadedValue(0, _parent._serializer.InitialState());
+            }
+
+            private void OnRefreshError(Exception exception)
+            {
+                _load.Expires(0, _parent._expiration).ValueIsStillValid();
+            }
+
+            private void OnLoadError(Exception exception)
+            {
+                _load.LoadingFailed(exception);
+            }
+        }
+
+        private void LoadPartition(IMemoryCacheLoad<TState> load)
+        {
+            new LoadPartitionWorker(this, load).Execute();
         }
 
         private void OnNotify(string partition, int version)
         {
-            Item item;
-            if (_cache.TryGetValue(partition, out item))
-                item.DocumentChanged();
-        }
-
-        private Item GetItem(string partition)
-        {
-            var item = _cache.GetOrAdd(partition, new Item(this, partition));
-            item.NotifyUsage();
-            return item;
-        }
-
-        public void EndCycle()
-        {
-            foreach (var item in _cache.Values.ToList())
-            {
-                item.EndCycle();
-                if (item.EvictIfNeeded())
-                {
-                    Item removed;
-                    if (_cache.TryRemove(item.Partition, out removed))
-                        removed.NotifyRemoval();
-                }
-            }
+            _cache.Invalidate(partition);
         }
 
         public void Dispose()
         {
             if (_listener != null)
                 _listener.Dispose();
+        }
+
+        public void SetupExpiration(int validity, int expiration)
+        {
+            _validity = validity;
+            _expiration = expiration; 
         }
     }
 }
