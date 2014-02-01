@@ -210,7 +210,18 @@ namespace Vydejna.Server
 
             For<SeznamNaradiRest>().Singleton().Use<SeznamNaradiRest>().Named("RestServiceSeznamNaradi");
             For<IEventSourcedSerializer>().Add<EventSourcedJsonSerializer>().Named("EventSourcedSerializerPrimary");
-            For<ITypeMapper>().Use<TypeMapper>().OnCreation(m => VydejnaTypeMapperConfigurator.Configure(m)).Named("TypeMapperPrimary");
+            For<IRegisterTypes>().AddInstances(b => {
+                b.Type<SeznamNaradiTypeMapping>();
+                b.Type<ExterniCiselnikyTypeMapping>();
+                b.Type<CislovaneNaradiTypeMapping>();
+            });
+            For<ITypeMapper>().Use(ctx =>
+            {
+                var mapper = new TypeMapper();
+                foreach (var registrator in ctx.GetAllInstances<IRegisterTypes>())
+                    registrator.Register(mapper);
+                return mapper;
+            }).Named("TypeMapperPrimary");
         }
     }
 }

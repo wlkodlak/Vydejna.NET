@@ -12,6 +12,11 @@ namespace ServiceLib
         Type GetType(string name);
     }
 
+    public interface IRegisterTypes
+    {
+        void Register(TypeMapper mapper);
+    }
+
     public class TypeMapper : ITypeMapper
     {
         private UpdateLock _lock = new UpdateLock();

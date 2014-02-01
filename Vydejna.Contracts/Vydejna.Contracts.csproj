@@ -42,6 +42,8 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="CislovaneNaradi.cs" />
+    <Compile Include="ExterniCiselniky.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="SeznamNaradi.cs" />
   </ItemGroup>
