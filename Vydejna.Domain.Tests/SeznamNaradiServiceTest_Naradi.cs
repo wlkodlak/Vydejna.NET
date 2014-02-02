@@ -19,7 +19,7 @@ namespace Vydejna.Domain.Tests
         private List<object> _udalosti;
         private IEnumerator<object> _aktualniUdalost;
         private Dictionary<Guid, List<object>> _obsahRepository;
-        private SeznamNaradiService _svc;
+        private DefinovaneNaradiService _svc;
 
         [TestInitialize]
         public void Initialize()
@@ -32,7 +32,7 @@ namespace Vydejna.Domain.Tests
 
         private void VytvoritService()
         {
-            _svc = new SeznamNaradiService(
+            _svc = new DefinovaneNaradiService(
                 _repository, 
                 new Mock<IUnikatnostNaradiRepository>(MockBehavior.Strict).Object);
         }
@@ -72,7 +72,7 @@ namespace Vydejna.Domain.Tests
             udalosti.AddRange(events);
         }
 
-        private class NaradiRepositoryMock : INaradiRepository
+        private class NaradiRepositoryMock : IDefinovaneNaradiRepository
         {
             private SeznamNaradiServiceTest_Naradi _parent;
             
@@ -81,16 +81,16 @@ namespace Vydejna.Domain.Tests
                 _parent = parent;
             }
 
-            public void Load(Guid id, Action<Naradi> onLoaded, Action onMissing, Action<Exception> onError)
+            public void Load(Guid id, Action<DefinovaneNaradi> onLoaded, Action onMissing, Action<Exception> onError)
             {
                 List<object> udalosti;
                 if (!_parent._obsahRepository.TryGetValue(id, out udalosti))
                     onMissing();
                 else
-                    onLoaded(Naradi.LoadFrom(udalosti));
+                    onLoaded(DefinovaneNaradi.LoadFrom(udalosti));
             }
 
-            public void Save(Naradi aggregate, Action onSaved, Action onConcurrency, Action<Exception> onError)
+            public void Save(DefinovaneNaradi aggregate, Action onSaved, Action onConcurrency, Action<Exception> onError)
             {
                 var udalosti = (aggregate as IEventSourcedAggregate).GetChanges();
                 _parent._udalosti.AddRange(udalosti);

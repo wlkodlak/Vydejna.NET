@@ -171,7 +171,7 @@ namespace Vydejna.Server
                     x.GetInstance<IMetadataManager>().GetConsumer("ProcesDefiniceNaradi"),
                     x.GetInstance<IEventStreamingDeserialized>(),
                     x.GetInstance<ICommandSubscriptionManager>());
-                var service = x.GetInstance<SeznamNaradiService>();
+                var service = x.GetInstance<DefinovaneNaradiService>();
                 var handler = new ProcesDefiniceNaradi(service, service, service);
                 proces.Register<ZahajenaDefiniceNaradiEvent>(handler);
                 proces.Register<ZahajenaAktivaceNaradiEvent>(handler);
@@ -202,8 +202,8 @@ namespace Vydejna.Server
                 .Ctor<IDocumentFolder>("store").Is(x => x.GetInstance<IDocumentStore>().SubFolder("SeznamNaradi"))
                 .Ctor<INotifyChange>("notifier").Is(x => x.GetInstance<INotifyChange>("NotifySeznamNaradi"));
 
-            For<IWriteSeznamNaradi>().Use<SeznamNaradiService>().Named("DomainServiceSeznamNaradi");
-            For<INaradiRepository>().Use<NaradiRepository>().Named("RepositoryNaradi")
+            For<IWriteSeznamNaradi>().Use<DefinovaneNaradiService>().Named("DomainServiceSeznamNaradi");
+            For<IDefinovaneNaradiRepository>().Use<DefinovaneNaradiRepository>().Named("RepositoryNaradi")
                 .Ctor<string>("prefix").Is("naradi");
             For<IUnikatnostNaradiRepository>().Use<UnikatnostNaradiRepository>().Named("RepositoryUnikatnost")
                 .Ctor<string>("prefix").Is("unikatnost_naradi");

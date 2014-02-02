@@ -19,7 +19,7 @@ namespace Vydejna.Domain.Tests
         private List<object> _udalosti;
         private IEnumerator<object> _aktualniUdalost;
         private List<object> _obsahRepository;
-        private SeznamNaradiService _svc;
+        private DefinovaneNaradiService _svc;
 
         [TestInitialize]
         public void Initialize()
@@ -32,8 +32,8 @@ namespace Vydejna.Domain.Tests
 
         private void VytvoritService()
         {
-            _svc = new SeznamNaradiService(
-                new Mock<INaradiRepository>(MockBehavior.Strict).Object,
+            _svc = new DefinovaneNaradiService(
+                new Mock<IDefinovaneNaradiRepository>(MockBehavior.Strict).Object,
                 _repository
                 );
         }

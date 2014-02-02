@@ -5,7 +5,7 @@ using Vydejna.Contracts;
 
 namespace Vydejna.Domain
 {
-    public class Naradi : EventSourcedAggregate
+    public class DefinovaneNaradi : EventSourcedAggregate
     {
         private bool _aktivni;
 
@@ -40,9 +40,9 @@ namespace Vydejna.Domain
             _aktivni = false;
         }
 
-        public static Naradi Definovat(Guid id, string vykres, string rozmer, string druh)
+        public static DefinovaneNaradi Definovat(Guid id, string vykres, string rozmer, string druh)
         {
-            var naradi = new Naradi();
+            var naradi = new DefinovaneNaradi();
             naradi.ApplyChange(new DefinovanoNaradiEvent
             {
                 NaradiId = id,
@@ -53,9 +53,9 @@ namespace Vydejna.Domain
             return naradi;
         }
 
-        public static Naradi LoadFrom(IList<object> udalosti)
+        public static DefinovaneNaradi LoadFrom(IList<object> udalosti)
         {
-            var naradi = new Naradi();
+            var naradi = new DefinovaneNaradi();
             var aggregate = naradi as IEventSourcedAggregate;
             aggregate.LoadFromEvents(udalosti);
             return naradi;
