@@ -181,7 +181,6 @@ namespace Vydejna.Contracts
         public Guid NaradiId { get; set; }
         public TypZmenyNaSklade TypZmeny { get; set; }
         public int Hodnota { get; set; }
-        public DateTime DatumZmeny { get; set; }
     }
 
     public class ZmenitStavNaSkladeInternalCommand
@@ -189,7 +188,13 @@ namespace Vydejna.Contracts
         public Guid NaradiId { get; set; }
         public TypZmenyNaSklade TypZmeny { get; set; }
         public int Hodnota { get; set; }
-        public DateTime DatumZmeny { get; set; }
+    }
+
+    public class NastalaPotrebaUpravitStavNaSkladeEvent
+    {
+        public Guid NaradiId { get; set; }
+        public TypZmenyNaSklade TypZmeny { get; set; }
+        public int Hodnota { get; set; }
     }
 
     public class ZmenenStavNaSkladeEvent
