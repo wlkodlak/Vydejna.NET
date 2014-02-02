@@ -5,14 +5,14 @@ using Vydejna.Contracts;
 namespace Vydejna.Domain
 {
     public class DefinovaneNaradiService
-        : IWriteSeznamNaradi
+        : IHandle<CommandExecution<AktivovatNaradiCommand>>
+        , IHandle<CommandExecution<DeaktivovatNaradiCommand>>
         , IHandle<CommandExecution<DefinovatNaradiInternalCommand>>
-        , IHandle<CommandExecution<DokoncitDefiniciNaradiInternalCommand>>
     {
         private log4net.ILog _log;
         private IDefinovaneNaradiRepository _repoNaradi;
 
-        public DefinovaneNaradiService(IDefinovaneNaradiRepository repoNaradi, IUnikatnostNaradiRepository repoUnikatnost)
+        public DefinovaneNaradiService(IDefinovaneNaradiRepository repoNaradi)
         {
             _log = log4net.LogManager.GetLogger(typeof(DefinovaneNaradiService));
             _repoNaradi = repoNaradi;

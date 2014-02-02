@@ -7,7 +7,9 @@ using Vydejna.Contracts;
 
 namespace Vydejna.Domain
 {
-    public class SeznamNaradiReader : IReadSeznamNaradi
+    public class SeznamNaradiReader
+        : IAnswer<ZiskatSeznamNaradiRequest, ZiskatSeznamNaradiResponse>
+        , IAnswer<OvereniUnikatnostiRequest, OvereniUnikatnostiResponse>
     {
         private PureProjectionReader<SeznamNaradiData> _reader;
 

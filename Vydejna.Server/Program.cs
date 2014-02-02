@@ -171,8 +171,9 @@ namespace Vydejna.Server
                     x.GetInstance<IMetadataManager>().GetConsumer("ProcesDefiniceNaradi"),
                     x.GetInstance<IEventStreamingDeserialized>(),
                     x.GetInstance<ICommandSubscriptionManager>());
-                var service = x.GetInstance<DefinovaneNaradiService>();
-                var handler = new ProcesDefiniceNaradi(service, service, service);
+                var svcDefinovane = x.GetInstance<DefinovaneNaradiService>();
+                var svcUnikatnost = x.GetInstance<UnikatnostNaradiService>();
+                var handler = new ProcesDefiniceNaradi(svcUnikatnost, svcDefinovane, svcUnikatnost);
                 proces.Register<ZahajenaDefiniceNaradiEvent>(handler);
                 proces.Register<ZahajenaAktivaceNaradiEvent>(handler);
                 proces.Register<DefinovanoNaradiEvent>(handler);
@@ -198,13 +199,22 @@ namespace Vydejna.Server
                 }).Named("SeznamNaradiProjection");
 
             For<SeznamNaradiSerializer>().Singleton().Use<SeznamNaradiSerializer>().Named("SeznamNaradiSerializer");
-            For<IReadSeznamNaradi>().Singleton().Use<SeznamNaradiReader>().Named("ViewServiceSeznamNaradi")
+            For<SeznamNaradiReader>().Singleton().Use<SeznamNaradiReader>().Named("ViewServiceSeznamNaradi")
                 .Ctor<IDocumentFolder>("store").Is(x => x.GetInstance<IDocumentStore>().SubFolder("SeznamNaradi"))
                 .Ctor<INotifyChange>("notifier").Is(x => x.GetInstance<INotifyChange>("NotifySeznamNaradi"));
+            Forward<SeznamNaradiReader, IAnswer<ZiskatSeznamNaradiRequest, ZiskatSeznamNaradiResponse>>();
+            Forward<SeznamNaradiReader, IAnswer<OvereniUnikatnostiRequest, OvereniUnikatnostiResponse>>();
 
-            For<IWriteSeznamNaradi>().Use<DefinovaneNaradiService>().Named("DomainServiceSeznamNaradi");
+            For<DefinovaneNaradiService>().Singleton().Use<DefinovaneNaradiService>().Named("DefinovaneNaradiDomainService");
+            Forward<DefinovaneNaradiService, IHandle<CommandExecution<AktivovatNaradiCommand>>>();
+            Forward<DefinovaneNaradiService, IHandle<CommandExecution<DeaktivovatNaradiCommand>>>();
+            Forward<DefinovaneNaradiService, IHandle<CommandExecution<DefinovatNaradiInternalCommand>>>();
             For<IDefinovaneNaradiRepository>().Use<DefinovaneNaradiRepository>().Named("RepositoryNaradi")
                 .Ctor<string>("prefix").Is("naradi");
+
+            For<UnikatnostNaradiService>().Singleton().Use<UnikatnostNaradiService>().Named("UnikatnostNaradiDomainService");
+            Forward<UnikatnostNaradiService, IHandle<CommandExecution<DefinovatNaradiCommand>>>();
+            Forward<UnikatnostNaradiService, IHandle<CommandExecution<DokoncitDefiniciNaradiInternalCommand>>>();
             For<IUnikatnostNaradiRepository>().Use<UnikatnostNaradiRepository>().Named("RepositoryUnikatnost")
                 .Ctor<string>("prefix").Is("unikatnost_naradi");
 

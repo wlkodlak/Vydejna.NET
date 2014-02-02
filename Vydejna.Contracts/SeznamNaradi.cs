@@ -5,19 +5,6 @@ using System.Text;
 
 namespace Vydejna.Contracts
 {
-    public interface IReadSeznamNaradi
-        : IAnswer<ZiskatSeznamNaradiRequest, ZiskatSeznamNaradiResponse>
-        , IAnswer<OvereniUnikatnostiRequest, OvereniUnikatnostiResponse>
-    {
-    }
-
-    public interface IWriteSeznamNaradi
-        : IHandle<CommandExecution<AktivovatNaradiCommand>>
-        , IHandle<CommandExecution<DeaktivovatNaradiCommand>>
-        , IHandle<CommandExecution<DefinovatNaradiCommand>>
-    {
-    }
-
     public class ZiskatSeznamNaradiRequest
     {
         public ZiskatSeznamNaradiRequest(int offset, int pocet)

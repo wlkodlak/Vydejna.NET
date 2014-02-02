@@ -9,6 +9,8 @@ using Vydejna.Contracts;
 namespace Vydejna.Domain
 {
     public class UnikatnostNaradiService
+        : IHandle<CommandExecution<DefinovatNaradiCommand>>
+        , IHandle<CommandExecution<DokoncitDefiniciNaradiInternalCommand>>
     {
         private log4net.ILog _log;
         private IUnikatnostNaradiRepository _repoUnikatnost;
