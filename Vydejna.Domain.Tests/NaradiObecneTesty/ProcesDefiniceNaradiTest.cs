@@ -1,16 +1,10 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-using Moq;
-using Vydejna.Contracts;
-using Vydejna.Domain;
+﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 using ServiceLib;
 using ServiceLib.Tests.TestUtils;
+using System;
+using Vydejna.Contracts;
 
-namespace Vydejna.Domain.Tests
+namespace Vydejna.Domain.Tests.NaradiObecneTesty
 {
     [TestClass]
     public class ProcesDefiniceNaradiTest
