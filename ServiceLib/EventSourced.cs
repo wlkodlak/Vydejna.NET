@@ -248,6 +248,21 @@ namespace ServiceLib
         }
     }
 
+    public class EventSourcedRepositoryDefault<T>
+        : EventSourcedRepository<T>
+        where T : class, IEventSourcedAggregate, new()
+    {
+        public EventSourcedRepositoryDefault(IEventStore store, string prefix, IEventSourcedSerializer serializer)
+            : base(store, prefix, serializer)
+        {
+        }
+
+        protected override T CreateAggregate()
+        {
+            return new T();
+        }
+    }
+
     public class EventSourcedJsonSerializer : IEventSourcedSerializer
     {
         private ITypeMapper _mapper;

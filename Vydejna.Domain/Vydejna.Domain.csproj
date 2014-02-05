@@ -53,6 +53,9 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Bootstrap.cs" />
+    <Compile Include="CislovaneNaradi.cs" />
+    <Compile Include="CislovaneNaradiRepository.cs" />
+    <Compile Include="CislovaneNaradiService.cs" />
     <Compile Include="DefinovaneNaradi.cs" />
     <Compile Include="DefinovaneNaradiRepository.cs" />
     <Compile Include="ProcesDefiniceNaradi.cs" />
