@@ -10,14 +10,56 @@ namespace Vydejna.Domain
 {
     public class CislovaneNaradi : EventSourcedAggregate
     {
-        protected override void DispatchEvent(object evt)
+        private Guid _naradiId;
+        private int _cisloNaradi;
+        private UmisteniNaradi _umisteni;
+
+        private void ApplyChange(CislovaneNaradiPrijatoNaVydejnuEvent evnt)
         {
+            RecordChange(evnt);
+            _naradiId = evnt.NaradiId;
+            _cisloNaradi = evnt.CisloNaradi;
+            _umisteni = UmisteniNaradi.Dto(evnt.NoveUmisteni);
         }
 
-        public void Execute(CislovaneNaradiPrijmoutNaVydejnuCommand cmd)
+        private void ApplyChange(NastalaPotrebaUpravitStavNaSkladeEvent evnt)
         {
+            RecordChange(evnt);
+        }
+
+        protected override void DispatchEvent(object evt)
+        {
+            ApplyChange((dynamic)evt);
+        }
+
+        public void Execute(CislovaneNaradiPrijmoutNaVydejnuCommand cmd, ITime time)
+        {
+            if (_cisloNaradi != 0)
+                throw new InvalidOperationException("Naradi s timto cislem jiz existuje");
+            if (cmd.CisloNaradi <= 0)
+                throw new ArgumentOutOfRangeException("CisloNaradi", "Cislo naradi musi byt kladne");
             if (cmd.CenaNova < 0)
                 throw new ArgumentOutOfRangeException("CenaNova", "Cena nesmi byt zaporna");
+            ApplyChange(new CislovaneNaradiPrijatoNaVydejnuEvent
+            {
+                EventId = Guid.NewGuid(),
+                Datum = time.GetUtcTime(),
+                NaradiId = cmd.NaradiId,
+                KodDodavatele = cmd.KodDodavatele,
+                CisloNaradi = cmd.CisloNaradi,
+                PrijemZeSkladu = cmd.PrijemZeSkladu,
+                CenaNova = cmd.CenaNova,
+                NoveUmisteni = UmisteniNaradi.NaVydejne(StavNaradi.VPoradku).Dto()
+            });
+            if (cmd.PrijemZeSkladu)
+            {
+                ApplyChange(new NastalaPotrebaUpravitStavNaSkladeEvent
+                {
+                    NaradiId = cmd.NaradiId,
+                    TypZmeny = TypZmenyNaSklade.SnizitStav,
+                    Hodnota = 1
+                });
+            }
         }
     }
 }

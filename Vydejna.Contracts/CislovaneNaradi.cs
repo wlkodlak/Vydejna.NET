@@ -26,6 +26,7 @@ namespace Vydejna.Contracts
         public DateTime Datum { get; set; }
         public string KodDodavatele { get; set; }
         public bool PrijemZeSkladu { get; set; }
+        public UmisteniNaradiDto NoveUmisteni { get; set; }
     }
 
     public class CislovaneNaradiStornovatPrijemNaVydejnuCommand
@@ -63,6 +64,8 @@ namespace Vydejna.Contracts
         public decimal CenaNova { get; set; }
         public DateTime Datum { get; set; }
         public string KodPracoviste { get; set; }
+        public UmisteniNaradiDto PredchoziUmisteni { get; set; }
+        public UmisteniNaradiDto NoveUmisteni { get; set; }
     }
 
     public class CislovaneNaradiStornovatVydaniDoVyrobyCommand
@@ -82,6 +85,8 @@ namespace Vydejna.Contracts
         public DateTime DatumStorna { get; set; }
         public string KodPracoviste { get; set; }
         public Guid StornovanaUdalost { get; set; }
+        public UmisteniNaradiDto PredchoziUmisteni { get; set; }
+        public UmisteniNaradiDto NoveUmisteni { get; set; }
     }
     #endregion
     #region Prijem z vyroby
@@ -106,6 +111,8 @@ namespace Vydejna.Contracts
         public string KodPracoviste { get; set; }
         public StavNaradi StavNaradi { get; set; }
         public string KodVady { get; set; }
+        public UmisteniNaradiDto PredchoziUmisteni { get; set; }
+        public UmisteniNaradiDto NoveUmisteni { get; set; }
     }
 
     public class CislovaneNaradiStornovatPrijemZVyrobyCommand
@@ -127,6 +134,8 @@ namespace Vydejna.Contracts
         public StavNaradi StavNaradiPoPrijmu { get; set; }
         public string KodVadyPoPrijmu { get; set; }
         public Guid StornovanaUdalost { get; set; }
+        public UmisteniNaradiDto PredchoziUmisteni { get; set; }
+        public UmisteniNaradiDto NoveUmisteni { get; set; }
     }
     #endregion
     #region Predani k oprave
@@ -153,6 +162,8 @@ namespace Vydejna.Contracts
         public string Objednavka { get; set; }
         public DateTime TerminDodani { get; set; }
         public TypOpravy TypOpravy { get; set; }
+        public UmisteniNaradiDto PredchoziUmisteni { get; set; }
+        public UmisteniNaradiDto NoveUmisteni { get; set; }
     }
 
     public class CislovaneNaradiStornovatPredaniKOpraveCommand
@@ -175,6 +186,8 @@ namespace Vydejna.Contracts
         public TypOpravy TypOpravy { get; set; }
         public StavNaradi StavNaradiPredOpravou { get; set; }
         public Guid StornovanaUdalost { get; set; }
+        public UmisteniNaradiDto PredchoziUmisteni { get; set; }
+        public UmisteniNaradiDto NoveUmisteni { get; set; }
     }
     #endregion
     #region Prijem z opravy
@@ -204,6 +217,8 @@ namespace Vydejna.Contracts
         public TypOpravy TypOpravy { get; set; }
         public StavNaradi StavNaradi { get; set; }
         public StavNaradiPoOprave Opraveno { get; set; }
+        public UmisteniNaradiDto PredchoziUmisteni { get; set; }
+        public UmisteniNaradiDto NoveUmisteni { get; set; }
     }
    
     public class CislovaneNaradiStornovatPrijemZOpravyCommand
@@ -227,6 +242,8 @@ namespace Vydejna.Contracts
         public TypOpravy TypOpravy { get; set; }
         public StavNaradi StavNaradiPoPrijmu { get; set; }
         public Guid StornovanaUdalost { get; set; }
+        public UmisteniNaradiDto PredchoziUmisteni { get; set; }
+        public UmisteniNaradiDto NoveUmisteni { get; set; }
     }
     #endregion
     #region Sesrotovani
@@ -243,6 +260,8 @@ namespace Vydejna.Contracts
         public int CisloNaradi { get; set; }
         public decimal CenaPredchozi { get; set; }
         public DateTime Datum { get; set; }
+        public UmisteniNaradiDto PredchoziUmisteni { get; set; }
+        public UmisteniNaradiDto NoveUmisteni { get; set; }
     }
    
     public class CislovaneNaradiStornovatPredaniKeSesrotovaniCommand
@@ -260,6 +279,8 @@ namespace Vydejna.Contracts
         public decimal CenaPredPredanim { get; set; }
         public DateTime DatumStorna { get; set; }
         public Guid StornovanaUdalost { get; set; }
+        public UmisteniNaradiDto PredchoziUmisteni { get; set; }
+        public UmisteniNaradiDto NoveUmisteni { get; set; }
     }
     #endregion
     #region Pomocne ciselniky

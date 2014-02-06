@@ -18,13 +18,16 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
         private CislovaneNaradiService _svc;
         private Exception _caughtException;
         private TestRepository<CislovaneNaradi> _repository;
+        private VirtualTime _time;
 
         [TestInitialize]
         public void Initialize()
         {
+            _time = new VirtualTime();
+            _time.SetTime(new DateTime(2012, 1, 18, 8, 19, 21));
             _executor = new TestExecutor();
             _repository = new TestRepository<CislovaneNaradi>();
-            _svc = new CislovaneNaradiService(_repository);
+            _svc = new CislovaneNaradiService(_repository, _time);
         }
 
         private void Execute<T>(T cmd)
@@ -115,7 +118,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
                 }
                 catch (Exception ex)
                 {
-                    onError(ex); 
+                    onError(ex);
                     return;
                 }
                 onSaved();
@@ -123,20 +126,154 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
         }
 
         [TestMethod]
-        public void CenaNesmiBytZaporna()
+        public void CisloNaradiMusiBytKladne()
         {
             Execute(new CislovaneNaradiPrijmoutNaVydejnuCommand
-                {
-                    NaradiId = new Guid("87228724-1111-1111-1111-222233334444"),
-                    CenaNova = -5,
-                    CisloNaradi = 1,
-                    KodDodavatele = "D58",
-                    PrijemZeSkladu = false
-                });
+            {
+                NaradiId = new Guid("87228724-1111-1111-1111-222233334444"),
+                CenaNova = 5,
+                CisloNaradi = -1,
+                KodDodavatele = "D58",
+                PrijemZeSkladu = false
+            });
             Exception<ArgumentOutOfRangeException>();
         }
 
+        [TestMethod]
+        public void CenaNesmiBytZaporna()
+        {
+            Execute(new CislovaneNaradiPrijmoutNaVydejnuCommand
+            {
+                NaradiId = new Guid("87228724-1111-1111-1111-222233334444"),
+                CenaNova = -5,
+                CisloNaradi = 1,
+                KodDodavatele = "D58",
+                PrijemZeSkladu = false
+            });
+            Exception<ArgumentOutOfRangeException>();
+        }
 
+        [TestMethod]
+        public void CisloNaradiNesmiBytObsazeno()
+        {
+            var naradiId = new Guid("87228724-1111-1111-1111-222233334444");
+            _repository.AddEvents(naradiId,
+                new CislovaneNaradiPrijatoNaVydejnuEvent
+                {
+                    NaradiId = naradiId,
+                    CisloNaradi = 1,
+                    EventId = Guid.NewGuid(),
+                    Datum = new DateTime(2012, 1, 1),
+                    KodDodavatele = "E7",
+                    PrijemZeSkladu = false,
+                    CenaNova = 3,
+                    NoveUmisteni = UmisteniNaradi.NaVydejne(StavNaradi.VPoradku).Dto()
+                });
+            Execute(new CislovaneNaradiPrijmoutNaVydejnuCommand
+            {
+                NaradiId = naradiId,
+                CisloNaradi = 1,
+                CenaNova = 5,
+                KodDodavatele = "D58",
+                PrijemZeSkladu = false
+            });
+            Exception<InvalidOperationException>();
+        }
+
+        [TestMethod]
+        public void GenerujeSePrijatoZeSkladu()
+        {
+            var naradiId = new Guid("87228724-1111-1111-1111-222233334444");
+            Execute(new CislovaneNaradiPrijmoutNaVydejnuCommand
+            {
+                NaradiId = naradiId,
+                CenaNova = 5,
+                CisloNaradi = 1,
+                KodDodavatele = "D58",
+                PrijemZeSkladu = false
+            });
+            var realne = string.Join(", ", _repository.NewEvents().Select(e => e.GetType().Name));
+            Assert.AreEqual("CislovaneNaradiPrijatoNaVydejnuEvent", realne);
+        }
+
+        [TestMethod]
+        public void DoUdalostiSeGenerujiAutomatickeVlastnosti()
+        {
+            var naradiId = new Guid("87228724-1111-1111-1111-222233334444");
+            Execute(new CislovaneNaradiPrijmoutNaVydejnuCommand
+            {
+                NaradiId = naradiId,
+                CenaNova = 5,
+                CisloNaradi = 1,
+                KodDodavatele = "D58",
+                PrijemZeSkladu = false
+            });
+            var udalost = _repository.NewEvents().OfType<CislovaneNaradiPrijatoNaVydejnuEvent>().FirstOrDefault();
+            Assert.IsNotNull(udalost, "Ocekavana udalost prijmu");
+            Assert.AreNotEqual(Guid.Empty, udalost.EventId, "EventId");
+            Assert.AreEqual(_time.GetUtcTime(), udalost.Datum, "Datum");
+        }
+
+        [TestMethod]
+        public void DoUdalostiSeDoplnujiDataZPrijazu()
+        {
+            var naradiId = new Guid("87228724-1111-1111-1111-222233334444");
+            var cmd = new CislovaneNaradiPrijmoutNaVydejnuCommand
+            {
+                NaradiId = naradiId,
+                CenaNova = 5,
+                CisloNaradi = 1,
+                KodDodavatele = "D58",
+                PrijemZeSkladu = false
+            };
+            Execute(cmd);
+            var udalost = _repository.NewEvents().OfType<CislovaneNaradiPrijatoNaVydejnuEvent>().FirstOrDefault();
+            Assert.IsNotNull(udalost, "Ocekavana udalost prijmu");
+            Assert.AreEqual(cmd.NaradiId, udalost.NaradiId, "NaradiId");
+            Assert.AreEqual(cmd.CenaNova, udalost.CenaNova, "CenaNova");
+            Assert.AreEqual(cmd.CisloNaradi, udalost.CisloNaradi, "CisloNaradi");
+            Assert.AreEqual(cmd.KodDodavatele, udalost.KodDodavatele, "KodDodavatele");
+            Assert.AreEqual(cmd.PrijemZeSkladu, udalost.PrijemZeSkladu, "PrijemZeSkladu");
+        }
+
+        [TestMethod]
+        public void UmisteniNaradiNaVydejne()
+        {
+            var naradiId = new Guid("87228724-1111-1111-1111-222233334444");
+            var cmd = new CislovaneNaradiPrijmoutNaVydejnuCommand
+            {
+                NaradiId = naradiId,
+                CenaNova = 5,
+                CisloNaradi = 1,
+                KodDodavatele = "D58",
+                PrijemZeSkladu = false
+            };
+            Execute(cmd);
+            var udalost = _repository.NewEvents().OfType<CislovaneNaradiPrijatoNaVydejnuEvent>().FirstOrDefault();
+            Assert.IsNotNull(udalost, "Ocekavana udalost prijmu");
+            Assert.AreEqual(UmisteniNaradi.NaVydejne(StavNaradi.VPoradku), UmisteniNaradi.Dto(udalost.NoveUmisteni), "Umisteni");
+        }
+
+        [TestMethod]
+        public void PriPrijmuZeSkladuSeSnizujeStavSkladuPomociInterniUdalosti()
+        {
+            var naradiId = new Guid("87228724-1111-1111-1111-222233334444");
+            var cmd = new CislovaneNaradiPrijmoutNaVydejnuCommand
+            {
+                NaradiId = naradiId,
+                CenaNova = 5,
+                CisloNaradi = 1,
+                KodDodavatele = "D58",
+                PrijemZeSkladu = true
+            };
+            Execute(cmd);
+            var udalost = _repository.NewEvents().OfType<NastalaPotrebaUpravitStavNaSkladeEvent>().FirstOrDefault();
+            Assert.IsNotNull(udalost, "Ocekavana udalost pro zmenu stavu na sklade");
+            Assert.AreEqual(naradiId, udalost.NaradiId, "NaradiId");
+            Assert.AreEqual(TypZmenyNaSklade.SnizitStav, udalost.TypZmeny, "TypZmeny");
+            Assert.AreEqual(1, udalost.Hodnota, "Hodnota");
+
+        }
     }
     /*
      * - prijem na vydejnu

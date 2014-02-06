@@ -12,16 +12,18 @@ namespace Vydejna.Domain
         : IHandle<CommandExecution<CislovaneNaradiPrijmoutNaVydejnuCommand>>
     {
         private IEventSourcedRepository<CislovaneNaradi> _repository;
+        private ITime _time;
 
-        public CislovaneNaradiService(IEventSourcedRepository<CislovaneNaradi> repository)
+        public CislovaneNaradiService(IEventSourcedRepository<CislovaneNaradi> repository, ITime time)
         {
             _repository = repository;
+            _time = time;
         }
 
         public void Handle(CommandExecution<CislovaneNaradiPrijmoutNaVydejnuCommand> message)
         {
             new ServiceExecution<CislovaneNaradi>(_repository, message.Command.NaradiId, message.OnCompleted, message.OnError)
-                .OnNew(agg => agg.Execute(message.Command))
+                .OnRequest(agg => agg.Execute(message.Command, _time))
                 .Execute();
         }
 
@@ -74,6 +76,11 @@ namespace Vydejna.Domain
                     return agg;
                 };
                 return this;
+            }
+
+            public ServiceExecution<T> OnRequest(Action<T> action)
+            {
+                return OnNew(action).OnExisting(action);
             }
 
             public void Execute()
