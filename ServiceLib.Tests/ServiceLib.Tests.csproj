@@ -116,6 +116,7 @@
     <Compile Include="TestUtils\TestMetadataInstance.cs" />
     <Compile Include="TestUtils\TestNodeLock.cs" />
     <Compile Include="TestUtils\TestRawContext.cs" />
+    <Compile Include="TestUtils\TestRepository.cs" />
     <Compile Include="TestUtils\TestStagedContext.cs" />
     <Compile Include="TestUtils\TestStreaming.cs" />
     <Compile Include="TestUtils\VirtualTime.cs" />

@@ -1,6 +1,7 @@
 ﻿using ServiceLib;
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using Vydejna.Contracts;
 
 namespace Vydejna.Domain
@@ -8,6 +9,11 @@ namespace Vydejna.Domain
     public class DefinovaneNaradi : EventSourcedAggregate
     {
         private bool _aktivni;
+
+        public DefinovaneNaradi()
+        {
+            RegisterEventHandlers(GetType().GetMethods(BindingFlags.Instance | BindingFlags.NonPublic));
+        }
 
         public void Aktivovat()
         {
@@ -59,11 +65,6 @@ namespace Vydejna.Domain
             var aggregate = naradi as IEventSourcedAggregate;
             aggregate.LoadFromEvents(udalosti);
             return naradi;
-        }
-
-        protected override void DispatchEvent(object evt)
-        {
-            ApplyChange((dynamic)evt);
         }
     }
 }

@@ -2,6 +2,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Linq.Expressions;
+using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -68,7 +70,30 @@ namespace ServiceLib
                 _changes.Add(ev);
         }
 
-        protected abstract void DispatchEvent(object evt);
+        private Dictionary<Type, Action<object>> _eventMapping = new Dictionary<Type, Action<object>>();
+
+        protected void RegisterEventHandlers(IEnumerable<MethodInfo> methods)
+        {
+            foreach (var method in methods)
+            {
+                var parameters = method.GetParameters();
+                if (parameters.Length != 1)
+                    continue;
+                var parameterType = parameters[0].ParameterType;
+                var parameterExpr = Expression.Parameter(typeof(object));
+                _eventMapping[parameterType] = Expression.Lambda<Action<object>>(
+                    Expression.Call(Expression.Constant(this), method, new[] { Expression.Convert(parameterExpr, parameterType) }),
+                    parameterExpr
+                    ).Compile();
+            }
+        }
+
+        protected virtual void DispatchEvent(object evt)
+        {
+            Action<object> handler;
+            if (_eventMapping.TryGetValue(evt.GetType(), out handler))
+                handler(evt);
+        }
 
         void IEventSourcedAggregate.LoadFromEvents(IList<object> events)
         {

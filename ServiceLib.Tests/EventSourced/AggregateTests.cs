@@ -1,5 +1,6 @@
 ﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
+using System.Reflection;
 
 namespace ServiceLib.Tests.EventSourced
 {
@@ -63,15 +64,12 @@ namespace ServiceLib.Tests.EventSourced
 
             public TestAggregate()
             {
+                RegisterEventHandlers(GetType().GetMethods(BindingFlags.Instance | BindingFlags.NonPublic));
                 Apply(new AggregateCreated { Id = Guid.NewGuid() });
             }
             public void Increment()
             {
                 Apply(new AggregateIncrement());
-            }
-            protected override void DispatchEvent(object evt)
-            {
-                Apply((dynamic)evt);
             }
             protected void Apply(AggregateCreated evnt)
             {

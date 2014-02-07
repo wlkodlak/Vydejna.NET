@@ -1,6 +1,7 @@
 ﻿using ServiceLib;
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using Vydejna.Contracts;
 
 namespace Vydejna.Domain
@@ -8,6 +9,11 @@ namespace Vydejna.Domain
     public class UnikatnostNaradi : EventSourcedAggregate
     {
         private Dictionary<Klic, StavNaradi> _existujici = new Dictionary<Klic, StavNaradi>();
+
+        public UnikatnostNaradi()
+        {
+            RegisterEventHandlers(GetType().GetMethods(BindingFlags.Instance | BindingFlags.NonPublic));
+        }
 
         private struct Klic { public string Vykres, Rozmer; };
         private class StavNaradi { public Guid Id; public bool DokoncenaDefinice; public string Vykres, Rozmer; }
@@ -57,11 +63,6 @@ namespace Vydejna.Domain
             RecordChange(evt);
             var klic = new Klic() { Vykres = evt.Vykres, Rozmer = evt.Rozmer };
             _existujici[klic].DokoncenaDefinice = true;
-        }
-
-        protected override void DispatchEvent(object evt)
-        {
-            ApplyChange((dynamic)evt);
         }
     }
 }

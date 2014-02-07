@@ -176,5 +176,18 @@ namespace Vydejna.Domain
                     return null;
             }
         }
+
+        public static bool operator ==(UmisteniNaradi a, UmisteniNaradi b)
+        {
+            if (ReferenceEquals(a, null))
+                return ReferenceEquals(b, null);
+            else
+                return a.Equals(b);
+        }
+        
+        public static bool operator !=(UmisteniNaradi a, UmisteniNaradi b)
+        {
+            return !(a == b);
+        }
     }
 }

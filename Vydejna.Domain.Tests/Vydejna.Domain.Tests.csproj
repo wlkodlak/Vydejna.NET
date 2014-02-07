@@ -60,6 +60,7 @@
   <ItemGroup>
     <Compile Include="CislovaneNaradiTesty\CislovaneNaradiServiceTest.cs" />
     <Compile Include="CislovaneNaradiTesty\PrijemNaVydejnuTest.cs" />
+    <Compile Include="CislovaneNaradiTesty\VydejDoVyrobyTest.cs" />
     <Compile Include="NaradiObecneTesty\ProcesDefiniceNaradiTest.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="SeznamNaradiProjectionTest.cs" />
