@@ -63,6 +63,7 @@
     <Compile Include="SeznamNaradiProjection.cs" />
     <Compile Include="SeznamNaradiRest.cs" />
     <Compile Include="DefinovaneNaradiService.cs" />
+    <Compile Include="SkupinaNecislovanehoNaradi.cs" />
     <Compile Include="UmisteniNaradi.cs" />
     <Compile Include="UnikatnostNaradi.cs" />
     <Compile Include="UnikatnostNaradiRepository.cs" />
