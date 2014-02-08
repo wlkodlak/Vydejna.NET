@@ -289,7 +289,6 @@ namespace Vydejna.Contracts
         Neurcen,
         VPoradku,
         NutnoOpravit,
-        NutnoReklamovat,
         Neopravitelne
     }
 

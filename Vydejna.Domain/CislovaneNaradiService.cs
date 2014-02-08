@@ -11,6 +11,10 @@ namespace Vydejna.Domain
     public class CislovaneNaradiService
         : IHandle<CommandExecution<CislovaneNaradiPrijmoutNaVydejnuCommand>>
         , IHandle<CommandExecution<CislovaneNaradiVydatDoVyrobyCommand>>
+        , IHandle<CommandExecution<CislovaneNaradiPrijmoutZVyrobyCommand>>
+        , IHandle<CommandExecution<CislovaneNaradiPredatKOpraveCommand>>
+        , IHandle<CommandExecution<CislovaneNaradiPrijmoutZOpravyCommand>>
+        , IHandle<CommandExecution<CislovaneNaradiPredatKeSesrotovaniCommand>>
     {
         private IEventSourcedRepository<CislovaneNaradi> _repository;
         private ITime _time;
@@ -29,6 +33,34 @@ namespace Vydejna.Domain
         }
 
         public void Handle(CommandExecution<CislovaneNaradiVydatDoVyrobyCommand> message)
+        {
+            new ServiceExecution<CislovaneNaradi>(_repository, message.Command.NaradiId, message.OnCompleted, message.OnError)
+                .OnRequest(agg => agg.Execute(message.Command, _time))
+                .Execute();
+        }
+
+        public void Handle(CommandExecution<CislovaneNaradiPrijmoutZVyrobyCommand> message)
+        {
+            new ServiceExecution<CislovaneNaradi>(_repository, message.Command.NaradiId, message.OnCompleted, message.OnError)
+                .OnRequest(agg => agg.Execute(message.Command, _time))
+                .Execute();
+        }
+
+        public void Handle(CommandExecution<CislovaneNaradiPredatKOpraveCommand> message)
+        {
+            new ServiceExecution<CislovaneNaradi>(_repository, message.Command.NaradiId, message.OnCompleted, message.OnError)
+                .OnRequest(agg => agg.Execute(message.Command, _time))
+                .Execute();
+        }
+
+        public void Handle(CommandExecution<CislovaneNaradiPrijmoutZOpravyCommand> message)
+        {
+            new ServiceExecution<CislovaneNaradi>(_repository, message.Command.NaradiId, message.OnCompleted, message.OnError)
+                .OnRequest(agg => agg.Execute(message.Command, _time))
+                .Execute();
+        }
+
+        public void Handle(CommandExecution<CislovaneNaradiPredatKeSesrotovaniCommand> message)
         {
             new ServiceExecution<CislovaneNaradi>(_repository, message.Command.NaradiId, message.OnCompleted, message.OnError)
                 .OnRequest(agg => agg.Execute(message.Command, _time))

@@ -59,7 +59,11 @@
   </Choose>
   <ItemGroup>
     <Compile Include="CislovaneNaradiTesty\CislovaneNaradiServiceTest.cs" />
+    <Compile Include="CislovaneNaradiTesty\VydejDoSrotuTest.cs" />
+    <Compile Include="CislovaneNaradiTesty\VydejNaOpravuTest.cs" />
     <Compile Include="CislovaneNaradiTesty\PrijemNaVydejnuTest.cs" />
+    <Compile Include="CislovaneNaradiTesty\PrijemZOpravyTest.cs" />
+    <Compile Include="CislovaneNaradiTesty\PrijemZVyrobyTest.cs" />
     <Compile Include="CislovaneNaradiTesty\VydejDoVyrobyTest.cs" />
     <Compile Include="NaradiObecneTesty\ProcesDefiniceNaradiTest.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

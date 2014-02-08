@@ -101,8 +101,6 @@ namespace Vydejna.Domain
                             return "Na vydejne v poradku";
                         case StavNaradi.NutnoOpravit:
                             return "Na vydejne k oprave";
-                        case StavNaradi.NutnoReklamovat:
-                            return "Na vydejne k reklamaci";
                         case StavNaradi.Neopravitelne:
                             return "Na vydejne k sesrotovani";
                     }

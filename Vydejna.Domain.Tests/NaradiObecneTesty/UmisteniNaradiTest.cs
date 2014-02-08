@@ -48,7 +48,6 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
             Assert.AreEqual(UmisteniNaradi.NaVydejne(StavNaradi.Neopravitelne), prosrot);
             Assert.AreNotEqual(vporadku, proopravu);
             Assert.AreNotEqual(prosrot, vesrotu);
-            Assert.AreNotEqual(UmisteniNaradi.NaVydejne(StavNaradi.NutnoReklamovat), proopravu);
         }
         [TestMethod]
         public void NaVydejne_Dto()
@@ -56,9 +55,6 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
             TestDto("V poradku",
                 new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.NaVydejne, UpresneniZakladu = "VPoradku" },
                 UmisteniNaradi.NaVydejne(StavNaradi.VPoradku));
-            TestDto("K reklamaci",
-                new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.NaVydejne, UpresneniZakladu = "NutnoReklamovat" },
-                UmisteniNaradi.NaVydejne(StavNaradi.NutnoReklamovat));
             TestDto("Pro srot",
                 new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.NaVydejne, UpresneniZakladu = "Neopravitelne" },
                 UmisteniNaradi.NaVydejne(StavNaradi.Neopravitelne));

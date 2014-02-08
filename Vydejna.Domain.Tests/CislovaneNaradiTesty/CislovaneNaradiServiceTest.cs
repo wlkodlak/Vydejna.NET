@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
+using Vydejna.Contracts;
 
 namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
 {
@@ -61,7 +62,9 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
 
         protected T NewEventOfType<T>()
         {
-            return _repository.NewEvents().OfType<T>().FirstOrDefault();
+            var evnt = _repository.NewEvents().OfType<T>().FirstOrDefault();
+            Assert.IsNotNull(evnt, "Expected event {0}", typeof(T).Name);
+            return evnt;
         }
 
         protected DateTime GetUtcTime()
@@ -98,6 +101,8 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
 
         private void ComputeEventCounts()
         {
+            if (_caughtException != null)
+                throw _caughtException.PreserveStackTrace();
             if (_newEventCounts == null)
             {
                 _newEventCounts = _repository.NewEvents()
@@ -108,58 +113,121 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
             }
         }
 
-        /*
-         * - prijem z vyroby
-         *   - cislovane naradi musi existovat
-         *   - cena nesmi byt zaporna
-         *   - nutne zadat kod pracoviste
-         *   - v udalosti odpodivaji polozky prikazu
-         *   - do udalosti se automaticky doplni EventId, Datum a PuvodniCena
-         *   - pokud stav naradi je v poradku, vada nesmi byt zadana
-         *   - pokud stav naradi neni v poradku, vada musi byt urcena
-         *   - naradi musi byt dostupne pro prijem z pracoviste
-         *     - spravne pracoviste
-         *   - naradi nesmi byt nedostupne pro prijem z pracoviste
-         *     - jeste vubec nevydano
-         *     - jine pracoviste
-         */
-        /*
-         * - sesrotovani
-         *   - cislovane naradi musi existovat
-         *   - naradi musi byt dostupne pro srotovani
-         *     - prijate z vyroby jako neopravitelne
-         *   - naradi nesmi byt nedostupne pro srotovani
-         *     - prijate z opravy jako opravene
-         *   - v udalosti odpodivaji polozky prikazu
-         *   - do udalosti se automaticky doplni EventId, Datum a PuvodniCena
-         */
-        /*
-         * - vydej na opravu
-         *   - cislovane naradi musi existovat
-         *   - naradi musi byt dostupne pro opravu
-         *     - prijate z vyroby jako nutne opravit
-         *   - naradi nesmi byt nedostupne pro opravu
-         *     - prijate z vyroby jako v poradku
-         *   - cena nesmi byt zaporna
-         *   - v udalosti odpodivaji polozky prikazu
-         *   - do udalosti se automaticky doplni EventId, Datum a PuvodniCena
-         *   - je nutne zadat objednavku
-         *   - je nutne zadat dodavatele
-         *   - termin dodani musi byt v budoucnosti (relativne k datu operace)
-         */
-        /*
-         * - prijem z opravy
-         *   - cislovane naradi musi existovat
-         *   - naradi musi byt dostupne pro prijem z opravy
-         *     - vydane na opravu na stejnou objednavku
-         *   - naradi nesmi byt nedostupne pro prijem z opravy
-         *     - vydane na reklamaci na jine objednavce
-         *   - cena nesmi byt zaporna
-         *   - v udalosti odpodivaji polozky prikazu
-         *   - do udalosti se automaticky doplni EventId, Datum a PuvodniCena
-         *   - je nutne zadat objednavku
-         *   - je nutne zadat dodavatele
-         *   - je nutne zadat dodaci list
-         */
+
+        protected CislovaneNaradiPrijatoNaVydejnuEvent EvtPrijato(Guid naradi, int cisloNaradi,
+            string kodDodavatele = "D43", decimal cena = 283m)
+        {
+            return new CislovaneNaradiPrijatoNaVydejnuEvent
+            {
+                NaradiId = naradi,
+                CisloNaradi = cisloNaradi,
+                Datum = GetUtcTime(),
+                EventId = Guid.NewGuid(),
+                KodDodavatele = kodDodavatele,
+                CenaNova = cena,
+                NoveUmisteni = UmisteniNaradi.NaVydejne(StavNaradi.VPoradku).Dto(),
+                PrijemZeSkladu = false
+            };
+        }
+
+        protected CislovaneNaradiVydanoDoVyrobyEvent EvtVydano(Guid naradi, int cisloNaradi,
+            string pracoviste = "88339430", decimal cenaPred = 100m, decimal cenaPo = 100m)
+        {
+            return new CislovaneNaradiVydanoDoVyrobyEvent
+            {
+                NaradiId = naradi,
+                CisloNaradi = cisloNaradi,
+                Datum = GetUtcTime(),
+                EventId = Guid.NewGuid(),
+                CenaPredchozi = cenaPred,
+                CenaNova = cenaPo,
+                PredchoziUmisteni = UmisteniNaradi.NaVydejne(StavNaradi.VPoradku).Dto(),
+                KodPracoviste = pracoviste,
+                NoveUmisteni = UmisteniNaradi.NaPracovisti(pracoviste).Dto()
+            };
+        }
+
+        protected CislovaneNaradiPrijatoZVyrobyEvent EvtVraceno(Guid naradi, int cisloNaradi,
+            string pracoviste = "88339430", StavNaradi stav = StavNaradi.VPoradku,
+            decimal cenaPred = 100m, decimal cenaPo = 100m,
+            string vada = null)
+        {
+            return new CislovaneNaradiPrijatoZVyrobyEvent
+            {
+                NaradiId = naradi,
+                CisloNaradi = cisloNaradi,
+                Datum = GetUtcTime(),
+                EventId = Guid.NewGuid(),
+                CenaPredchozi = cenaPred,
+                CenaNova = cenaPo,
+                KodPracoviste = pracoviste,
+                KodVady = vada,
+                StavNaradi = stav,
+                PredchoziUmisteni = UmisteniNaradi.NaPracovisti(pracoviste).Dto(),
+                NoveUmisteni = UmisteniNaradi.NaVydejne(stav).Dto()
+            };
+        }
+
+        protected CislovaneNaradiPredanoKeSesrotovaniEvent EvtSrotovano(Guid naradi, int cisloNaradi,
+            decimal cenaPred = 100m, StavNaradi stav = StavNaradi.Neopravitelne)
+        {
+            return new CislovaneNaradiPredanoKeSesrotovaniEvent
+            {
+                NaradiId = naradi,
+                CisloNaradi = cisloNaradi,
+                Datum = GetUtcTime(),
+                EventId = Guid.NewGuid(),
+                CenaPredchozi = cenaPred,
+                PredchoziUmisteni = UmisteniNaradi.NaVydejne(stav).Dto(),
+                NoveUmisteni = UmisteniNaradi.VeSrotu().Dto()
+            };
+        }
+
+        protected CislovaneNaradiPredanoKOpraveEvent EvtOprava(Guid naradi, int cisloNaradi,
+            decimal cenaPred = 100m, decimal cenaPo = 100m,
+            StavNaradi stav = StavNaradi.NutnoOpravit, TypOpravy typ = TypOpravy.Oprava,
+            string dodavatel = "D43", string objednavka = "483/2013", DateTime termin = default(DateTime))
+        {
+            return new CislovaneNaradiPredanoKOpraveEvent
+            {
+                NaradiId = naradi,
+                CisloNaradi = cisloNaradi,
+                Datum = GetUtcTime(),
+                EventId = Guid.NewGuid(),
+                CenaPredchozi = cenaPred,
+                CenaNova = cenaPo,
+                KodDodavatele = dodavatel,
+                Objednavka = objednavka,
+                TerminDodani = termin == default(DateTime) ? GetUtcTime().Date.AddDays(15) : termin,
+                TypOpravy = typ,
+                PredchoziUmisteni = UmisteniNaradi.NaVydejne(stav).Dto(),
+                NoveUmisteni = UmisteniNaradi.NaOprave(typ, dodavatel, objednavka).Dto()
+            };
+        }
+
+        protected CislovaneNaradiPrijatoZOpravyEvent EvtOpraveno(Guid naradi, int cisloNaradi,
+            decimal cenaPred = 100m, decimal cenaPo = 100m,
+            TypOpravy typ = TypOpravy.Oprava, StavNaradiPoOprave opraveno = StavNaradiPoOprave.Opraveno,
+            string dodavatel = "D43", string objednavka = "483/2013", string dodaciList = "483d/2013")
+        {
+            var stav = (opraveno == StavNaradiPoOprave.OpravaNepotrebna || opraveno == StavNaradiPoOprave.Opraveno) ? StavNaradi.VPoradku : StavNaradi.Neopravitelne;
+            return new CislovaneNaradiPrijatoZOpravyEvent
+            {
+                NaradiId = naradi,
+                CisloNaradi = cisloNaradi,
+                Datum = GetUtcTime(),
+                EventId = Guid.NewGuid(),
+                CenaPredchozi = cenaPred,
+                CenaNova = cenaPo,
+                KodDodavatele = dodavatel,
+                Objednavka = objednavka,
+                TypOpravy = typ,
+                DodaciList = dodaciList,
+                Opraveno = opraveno,
+                StavNaradi = stav,
+                PredchoziUmisteni = UmisteniNaradi.NaOprave(typ, dodavatel, objednavka).Dto(),
+                NoveUmisteni = UmisteniNaradi.NaVydejne(stav).Dto()
+            };
+        }
     }
 }

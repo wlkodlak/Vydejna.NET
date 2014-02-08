@@ -1,9 +1,5 @@
 ﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using Vydejna.Contracts;
 
 namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
@@ -155,63 +151,6 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
             Assert.AreEqual(GetUtcTime(), udalost.Datum, "Datum");
             Assert.AreEqual(300m, udalost.CenaPredchozi, "CenaPredchozi");
             Assert.AreEqual(UmisteniNaradi.NaVydejne(StavNaradi.VPoradku).Dto(), udalost.PredchoziUmisteni, "PredchoziUmisteni");
-        }
-
-        /*
-         *   - v udalosti odpodivaji polozky prikazu
-         *   - do udalosti se automaticky doplni EventId, Datum a PuvodniCena
-         */
-
-        private CislovaneNaradiPrijatoNaVydejnuEvent EvtPrijato(Guid naradi, int cisloNaradi,
-            string kodDodavatele = "D43", decimal cena = 283m)
-        {
-            return new CislovaneNaradiPrijatoNaVydejnuEvent
-            {
-                NaradiId = naradi,
-                CisloNaradi = cisloNaradi,
-                Datum = GetUtcTime(),
-                EventId = Guid.NewGuid(),
-                KodDodavatele = kodDodavatele,
-                CenaNova = cena,
-                NoveUmisteni = UmisteniNaradi.NaVydejne(StavNaradi.VPoradku).Dto(),
-                PrijemZeSkladu = false
-            };
-        }
-
-        private CislovaneNaradiPrijatoZVyrobyEvent EvtVraceno(Guid naradi, int cisloNaradi,
-            string pracoviste = "88339430", StavNaradi stav = StavNaradi.VPoradku,
-            decimal cenaPred = 100m, decimal cenaPo = 100m,
-            string vada = null)
-        {
-            return new CislovaneNaradiPrijatoZVyrobyEvent
-            {
-                NaradiId = naradi,
-                CisloNaradi = cisloNaradi,
-                Datum = GetUtcTime(),
-                EventId = Guid.NewGuid(),
-                CenaPredchozi = cenaPred,
-                CenaNova = cenaPo,
-                KodPracoviste = pracoviste,
-                KodVady = vada,
-                StavNaradi = stav,
-                PredchoziUmisteni = UmisteniNaradi.NaPracovisti(pracoviste).Dto(),
-                NoveUmisteni = UmisteniNaradi.NaVydejne(stav).Dto()
-            };
-        }
-
-        private CislovaneNaradiPredanoKeSesrotovaniEvent EvtSrotovano(Guid naradi, int cisloNaradi,
-            decimal cenaPred = 100m, StavNaradi stav = StavNaradi.Neopravitelne)
-        {
-            return new CislovaneNaradiPredanoKeSesrotovaniEvent
-            {
-                NaradiId = naradi,
-                CisloNaradi = cisloNaradi,
-                Datum = GetUtcTime(),
-                EventId = Guid.NewGuid(),
-                CenaPredchozi = cenaPred,
-                PredchoziUmisteni = UmisteniNaradi.NaVydejne(stav).Dto(),
-                NoveUmisteni = UmisteniNaradi.VeSrotu().Dto()
-            };
         }
     }
 }

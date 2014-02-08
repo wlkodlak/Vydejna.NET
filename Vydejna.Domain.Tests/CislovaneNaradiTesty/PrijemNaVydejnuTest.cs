@@ -1,13 +1,6 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-using ServiceLib;
+﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System;
 using Vydejna.Contracts;
-using ServiceLib.Tests.TestUtils;
-using System.Threading;
 
 namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
 {
@@ -81,8 +74,8 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
                 KodDodavatele = "D58",
                 PrijemZeSkladu = false
             });
-            var realne = string.Join(", ", NewEventsTypeNames());
-            Assert.AreEqual("CislovaneNaradiPrijatoNaVydejnuEvent", realne);
+            Event<CislovaneNaradiPrijatoNaVydejnuEvent>();
+            NoMoreEvents();
         }
 
         [TestMethod]
