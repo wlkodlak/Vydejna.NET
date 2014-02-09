@@ -5,7 +5,7 @@ using Vydejna.Contracts;
 
 namespace Vydejna.Domain
 {
-    public class NecislovaneNaradi : EventSourcedAggregate
+    public class NecislovaneNaradi : EventSourcedGuidAggregate
     {
         public NecislovaneNaradi()
         {

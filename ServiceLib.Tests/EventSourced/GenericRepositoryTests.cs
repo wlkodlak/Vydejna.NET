@@ -15,7 +15,7 @@ namespace Vydejna.Tests.EventSourcedTests
             public int CommitedVersion = -1;
             public List<object> LoadedEvents = new List<object>();
 
-            public Guid Id { get; set; }
+            public IAggregateId Id { get; set; }
             public int OriginalVersion { get { return LoadedEvents.Count; } }
             public IList<object> GetChanges() { return Changes; }
             public object CreateSnapshot() { return null; }
@@ -92,7 +92,7 @@ namespace Vydejna.Tests.EventSourcedTests
         }
 
 
-        private readonly Guid _aggregateGuid = new Guid("11111111-2222-3333-4444-000000000001");
+        private readonly IAggregateId _aggregateGuid = new AggregateIdGuid("11111111-2222-3333-4444-000000000001");
         private readonly string _streamName = "testaggregate_11111111222233334444000000000001";
         private TestExecutor _executor;
         private TestEventStore _store;

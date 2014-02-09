@@ -9,17 +9,17 @@ namespace ServiceLib.Tests.TestUtils
     public class TestRepository<T> : IEventSourcedRepository<T>
         where T : class, IEventSourcedAggregate, new()
     {
-        private Dictionary<Guid, List<object>> _allEvents;
+        private Dictionary<IAggregateId, List<object>> _allEvents;
         private List<object> _newEvents;
         private bool _throwConcurrency;
 
         public TestRepository()
         {
-            _allEvents = new Dictionary<Guid, List<object>>();
+            _allEvents = new Dictionary<IAggregateId, List<object>>();
             _newEvents = new List<object>();
         }
 
-        public void AddEvents(Guid id, params object[] events)
+        public void AddEvents(IAggregateId id, params object[] events)
         {
             List<object> all;
             if (!_allEvents.TryGetValue(id, out all))
@@ -37,7 +37,7 @@ namespace ServiceLib.Tests.TestUtils
             return _newEvents;
         }
 
-        public void Load(Guid id, Action<T> onLoaded, Action onMissing, Action<Exception> onError)
+        public void Load(IAggregateId id, Action<T> onLoaded, Action onMissing, Action<Exception> onError)
         {
             List<object> all;
             if (!_allEvents.TryGetValue(id, out all))

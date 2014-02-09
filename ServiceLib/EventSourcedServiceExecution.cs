@@ -10,7 +10,7 @@ namespace ServiceLib
         where T : class, IEventSourcedAggregate, new()
     {
         private IEventSourcedRepository<T> _repository;
-        private Guid _aggregateId;
+        private IAggregateId _aggregateId;
         private Action _onComplete;
         private Action<Exception> _onError;
         private Action<T> _existingAction;
@@ -18,7 +18,7 @@ namespace ServiceLib
         private int _tryNumber = 0;
         private Func<ValidationErrorException> _validation;
 
-        public EventSourcedServiceExecution(IEventSourcedRepository<T> repository, Guid aggregateId, Action onComplete, Action<Exception> onError)
+        public EventSourcedServiceExecution(IEventSourcedRepository<T> repository, IAggregateId aggregateId, Action onComplete, Action<Exception> onError)
         {
             _repository = repository;
             _aggregateId = aggregateId;

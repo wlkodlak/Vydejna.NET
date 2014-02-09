@@ -5,8 +5,37 @@ using Vydejna.Contracts;
 
 namespace Vydejna.Domain
 {
+    public class CislovaneNaradiId : IAggregateId
+    {
+        public readonly Guid NaradiId;
+        public readonly int CisloNaradi;
+        
+        public CislovaneNaradiId(Guid naradiId, int cisloNaradi)
+        {
+            NaradiId = naradiId;
+            CisloNaradi = cisloNaradi;
+        }
+
+        public override int GetHashCode()
+        {
+            return NaradiId.GetHashCode() ^ CisloNaradi;
+        }
+
+        public override bool Equals(object obj)
+        {
+            var oth = obj as CislovaneNaradiId;
+            return oth != null && NaradiId == oth.NaradiId && CisloNaradi == oth.CisloNaradi;
+        }
+
+        public override string ToString()
+        {
+            return string.Concat(NaradiId.ToString("N").ToLowerInvariant(), "-", CisloNaradi.ToString());
+        }
+    }
+
     public class CislovaneNaradi : EventSourcedAggregate
     {
+        private CislovaneNaradiId _id;
         private Guid _naradiId;
         private int _cisloNaradi;
         private UmisteniNaradi _umisteni;
@@ -15,6 +44,11 @@ namespace Vydejna.Domain
         public CislovaneNaradi()
         {
             RegisterEventHandlers(GetType().GetMethods(BindingFlags.Instance | BindingFlags.NonPublic));
+        }
+
+        public override IAggregateId Id
+        {
+            get { return _id; }
         }
 
         public void Execute(CislovaneNaradiPrijmoutNaVydejnuCommand cmd, ITime time)
@@ -48,6 +82,7 @@ namespace Vydejna.Domain
             RecordChange(evnt);
             _naradiId = evnt.NaradiId;
             _cisloNaradi = evnt.CisloNaradi;
+            _id = new CislovaneNaradiId(_naradiId, _cisloNaradi);
             _umisteni = UmisteniNaradi.Dto(evnt.NoveUmisteni);
             _cena = evnt.CenaNova;
         }

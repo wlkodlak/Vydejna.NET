@@ -74,10 +74,11 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
                 _parent = parent;
             }
 
-            public void Load(Guid id, Action<DefinovaneNaradi> onLoaded, Action onMissing, Action<Exception> onError)
+            public void Load(IAggregateId id, Action<DefinovaneNaradi> onLoaded, Action onMissing, Action<Exception> onError)
             {
                 List<object> udalosti;
-                if (!_parent._obsahRepository.TryGetValue(id, out udalosti))
+                var guid = ((AggregateIdGuid)id).Guid;
+                if (!_parent._obsahRepository.TryGetValue(guid, out udalosti))
                     onMissing();
                 else
                     onLoaded(DefinovaneNaradi.LoadFrom(udalosti));

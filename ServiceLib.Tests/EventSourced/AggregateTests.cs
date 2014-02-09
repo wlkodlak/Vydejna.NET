@@ -31,7 +31,7 @@ namespace ServiceLib.Tests.EventSourced
             
             agg.Increment();
             
-            Assert.AreEqual(guid, agg.Id, "Id");
+            Assert.AreEqual(guid.ToId(), agg.Id, "Id");
             Assert.AreEqual(1, iagg.OriginalVersion, "Original version");
             var changes = iagg.GetChanges();
             Assert.IsNotNull(changes, "Changes");
@@ -51,14 +51,14 @@ namespace ServiceLib.Tests.EventSourced
 
             iagg.CommitChanges(2);
 
-            Assert.AreEqual(guid, agg.Id, "Id");
+            Assert.AreEqual(guid.ToId(), agg.Id, "Id");
             Assert.AreEqual(2, iagg.OriginalVersion, "Original version");
             var changes = iagg.GetChanges();
             Assert.IsNotNull(changes, "Changes");
             Assert.AreEqual(0, changes.Count, "Changes");
         }
 
-        private class TestAggregate : EventSourcedAggregate
+        private class TestAggregate : EventSourcedGuidAggregate
         {
             public int State = 0;
 
@@ -74,7 +74,7 @@ namespace ServiceLib.Tests.EventSourced
             protected void Apply(AggregateCreated evnt)
             {
                 RecordChange(evnt);
-                Id = evnt.Id;
+                SetGuid(evnt.Id);
             }
             protected void Apply(AggregateIncrement evnt)
             {

@@ -24,7 +24,7 @@ namespace Vydejna.Domain
 
         public void Handle(CommandExecution<NecislovaneNaradiPrijmoutNaVydejnuCommand> message)
         {
-            new EventSourcedServiceExecution<NecislovaneNaradi>(_repository, message.Command.NaradiId, message.OnCompleted, message.OnError)
+            new EventSourcedServiceExecution<NecislovaneNaradi>(_repository, message.Command.NaradiId.ToId(), message.OnCompleted, message.OnError)
                 .Validate(() => _validator.Validace(message.Command))
                 .OnRequest(agg => agg.Execute(message.Command, _time))
                 .Execute();
@@ -32,7 +32,7 @@ namespace Vydejna.Domain
 
         public void Handle(CommandExecution<NecislovaneNaradiVydatDoVyrobyCommand> message)
         {
-            new EventSourcedServiceExecution<NecislovaneNaradi>(_repository, message.Command.NaradiId, message.OnCompleted, message.OnError)
+            new EventSourcedServiceExecution<NecislovaneNaradi>(_repository, message.Command.NaradiId.ToId(), message.OnCompleted, message.OnError)
                 .Validate(() => _validator.Validace(message.Command))
                 .OnRequest(agg => agg.Execute(message.Command, _time))
                 .Execute();
@@ -40,7 +40,7 @@ namespace Vydejna.Domain
 
         public void Handle(CommandExecution<NecislovaneNaradiPrijmoutZVyrobyCommand> message)
         {
-            new EventSourcedServiceExecution<NecislovaneNaradi>(_repository, message.Command.NaradiId, message.OnCompleted, message.OnError)
+            new EventSourcedServiceExecution<NecislovaneNaradi>(_repository, message.Command.NaradiId.ToId(), message.OnCompleted, message.OnError)
                 .Validate(() => _validator.Validace(message.Command))
                 .OnRequest(agg => agg.Execute(message.Command, _time))
                 .Execute();
@@ -48,7 +48,7 @@ namespace Vydejna.Domain
 
         public void Handle(CommandExecution<NecislovaneNaradiPredatKOpraveCommand> message)
         {
-            new EventSourcedServiceExecution<NecislovaneNaradi>(_repository, message.Command.NaradiId, message.OnCompleted, message.OnError)
+            new EventSourcedServiceExecution<NecislovaneNaradi>(_repository, message.Command.NaradiId.ToId(), message.OnCompleted, message.OnError)
                 .Validate(() => _validator.Validace(message.Command, _time))
                 .OnRequest(agg => agg.Execute(message.Command, _time))
                 .Execute();
@@ -56,7 +56,7 @@ namespace Vydejna.Domain
 
         public void Handle(CommandExecution<NecislovaneNaradiPrijmoutZOpravyCommand> message)
         {
-            new EventSourcedServiceExecution<NecislovaneNaradi>(_repository, message.Command.NaradiId, message.OnCompleted, message.OnError)
+            new EventSourcedServiceExecution<NecislovaneNaradi>(_repository, message.Command.NaradiId.ToId(), message.OnCompleted, message.OnError)
                 .Validate(() => _validator.Validace(message.Command))
                 .OnRequest(agg => agg.Execute(message.Command, _time))
                 .Execute();
@@ -64,7 +64,7 @@ namespace Vydejna.Domain
 
         public void Handle(CommandExecution<NecislovaneNaradiPredatKeSesrotovaniCommand> message)
         {
-            new EventSourcedServiceExecution<NecislovaneNaradi>(_repository, message.Command.NaradiId, message.OnCompleted, message.OnError)
+            new EventSourcedServiceExecution<NecislovaneNaradi>(_repository, message.Command.NaradiId.ToId(), message.OnCompleted, message.OnError)
                 .Validate(() => _validator.Validace(message.Command))
                 .OnRequest(agg => agg.Execute(message.Command, _time))
                 .Execute();

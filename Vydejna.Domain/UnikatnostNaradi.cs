@@ -15,6 +15,11 @@ namespace Vydejna.Domain
             RegisterEventHandlers(GetType().GetMethods(BindingFlags.Instance | BindingFlags.NonPublic));
         }
 
+        public override IAggregateId Id
+        {
+            get { return UnikatnostNaradiId.Value; }
+        }
+
         private struct Klic { public string Vykres, Rozmer; };
         private class StavNaradi { public Guid Id; public bool DokoncenaDefinice; public string Vykres, Rozmer; }
 

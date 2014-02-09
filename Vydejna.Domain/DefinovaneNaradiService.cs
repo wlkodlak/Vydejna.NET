@@ -79,7 +79,7 @@ namespace Vydejna.Domain
                 {
                     _logAction(_parent._log, _message.Command);
                     _id = _getId(_message.Command);
-                    _parent._repoNaradi.Load(_id, NaradiNacteno, NaradiChybi, _message.OnError);
+                    _parent._repoNaradi.Load(_id.ToId(), NaradiNacteno, NaradiChybi, _message.OnError);
                 }
                 catch (Exception ex)
                 {
@@ -117,7 +117,7 @@ namespace Vydejna.Domain
             {
                 try
                 {
-                    _parent._repoNaradi.Load(_id, NaradiNacteno, NaradiChybi, _message.OnError);
+                    _parent._repoNaradi.Load(_id.ToId(), NaradiNacteno, NaradiChybi, _message.OnError);
                 }
                 catch (Exception ex)
                 {

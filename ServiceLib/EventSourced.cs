@@ -9,9 +9,50 @@ using System.Threading.Tasks;
 
 namespace ServiceLib
 {
+    public interface IAggregateId
+    {
+    }
+
+    public class AggregateIdGuid : IAggregateId
+    {
+        public Guid Guid { get; private set; }
+        public AggregateIdGuid(Guid id) { Guid = id; }
+        public AggregateIdGuid(string id) { Guid = new Guid(id); }
+        public override int GetHashCode()
+        {
+            return Guid.GetHashCode();
+        }
+        public override bool Equals(object obj)
+        {
+            if (obj is AggregateIdGuid)
+                return Guid.Equals(((AggregateIdGuid)obj).Guid);
+            else
+                return false;
+        }
+        public override string ToString()
+        {
+            return Guid.ToString("N").ToLowerInvariant();
+        }
+
+        public static AggregateIdGuid NewGuid()
+        {
+            return new AggregateIdGuid(Guid.NewGuid());
+        }
+
+        public static readonly AggregateIdGuid Empty = new AggregateIdGuid(Guid.Empty);
+    }
+
+    public static class AggregateIdGuidExtensions
+    {
+        public static AggregateIdGuid ToId(this Guid guid)
+        {
+            return new AggregateIdGuid(guid);
+        }
+    }
+
     public interface IEventSourcedAggregate
     {
-        Guid Id { get; }
+        IAggregateId Id { get; }
         int OriginalVersion { get; }
         IList<object> GetChanges();
         object CreateSnapshot();
@@ -22,7 +63,6 @@ namespace ServiceLib
 
     public abstract class EventSourcedAggregate : IEventSourcedAggregate
     {
-        private Guid _id;
         private List<object> _changes;
         private int _originalVersion;
         private bool _loadingEvents;
@@ -32,11 +72,7 @@ namespace ServiceLib
             _changes = new List<object>();
         }
 
-        public Guid Id
-        {
-            get { return _id; }
-            protected set { _id = value; }
-        }
+        public abstract IAggregateId Id { get; }
 
         int IEventSourcedAggregate.OriginalVersion
         {
@@ -114,10 +150,35 @@ namespace ServiceLib
         }
     }
 
+    public abstract class EventSourcedGuidAggregate : EventSourcedAggregate
+    {
+        private AggregateIdGuid _id;
+
+        public override IAggregateId Id
+        {
+            get { return _id; }
+        }
+
+        public EventSourcedGuidAggregate()
+        {
+            _id = AggregateIdGuid.NewGuid();
+        }
+
+        protected void SetGuid(Guid id)
+        {
+            _id = id.ToId();
+        }
+
+        protected Guid GetGuid()
+        {
+            return _id.Guid;
+        }
+    }
+
     public interface IEventSourcedRepository<T>
         where T : class, IEventSourcedAggregate
     {
-        void Load(Guid id, Action<T> onLoaded, Action onMissing, Action<Exception> onError);
+        void Load(IAggregateId id, Action<T> onLoaded, Action onMissing, Action<Exception> onError);
         void Save(T aggregate, Action onSaved, Action onConcurrency, Action<Exception> onError);
     }
 
@@ -149,16 +210,16 @@ namespace ServiceLib
 
         protected string Prefix { get { return _prefix; } }
 
-        protected virtual string StreamNameForId(Guid id)
+        protected virtual string StreamNameForId(IAggregateId id)
         {
             return new StringBuilder(64)
                 .Append(Prefix)
                 .Append('_')
-                .Append(id.ToString("N").ToLowerInvariant())
+                .Append(id.ToString())
                 .ToString();
         }
 
-        public void Load(Guid id, Action<T> onLoaded, Action onMissing, Action<Exception> onError)
+        public void Load(IAggregateId id, Action<T> onLoaded, Action onMissing, Action<Exception> onError)
         {
             new AggregateLoading(this, id, onLoaded, onMissing, onError).Execute();
         }
@@ -175,7 +236,7 @@ namespace ServiceLib
             private Action _onMissing;
             private Action<Exception> _onError;
 
-            public AggregateLoading(EventSourcedRepository<T> parent, Guid id, Action<T> onLoaded, Action onMissing, Action<Exception> onError)
+            public AggregateLoading(EventSourcedRepository<T> parent, IAggregateId id, Action<T> onLoaded, Action onMissing, Action<Exception> onError)
             {
                 _parent = parent;
                 _streamName = _parent.StreamNameForId(id);

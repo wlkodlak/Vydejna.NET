@@ -6,7 +6,7 @@ using Vydejna.Contracts;
 
 namespace Vydejna.Domain
 {
-    public class DefinovaneNaradi : EventSourcedAggregate
+    public class DefinovaneNaradi : EventSourcedGuidAggregate
     {
         private bool _aktivni;
 
@@ -18,19 +18,19 @@ namespace Vydejna.Domain
         public void Aktivovat()
         {
             if (!_aktivni)
-                ApplyChange(new AktivovanoNaradiEvent { NaradiId = Id });
+                ApplyChange(new AktivovanoNaradiEvent { NaradiId = GetGuid() });
         }
 
         public void Deaktivovat()
         {
             if (_aktivni)
-                ApplyChange(new DeaktivovanoNaradiEvent { NaradiId = Id });
+                ApplyChange(new DeaktivovanoNaradiEvent { NaradiId = GetGuid() });
         }
 
         private void ApplyChange(DefinovanoNaradiEvent ev)
         {
             RecordChange(ev);
-            Id = ev.NaradiId;
+            SetGuid(ev.NaradiId);
             _aktivni = true;
         }
 

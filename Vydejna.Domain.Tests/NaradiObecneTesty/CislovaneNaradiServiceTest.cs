@@ -83,7 +83,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
 
         protected void Given(Guid naradiId, params object[] events)
         {
-            _repository.AddEvents(naradiId, events);
+            _repository.AddEvents(naradiId.ToId(), events);
         }
 
         protected IList<string> NewEventsTypeNames()
