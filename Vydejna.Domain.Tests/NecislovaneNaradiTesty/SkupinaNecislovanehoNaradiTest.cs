@@ -18,6 +18,18 @@ namespace Vydejna.Domain.Tests.NecislovaneNaradiTesty
         }
 
         [TestMethod]
+        public void KopieSJinymPoctem()
+        {
+            var datum = new DateTime(2013, 8, 13, 22, 43, 33);
+            var puvodni = new SkupinaNecislovanehoNaradi(datum, 30m, CerstvostNecislovanehoNaradi.Nove, 12);
+            var odvozena = puvodni.SPoctem(10);
+            Assert.AreEqual(datum, odvozena.DatumCerstvosti, "DatumCerstvosti");
+            Assert.AreEqual(30m, odvozena.Cena, "Cena");
+            Assert.AreEqual(CerstvostNecislovanehoNaradi.Nove, odvozena.Cerstvost, "Cerstvost");
+            Assert.AreEqual(10, odvozena.Pocet, "Pocet");
+        }
+
+        [TestMethod]
         public void Equality()
         {
             var a = new SkupinaNecislovanehoNaradi(new DateTime(2013, 4, 12), 10m, CerstvostNecislovanehoNaradi.Nove, 12);

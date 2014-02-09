@@ -58,5 +58,21 @@ namespace Vydejna.Domain
         {
             return string.Format("{{ datum: '{0:yyyy-MM-dd hh:mm:ss}', cena: {1}, cerstvost: {2}, pocet: {3} }}", DatumCerstvosti, Cena, Cerstvost, Pocet);
         }
+
+        public SkupinaNecislovanehoNaradi SPoctem(int pocet)
+        {
+            if (Pocet == pocet)
+                return this;
+            else
+                return new SkupinaNecislovanehoNaradi(DatumCerstvosti, Cena, Cerstvost, pocet);
+        }
+    }
+
+    public class SkupinaNecislovanehoNaradiComparer : IComparer<SkupinaNecislovanehoNaradi>
+    {
+        public int Compare(SkupinaNecislovanehoNaradi x, SkupinaNecislovanehoNaradi y)
+        {
+            return DateTime.Compare(x.DatumCerstvosti, y.DatumCerstvosti);
+        }
     }
 }

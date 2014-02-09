@@ -66,6 +66,7 @@
     <Compile Include="CislovaneNaradiTesty\PrijemZVyrobyTest.cs" />
     <Compile Include="CislovaneNaradiTesty\VydejDoVyrobyTest.cs" />
     <Compile Include="NaradiObecneTesty\ProcesDefiniceNaradiTest.cs" />
+    <Compile Include="NecislovaneNaradiTesty\MnozinaNecislovanehoNaradiTest.cs" />
     <Compile Include="NecislovaneNaradiTesty\SkupinaNecislovanehoNaradiTest.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="SeznamNaradiProjectionTest.cs" />
