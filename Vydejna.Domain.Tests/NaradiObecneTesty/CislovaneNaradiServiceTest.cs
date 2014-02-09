@@ -9,14 +9,15 @@ using Vydejna.Contracts;
 
 namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
 {
-    public class CislovaneNaradiServiceTestBase
+    public abstract class ObecneNaradiServiceTestBase<TAggregate, TService>
+        where TAggregate : class, IEventSourcedAggregate, new()
     {
-        private TestExecutor _executor;
-        private CislovaneNaradiService _svc;
-        private Exception _caughtException;
-        private TestRepository<CislovaneNaradi> _repository;
-        private VirtualTime _time;
-        private Dictionary<string, int> _newEventCounts;
+        protected TestExecutor _executor;
+        protected TService _svc;
+        protected Exception _caughtException;
+        protected TestRepository<TAggregate> _repository;
+        protected Dictionary<string, int> _newEventCounts;
+        protected VirtualTime _time;
 
         [TestInitialize]
         public void Initialize()
@@ -24,10 +25,12 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
             _time = new VirtualTime();
             _time.SetTime(new DateTime(2012, 1, 18, 8, 19, 21));
             _executor = new TestExecutor();
-            _repository = new TestRepository<CislovaneNaradi>();
-            _svc = new CislovaneNaradiService(_repository, _time);
+            _repository = new TestRepository<TAggregate>();
+            _svc = CreateService();
             _newEventCounts = null;
         }
+
+        protected abstract TService CreateService();
 
         protected void Execute<T>(T cmd)
         {
@@ -256,6 +259,22 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
                 PredchoziUmisteni = UmisteniNaradi.NaOprave(typ, dodavatel, objednavka).Dto(),
                 NoveUmisteni = UmisteniNaradi.NaVydejne(stav).Dto()
             };
+        }
+    }
+
+    public class CislovaneNaradiServiceTestBase : ObecneNaradiServiceTestBase<CislovaneNaradi, CislovaneNaradiService>
+    {
+        protected override CislovaneNaradiService CreateService()
+        {
+            return new CislovaneNaradiService(_repository, _time);
+        }
+    }
+
+    public class NecislovaneNaradiServiceTestBase : ObecneNaradiServiceTestBase<NecislovaneNaradi, NecislovaneNaradiService>
+    {
+        protected override NecislovaneNaradiService CreateService()
+        {
+            return new NecislovaneNaradiService(_repository, _time);
         }
     }
 }

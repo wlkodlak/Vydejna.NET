@@ -232,6 +232,7 @@ namespace Vydejna.Contracts
             mapper.Register<DokoncenaDefiniceNaradiEvent>();
             mapper.Register<ZahajenaAktivaceNaradiEvent>();
             mapper.Register<ZmenenStavNaSkladeEvent>();
+            mapper.Register<NastalaPotrebaUpravitStavNaSkladeEvent>();
         }
     }
 }

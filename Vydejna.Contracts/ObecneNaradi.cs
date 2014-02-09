@@ -57,6 +57,14 @@ namespace Vydejna.Contracts
             return DtoUtils.ToString<UmisteniNaradiDto>(this);
         }
     }
+
+    public class ObecneNaradiTypeMapping : IRegisterTypes
+    {
+        public void Register(TypeMapper mapper)
+        {
+            mapper.Register<UmisteniNaradiDto>();
+        }
+    }
     #endregion
   
 }

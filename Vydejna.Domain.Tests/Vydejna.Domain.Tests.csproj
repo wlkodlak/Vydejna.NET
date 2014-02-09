@@ -58,7 +58,7 @@
     </Otherwise>
   </Choose>
   <ItemGroup>
-    <Compile Include="CislovaneNaradiTesty\CislovaneNaradiServiceTest.cs" />
+    <Compile Include="NaradiObecneTesty\CislovaneNaradiServiceTest.cs" />
     <Compile Include="CislovaneNaradiTesty\VydejDoSrotuTest.cs" />
     <Compile Include="CislovaneNaradiTesty\VydejNaOpravuTest.cs" />
     <Compile Include="CislovaneNaradiTesty\PrijemNaVydejnuTest.cs" />

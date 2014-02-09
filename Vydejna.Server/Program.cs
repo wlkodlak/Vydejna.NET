@@ -224,6 +224,8 @@ namespace Vydejna.Server
                 b.Type<SeznamNaradiTypeMapping>();
                 b.Type<ExterniCiselnikyTypeMapping>();
                 b.Type<CislovaneNaradiTypeMapping>();
+                b.Type<NecislovaneNaradiTypeMapping>();
+                b.Type<ObecneNaradiTypeMapping>();
             });
             For<ITypeMapper>().Use(ctx =>
             {

@@ -3,51 +3,47 @@ using Vydejna.Contracts;
 
 namespace Vydejna.Domain
 {
-    public class CislovaneNaradiValidation
+    public class NecislovaneNaradiValidation
     {
-        public ValidationErrorException Validace(CislovaneNaradiPrijmoutNaVydejnuCommand cmd)
+        public ValidationErrorException Validace(NecislovaneNaradiPrijmoutNaVydejnuCommand cmd)
         {
-            if (cmd.CisloNaradi <= 0)
-                return new ValidationErrorException("CisloNaradi", "RANGE", "Cislo naradi musi byt kladne");
             if (cmd.CenaNova < 0)
                 return new ValidationErrorException("CenaNova", "RANGE", "Cena nesmi byt zaporna");
+            if (cmd.Pocet <= 0)
+                return new ValidationErrorException("Pocet", "RANGE", "Pouzity pocet musi byt kladny");
             return null;
         }
 
-        public ValidationErrorException Validace(CislovaneNaradiVydatDoVyrobyCommand cmd)
+        public ValidationErrorException Validace(NecislovaneNaradiVydatDoVyrobyCommand cmd)
         {
-            if (cmd.CenaNova < 0)
+            if (cmd.CenaNova.HasValue && cmd.CenaNova.Value < 0)
                 return new ValidationErrorException("CenaNova", "RANGE", "Cena nesmi byt zaporna");
             if (string.IsNullOrEmpty(cmd.KodPracoviste))
                 return new ValidationErrorException("KodPracoviste", "REQUIRED", "Chybi cilove pracoviste");
+            if (cmd.Pocet <= 0)
+                return new ValidationErrorException("Pocet", "RANGE", "Pouzity pocet musi byt kladny");
             return null;
         }
 
-        public ValidationErrorException Validace(CislovaneNaradiPrijmoutZVyrobyCommand cmd)
+        public ValidationErrorException Validace(NecislovaneNaradiPrijmoutZVyrobyCommand cmd)
         {
-            if (cmd.CenaNova < 0)
+            if (cmd.CenaNova.HasValue && cmd.CenaNova.Value < 0)
                 return new ValidationErrorException("CenaNova", "RANGE", "Cena nesmi byt zaporna");
             if (string.IsNullOrEmpty(cmd.KodPracoviste))
                 return new ValidationErrorException("KodPracoviste", "REQUIRED", "Chybi zdrojove pracoviste");
+            if (cmd.Pocet <= 0)
+                return new ValidationErrorException("Pocet", "RANGE", "Pouzity pocet musi byt kladny");
             if (cmd.StavNaradi == StavNaradi.Neurcen)
                 return new ValidationErrorException("StavNaradi", "REQUIRED", "Stav naradi neni urcen");
-            else if (cmd.StavNaradi == StavNaradi.VPoradku)
-            {
-                if (!string.IsNullOrEmpty(cmd.KodVady))
-                    return new ValidationErrorException("KodVady", "RANGE", "Naradi v poradku nesmi mit uvedenou vadu");
-            }
-            else
-            {
-                if (string.IsNullOrEmpty(cmd.KodVady))
-                    return new ValidationErrorException("KodVady", "REQUIRED", "Poskozene musi mit uvedenou vadu");
-            }
             return null;
         }
 
-        public ValidationErrorException Validace(CislovaneNaradiPredatKOpraveCommand cmd, ITime time)
+        public ValidationErrorException Validace(NecislovaneNaradiPredatKOpraveCommand cmd, ITime time)
         {
-            if (cmd.CenaNova < 0)
+            if (cmd.CenaNova.HasValue && cmd.CenaNova.Value < 0)
                 return new ValidationErrorException("CenaNova", "RANGE", "Cena nesmi byt zaporna");
+            if (cmd.Pocet <= 0)
+                return new ValidationErrorException("Pocet", "RANGE", "Pouzity pocet musi byt kladny");
             if (string.IsNullOrEmpty(cmd.Objednavka))
                 return new ValidationErrorException("Objednavka", "REQUIRED", "Nutne zadat cislo objednavky");
             if (string.IsNullOrEmpty(cmd.KodDodavatele))
@@ -59,10 +55,12 @@ namespace Vydejna.Domain
             return null;
         }
 
-        public ValidationErrorException Validace(CislovaneNaradiPrijmoutZOpravyCommand cmd)
+        public ValidationErrorException Validace(NecislovaneNaradiPrijmoutZOpravyCommand cmd)
         {
-            if (cmd.CenaNova < 0)
+            if (cmd.CenaNova.HasValue && cmd.CenaNova.Value < 0)
                 return new ValidationErrorException("CenaNova", "RANGE", "Cena nesmi byt zaporna");
+            if (cmd.Pocet <= 0)
+                return new ValidationErrorException("Pocet", "RANGE", "Pouzity pocet musi byt kladny");
             if (string.IsNullOrEmpty(cmd.Objednavka))
                 return new ValidationErrorException("Objednavka", "REQUIRED", "Nutne zadat cislo objednavky");
             if (string.IsNullOrEmpty(cmd.DodaciList))
@@ -76,9 +74,12 @@ namespace Vydejna.Domain
             return null;
         }
 
-        public ValidationErrorException Validace(CislovaneNaradiPredatKeSesrotovaniCommand cmd)
+        public ValidationErrorException Validace(NecislovaneNaradiPredatKeSesrotovaniCommand cmd)
         {
+            if (cmd.Pocet <= 0)
+                return new ValidationErrorException("Pocet", "RANGE", "Pouzity pocet musi byt kladny");
             return null;
         }
+
     }
 }

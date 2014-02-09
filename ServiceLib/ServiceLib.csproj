@@ -55,6 +55,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="DtoUtils.cs" />
+    <Compile Include="EventSourcedServiceExecution.cs" />
     <Compile Include="LocalBus.cs" />
     <Compile Include="ContractTypes.cs" />
     <Compile Include="DatabasePostgres.cs" />
