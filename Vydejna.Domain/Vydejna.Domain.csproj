@@ -56,6 +56,7 @@
     <Compile Include="CislovaneNaradi.cs" />
     <Compile Include="CislovaneNaradiRepository.cs" />
     <Compile Include="CislovaneNaradiService.cs" />
+    <Compile Include="CislovaneNaradiValidation.cs" />
     <Compile Include="DefinovaneNaradi.cs" />
     <Compile Include="DefinovaneNaradiRepository.cs" />
     <Compile Include="MnozinaNecislovanehoNaradi.cs" />

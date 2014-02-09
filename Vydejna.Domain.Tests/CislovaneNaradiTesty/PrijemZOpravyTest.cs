@@ -22,7 +22,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
                 Objednavka = "482/2014",
                 DodaciList = "482d/2014"
             });
-            Exception<InvalidOperationException>();
+            ChybaStavu("NOTFOUND", "CisloNaradi");
         }
 
         [TestMethod]
@@ -45,7 +45,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
                 Objednavka = "482/2014",
                 DodaciList = "482d/2014"
             });
-            Exception<ArgumentOutOfRangeException>();
+            ChybaValidace("RANGE", "CenaNova");
         }
 
         [TestMethod]
@@ -68,7 +68,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
                 Objednavka = "",
                 DodaciList = "482d/2014"
             });
-            Exception<ArgumentOutOfRangeException>();
+            ChybaValidace("REQUIRED", "Objednavka");
         }
 
         [TestMethod]
@@ -91,7 +91,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
                 Objednavka = "482/2014",
                 DodaciList = ""
             });
-            Exception<ArgumentOutOfRangeException>();
+            ChybaValidace("REQUIRED", "DodaciList");
         }
 
         [TestMethod]
@@ -114,7 +114,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
                 Objednavka = "482/2014",
                 DodaciList = "482d/2014"
             });
-            Exception<ArgumentOutOfRangeException>();
+            ChybaValidace("REQUIRED", "KodDodavatele");
         }
 
         [TestMethod]
@@ -136,7 +136,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
                 Objednavka = "482/2014",
                 DodaciList = "482d/2014"
             });
-            Exception<ArgumentOutOfRangeException>();
+            ChybaValidace("REQUIRED", "TypOpravy");
         }
 
         [TestMethod]
@@ -158,7 +158,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
                 Objednavka = "482/2014",
                 DodaciList = "482d/2014"
             });
-            Exception<ArgumentOutOfRangeException>();
+            ChybaValidace("REQUIRED", "Opraveno");
         }
 
         [TestMethod]
@@ -207,7 +207,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
                 DodaciList = "999d/2014"
             };
             Execute(cmd);
-            Exception<InvalidOperationException>();
+            ChybaStavu("RANGE", "Umisteni");
         }
 
         [TestMethod]
@@ -230,7 +230,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
                 DodaciList = "123d/2014"
             };
             Execute(cmd);
-            Exception<InvalidOperationException>();
+            ChybaStavu("RANGE", "Umisteni");
         }
 
         [TestMethod]

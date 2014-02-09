@@ -19,7 +19,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
                 StavNaradi = StavNaradi.VPoradku,
                 KodVady = null
             });
-            Exception<InvalidOperationException>();
+            ChybaStavu("NOTFOUND", "CisloNaradi");
         }
 
         [TestMethod]
@@ -36,7 +36,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
                 StavNaradi = StavNaradi.VPoradku,
                 KodVady = null
             });
-            Exception<ArgumentOutOfRangeException>();
+            ChybaValidace("RANGE", "CenaNova");
         }
 
         [TestMethod]
@@ -53,7 +53,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
                 StavNaradi = StavNaradi.VPoradku,
                 KodVady = null
             });
-            Exception<ArgumentOutOfRangeException>();
+            ChybaValidace("REQUIRED", "KodPracoviste");
         }
 
         [TestMethod]
@@ -70,7 +70,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
                 StavNaradi = StavNaradi.VPoradku,
                 KodVady = "9"
             });
-            Exception<ArgumentOutOfRangeException>();
+            ChybaValidace("RANGE", "KodVady");
         }
 
         [TestMethod]
@@ -87,7 +87,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
                 StavNaradi = StavNaradi.NutnoOpravit,
                 KodVady = ""
             });
-            Exception<ArgumentOutOfRangeException>();
+            ChybaValidace("REQUIRED", "KodVady");
         }
 
         [TestMethod]
@@ -103,7 +103,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
                 CenaNova = 4.33m,
                 KodVady = "9"
             });
-            Exception<ArgumentOutOfRangeException>();
+            ChybaValidace("REQUIRED", "StavNaradi");
         }
 
         [TestMethod]
@@ -138,7 +138,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
                 StavNaradi = StavNaradi.NutnoOpravit,
                 KodVady = "5"
             });
-            Exception<InvalidOperationException>();
+            ChybaStavu("RANGE", "Umisteni");
         }
 
         [TestMethod]
@@ -155,7 +155,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
                 StavNaradi = StavNaradi.NutnoOpravit,
                 KodVady = "5"
             });
-            Exception<InvalidOperationException>();
+            ChybaStavu("RANGE", "Umisteni");
         }
 
         [TestMethod]

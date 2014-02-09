@@ -15,7 +15,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
                 NaradiId = Id("8394bb2a"),
                 CisloNaradi = 4
             });
-            Exception<InvalidOperationException>();
+            ChybaStavu("NOTFOUND", "CisloNaradi");
         }
 
         [TestMethod]
@@ -28,7 +28,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
                 NaradiId = naradi,
                 CisloNaradi = 4
             });
-            Exception<InvalidOperationException>();
+            ChybaStavu("RANGE", "Umisteni");
         }
 
         [TestMethod]
@@ -55,7 +55,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
                 NaradiId = naradi,
                 CisloNaradi = 4
             });
-            Exception<InvalidOperationException>();
+            ChybaStavu("RANGE", "Umisteni");
         }
 
         [TestMethod]

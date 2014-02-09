@@ -18,16 +18,19 @@ namespace Vydejna.Domain
     {
         private IEventSourcedRepository<CislovaneNaradi> _repository;
         private ITime _time;
+        private CislovaneNaradiValidation _validator;
 
         public CislovaneNaradiService(IEventSourcedRepository<CislovaneNaradi> repository, ITime time)
         {
             _repository = repository;
             _time = time;
+            _validator = new CislovaneNaradiValidation();
         }
 
         public void Handle(CommandExecution<CislovaneNaradiPrijmoutNaVydejnuCommand> message)
         {
             new ServiceExecution<CislovaneNaradi>(_repository, message.Command.NaradiId, message.OnCompleted, message.OnError)
+                .Validate(() => _validator.Validace(message.Command))
                 .OnRequest(agg => agg.Execute(message.Command, _time))
                 .Execute();
         }
@@ -35,6 +38,7 @@ namespace Vydejna.Domain
         public void Handle(CommandExecution<CislovaneNaradiVydatDoVyrobyCommand> message)
         {
             new ServiceExecution<CislovaneNaradi>(_repository, message.Command.NaradiId, message.OnCompleted, message.OnError)
+                .Validate(() => _validator.Validace(message.Command))
                 .OnRequest(agg => agg.Execute(message.Command, _time))
                 .Execute();
         }
@@ -42,6 +46,7 @@ namespace Vydejna.Domain
         public void Handle(CommandExecution<CislovaneNaradiPrijmoutZVyrobyCommand> message)
         {
             new ServiceExecution<CislovaneNaradi>(_repository, message.Command.NaradiId, message.OnCompleted, message.OnError)
+                .Validate(() => _validator.Validace(message.Command))
                 .OnRequest(agg => agg.Execute(message.Command, _time))
                 .Execute();
         }
@@ -49,6 +54,7 @@ namespace Vydejna.Domain
         public void Handle(CommandExecution<CislovaneNaradiPredatKOpraveCommand> message)
         {
             new ServiceExecution<CislovaneNaradi>(_repository, message.Command.NaradiId, message.OnCompleted, message.OnError)
+                .Validate(() => _validator.Validace(message.Command, _time))
                 .OnRequest(agg => agg.Execute(message.Command, _time))
                 .Execute();
         }
@@ -56,6 +62,7 @@ namespace Vydejna.Domain
         public void Handle(CommandExecution<CislovaneNaradiPrijmoutZOpravyCommand> message)
         {
             new ServiceExecution<CislovaneNaradi>(_repository, message.Command.NaradiId, message.OnCompleted, message.OnError)
+                .Validate(() => _validator.Validace(message.Command))
                 .OnRequest(agg => agg.Execute(message.Command, _time))
                 .Execute();
         }
@@ -63,6 +70,7 @@ namespace Vydejna.Domain
         public void Handle(CommandExecution<CislovaneNaradiPredatKeSesrotovaniCommand> message)
         {
             new ServiceExecution<CislovaneNaradi>(_repository, message.Command.NaradiId, message.OnCompleted, message.OnError)
+                .Validate(() => _validator.Validace(message.Command))
                 .OnRequest(agg => agg.Execute(message.Command, _time))
                 .Execute();
         }
@@ -85,6 +93,7 @@ namespace Vydejna.Domain
             private Action<T> _existingAction;
             private Func<T> _newAction;
             private int _tryNumber = 0;
+            private Func<ValidationErrorException> _validation;
 
             public ServiceExecution(IEventSourcedRepository<T> repository, Guid aggregateId, Action onComplete, Action<Exception> onError)
             {
@@ -123,8 +132,23 @@ namespace Vydejna.Domain
                 return OnNew(action).OnExisting(action);
             }
 
+            public ServiceExecution<T> Validate(Func<ValidationErrorException> validation)
+            {
+                _validation = validation;
+                return this;
+            }
+
             public void Execute()
             {
+                if (_validation != null)
+                {
+                    var validationResult = _validation();
+                    if (validationResult != null)
+                    {
+                        _onError(validationResult);
+                        return;
+                    }
+                }
                 if (_tryNumber <= 3)
                 {
                     _tryNumber++;

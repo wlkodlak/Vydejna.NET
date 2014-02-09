@@ -17,7 +17,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
                 KodPracoviste = "84930120",
                 CenaNova = 4.33m
             });
-            Exception<InvalidOperationException>();
+            ChybaStavu("NOTFOUND", "CisloNaradi");
         }
 
         [TestMethod]
@@ -32,7 +32,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
                 KodPracoviste = "84930120",
                 CenaNova = -4.33m
             });
-            Exception<ArgumentOutOfRangeException>();
+            ChybaValidace("RANGE", "CenaNova");
         }
 
         [TestMethod]
@@ -47,7 +47,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
                 KodPracoviste = "",
                 CenaNova = 4.33m
             });
-            Exception<ArgumentOutOfRangeException>();
+            ChybaValidace("REQUIRED", "KodPracoviste");
         }
 
         [TestMethod]
@@ -94,7 +94,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
                 KodPracoviste = "09842333",
                 CenaNova = 4.33m
             });
-            Exception<InvalidOperationException>();
+            ChybaStavu("RANGE", "Umisteni");
         }
 
         [TestMethod]
@@ -109,7 +109,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
                 KodPracoviste = "09842333",
                 CenaNova = 4.33m
             });
-            Exception<InvalidOperationException>();
+            ChybaStavu("RANGE", "Umisteni");
         }
 
         [TestMethod]

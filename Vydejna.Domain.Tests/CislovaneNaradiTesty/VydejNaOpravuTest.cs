@@ -20,7 +20,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
                 TerminDodani = GetUtcTime().Date.AddDays(15),
                 TypOpravy = TypOpravy.Oprava
             });
-            Exception<InvalidOperationException>();
+            ChybaStavu("NOTFOUND", "CisloNaradi");
         }
 
         [TestMethod]
@@ -38,7 +38,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
                 TerminDodani = GetUtcTime().Date.AddDays(15),
                 TypOpravy = TypOpravy.Oprava
             });
-            Exception<ArgumentOutOfRangeException>();
+            ChybaValidace("RANGE", "CenaNova");
         }
 
         [TestMethod]
@@ -56,7 +56,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
                 TerminDodani = GetUtcTime().Date.AddDays(15),
                 TypOpravy = TypOpravy.Oprava
             });
-            Exception<ArgumentOutOfRangeException>();
+            ChybaValidace("REQUIRED", "Objednavka");
         }
 
         [TestMethod]
@@ -74,7 +74,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
                 TerminDodani = GetUtcTime().Date.AddDays(15),
                 TypOpravy = TypOpravy.Oprava
             });
-            Exception<ArgumentOutOfRangeException>();
+            ChybaValidace("REQUIRED", "KodDodavatele");
         }
 
         [TestMethod]
@@ -92,7 +92,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
                 TerminDodani = GetUtcTime().Date.AddDays(-1),
                 TypOpravy = TypOpravy.Oprava
             });
-            Exception<ArgumentOutOfRangeException>();
+            ChybaValidace("RANGE", "TerminDodani");
         }
 
         [TestMethod]
@@ -109,7 +109,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
                 Objednavka = "384/2014",
                 TerminDodani = GetUtcTime().Date.AddDays(15)
             });
-            Exception<ArgumentOutOfRangeException>();
+            ChybaValidace("REQUIRED", "TypOpravy");
         }
 
         [TestMethod]
@@ -146,7 +146,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
                 TerminDodani = GetUtcTime().Date.AddDays(15),
                 TypOpravy = TypOpravy.Oprava
             });
-            Exception<InvalidOperationException>();
+            ChybaStavu("RANGE", "Umisteni");
         }
 
         [TestMethod]

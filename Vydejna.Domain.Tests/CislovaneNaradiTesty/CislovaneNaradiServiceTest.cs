@@ -42,12 +42,40 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
             }
         }
 
-        protected void Exception<TException>()
+        protected void ChybaValidace(string kategorie, string polozka)
         {
-            Assert.IsNotNull(_caughtException, "Expected exception");
-            if (_caughtException is TException)
-                return;
-            throw _caughtException.PreserveStackTrace();
+            Assert.IsNotNull(_caughtException, "Ocekavana chyba validace {0} {1}", kategorie, polozka);
+            var chybaValidace = _caughtException as ValidationErrorException;
+            var chybaStavu = _caughtException as DomainErrorException;
+            if (chybaValidace != null)
+            {
+                Assert.AreEqual(polozka, chybaValidace.Field, "Polozka chyby validace");
+                Assert.AreEqual(kategorie, chybaValidace.Category, "Kategorie chyby validace");
+                Assert.AreEqual("", string.Join(", ", NewEventsTypeNames()), "Udalosti");
+            }
+            else if (chybaStavu != null)
+                Assert.Fail("Ocekavana chyba validace {0} {1}, nalezena chyba stavu {2} {3}",
+                    kategorie, polozka, chybaStavu.Category, chybaStavu.Field);
+            else
+                throw _caughtException.PreserveStackTrace();
+        }
+
+        protected void ChybaStavu(string kategorie, string polozka)
+        {
+            Assert.IsNotNull(_caughtException, "Ocekavana chyba stavu {0} {1}", kategorie, polozka);
+            var chybaStavu = _caughtException as DomainErrorException;
+            var chybaValidace = _caughtException as ValidationErrorException;
+            if (chybaStavu != null)
+            {
+                Assert.AreEqual(polozka, chybaStavu.Field, "Polozka chyby stavu");
+                Assert.AreEqual(kategorie, chybaStavu.Category, "Kategorie chyby stavu");
+                Assert.AreEqual("", string.Join(", ", NewEventsTypeNames()), "Udalosti");
+            }
+            else if (chybaValidace != null)
+                Assert.Fail("Ocekavana chyba stavu {0} {1}, nalezena chyba validace {2} {3}",
+                    kategorie, polozka, chybaValidace.Category, chybaValidace.Field);
+            else
+                throw _caughtException.PreserveStackTrace();
         }
 
         protected void Given(Guid naradiId, params object[] events)

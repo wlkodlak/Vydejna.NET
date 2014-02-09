@@ -18,7 +18,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
                 KodDodavatele = "D58",
                 PrijemZeSkladu = false
             });
-            Exception<ArgumentOutOfRangeException>();
+            ChybaValidace("RANGE", "CisloNaradi");
         }
 
         [TestMethod]
@@ -32,7 +32,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
                 KodDodavatele = "D58",
                 PrijemZeSkladu = false
             });
-            Exception<ArgumentOutOfRangeException>();
+            ChybaValidace("RANGE", "CenaNova");
         }
 
         [TestMethod]
@@ -59,7 +59,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
                 KodDodavatele = "D58",
                 PrijemZeSkladu = false
             });
-            Exception<InvalidOperationException>();
+            ChybaStavu("CONFLICT", "CisloNaradi");
         }
 
         [TestMethod]

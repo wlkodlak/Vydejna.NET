@@ -89,6 +89,7 @@
     <Compile Include="NodeLockManager.cs" />
     <Compile Include="NotifyChange.cs" />
     <Compile Include="ParametrizedUrl.cs" />
+    <Compile Include="ProcessingErrors.cs" />
     <Compile Include="ProcessManager.cs" />
     <Compile Include="ProcessManagerSimple.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
