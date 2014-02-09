@@ -1,5 +1,4 @@
 ﻿using ServiceLib;
-using System;
 using System.Reflection;
 using Vydejna.Contracts;
 
@@ -12,34 +11,28 @@ namespace Vydejna.Domain
             RegisterEventHandlers(GetType().GetMethods(BindingFlags.Instance | BindingFlags.NonPublic));
         }
 
-        public void Execute(NecislovaneNaradiPrijmoutNaVydejnuCommand necislovaneNaradiPrijmoutNaVydejnuCommand, ITime _time)
+        public void Execute(NecislovaneNaradiPrijmoutNaVydejnuCommand cmd, ITime time)
         {
-            throw new NotImplementedException();
         }
 
-        public void Execute(NecislovaneNaradiVydatDoVyrobyCommand necislovaneNaradiVydatDoVyrobyCommand, ITime _time)
+        public void Execute(NecislovaneNaradiVydatDoVyrobyCommand cmd, ITime time)
         {
-            throw new NotImplementedException();
         }
 
-        public void Execute(NecislovaneNaradiPrijmoutZVyrobyCommand necislovaneNaradiPrijmoutZVyrobyCommand, ITime _time)
+        public void Execute(NecislovaneNaradiPrijmoutZVyrobyCommand cmd, ITime time)
         {
-            throw new NotImplementedException();
         }
 
-        public void Execute(NecislovaneNaradiPredatKOpraveCommand necislovaneNaradiPredatKOpraveCommand, ITime _time)
+        public void Execute(NecislovaneNaradiPredatKOpraveCommand cmd, ITime time)
         {
-            throw new NotImplementedException();
         }
 
-        public void Execute(NecislovaneNaradiPrijmoutZOpravyCommand necislovaneNaradiPrijmoutZOpravyCommand, ITime _time)
+        public void Execute(NecislovaneNaradiPrijmoutZOpravyCommand cmd, ITime time)
         {
-            throw new NotImplementedException();
         }
 
-        public void Execute(NecislovaneNaradiPredatKeSesrotovaniCommand necislovaneNaradiPredatKeSesrotovaniCommand, ITime _time)
+        public void Execute(NecislovaneNaradiPredatKeSesrotovaniCommand cmd, ITime time)
         {
-            throw new NotImplementedException();
         }
     }
 }

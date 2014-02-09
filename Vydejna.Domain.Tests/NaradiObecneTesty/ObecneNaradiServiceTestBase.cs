@@ -7,7 +7,7 @@ using System.Linq;
 using System.Threading;
 using Vydejna.Contracts;
 
-namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
+namespace Vydejna.Domain.Tests.NaradiObecneTesty
 {
     public abstract class ObecneNaradiServiceTestBase<TAggregate, TService>
         where TAggregate : class, IEventSourcedAggregate, new()
@@ -259,22 +259,6 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
                 PredchoziUmisteni = UmisteniNaradi.NaOprave(typ, dodavatel, objednavka).Dto(),
                 NoveUmisteni = UmisteniNaradi.NaVydejne(stav).Dto()
             };
-        }
-    }
-
-    public class CislovaneNaradiServiceTestBase : ObecneNaradiServiceTestBase<CislovaneNaradi, CislovaneNaradiService>
-    {
-        protected override CislovaneNaradiService CreateService()
-        {
-            return new CislovaneNaradiService(_repository, _time);
-        }
-    }
-
-    public class NecislovaneNaradiServiceTestBase : ObecneNaradiServiceTestBase<NecislovaneNaradi, NecislovaneNaradiService>
-    {
-        protected override NecislovaneNaradiService CreateService()
-        {
-            return new NecislovaneNaradiService(_repository, _time);
         }
     }
 }
