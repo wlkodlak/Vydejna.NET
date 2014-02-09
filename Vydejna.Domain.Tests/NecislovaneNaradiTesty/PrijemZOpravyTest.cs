@@ -1,4 +1,5 @@
-﻿
+﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
+
 namespace Vydejna.Domain.Tests.NecislovaneNaradiTesty
 {
     public class PrijemZOpravyTest : NecislovaneNaradiServiceTestBase

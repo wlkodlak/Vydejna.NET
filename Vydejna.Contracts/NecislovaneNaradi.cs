@@ -41,6 +41,7 @@ namespace Vydejna.Contracts
         public Guid EventId { get; set; }
         public Guid NaradiId { get; set; }
         public int Pocet { get; set; }
+        public decimal CenaNova { get; set; }
         public decimal CelkovaCenaNova { get; set; }
         public DateTime Datum { get; set; }
         public string KodDodavatele { get; set; }
