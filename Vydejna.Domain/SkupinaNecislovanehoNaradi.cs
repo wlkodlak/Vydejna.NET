@@ -67,12 +67,4 @@ namespace Vydejna.Domain
                 return new SkupinaNecislovanehoNaradi(DatumCerstvosti, Cena, Cerstvost, pocet);
         }
     }
-
-    public class SkupinaNecislovanehoNaradiComparer : IComparer<SkupinaNecislovanehoNaradi>
-    {
-        public int Compare(SkupinaNecislovanehoNaradi x, SkupinaNecislovanehoNaradi y)
-        {
-            return DateTime.Compare(x.DatumCerstvosti, y.DatumCerstvosti);
-        }
-    }
 }
