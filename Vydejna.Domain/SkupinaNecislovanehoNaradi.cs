@@ -1,14 +1,11 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using Vydejna.Contracts;
 
 namespace Vydejna.Domain
 {
     public enum CerstvostNecislovanehoNaradi
     {
-        Nove, 
+        Nove,
         Opravene,
         Pouzite
     }
@@ -65,6 +62,31 @@ namespace Vydejna.Domain
                 return this;
             else
                 return new SkupinaNecislovanehoNaradi(DatumCerstvosti, Cena, Cerstvost, pocet);
+        }
+
+        public SkupinaNecislovanehoNaradiDto Dto()
+        {
+            return new SkupinaNecislovanehoNaradiDto
+            {
+                Datum = DatumCerstvosti,
+                Cena = Cena,
+                Cerstvost = Cerstvost.ToString(),
+                Pocet = Pocet
+            };
+        }
+
+        public static SkupinaNecislovanehoNaradi Dto(SkupinaNecislovanehoNaradiDto dto)
+        {
+            return new SkupinaNecislovanehoNaradi(dto.Datum, dto.Cena, CerstvostDto(dto.Cerstvost), dto.Pocet);
+        }
+
+        private static CerstvostNecislovanehoNaradi CerstvostDto(string cerstvost)
+        {
+            CerstvostNecislovanehoNaradi result;
+            if (Enum.TryParse<CerstvostNecislovanehoNaradi>(cerstvost, out result))
+                return result;
+            else
+                return CerstvostNecislovanehoNaradi.Pouzite;
         }
     }
 }

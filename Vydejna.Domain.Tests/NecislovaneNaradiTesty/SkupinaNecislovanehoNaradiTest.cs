@@ -1,5 +1,6 @@
 ﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
+using Vydejna.Contracts;
 
 namespace Vydejna.Domain.Tests.NecislovaneNaradiTesty
 {
@@ -108,6 +109,24 @@ namespace Vydejna.Domain.Tests.NecislovaneNaradiTesty
             Assert.IsTrue(d.Odpovida(e), "{0} ~ {1}");
             Assert.IsTrue(!d.Odpovida(f), "{0} !~ {1}");
             Assert.IsTrue(!d.Odpovida(g), "{0} !~ {1}");
+        }
+
+        [TestMethod]
+        public void KonverzeDto()
+        {
+            TestDto("Nove",
+                new SkupinaNecislovanehoNaradiDto { Datum = new DateTime(2013, 5, 28), Cena = 30.4m, Cerstvost = "Nove", Pocet = 4 },
+                new SkupinaNecislovanehoNaradi(new DateTime(2013, 5, 28), 30.4m, CerstvostNecislovanehoNaradi.Nove, 4));
+            TestDto("Pouzite",
+                new SkupinaNecislovanehoNaradiDto { Datum = new DateTime(2013, 8, 1), Cena = 0m, Cerstvost = "Pouzite", Pocet = 1 },
+                new SkupinaNecislovanehoNaradi(new DateTime(2013, 8, 1), 0m, CerstvostNecislovanehoNaradi.Pouzite, 1));
+        }
+        private void TestDto(string nazevTestu, SkupinaNecislovanehoNaradiDto dto, SkupinaNecislovanehoNaradi skupina)
+        {
+            var zakodovano = skupina.Dto();
+            var dekodovano = SkupinaNecislovanehoNaradi.Dto(dto);
+            Assert.AreEqual(skupina, dekodovano, "Dekodovani {0}", nazevTestu);
+            Assert.AreEqual(dto, zakodovano, "Zakodovani {0}", nazevTestu);
         }
     }
 }
