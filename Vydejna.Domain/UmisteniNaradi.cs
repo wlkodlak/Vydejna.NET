@@ -188,4 +188,12 @@ namespace Vydejna.Domain
             return !(a == b);
         }
     }
+
+    public static class UmisteniNaradiExtensions
+    {
+        public static UmisteniNaradi ToValue(this UmisteniNaradiDto dto)
+        {
+            return UmisteniNaradi.Dto(dto);
+        }
+    }
 }

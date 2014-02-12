@@ -279,6 +279,16 @@ namespace Vydejna.Contracts
         public UmisteniNaradiDto NoveUmisteni { get; set; }
     }
     #endregion
+    #region Snapshot
+    public class CislovaneNaradiSnapshot_v1
+    {
+        public Guid NaradiId { get; set; }
+        public int CisloNaradi { get; set; }
+        public UmisteniNaradiDto Umisteni { get; set; }
+        public decimal Cena { get; set; }
+        public int Version { get; set; }
+    }
+    #endregion
     #region Registrace typu
     public class CislovaneNaradiTypeMapping : IRegisterTypes
     {

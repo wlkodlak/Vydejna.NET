@@ -9,7 +9,7 @@ namespace Vydejna.Domain
     {
         public readonly Guid NaradiId;
         public readonly int CisloNaradi;
-        
+
         public CislovaneNaradiId(Guid naradiId, int cisloNaradi)
         {
             NaradiId = naradiId;
@@ -51,6 +51,31 @@ namespace Vydejna.Domain
             get { return _id; }
         }
 
+        protected override int LoadFromSnapshot(object snapshotObject)
+        {
+            var snapshot = snapshotObject as CislovaneNaradiSnapshot_v1;
+            if (snapshot == null)
+                return 0;
+            _naradiId = snapshot.NaradiId;
+            _cisloNaradi = snapshot.CisloNaradi;
+            _cena = snapshot.Cena;
+            _umisteni = snapshot.Umisteni.ToValue();
+            _id = new CislovaneNaradiId(_naradiId, _cisloNaradi);
+            return snapshot.Version;
+        }
+
+        protected override object CreateSnapshot()
+        {
+            return new CislovaneNaradiSnapshot_v1
+            {
+                NaradiId = _naradiId,
+                CisloNaradi = _cisloNaradi,
+                Cena = _cena,
+                Umisteni = _umisteni.Dto(),
+                Version = CurrentVersion
+            };
+        }
+
         public void Execute(CislovaneNaradiPrijmoutNaVydejnuCommand cmd, ITime time)
         {
             if (_cisloNaradi != 0)
@@ -83,7 +108,7 @@ namespace Vydejna.Domain
             _naradiId = evnt.NaradiId;
             _cisloNaradi = evnt.CisloNaradi;
             _id = new CislovaneNaradiId(_naradiId, _cisloNaradi);
-            _umisteni = UmisteniNaradi.Dto(evnt.NoveUmisteni);
+            _umisteni = evnt.NoveUmisteni.ToValue();
             _cena = evnt.CenaNova;
         }
 
@@ -115,7 +140,7 @@ namespace Vydejna.Domain
         private void ApplyChange(CislovaneNaradiVydanoDoVyrobyEvent evnt)
         {
             RecordChange(evnt);
-            _umisteni = UmisteniNaradi.Dto(evnt.NoveUmisteni);
+            _umisteni = evnt.NoveUmisteni.ToValue();
             _cena = evnt.CenaNova;
         }
 
@@ -144,7 +169,7 @@ namespace Vydejna.Domain
         private void ApplyChange(CislovaneNaradiPrijatoZVyrobyEvent evnt)
         {
             RecordChange(evnt);
-            _umisteni = UmisteniNaradi.Dto(evnt.NoveUmisteni);
+            _umisteni = evnt.NoveUmisteni.ToValue();
             _cena = evnt.CenaNova;
         }
 
@@ -175,7 +200,7 @@ namespace Vydejna.Domain
         private void ApplyChange(CislovaneNaradiPredanoKOpraveEvent evnt)
         {
             RecordChange(evnt);
-            _umisteni = UmisteniNaradi.Dto(evnt.NoveUmisteni);
+            _umisteni = evnt.NoveUmisteni.ToValue();
             _cena = evnt.CenaNova;
         }
 
@@ -208,7 +233,7 @@ namespace Vydejna.Domain
         private void ApplyChange(CislovaneNaradiPrijatoZOpravyEvent evnt)
         {
             RecordChange(evnt);
-            _umisteni = UmisteniNaradi.Dto(evnt.NoveUmisteni);
+            _umisteni = evnt.NoveUmisteni.ToValue();
             _cena = evnt.CenaNova;
         }
 
@@ -233,7 +258,7 @@ namespace Vydejna.Domain
         private void ApplyChange(CislovaneNaradiPredanoKeSesrotovaniEvent evnt)
         {
             RecordChange(evnt);
-            _umisteni = UmisteniNaradi.Dto(evnt.NoveUmisteni);
+            _umisteni = evnt.NoveUmisteni.ToValue();
             _cena = 0;
         }
     }

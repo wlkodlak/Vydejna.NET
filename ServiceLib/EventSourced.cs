@@ -90,6 +90,11 @@ namespace ServiceLib
             _changes.Clear();
         }
 
+        protected int CurrentVersion
+        {
+            get { return _originalVersion + _changes.Count; }
+        }
+
         protected virtual object CreateSnapshot()
         {
             return null;

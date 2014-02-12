@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Vydejna.Contracts;
 
 namespace Vydejna.Domain
 {
@@ -12,6 +13,10 @@ namespace Vydejna.Domain
         private int _pocetCelkem;
         private IComparer<SkupinaNecislovanehoNaradi> _comparer;
         private bool _normalizovano;
+        private bool _isnull;
+
+        private static MnozinaNecislovanehoNaradi _nullObject = new MnozinaNecislovanehoNaradi { _isnull = true };
+        public static MnozinaNecislovanehoNaradi NullObject { get { return _nullObject; } }
 
         public MnozinaNecislovanehoNaradi()
         {
@@ -25,7 +30,7 @@ namespace Vydejna.Domain
         public int PocetCelkem
         {
             get { return _pocetCelkem; }
-            set { _pocetCelkem = value; }
+            set { if (!_isnull) _pocetCelkem = value; }
         }
 
         public IList<SkupinaNecislovanehoNaradi> Obsah()
@@ -36,6 +41,8 @@ namespace Vydejna.Domain
 
         public void Pridat(SkupinaNecislovanehoNaradi skupina)
         {
+            if (_isnull)
+                return;
             _normalizovano = false;
             _pocetCelkem += skupina.Pocet;
             _pridane.Add(skupina);
@@ -43,6 +50,8 @@ namespace Vydejna.Domain
 
         public void Odebrat(SkupinaNecislovanehoNaradi skupina)
         {
+            if (_isnull)
+                return;
             _pocetCelkem -= skupina.Pocet;
             if (_pocetCelkem <= 0)
             {
@@ -61,6 +70,8 @@ namespace Vydejna.Domain
 
         public IList<SkupinaNecislovanehoNaradi> Pouzit(int pocet)
         {
+            if (_isnull)
+                return new SkupinaNecislovanehoNaradi[0];
             Normalizovat();
             var vysledek = new List<SkupinaNecislovanehoNaradi>();
             var ziskavanyPocet = Math.Min(pocet, _pocetCelkem);
@@ -233,4 +244,11 @@ namespace Vydejna.Domain
         }
     }
 
+    public static class SkupinaNecislovanehoNaradiExtenstions
+    {
+        public static SkupinaNecislovanehoNaradi ToValue(this SkupinaNecislovanehoNaradiDto dto)
+        {
+            return SkupinaNecislovanehoNaradi.Dto(dto);
+        }
+    }
 }

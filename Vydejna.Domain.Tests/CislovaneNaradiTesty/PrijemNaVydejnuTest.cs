@@ -1,6 +1,7 @@
 ﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using Vydejna.Contracts;
+using Vydejna.Domain;
 
 namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
 {
@@ -133,7 +134,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
             Execute(cmd);
             var udalost = NewEventOfType<CislovaneNaradiPrijatoNaVydejnuEvent>();
             Assert.IsNotNull(udalost, "Ocekavana udalost prijmu");
-            Assert.AreEqual(UmisteniNaradi.NaVydejne(StavNaradi.VPoradku), UmisteniNaradi.Dto(udalost.NoveUmisteni), "Umisteni");
+            Assert.AreEqual(UmisteniNaradi.NaVydejne(StavNaradi.VPoradku), udalost.NoveUmisteni.ToValue(), "Umisteni");
         }
 
         [TestMethod]
@@ -154,7 +155,6 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
             Assert.AreEqual(naradiId, udalost.NaradiId, "NaradiId");
             Assert.AreEqual(TypZmenyNaSklade.SnizitStav, udalost.TypZmeny, "TypZmeny");
             Assert.AreEqual(1, udalost.Hodnota, "Hodnota");
-
         }
     }
 }

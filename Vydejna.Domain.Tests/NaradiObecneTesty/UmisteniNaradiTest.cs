@@ -130,7 +130,7 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
 
         private void TestDto(string nazevTestu, UmisteniNaradiDto dto, UmisteniNaradi umisteni)
         {
-            var dekodovano = UmisteniNaradi.Dto(dto);
+            var dekodovano = dto.ToValue();
             var zakodovano = umisteni.Dto();
             Assert.AreEqual(umisteni, dekodovano, "Dekodovani {0}", nazevTestu);
             Assert.AreEqual(dto, zakodovano, "Zakodovani {0}", nazevTestu);

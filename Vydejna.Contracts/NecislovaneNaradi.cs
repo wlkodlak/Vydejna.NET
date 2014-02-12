@@ -72,6 +72,7 @@ namespace Vydejna.Contracts
         public UmisteniNaradiDto PredchoziUmisteni { get; set; }
         public UmisteniNaradiDto NoveUmisteni { get; set; }
         public List<SkupinaNecislovanehoNaradiDto> PouziteKusy { get; set; }
+        public List<SkupinaNecislovanehoNaradiDto> NoveKusy { get; set; }
     }
     #endregion
     #region Prijem z vyroby
@@ -98,6 +99,7 @@ namespace Vydejna.Contracts
         public UmisteniNaradiDto PredchoziUmisteni { get; set; }
         public UmisteniNaradiDto NoveUmisteni { get; set; }
         public List<SkupinaNecislovanehoNaradiDto> PouziteKusy { get; set; }
+        public List<SkupinaNecislovanehoNaradiDto> NoveKusy { get; set; }
     }
     #endregion
     #region Predani k oprave
@@ -128,6 +130,7 @@ namespace Vydejna.Contracts
         public UmisteniNaradiDto PredchoziUmisteni { get; set; }
         public UmisteniNaradiDto NoveUmisteni { get; set; }
         public List<SkupinaNecislovanehoNaradiDto> PouziteKusy { get; set; }
+        public List<SkupinaNecislovanehoNaradiDto> NoveKusy { get; set; }
     }
     #endregion
     #region Prijem z opravy
@@ -161,6 +164,7 @@ namespace Vydejna.Contracts
         public UmisteniNaradiDto PredchoziUmisteni { get; set; }
         public UmisteniNaradiDto NoveUmisteni { get; set; }
         public List<SkupinaNecislovanehoNaradiDto> PouziteKusy { get; set; }
+        public List<SkupinaNecislovanehoNaradiDto> NoveKusy { get; set; }
     }
     #endregion
     #region Sesrotovani
@@ -180,6 +184,19 @@ namespace Vydejna.Contracts
         public UmisteniNaradiDto PredchoziUmisteni { get; set; }
         public UmisteniNaradiDto NoveUmisteni { get; set; }
         public List<SkupinaNecislovanehoNaradiDto> PouziteKusy { get; set; }
+    }
+    #endregion
+    #region
+    public class NecislovaneNaradiSnapshot_v1
+    {
+        public List<NecislovaneNaradiSnapshot_v1_Rozlozeni> Rozlozeni { get; set; }
+        public int Version { get; set; }
+    }
+    public class NecislovaneNaradiSnapshot_v1_Rozlozeni
+    {
+        public UmisteniNaradiDto Umisteni { get; set; }
+        public int PocetCelkem { get; set; }
+        public List<SkupinaNecislovanehoNaradiDto> Skupiny { get; set; }
     }
     #endregion
     #region Registrace typu
