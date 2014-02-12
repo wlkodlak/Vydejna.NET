@@ -26,13 +26,15 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
             _time.SetTime(new DateTime(2012, 1, 18, 8, 19, 21));
             _executor = new TestExecutor();
             _repository = new TestRepository<TAggregate>();
+            InitializeCore();
             _svc = CreateService();
             _newEventCounts = null;
         }
 
         protected abstract TService CreateService();
+        protected virtual void InitializeCore() { }
 
-        protected void Execute<T>(T cmd)
+        protected virtual void Execute<T>(T cmd)
         {
             var mre = new ManualResetEventSlim();
             var msg = new CommandExecution<T>(cmd, () => mre.Set(), ex => { _caughtException = ex; mre.Set(); });
@@ -93,6 +95,7 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
 
         protected T NewEventOfType<T>()
         {
+            Assert.AreEqual(null, _caughtException, "Necekana chyba");
             var evnt = _repository.NewEvents().OfType<T>().FirstOrDefault();
             Assert.IsNotNull(evnt, "Expected event {0}", typeof(T).Name);
             return evnt;

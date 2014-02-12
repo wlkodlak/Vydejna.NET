@@ -9,9 +9,25 @@ namespace Vydejna.Domain.Tests.NecislovaneNaradiTesty
 {
     public class NecislovaneNaradiServiceTestBase : ObecneNaradiServiceTestBase<NecislovaneNaradi, NecislovaneNaradiService>
     {
+        protected Guid _naradiId;
+        protected List<object> _given;
+
+        protected override void InitializeCore()
+        {
+            base.InitializeCore();
+            _naradiId = new Guid("5844abcd-0000-0000-0000-111122223333");
+            _given = new List<object>();
+        }
+
         protected override NecislovaneNaradiService CreateService()
         {
             return new NecislovaneNaradiService(_repository, _time);
+        }
+
+        protected override void Execute<T>(T cmd)
+        {
+            Given(_naradiId, _given.ToArray());
+            base.Execute<T>(cmd);
         }
 
         protected SkupinaNecislovanehoNaradiDto Kus(DateTime datum, decimal cena, char cerstvost, int pocet)
@@ -56,8 +72,30 @@ namespace Vydejna.Domain.Tests.NecislovaneNaradiTesty
 
         private string StringOcekavanychKusu(SkupinaNecislovanehoNaradiDto dto)
         {
-            return string.Format("{0:yyyyMMdd}{1}{2}x{3:0.00}", 
+            return string.Format("{0:yyyyMMdd}{1}{2}x{3:0.00}",
                 dto.Datum, CerstvostChar(dto.Cerstvost), dto.Pocet, dto.Cena);
+        }
+
+        protected DateTime Datum(int den)
+        {
+            return GetUtcTime().Date.AddDays(-90 + den);
+        }
+
+        protected void Prijate(int pocet, decimal cena = 10m, int datum = 0)
+        {
+            _given.Add(new NecislovaneNaradiPrijatoNaVydejnuEvent
+            {
+                EventId = Guid.NewGuid(),
+                Datum = Datum(datum),
+                Pocet = pocet,
+                CenaNova = cena,
+                NaradiId = _naradiId,
+                KodDodavatele = "D88",
+                CelkovaCenaNova = pocet * cena,
+                PrijemZeSkladu = false,
+                NoveUmisteni = UmisteniNaradi.NaVydejne(StavNaradi.VPoradku).Dto(),
+                NoveKusy = new List<SkupinaNecislovanehoNaradiDto> { Kus(Datum(datum), cena, 'N', pocet) }
+            });
         }
     }
 }
