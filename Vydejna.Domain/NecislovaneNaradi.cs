@@ -219,6 +219,7 @@ namespace Vydejna.Domain
         public void Execute(NecislovaneNaradiPrijmoutZOpravyCommand cmd, ITime time)
         {
             var stavNaradi = cmd.Opraveno == StavNaradiPoOprave.Neopravitelne ? StavNaradi.Neopravitelne : StavNaradi.VPoradku;
+            char? cerstvost = cmd.Opraveno == StavNaradiPoOprave.Opraveno ? 'O' : 'P';
             var predchoziUmisteni = UmisteniNaradi.NaOprave(cmd.TypOpravy, cmd.KodDodavatele, cmd.Objednavka);
             var noveUmisteni = UmisteniNaradi.NaVydejne(stavNaradi);
             var evnt = new NecislovaneNaradiPrijatoZOpravyEvent
@@ -242,7 +243,7 @@ namespace Vydejna.Domain
                 throw new DomainErrorException("Pocet", "RANGE", "Na vydejne neni dostatek naradi");
             var pouziteKusy = mnozina.Pouzit(cmd.Pocet);
             evnt.PouziteKusy = pouziteKusy.Select(k => k.Dto()).ToList();
-            evnt.NoveKusy = pouziteKusy.Select(k => NovaSkupina(k, cmd.CenaNova, null).Dto()).ToList();
+            evnt.NoveKusy = pouziteKusy.Select(k => NovaSkupina(k, cmd.CenaNova, cerstvost).Dto()).ToList();
             evnt.CelkovaCenaPredchozi = pouziteKusy.Sum(k => k.Cena * k.Pocet);
             evnt.CelkovaCenaNova = cmd.CenaNova.HasValue ? cmd.Pocet * cmd.CenaNova.Value : evnt.CelkovaCenaPredchozi;
             ApplyChange(evnt);
