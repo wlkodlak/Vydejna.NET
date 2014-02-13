@@ -81,9 +81,9 @@ namespace Vydejna.Domain.Tests.NecislovaneNaradiTesty
             return GetUtcTime().Date.AddDays(-90 + den);
         }
 
-        protected void Prijate(int pocet, decimal cena = 10m, int datum = 0)
+        protected NecislovaneNaradiPrijatoNaVydejnuEvent Prijate(int pocet, decimal cena = 10m, int datum = 0)
         {
-            _given.Add(new NecislovaneNaradiPrijatoNaVydejnuEvent
+            var evnt = new NecislovaneNaradiPrijatoNaVydejnuEvent
             {
                 EventId = Guid.NewGuid(),
                 Datum = Datum(datum),
@@ -95,40 +95,179 @@ namespace Vydejna.Domain.Tests.NecislovaneNaradiTesty
                 PrijemZeSkladu = false,
                 NoveUmisteni = UmisteniNaradi.NaVydejne(StavNaradi.VPoradku).Dto(),
                 NoveKusy = new List<SkupinaNecislovanehoNaradiDto> { Kus(Datum(datum), cena, 'N', pocet) }
-            });
+            };
+            _given.Add(evnt);
+            return evnt;
         }
 
-        protected void Vydane(int pocet, decimal cena = 0m, int datum = 0, string pracoviste = "84772140")
+        protected NecislovaneNaradiVydanoDoVyrobyEvent Vydane(int pocet, decimal? cena = null, int datum = 0, string pracoviste = "84772140")
         {
-            var evntPrijem = new NecislovaneNaradiPrijatoNaVydejnuEvent
+            var prev = Prijate(pocet, 10m, datum);
+            var evnt = new NecislovaneNaradiVydanoDoVyrobyEvent
             {
                 EventId = Guid.NewGuid(),
                 Datum = Datum(datum),
                 Pocet = pocet,
                 CenaNova = cena,
                 NaradiId = _naradiId,
-                KodDodavatele = "D88",
-                CelkovaCenaNova = pocet * 10m,
-                PrijemZeSkladu = false,
-                NoveUmisteni = UmisteniNaradi.NaVydejne(StavNaradi.VPoradku).Dto(),
-                NoveKusy = new List<SkupinaNecislovanehoNaradiDto> { Kus(Datum(datum), cena, 'N', pocet) }
-            };
-            var evntVydej = new NecislovaneNaradiVydanoDoVyrobyEvent
-            {
-                EventId = Guid.NewGuid(),
-                Datum = Datum(datum),
-                Pocet = pocet,
-                CenaNova = cena,
-                NaradiId = _naradiId,
-                CelkovaCenaPredchozi = evntPrijem.CelkovaCenaNova, 
-                CelkovaCenaNova = pocet * cena,
-                PredchoziUmisteni = evntPrijem.NoveUmisteni,
-                PouziteKusy = evntPrijem.NoveKusy,
+                KodPracoviste = pracoviste,
+                CelkovaCenaPredchozi = prev.CelkovaCenaNova,
+                CelkovaCenaNova = cena.HasValue ? pocet * cena.Value : prev.CelkovaCenaNova,
+                PredchoziUmisteni = prev.NoveUmisteni,
+                PouziteKusy = prev.NoveKusy,
                 NoveUmisteni = UmisteniNaradi.NaPracovisti(pracoviste).Dto(),
-                NoveKusy = new List<SkupinaNecislovanehoNaradiDto> { Kus(Datum(datum), cena, 'P', pocet) }
+                NoveKusy = new List<SkupinaNecislovanehoNaradiDto> { Kus(Datum(datum), cena ?? 10m, 'P', pocet) }
             };
-            _given.Add(evntPrijem);
-            _given.Add(evntVydej);
+            _given.Add(evnt);
+            return evnt;
+        }
+
+        protected NecislovaneNaradiPrijatoZVyrobyEvent Vracene(int pocet, decimal? cena = null, int datum = 0)
+        {
+            var prev = Vydane(pocet, 5m, datum, "84772140");
+            var evnt = new NecislovaneNaradiPrijatoZVyrobyEvent
+            {
+                EventId = Guid.NewGuid(),
+                Datum = Datum(datum),
+                Pocet = pocet,
+                CenaNova = cena,
+                NaradiId = _naradiId,
+                StavNaradi = StavNaradi.Neopravitelne,
+                KodPracoviste = "84772140",
+                CelkovaCenaPredchozi = prev.CelkovaCenaNova,
+                CelkovaCenaNova = cena.HasValue ? pocet * cena.Value : prev.CelkovaCenaNova,
+                PredchoziUmisteni = prev.NoveUmisteni,
+                PouziteKusy = prev.NoveKusy,
+                NoveUmisteni = UmisteniNaradi.NaVydejne(StavNaradi.VPoradku).Dto(),
+                NoveKusy = new List<SkupinaNecislovanehoNaradiDto> { Kus(Datum(datum), cena ?? 5m, 'P', pocet) }
+            };
+            _given.Add(evnt);
+            return evnt;
+        }
+
+        protected NecislovaneNaradiPrijatoZVyrobyEvent Poskozene(int pocet, decimal? cena = 0m, int datum = 0)
+        {
+            var prev = Vydane(pocet, 5m, datum, "84772140");
+            var evnt = new NecislovaneNaradiPrijatoZVyrobyEvent
+            {
+                EventId = Guid.NewGuid(),
+                Datum = Datum(datum),
+                Pocet = pocet,
+                CenaNova = cena,
+                NaradiId = _naradiId,
+                StavNaradi = StavNaradi.Neopravitelne,
+                KodPracoviste = "84772140",
+                CelkovaCenaPredchozi = prev.CelkovaCenaNova,
+                CelkovaCenaNova = cena.HasValue ? pocet * cena.Value : prev.CelkovaCenaNova,
+                PredchoziUmisteni = prev.NoveUmisteni,
+                PouziteKusy = prev.NoveKusy,
+                NoveUmisteni = UmisteniNaradi.NaVydejne(StavNaradi.NutnoOpravit).Dto(),
+                NoveKusy = new List<SkupinaNecislovanehoNaradiDto> { Kus(Datum(datum), cena ?? 5m, 'P', pocet) }
+            };
+            _given.Add(evnt);
+            return evnt;
+        }
+
+        protected NecislovaneNaradiPrijatoZVyrobyEvent Znicene(int pocet, decimal? cena = 0m, int datum = 0)
+        {
+            var prev = Vydane(pocet, 5m, datum, "84772140");
+            var evnt = new NecislovaneNaradiPrijatoZVyrobyEvent
+            {
+                EventId = Guid.NewGuid(),
+                Datum = Datum(datum),
+                Pocet = pocet,
+                CenaNova = cena,
+                NaradiId = _naradiId,
+                StavNaradi = StavNaradi.Neopravitelne,
+                KodPracoviste = "84772140",
+                CelkovaCenaPredchozi = prev.CelkovaCenaNova,
+                CelkovaCenaNova = cena.HasValue ? pocet * cena.Value : prev.CelkovaCenaNova,
+                PredchoziUmisteni = prev.NoveUmisteni,
+                PouziteKusy = prev.NoveKusy,
+                NoveUmisteni = UmisteniNaradi.NaVydejne(StavNaradi.Neopravitelne).Dto(),
+                NoveKusy = new List<SkupinaNecislovanehoNaradiDto> { Kus(Datum(datum), cena ?? 5m, 'P', pocet) }
+            };
+            _given.Add(evnt);
+            return evnt;
+        }
+
+        protected NecislovaneNaradiPredanoKOpraveEvent Opravovane(int pocet, decimal? cena = 0m, int datum = 0, string dodavatel = "D48", string objednavka = "111/2014")
+        {
+            var prev = Poskozene(pocet, 0m, datum);
+            var evnt = new NecislovaneNaradiPredanoKOpraveEvent
+            {
+                EventId = Guid.NewGuid(),
+                Datum = Datum(datum),
+                Pocet = pocet,
+                CenaNova = cena,
+                NaradiId = _naradiId,
+                TypOpravy = TypOpravy.Oprava,
+                KodDodavatele = dodavatel,
+                Objednavka = objednavka,
+                TerminDodani = Datum(datum).AddDays(30),
+                CelkovaCenaPredchozi = prev.CelkovaCenaNova,
+                CelkovaCenaNova = cena.HasValue ? pocet * cena.Value : prev.CelkovaCenaNova,
+                PredchoziUmisteni = prev.NoveUmisteni,
+                PouziteKusy = prev.NoveKusy,
+                NoveUmisteni = UmisteniNaradi.NaOprave(TypOpravy.Oprava, dodavatel, objednavka).Dto(),
+                NoveKusy = new List<SkupinaNecislovanehoNaradiDto> { Kus(Datum(datum), cena ?? 5m, 'P', pocet) }
+            };
+            _given.Add(evnt);
+            return evnt;
+        }
+
+        protected NecislovaneNaradiPrijatoZOpravyEvent Opravene(int pocet, decimal? cena = 0m, int datum = 0)
+        {
+            var prev = Opravovane(pocet, 0m, datum);
+            var evnt = new NecislovaneNaradiPrijatoZOpravyEvent
+            {
+                EventId = Guid.NewGuid(),
+                Datum = Datum(datum),
+                Pocet = pocet,
+                CenaNova = cena,
+                NaradiId = _naradiId,
+                TypOpravy = TypOpravy.Oprava,
+                KodDodavatele = prev.KodDodavatele,
+                Objednavka = prev.Objednavka,
+                DodaciList = "111d/2014",
+                Opraveno = StavNaradiPoOprave.Opraveno,
+                StavNaradi = StavNaradi.VPoradku,
+                CelkovaCenaPredchozi = prev.CelkovaCenaNova,
+                CelkovaCenaNova = cena.HasValue ? pocet * cena.Value : prev.CelkovaCenaNova,
+                PredchoziUmisteni = prev.NoveUmisteni,
+                PouziteKusy = prev.NoveKusy,
+                NoveUmisteni = UmisteniNaradi.NaVydejne(StavNaradi.VPoradku).Dto(),
+                NoveKusy = new List<SkupinaNecislovanehoNaradiDto> { Kus(Datum(datum), cena ?? 5m, 'P', pocet) }
+            };
+            _given.Add(evnt);
+            return evnt;
+        }
+
+        protected NecislovaneNaradiPrijatoZOpravyEvent Neopravitelne(int pocet, decimal? cena = 0m, int datum = 0)
+        {
+            var prev = Opravovane(pocet, 0m, datum);
+            var evnt = new NecislovaneNaradiPrijatoZOpravyEvent
+            {
+                EventId = Guid.NewGuid(),
+                Datum = Datum(datum),
+                Pocet = pocet,
+                CenaNova = cena,
+                NaradiId = _naradiId,
+                TypOpravy = TypOpravy.Oprava,
+                KodDodavatele = prev.KodDodavatele,
+                Objednavka = prev.Objednavka,
+                DodaciList = "111d/2014",
+                Opraveno = StavNaradiPoOprave.Neopravitelne,
+                StavNaradi = StavNaradi.Neopravitelne,
+                CelkovaCenaPredchozi = prev.CelkovaCenaNova,
+                CelkovaCenaNova = cena.HasValue ? pocet * cena.Value : prev.CelkovaCenaNova,
+                PredchoziUmisteni = prev.NoveUmisteni,
+                PouziteKusy = prev.NoveKusy,
+                NoveUmisteni = UmisteniNaradi.NaVydejne(StavNaradi.Neopravitelne).Dto(),
+                NoveKusy = new List<SkupinaNecislovanehoNaradiDto> { Kus(Datum(datum), cena ?? 5m, 'P', pocet) }
+            };
+            _given.Add(evnt);
+            return evnt;
         }
     }
 }
