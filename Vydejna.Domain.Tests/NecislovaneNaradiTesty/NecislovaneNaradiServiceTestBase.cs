@@ -97,5 +97,38 @@ namespace Vydejna.Domain.Tests.NecislovaneNaradiTesty
                 NoveKusy = new List<SkupinaNecislovanehoNaradiDto> { Kus(Datum(datum), cena, 'N', pocet) }
             });
         }
+
+        protected void Vydane(int pocet, decimal cena = 0m, int datum = 0, string pracoviste = "84772140")
+        {
+            var evntPrijem = new NecislovaneNaradiPrijatoNaVydejnuEvent
+            {
+                EventId = Guid.NewGuid(),
+                Datum = Datum(datum),
+                Pocet = pocet,
+                CenaNova = cena,
+                NaradiId = _naradiId,
+                KodDodavatele = "D88",
+                CelkovaCenaNova = pocet * 10m,
+                PrijemZeSkladu = false,
+                NoveUmisteni = UmisteniNaradi.NaVydejne(StavNaradi.VPoradku).Dto(),
+                NoveKusy = new List<SkupinaNecislovanehoNaradiDto> { Kus(Datum(datum), cena, 'N', pocet) }
+            };
+            var evntVydej = new NecislovaneNaradiVydanoDoVyrobyEvent
+            {
+                EventId = Guid.NewGuid(),
+                Datum = Datum(datum),
+                Pocet = pocet,
+                CenaNova = cena,
+                NaradiId = _naradiId,
+                CelkovaCenaPredchozi = evntPrijem.CelkovaCenaNova, 
+                CelkovaCenaNova = pocet * cena,
+                PredchoziUmisteni = evntPrijem.NoveUmisteni,
+                PouziteKusy = evntPrijem.NoveKusy,
+                NoveUmisteni = UmisteniNaradi.NaPracovisti(pracoviste).Dto(),
+                NoveKusy = new List<SkupinaNecislovanehoNaradiDto> { Kus(Datum(datum), cena, 'P', pocet) }
+            };
+            _given.Add(evntPrijem);
+            _given.Add(evntVydej);
+        }
     }
 }
