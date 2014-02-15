@@ -89,6 +89,8 @@ namespace Vydejna.Domain
                 CisloNaradi = cmd.CisloNaradi,
                 PrijemZeSkladu = cmd.PrijemZeSkladu,
                 CenaNova = cmd.CenaNova,
+                CenaPredchozi = 0,
+                PredchoziUmisteni = UmisteniNaradi.VeSkladu().Dto(),
                 NoveUmisteni = UmisteniNaradi.NaVydejne(StavNaradi.VPoradku).Dto()
             });
             if (cmd.PrijemZeSkladu)

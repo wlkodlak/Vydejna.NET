@@ -64,6 +64,7 @@
     <Compile Include="NecislovaneNaradiRepository.cs" />
     <Compile Include="NecislovaneNaradiService.cs" />
     <Compile Include="NecislovaneNaradiValidation.cs" />
+    <Compile Include="PrehledAktivnihoNaradiProjection.cs" />
     <Compile Include="ProcesDefiniceNaradi.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="SeznamNaradiProjection.cs" />

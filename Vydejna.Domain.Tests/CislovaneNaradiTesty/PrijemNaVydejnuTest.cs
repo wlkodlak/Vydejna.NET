@@ -95,6 +95,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
             Assert.IsNotNull(udalost, "Ocekavana udalost prijmu");
             Assert.AreNotEqual(Guid.Empty, udalost.EventId, "EventId");
             Assert.AreEqual(GetUtcTime(), udalost.Datum, "Datum");
+            Assert.AreEqual(0m, udalost.CenaPredchozi, "CenaPredchozi");
         }
 
         [TestMethod]
@@ -134,7 +135,8 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
             Execute(cmd);
             var udalost = NewEventOfType<CislovaneNaradiPrijatoNaVydejnuEvent>();
             Assert.IsNotNull(udalost, "Ocekavana udalost prijmu");
-            Assert.AreEqual(UmisteniNaradi.NaVydejne(StavNaradi.VPoradku), udalost.NoveUmisteni.ToValue(), "Umisteni");
+            Assert.AreEqual(UmisteniNaradi.VeSkladu(), udalost.PredchoziUmisteni.ToValue(), "PredchoziUmisteni");
+            Assert.AreEqual(UmisteniNaradi.NaVydejne(StavNaradi.VPoradku), udalost.NoveUmisteni.ToValue(), "NoveUmisteni");
         }
 
         [TestMethod]

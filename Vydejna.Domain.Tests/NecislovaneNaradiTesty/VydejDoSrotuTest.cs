@@ -46,6 +46,7 @@ namespace Vydejna.Domain.Tests.NecislovaneNaradiTesty
             var evnt = NewEventOfType<NecislovaneNaradiPredanoKeSesrotovaniEvent>();
             Assert.AreNotEqual(Guid.Empty, evnt.EventId, "EventId");
             Assert.AreEqual(GetUtcTime(), evnt.Datum, "Datum");
+            Assert.AreEqual(0m, evnt.CelkovaCenaNova, "CelkovaCenaNova");
         }
 
         [TestMethod]

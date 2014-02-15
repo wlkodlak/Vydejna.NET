@@ -72,6 +72,7 @@ namespace Vydejna.Domain.Tests.NecislovaneNaradiTesty
             };
             Execute(cmd);
             var udalost = NewEventOfType<NecislovaneNaradiPrijatoNaVydejnuEvent>();
+            Assert.AreEqual(0m, udalost.CelkovaCenaPredchozi, "CelkovaCenaPredchozi");
             Assert.AreEqual(280m, udalost.CelkovaCenaNova, "CelkovaCenaNova");
         }
 
@@ -91,6 +92,7 @@ namespace Vydejna.Domain.Tests.NecislovaneNaradiTesty
             var udalost = NewEventOfType<NecislovaneNaradiPrijatoNaVydejnuEvent>();
             Assert.AreNotEqual(Guid.Empty, udalost.EventId, "EventId");
             Assert.AreEqual(GetUtcTime(), udalost.Datum, "Datum");
+            Assert.AreEqual(UmisteniNaradi.VeSkladu().Dto(), udalost.PredchoziUmisteni, "PredchoziUmisteni");
             Assert.AreEqual(UmisteniNaradi.NaVydejne(StavNaradi.VPoradku).Dto(), udalost.NoveUmisteni, "NoveUmisteni");
         }
 
@@ -107,6 +109,8 @@ namespace Vydejna.Domain.Tests.NecislovaneNaradiTesty
                 PrijemZeSkladu = false
             };
             Execute(cmd);
+            var evnt = NewEventOfType<NecislovaneNaradiPrijatoNaVydejnuEvent>();
+            Assert.IsNull(evnt.PouziteKusy, "PouziteKusy");
             OcekavaneKusy<NecislovaneNaradiPrijatoNaVydejnuEvent>(e => e.NoveKusy,
                 Kus(GetUtcTime(), 40m, 'N', 7));
         }

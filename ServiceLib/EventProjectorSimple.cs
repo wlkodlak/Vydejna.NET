@@ -30,6 +30,7 @@ namespace ServiceLib
         }
         public class Reset { }
         public class Flush { }
+        public class Resume { }
     }
 
     public class EventProjectorSimple : IEventProjector, IProcessWorker

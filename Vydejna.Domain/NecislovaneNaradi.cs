@@ -19,7 +19,8 @@ namespace Vydejna.Domain
 
         protected override object CreateSnapshot()
         {
-            return new NecislovaneNaradiSnapshot_v1 { 
+            return new NecislovaneNaradiSnapshot_v1
+            {
                 Version = CurrentVersion
             };
         }
@@ -69,11 +70,13 @@ namespace Vydejna.Domain
                 PrijemZeSkladu = cmd.PrijemZeSkladu,
                 EventId = Guid.NewGuid(),
                 Datum = time.GetUtcTime(),
+                PredchoziUmisteni = UmisteniNaradi.VeSkladu().Dto(),
                 NoveUmisteni = UmisteniNaradi.NaVydejne(StavNaradi.VPoradku).Dto(),
                 CelkovaCenaNova = cmd.Pocet * cmd.CenaNova,
+                CelkovaCenaPredchozi = 0m,
                 NoveKusy = new List<SkupinaNecislovanehoNaradiDto>()
             };
-            evnt.NoveKusy.Add(new SkupinaNecislovanehoNaradi(evnt.Datum, evnt.CenaNova, CerstvostNecislovanehoNaradi.Nove, evnt.Pocet).Dto());
+            evnt.NoveKusy.Add(new SkupinaNecislovanehoNaradi(evnt.Datum, evnt.CenaNova ?? 0, CerstvostNecislovanehoNaradi.Nove, evnt.Pocet).Dto());
             ApplyChange(evnt);
 
             if (cmd.PrijemZeSkladu)

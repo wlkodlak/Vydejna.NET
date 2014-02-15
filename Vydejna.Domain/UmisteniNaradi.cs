@@ -121,6 +121,8 @@ namespace Vydejna.Domain
 
         public static UmisteniNaradi Dto(UmisteniNaradiDto dto)
         {
+            if (dto == null)
+                return null;
             switch (dto.ZakladniUmisteni)
             {
                 case ZakladUmisteni.NaVydejne:

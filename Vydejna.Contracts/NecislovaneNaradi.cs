@@ -26,6 +26,22 @@ namespace Vydejna.Contracts
         }
     }
     #endregion
+    #region Obecny presun
+    public class NecislovaneNaradiPresunutoEvent
+    {
+        public Guid EventId { get; set; }
+        public Guid NaradiId { get; set; }
+        public int Pocet { get; set; }
+        public decimal? CenaNova { get; set; }
+        public DateTime Datum { get; set; }
+        public decimal CelkovaCenaPredchozi { get; set; }
+        public decimal CelkovaCenaNova { get; set; }
+        public UmisteniNaradiDto PredchoziUmisteni { get; set; }
+        public UmisteniNaradiDto NoveUmisteni { get; set; }
+        public List<SkupinaNecislovanehoNaradiDto> PouziteKusy { get; set; }
+        public List<SkupinaNecislovanehoNaradiDto> NoveKusy { get; set; }
+    }
+    #endregion
     #region Prijem na vydejnu
     public class NecislovaneNaradiPrijmoutNaVydejnuCommand
     {
@@ -36,18 +52,10 @@ namespace Vydejna.Contracts
         public bool PrijemZeSkladu { get; set; }
     }
 
-    public class NecislovaneNaradiPrijatoNaVydejnuEvent
+    public class NecislovaneNaradiPrijatoNaVydejnuEvent : NecislovaneNaradiPresunutoEvent
     {
-        public Guid EventId { get; set; }
-        public Guid NaradiId { get; set; }
-        public int Pocet { get; set; }
-        public decimal CenaNova { get; set; }
-        public decimal CelkovaCenaNova { get; set; }
-        public DateTime Datum { get; set; }
         public string KodDodavatele { get; set; }
         public bool PrijemZeSkladu { get; set; }
-        public UmisteniNaradiDto NoveUmisteni { get; set; }
-        public List<SkupinaNecislovanehoNaradiDto> NoveKusy { get; set; }
     }
     #endregion
     #region Vydej do vyroby
@@ -59,20 +67,9 @@ namespace Vydejna.Contracts
         public string KodPracoviste { get; set; }
     }
 
-    public class NecislovaneNaradiVydanoDoVyrobyEvent
+    public class NecislovaneNaradiVydanoDoVyrobyEvent : NecislovaneNaradiPresunutoEvent
     {
-        public Guid EventId { get; set; }
-        public Guid NaradiId { get; set; }
-        public int Pocet { get; set; }
-        public decimal? CenaNova { get; set; }
-        public decimal CelkovaCenaPredchozi { get; set; }
-        public decimal CelkovaCenaNova { get; set; }
-        public DateTime Datum { get; set; }
         public string KodPracoviste { get; set; }
-        public UmisteniNaradiDto PredchoziUmisteni { get; set; }
-        public UmisteniNaradiDto NoveUmisteni { get; set; }
-        public List<SkupinaNecislovanehoNaradiDto> PouziteKusy { get; set; }
-        public List<SkupinaNecislovanehoNaradiDto> NoveKusy { get; set; }
     }
     #endregion
     #region Prijem z vyroby
@@ -85,21 +82,10 @@ namespace Vydejna.Contracts
         public StavNaradi StavNaradi { get; set; }
     }
 
-    public class NecislovaneNaradiPrijatoZVyrobyEvent
+    public class NecislovaneNaradiPrijatoZVyrobyEvent : NecislovaneNaradiPresunutoEvent
     {
-        public Guid EventId { get; set; }
-        public Guid NaradiId { get; set; }
-        public int Pocet { get; set; }
-        public decimal? CenaNova { get; set; }
-        public decimal CelkovaCenaPredchozi { get; set; }
-        public decimal CelkovaCenaNova { get; set; }
-        public DateTime Datum { get; set; }
         public string KodPracoviste { get; set; }
         public StavNaradi StavNaradi { get; set; }
-        public UmisteniNaradiDto PredchoziUmisteni { get; set; }
-        public UmisteniNaradiDto NoveUmisteni { get; set; }
-        public List<SkupinaNecislovanehoNaradiDto> PouziteKusy { get; set; }
-        public List<SkupinaNecislovanehoNaradiDto> NoveKusy { get; set; }
     }
     #endregion
     #region Predani k oprave
@@ -114,23 +100,12 @@ namespace Vydejna.Contracts
         public TypOpravy TypOpravy { get; set; }
     }
 
-    public class NecislovaneNaradiPredanoKOpraveEvent
+    public class NecislovaneNaradiPredanoKOpraveEvent : NecislovaneNaradiPresunutoEvent
     {
-        public Guid EventId { get; set; }
-        public Guid NaradiId { get; set; }
-        public int Pocet { get; set; }
-        public decimal? CenaNova { get; set; }
-        public decimal CelkovaCenaPredchozi { get; set; }
-        public decimal CelkovaCenaNova { get; set; }
-        public DateTime Datum { get; set; }
         public string KodDodavatele { get; set; }
         public string Objednavka { get; set; }
         public DateTime TerminDodani { get; set; }
         public TypOpravy TypOpravy { get; set; }
-        public UmisteniNaradiDto PredchoziUmisteni { get; set; }
-        public UmisteniNaradiDto NoveUmisteni { get; set; }
-        public List<SkupinaNecislovanehoNaradiDto> PouziteKusy { get; set; }
-        public List<SkupinaNecislovanehoNaradiDto> NoveKusy { get; set; }
     }
     #endregion
     #region Prijem z opravy
@@ -146,25 +121,14 @@ namespace Vydejna.Contracts
         public StavNaradiPoOprave Opraveno { get; set; }
     }
 
-    public class NecislovaneNaradiPrijatoZOpravyEvent
+    public class NecislovaneNaradiPrijatoZOpravyEvent : NecislovaneNaradiPresunutoEvent
     {
-        public Guid EventId { get; set; }
-        public Guid NaradiId { get; set; }
-        public int Pocet { get; set; }
-        public decimal? CenaNova { get; set; }
-        public decimal CelkovaCenaPredchozi { get; set; }
-        public decimal CelkovaCenaNova { get; set; }
-        public DateTime Datum { get; set; }
         public string KodDodavatele { get; set; }
         public string Objednavka { get; set; }
         public string DodaciList { get; set; }
         public TypOpravy TypOpravy { get; set; }
         public StavNaradi StavNaradi { get; set; }
         public StavNaradiPoOprave Opraveno { get; set; }
-        public UmisteniNaradiDto PredchoziUmisteni { get; set; }
-        public UmisteniNaradiDto NoveUmisteni { get; set; }
-        public List<SkupinaNecislovanehoNaradiDto> PouziteKusy { get; set; }
-        public List<SkupinaNecislovanehoNaradiDto> NoveKusy { get; set; }
     }
     #endregion
     #region Sesrotovani
@@ -174,16 +138,8 @@ namespace Vydejna.Contracts
         public int Pocet { get; set; }
     }
 
-    public class NecislovaneNaradiPredanoKeSesrotovaniEvent
+    public class NecislovaneNaradiPredanoKeSesrotovaniEvent : NecislovaneNaradiPresunutoEvent
     {
-        public Guid EventId { get; set; }
-        public Guid NaradiId { get; set; }
-        public int Pocet { get; set; }
-        public decimal CelkovaCenaPredchozi { get; set; }
-        public DateTime Datum { get; set; }
-        public UmisteniNaradiDto PredchoziUmisteni { get; set; }
-        public UmisteniNaradiDto NoveUmisteni { get; set; }
-        public List<SkupinaNecislovanehoNaradiDto> PouziteKusy { get; set; }
     }
     #endregion
     #region
