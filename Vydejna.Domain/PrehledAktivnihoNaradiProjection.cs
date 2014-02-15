@@ -40,6 +40,10 @@ namespace Vydejna.Domain
         public PrehledAktivnihoNaradiProjection(IDocumentFolder store)
         {
             _store = store;
+            _comparer = new PrehledAktivnihoNaradiDataComparer();
+            _serializer = new PrehledAktivnihoNaradiSerializer();
+            _documentVersion = 0;
+            _data = null;
         }
 
         public string GetVersion()
@@ -64,10 +68,18 @@ namespace Vydejna.Domain
 
         public void Handle(CommandExecution<ProjectorMessages.RebuildFinished> message)
         {
+            SaveDocument(message.OnCompleted, message.OnError);
         }
 
         public void Handle(CommandExecution<ProjectorMessages.Flush> message)
         {
+            SaveDocument(message.OnCompleted, message.OnError);
+        }
+
+        private void SaveDocument(Action onCompleted, Action<Exception> onError)
+        {
+            var serialized = _serializer.Serialize(_data);
+            _store.SaveDocument("all", serialized, DocumentStoreVersion.At(_documentVersion), onCompleted, () => SaveDocument(onCompleted, onError), onError);
         }
 
         public void Handle(CommandExecution<ProjectorMessages.Resume> message)
@@ -79,11 +91,12 @@ namespace Vydejna.Domain
                     _data = _serializer.Deserialize(c);
                     message.OnCompleted();
                 },
-                () => {
+                () =>
+                {
                     _documentVersion = 0;
                     _data = _serializer.Deserialize(null);
                     message.OnCompleted();
-                }, 
+                },
                 message.OnError);
         }
 
@@ -285,6 +298,20 @@ namespace Vydejna.Domain
             result.IndexNaradiId = result.Seznam.ToDictionary(n => n.NaradiId);
             return result;
         }
+        public PrehledAktivnihoNaradiData DeserializeForReader(string contents)
+        {
+            PrehledAktivnihoNaradiData result;
+            if (!string.IsNullOrEmpty(contents))
+            {
+                result = JsonSerializer.DeserializeFromString<PrehledAktivnihoNaradiData>(contents);
+            }
+            else
+            {
+                result = new PrehledAktivnihoNaradiData();
+            }
+            result.Seznam = result.Seznam ?? new List<PrehledAktivnihoNaradiDataNaradi>();
+            return result;
+        }
         public string Serialize(PrehledAktivnihoNaradiData data)
         {
             var redukovanaKopie = new PrehledAktivnihoNaradiData { Seznam = data.Seznam };
@@ -327,6 +354,77 @@ namespace Vydejna.Domain
             if (result != 0)
                 return result;
             return 0;
+        }
+    }
+
+    public class PrehledAktivnihoNaradiReader
+        : IAnswer<PrehledNaradiRequest, PrehledNaradiResponse>
+    {
+        private IQueueExecution _executor;
+        private ITime _time;
+        private MemoryCache<PrehledNaradiResponse> _cache;
+        private IDocumentFolder _store;
+        private PrehledAktivnihoNaradiSerializer _serializer;
+
+        public PrehledAktivnihoNaradiReader(IQueueExecution executor, ITime time, IDocumentFolder store)
+        {
+            _executor = executor;
+            _time = time;
+            _store = store;
+            _cache = new MemoryCache<PrehledNaradiResponse>(_executor, _time);
+            _serializer = new PrehledAktivnihoNaradiSerializer();
+        }
+
+        public void Handle(QueryExecution<PrehledNaradiRequest, PrehledNaradiResponse> message)
+        {
+            _cache.Get("all",
+                (version, data) => message.OnCompleted(data),
+                message.OnError,
+                LoadResponse);
+        }
+
+        private void LoadResponse(IMemoryCacheLoad<PrehledNaradiResponse> load)
+        {
+            if (load.OldValueAvailable)
+            {
+                _store.GetNewerDocument("all", load.OldVersion,
+                    (version, raw) => load.SetLoadedValue(version, CreateResponse(raw)),
+                    () => load.ValueIsStillValid(),
+                    () => load.SetLoadedValue(0, CreateResponse(null)),
+                    load.LoadingFailed
+                    );
+            }
+            else
+            {
+                _store.GetDocument("all",
+                    (version, raw) => load.SetLoadedValue(version, CreateResponse(raw)),
+                    () => load.SetLoadedValue(0, CreateResponse(null)),
+                    load.LoadingFailed);
+            }
+        }
+
+        private PrehledNaradiResponse CreateResponse(string raw)
+        {
+            var data = _serializer.DeserializeForReader(raw);
+            var response = new PrehledNaradiResponse();
+            response.Naradi = data.Seznam.Where(n => n.Aktivni).Select(KonverzeNaResponse).ToList();
+            return response;
+        }
+        private PrehledNaradiPolozka KonverzeNaResponse(PrehledAktivnihoNaradiDataNaradi data)
+        {
+            return new PrehledNaradiPolozka
+            {
+                NaradiId = data.NaradiId,
+                Vykres = data.Vykres,
+                Rozmer = data.Rozmer,
+                Druh = data.Druh,
+                NaSklade = data.NaSklade,
+                VPoradku = data.NecislovaneVPoradku + data.CislovaneVPoradku.Count,
+                VeVyrobe = data.NecislovaneVeVyrobe + data.CislovaneVeVyrobe.Count,
+                Poskozene = data.NecislovanePoskozene + data.CislovanePoskozene.Count,
+                Opravovane = data.NecislovaneOpravovane + data.CislovaneOpravovane.Count,
+                Znicene = data.NecislovaneZnicene + data.CislovaneZnicene.Count
+            };
         }
     }
 

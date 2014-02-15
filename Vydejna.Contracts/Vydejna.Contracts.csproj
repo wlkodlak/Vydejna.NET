@@ -46,6 +46,7 @@
     <Compile Include="ExterniCiselniky.cs" />
     <Compile Include="NecislovaneNaradi.cs" />
     <Compile Include="ObecneNaradi.cs" />
+    <Compile Include="PrehledNaradi.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="SeznamNaradi.cs" />
   </ItemGroup>
