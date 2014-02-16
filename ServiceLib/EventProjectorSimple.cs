@@ -21,6 +21,7 @@ namespace ServiceLib
     public enum EventProjectionUpgradeMode { NotNeeded, Rebuild, Upgrade }
     public static class ProjectorMessages
     {
+        public class ConcurrencyException : Exception { }
         public class RebuildFinished { }
         public class UpgradeFrom
         {

@@ -28,6 +28,15 @@ namespace ServiceLib
         IMemoryCacheLoad<T> Expires(int validityMs, int expirationMs);
     }
 
+    public interface IMemoryCacheSave<T>
+    {
+        string Key { get; }
+        int Version { get; }
+        T Value { get; }
+        void SavedAsVersion(int version);
+        void SavingFailed(Exception exception);
+    }
+
     public class MemoryCacheLoaded<T> : IQueuedExecutionDispatcher
     {
         private readonly Action<int, T> _handler;
@@ -126,7 +135,7 @@ namespace ServiceLib
                 onLoading(item);
         }
 
-        public void Insert(string key, int version, T value, int validity = -1, int expiration = -1)
+        public void Insert(string key, int version, T value, int validity = -1, int expiration = -1, bool dirty = false)
         {
             MemoryCacheItem item;
             if (!_contents.TryGetValue(key, out item))
@@ -134,7 +143,7 @@ namespace ServiceLib
             lock (item)
             {
                 item.NotifyUsage();
-                item.Insert(version, value, validity, expiration);
+                item.Insert(version, value, validity, expiration, dirty);
             }
         }
 
@@ -324,7 +333,7 @@ namespace ServiceLib
                     _validUntil = 0;
             }
 
-            public void Insert(int version, T value, int validity, int expiration)
+            public void Insert(int version, T value, int validity, int expiration, bool dirty)
             {
                 if (_loadInProgress)
                     return;
@@ -336,6 +345,16 @@ namespace ServiceLib
         private long GetTime()
         {
             return _timeService.GetUtcTime().Ticks;
+        }
+
+        public void Clear()
+        {
+            throw new NotImplementedException();
+        }
+
+        public void Flush(Action onCompleted, Action<Exception> onError, Action<IMemoryCacheSave<T>> saveAction)
+        {
+            throw new NotImplementedException();
         }
     }
 }
