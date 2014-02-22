@@ -11,7 +11,7 @@ namespace ServiceLib
     public interface IMemoryCache<T>
     {
         void Get(string key, Action<int, T> onLoaded, Action<Exception> onError, Action<IMemoryCacheLoad<T>> onLoading);
-        void Insert(string key, int version, T value, int validity = -1, int expiration = -1);
+        void Insert(string key, int version, T value, int validity = -1, int expiration = -1, bool dirty = false);
         void Evict(string key);
         void Invalidate(string key);
     }

@@ -68,7 +68,6 @@ namespace Vydejna.Contracts
     {
         public int CisloNaradi { get; set; }
         public ZakladUmisteni ZakladUmisteni { get; set; }
-        public int Pocet { get; set; }
         public DetailNaradiVeVyrobe VeVyrobe { get; set; }
         public DetailNaradiVOprave VOprave { get; set; }
         public DetailNaradiNaVydejne NaVydejne { get; set; }
