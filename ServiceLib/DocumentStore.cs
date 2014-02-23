@@ -1,17 +1,19 @@
 ﻿using System;
+using System.Collections.Generic;
 
 namespace ServiceLib
 {
     public interface IDocumentFolder
     {
-        IDocumentFolder SubFolder(string name);
         void DeleteAll(Action onComplete, Action<Exception> onError);
         void GetDocument(string name, Action<int, string> onFound, Action onMissing, Action<Exception> onError);
         void GetNewerDocument(string name, int knownVersion, Action<int, string> onFoundNewer, Action onNotModified, Action onMissing, Action<Exception> onError);
-        void SaveDocument(string name, string value, DocumentStoreVersion expectedVersion, Action onSave, Action onConcurrency, Action<Exception> onError);
+        void SaveDocument(string name, string value, DocumentStoreVersion expectedVersion, IList<DocumentIndexing> indexes, Action onSave, Action onConcurrency, Action<Exception> onError);
+        void FindDocuments(string indexName, string minValue, string maxValue, Action<IList<string>> onFoundKeys, Action<Exception> onError);
     }
-    public interface IDocumentStore : IDocumentFolder
+    public interface IDocumentStore
     {
+        IDocumentFolder GetFolder(string name);
     }
     public class DocumentStoreVersion
     {
@@ -66,6 +68,18 @@ namespace ServiceLib
         public void Execute()
         {
             _onFound(_version, _contents);
+        }
+    }
+
+    public class DocumentIndexing
+    {
+        public string IndexName { get; private set; }
+        public IList<string> Values { get; private set; }
+
+        public DocumentIndexing(string indexName, IList<string> values)
+        {
+            IndexName = indexName;
+            Values = values;
         }
     }
 }

@@ -356,5 +356,10 @@ namespace ServiceLib
         {
             throw new NotImplementedException();
         }
+
+        public List<T> GetAllChanges()
+        {
+            throw new NotImplementedException();
+        }
     }
 }
