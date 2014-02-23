@@ -22,39 +22,38 @@ namespace ServiceLib
             }
         }
 
+        private class Index
+        {
+            public string IndexName;
+            public SortedDictionary<string, HashSet<string>> ByDocument;
+            public SortedDictionary<string, HashSet<string>> ByValue;
+
+            public Index(string indexName)
+            {
+                IndexName = indexName;
+                ByDocument = new SortedDictionary<string, HashSet<string>>();
+                ByValue = new SortedDictionary<string, HashSet<string>>();
+            }
+        }
+
         private class DocumentFolder : IDocumentFolder
         {
-            private static readonly Regex _regex = new Regex(@"^[a-zA-Z0-9_\-.]+$", RegexOptions.Compiled);
+            private string _folderName;
             private IQueueExecution _executor;
-            private ConcurrentDictionary<string, DocumentFolder> _folders = new ConcurrentDictionary<string, DocumentFolder>();
             private ConcurrentDictionary<string, Document> _documents = new ConcurrentDictionary<string, Document>();
+            private ConcurrentDictionary<string, Index> _indexes = new ConcurrentDictionary<string, Index>();
 
-            public DocumentFolder(IQueueExecution executor)
+            public DocumentFolder(string folderName, IQueueExecution executor)
             {
+                _folderName = folderName;
                 _executor = executor;
-            }
-
-            public IDocumentFolder SubFolder(string name)
-            {
-                if (!_regex.IsMatch(name))
-                    throw new ArgumentOutOfRangeException(name, "Invalid characters in name");
-                DocumentFolder folder;
-                while (true)
-                {
-                    if (_folders.TryGetValue(name, out folder))
-                        return folder;
-                    else if (_folders.TryAdd(name, (folder = new DocumentFolder(_executor))))
-                        return folder;
-                }
             }
 
             public void DeleteAll(Action onComplete, Action<Exception> onError)
             {
                 List<string> documentNames = _documents.Keys.ToList();
-                foreach (var folder in _folders)
-                    folder.Value.DeleteAll(() => { }, ex => { });
-                _folders.Clear();
                 _documents.Clear();
+                _indexes.Clear();
                 _executor.Enqueue(onComplete);
             }
 
@@ -62,7 +61,7 @@ namespace ServiceLib
             {
                 try
                 {
-                    if (!_regex.IsMatch(name))
+                    if (!_nameRegex.IsMatch(name))
                         throw new ArgumentOutOfRangeException(name, "Invalid characters in name");
                     Document document;
                     if (!_documents.TryGetValue(name, out document))
@@ -82,7 +81,7 @@ namespace ServiceLib
             {
                 try
                 {
-                    if (!_regex.IsMatch(name))
+                    if (!_nameRegex.IsMatch(name))
                         throw new ArgumentOutOfRangeException(name, "Invalid characters in name");
                     Document document;
                     if (!_documents.TryGetValue(name, out document))
@@ -100,13 +99,13 @@ namespace ServiceLib
                 }
             }
 
-            public void SaveDocument(string name, string value, DocumentStoreVersion expectedVersion, Action onSave, Action onConcurrency, Action<Exception> onError)
+            public void SaveDocument(string name, string value, DocumentStoreVersion expectedVersion, IList<DocumentIndexing> indexes, Action onSave, Action onConcurrency, Action<Exception> onError)
             {
                 bool wasSaved = false;
                 int newVersion = 0;
                 try
                 {
-                    if (!_regex.IsMatch(name))
+                    if (!_nameRegex.IsMatch(name))
                         throw new ArgumentOutOfRangeException(name, "Invalid characters in name");
                     var newDocument = new Document(0, null);
                     var existingDocument = _documents.GetOrAdd(name, newDocument);
@@ -120,6 +119,48 @@ namespace ServiceLib
                             newVersion = existingDocument.Version;
                         }
                     }
+                    if (indexes != null)
+                    {
+                        foreach (var indexChange in indexes)
+                        {
+                            Index index;
+                            if (!_indexes.TryGetValue(indexChange.IndexName, out index))
+                                index = _indexes.GetOrAdd(indexChange.IndexName, new Index(indexChange.IndexName));
+                            lock (index)
+                            {
+                                HashSet<string> existingValues, valueDocuments;
+                                if (!index.ByDocument.TryGetValue(name, out existingValues))
+                                {
+                                    index.ByDocument[name] = new HashSet<string>(indexChange.Values);
+                                    foreach (var idxValue in indexChange.Values)
+                                    {
+                                        if (!index.ByValue.TryGetValue(idxValue, out valueDocuments))
+                                            index.ByValue[idxValue] = valueDocuments = new HashSet<string>();
+                                        valueDocuments.Add(name);
+                                    }
+                                }
+                                else
+                                {
+                                    foreach (var idxValue in existingValues)
+                                    {
+                                        if (indexChange.Values.Contains(idxValue))
+                                            continue;
+                                        if (index.ByValue.TryGetValue(idxValue, out valueDocuments))
+                                            valueDocuments.Remove(name);
+                                    }
+                                    foreach (var idxValue in indexChange.Values)
+                                    {
+                                        if (existingValues.Contains(idxValue))
+                                            continue;
+                                        existingValues.Add(idxValue);
+                                        if (!index.ByValue.TryGetValue(idxValue, out valueDocuments))
+                                            index.ByValue[idxValue] = valueDocuments = new HashSet<string>();
+                                        valueDocuments.Add(name);
+                                    }
+                                }
+                            }
+                        }
+                    }
                     if (wasSaved)
                         _executor.Enqueue(onSave);
                     else
@@ -130,39 +171,63 @@ namespace ServiceLib
                     _executor.Enqueue(onError, ex);
                 }
             }
+
+            public void FindDocuments(string indexName, string minValue, string maxValue, Action<IList<string>> onFoundKeys, Action<Exception> onError)
+            {
+                Index index;
+                if (!_indexes.TryGetValue(indexName, out index))
+                {
+                    onError(new ArgumentOutOfRangeException("indexName", string.Format("Index {0} does not exist in folder {1}", indexName, _folderName)));
+                    return;
+                }
+                var foundKeys = new List<string>();
+                if (string.Equals(minValue, maxValue, StringComparison.Ordinal))
+                {
+                    HashSet<string> foundDocs;
+                    if (index.ByValue.TryGetValue(minValue, out foundDocs))
+                    {
+                        foundKeys.AddRange(foundDocs);
+                    }
+                }
+                else
+                {
+                    foreach (var pair in index.ByValue)
+                    {
+                        if (string.CompareOrdinal(pair.Key, minValue) < 0)
+                            continue;
+                        if (string.CompareOrdinal(pair.Key, maxValue) > 0)
+                            continue;
+                        foundKeys.AddRange(pair.Value);
+                    }
+                }
+                onFoundKeys(foundKeys);
+            }
         }
 
-        private readonly DocumentFolder _root;
+        private IQueueExecution _executor;
+        private ConcurrentDictionary<string, DocumentFolder> _folders = new ConcurrentDictionary<string, DocumentFolder>();
+        private static readonly Regex _nameRegex = new Regex(@"^[a-zA-Z0-9_\-]+$", RegexOptions.Compiled);
 
         public DocumentStoreInMemory(IQueueExecution executor)
         {
-            _root = new DocumentFolder(executor);
+            _executor = executor;
+            _folders = new ConcurrentDictionary<string, DocumentFolder>();
         }
 
         public IDocumentFolder SubFolder(string name)
         {
-            return _root.SubFolder(name);
+            if (!_nameRegex.IsMatch(name))
+                throw new ArgumentOutOfRangeException(name, "Invalid characters in name");
+            DocumentFolder folder;
+            while (true)
+            {
+                if (_folders.TryGetValue(name, out folder))
+                    return folder;
+                else if (_folders.TryAdd(name, (folder = new DocumentFolder(name, _executor))))
+                    return folder;
+            }
         }
 
-        public void DeleteAll(Action onComplete, Action<Exception> onError)
-        {
-            _root.DeleteAll(onComplete, onError);
-        }
-
-        public void GetDocument(string name, Action<int, string> onFound, Action onMissing, Action<Exception> onError)
-        {
-            _root.GetDocument(name, onFound, onMissing, onError);
-        }
-
-        public void GetNewerDocument(string name, int knownVersion, Action<int, string> onFoundNewer, Action onNotModified, Action onMissing, Action<Exception> onError)
-        {
-            _root.GetNewerDocument(name, knownVersion, onFoundNewer, onNotModified, onMissing, onError);
-        }
-
-        public void SaveDocument(string name, string value, DocumentStoreVersion expectedVersion, Action onSave, Action onConcurrency, Action<Exception> onError)
-        {
-            _root.SaveDocument(name, value, expectedVersion, onSave, onConcurrency, onError);
-        }
     }
 
 }
