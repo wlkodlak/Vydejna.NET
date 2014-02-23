@@ -13,6 +13,7 @@ namespace ServiceLib.Tests.TestUtils
         private Dictionary<string, Document> _data;
         private IQueueExecution _executor;
         private List<string> _log;
+        private Dictionary<string, Index> _indexes;
 
         private class Document
         {
@@ -24,17 +25,17 @@ namespace ServiceLib.Tests.TestUtils
             }
         }
 
+        private class Index : List<Tuple<string, string>>
+        {
+        }
+
         public TestDocumentFolder(IQueueExecution executor)
         {
             _executor = executor;
             _lock = new object();
             _data = new Dictionary<string, Document>();
             _log = new List<string>();
-        }
-
-        public IDocumentFolder SubFolder(string name)
-        {
-            throw new NotSupportedException("Subfolders are not supported");
+            _indexes = new Dictionary<string, Index>();
         }
 
         public void DeleteAll(Action onComplete, Action<Exception> onError)
@@ -42,6 +43,7 @@ namespace ServiceLib.Tests.TestUtils
             lock (_lock)
             {
                 _data.Clear();
+                _indexes.Clear();
                 AddToLog("Clear", null, 0);
                 _executor.Enqueue(onComplete);
             }
@@ -134,7 +136,7 @@ namespace ServiceLib.Tests.TestUtils
             }
         }
 
-        public void SaveDocument(string name, string value, DocumentStoreVersion expectedVersion, Action onSave, Action onConcurrency, Action<Exception> onError)
+        public void SaveDocument(string name, string value, DocumentStoreVersion expectedVersion, IList<DocumentIndexing> indexes, Action onSave, Action onConcurrency, Action<Exception> onError)
         {
             lock (_lock)
             {
@@ -151,6 +153,7 @@ namespace ServiceLib.Tests.TestUtils
                         document.Version++;
                         document.Contents = value;
                         AddToLog("Save", name, document.Version);
+                        SaveIndexes(name, indexes);
                         _executor.Enqueue(onSave);
                     }
                 }
@@ -167,13 +170,14 @@ namespace ServiceLib.Tests.TestUtils
                         document.Version = 1;
                         document.Contents = value;
                         AddToLog("Save", name, 1);
+                        SaveIndexes(name, indexes);
                         _executor.Enqueue(onSave);
                     }
                 }
             }
         }
 
-        public void SaveDocument(string name, string value, int manualVersion = -1)
+        public void SaveDocument(string name, string value, int manualVersion = -1, IList<DocumentIndexing> indexes = null)
         {
             lock (_lock)
             {
@@ -182,7 +186,36 @@ namespace ServiceLib.Tests.TestUtils
                     _data[name] = document = new Document();
                 document.Version = (manualVersion >= 0) ? manualVersion : document.Version + 1;
                 document.Contents = value;
+                SaveIndexes(name, indexes);
             }
+        }
+
+        private void SaveIndexes(string name, IList<DocumentIndexing> indexes)
+        {
+            if (indexes == null || indexes.Count == 0)
+                return;
+            foreach (var indexChanges in indexes)
+            {
+                Index index;
+                if (!_indexes.TryGetValue(indexChanges.IndexName, out index))
+                    _indexes[indexChanges.IndexName] = index = new Index();
+                index.RemoveAll(t => string.Equals(t.Item2, name));
+                index.AddRange(indexChanges.Values.Select(v => Tuple.Create(v, name)));
+            }
+        }
+
+        public void FindDocuments(string indexName, string minValue, string maxValue, Action<IList<string>> onFoundKeys, Action<Exception> onError)
+        {
+            Index index;
+            if (!_indexes.TryGetValue(indexName, out index))
+            {
+                onError(new ArgumentOutOfRangeException("indexName", "Index not found"));
+                return;
+            }
+            var result = index
+                .Where(t => string.CompareOrdinal(minValue, t.Item1) <= 0 && string.CompareOrdinal(t.Item1, maxValue) <= 0)
+                .Select(t => t.Item2).Distinct().ToList();
+            _executor.Enqueue(new FindDocumentsCompleted(onFoundKeys, result));
         }
     }
 }

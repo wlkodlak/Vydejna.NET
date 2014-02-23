@@ -123,7 +123,7 @@ namespace ServiceLib
                     return;
                 _isBusy = true;
                 _parent._store.SaveDocument(
-                    LockName, _parent.ContentsToWrite(), DocumentStoreVersion.At(DocumentVersion),
+                    LockName, _parent.ContentsToWrite(), DocumentStoreVersion.At(DocumentVersion), null, 
                     OnSaved, OnConcurrency, OnError);
             }
 
@@ -140,7 +140,7 @@ namespace ServiceLib
                         IsActive = false;
                         _parent._ownedLocks.Remove(LockName);
                         _parent._store.SaveDocument(
-                            LockName, "", DocumentStoreVersion.At(DocumentVersion),
+                            LockName, "", DocumentStoreVersion.At(DocumentVersion), null, 
                             Unlocked, Unlocked, OnError);
                     }
                 }
@@ -175,7 +175,7 @@ namespace ServiceLib
                         return;
                     IsActive = false;
                     _parent._store.SaveDocument(
-                        LockName, "", DocumentStoreVersion.At(DocumentVersion),
+                        LockName, "", DocumentStoreVersion.At(DocumentVersion), null, 
                         Unlocked, Unlocked, OnError);
                 }
             }
@@ -229,7 +229,7 @@ namespace ServiceLib
                 if (cancel)
                     _cannotLock();
                 else if (string.IsNullOrEmpty(existingContents))
-                    _parent._store.SaveDocument(_lockName, _parent.ContentsToWrite(), DocumentStoreVersion.At(version), OnLockObtained, OnLockBusy, OnError);
+                    _parent._store.SaveDocument(_lockName, _parent.ContentsToWrite(), DocumentStoreVersion.At(version), null, OnLockObtained, OnLockBusy, OnError);
                 else if (existingContents == _parent._nodeName)
                     OnLockObtained();
                 else
@@ -238,7 +238,7 @@ namespace ServiceLib
             private void OnLockMissing()
             {
                 _savedVersion = 1;
-                _parent._store.SaveDocument(_lockName, _parent.ContentsToWrite(), DocumentStoreVersion.New, OnLockObtained, OnLockBusy, OnError);
+                _parent._store.SaveDocument(_lockName, _parent.ContentsToWrite(), DocumentStoreVersion.New, null, OnLockObtained, OnLockBusy, OnError);
             }
             private bool IsFree(string contents)
             {

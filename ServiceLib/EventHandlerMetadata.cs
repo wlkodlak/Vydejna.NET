@@ -75,7 +75,7 @@ namespace ServiceLib
 
         public void SetToken(EventStoreToken token, Action onCompleted, Action<Exception> onError)
         {
-            _store.SaveDocument(_tokenDoc, token.ToString(), DocumentStoreVersion.At(_tokenVer), onCompleted, 
+            _store.SaveDocument(_tokenDoc, token.ToString(), DocumentStoreVersion.At(_tokenVer), null, onCompleted, 
                 () => onError(new MetadataInstanceConcurrencyException()), onError);
         }
 
@@ -95,7 +95,7 @@ namespace ServiceLib
             if (string.IsNullOrEmpty(_versionDoc))
                 onCompleted();
             else
-                _store.SaveDocument(_versionDoc, version, DocumentStoreVersion.At(_versionVer), onCompleted, 
+                _store.SaveDocument(_versionDoc, version, DocumentStoreVersion.At(_versionVer), null, onCompleted, 
                     () => onError(new MetadataInstanceConcurrencyException()), onError);
         }
 

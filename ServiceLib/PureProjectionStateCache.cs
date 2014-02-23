@@ -267,7 +267,7 @@ namespace ServiceLib
                 if (_currentDirtyItem != null)
                 {
                     var serialized = _parent._serializer.Serialize(_currentDirtyItem.State);
-                    _parent._store.SaveDocument(_currentDirtyItem.Partition, serialized, DocumentStoreVersion.Any, ProcessNextDirtyItem, ProcessNextDirtyItem, _onError);
+                    _parent._store.SaveDocument(_currentDirtyItem.Partition, serialized, DocumentStoreVersion.Any, null, ProcessNextDirtyItem, ProcessNextDirtyItem, _onError);
                 }
                 else
                     SaveVersion();
@@ -275,14 +275,14 @@ namespace ServiceLib
             private void SaveVersion()
             {
                 if (_parent._versionDirty)
-                    _parent._store.SaveDocument("__version", _parent._version, DocumentStoreVersion.Any, SaveToken, SaveToken, _onError);
+                    _parent._store.SaveDocument("__version", _parent._version, DocumentStoreVersion.Any, null, SaveToken, SaveToken, _onError);
                 else
                     SaveToken();
             }
             private void SaveToken()
             {
                 if (_parent._tokenDirty)
-                    _parent._store.SaveDocument("__token", _parent._token.ToString(), DocumentStoreVersion.Any, ReportComplete, ReportComplete, _onError);
+                    _parent._store.SaveDocument("__token", _parent._token.ToString(), DocumentStoreVersion.Any, null, ReportComplete, ReportComplete, _onError);
                 else
                     ReportComplete();
             }

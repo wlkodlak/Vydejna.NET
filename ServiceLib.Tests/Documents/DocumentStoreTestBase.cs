@@ -72,7 +72,7 @@ namespace ServiceLib.Tests.Documents
         protected void SetupDocument(string folder, string name, string contents)
         {
             bool isSaved = false;
-            Store.SubFolder(folder).SaveDocument(name, contents, DocumentStoreVersion.New,
+            Store.GetFolder(folder).SaveDocument(name, contents, DocumentStoreVersion.New, null, 
                 () => { isSaved = true; }, 
                 () => { throw new InvalidOperationException(string.Format("Document {0} already exists", name)); }, 
                 ex => { throw ex.PreserveStackTrace(); });
@@ -85,7 +85,7 @@ namespace ServiceLib.Tests.Documents
             string contents = "";
             int version = 0;
             bool failed = false;
-            Store.SubFolder(folder).GetDocument(name, (v, c) => { version = v; contents = c; }, () => { }, ex => failed = true);
+            Store.GetFolder(folder).GetDocument(name, (v, c) => { version = v; contents = c; }, () => { }, ex => failed = true);
             Executor.Process();
             Assert.IsFalse(failed, "GetDocument({0}) failed", name);
             if (!expectedVersion.VerifyVersion(version))
@@ -95,14 +95,14 @@ namespace ServiceLib.Tests.Documents
 
         protected void DeleteFolderContents(string folder)
         {
-            Store.SubFolder(folder).DeleteAll(() => { }, ex => { });
+            Store.GetFolder(folder).DeleteAll(() => { }, ex => { });
             Executor.Process();
         }
 
         protected void SaveDocument(string folder, string name, DocumentStoreVersion expectedVersion, string contents, string expectedOutcome)
         {
             string resultSave = null;
-            Store.SubFolder(folder).SaveDocument(name, contents, expectedVersion,
+            Store.GetFolder(folder).SaveDocument(name, contents, expectedVersion, null, 
                 () => resultSave = "saved", () => resultSave = "conflict", ex => resultSave = "error");
             Executor.Process();
             Assert.AreEqual(expectedOutcome, resultSave, "Outcome for {0}", name);

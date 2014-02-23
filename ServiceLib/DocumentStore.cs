@@ -71,6 +71,23 @@ namespace ServiceLib
         }
     }
 
+    public class FindDocumentsCompleted : IQueuedExecutionDispatcher
+    {
+        private Action<IList<string>> _onFoundKeys;
+        private List<string> _list;
+
+        public FindDocumentsCompleted(Action<IList<string>> onFoundKeys, List<string> list)
+        {
+            _onFoundKeys = onFoundKeys;
+            _list = list;
+        }
+
+        public void Execute()
+        {
+            _onFoundKeys(_list);
+        }
+    }
+
     public class DocumentIndexing
     {
         public string IndexName { get; private set; }

@@ -77,7 +77,7 @@ namespace Vydejna.Domain
         private void SaveDocument(Action onCompleted, Action<Exception> onError)
         {
             var serialized = _serializer.Serialize(_data);
-            _store.SaveDocument("all", serialized, DocumentStoreVersion.At(_documentVersion), onCompleted, () => SaveDocument(onCompleted, onError), onError);
+            _store.SaveDocument("all", serialized, DocumentStoreVersion.At(_documentVersion), null, onCompleted, () => SaveDocument(onCompleted, onError), onError);
         }
 
         public void Handle(CommandExecution<ProjectorMessages.Resume> message)

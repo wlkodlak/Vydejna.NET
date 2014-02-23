@@ -104,7 +104,7 @@ namespace Vydejna.Server
 
             For<ITime>().Singleton().Use<RealTime>().Named("TimeService");
             For<IMetadataManager>().Singleton().Use(x => new MetadataManager(
-                x.GetInstance<IDocumentStore>().SubFolder("Metadata"),
+                x.GetInstance<IDocumentStore>().GetFolder("Metadata"),
                 x.GetInstance<INodeLockManager>())).Named("MetadataManager");
             For<IEventStreaming>().Singleton().Use<EventStreaming>().Named("EventStreamingRaw");
             For<IEventStreamingDeserialized>().AlwaysUnique().Use<EventStreamingDeserialized>();
@@ -125,7 +125,7 @@ namespace Vydejna.Server
         public MultiNodePostgresRegistry(string nodeName)
         {
             For<INodeLockManager>().Singleton().Use(x => new NodeLockManagerDocument(
-                x.GetInstance<IDocumentStore>().SubFolder("Locking"),
+                x.GetInstance<IDocumentStore>().GetFolder("Locking"),
                 nodeName,
                 x.GetInstance<ITime>(),
                 x.GetInstance<INotifyChange>("NotifyLocking"))).Named("LockManager");
@@ -185,7 +185,7 @@ namespace Vydejna.Server
                     var serializer = x.GetInstance<SeznamNaradiSerializer>();
                     var projekce = new SeznamNaradiProjection(serializer);
                     var locking = new NodeLock(x.GetInstance<INodeLockManager>(), "SeznamNaradi");
-                    var store = x.GetInstance<IDocumentStore>().SubFolder("SeznamNaradi");
+                    var store = x.GetInstance<IDocumentStore>().GetFolder("SeznamNaradi");
                     var dispatcher = new PureProjectionDispatcherDeduplication<SeznamNaradiData>(
                         new PureProjectionDispatcher<SeznamNaradiData>(), projekce);
                     var cache = new PureProjectionStateCache<SeznamNaradiData>(store, serializer);
@@ -200,7 +200,7 @@ namespace Vydejna.Server
 
             For<SeznamNaradiSerializer>().Singleton().Use<SeznamNaradiSerializer>().Named("SeznamNaradiSerializer");
             For<SeznamNaradiReader>().Singleton().Use<SeznamNaradiReader>().Named("ViewServiceSeznamNaradi")
-                .Ctor<IDocumentFolder>("store").Is(x => x.GetInstance<IDocumentStore>().SubFolder("SeznamNaradi"))
+                .Ctor<IDocumentFolder>("store").Is(x => x.GetInstance<IDocumentStore>().GetFolder("SeznamNaradi"))
                 .Ctor<INotifyChange>("notifier").Is(x => x.GetInstance<INotifyChange>("NotifySeznamNaradi"));
             Forward<SeznamNaradiReader, IAnswer<ZiskatSeznamNaradiRequest, ZiskatSeznamNaradiResponse>>();
             Forward<SeznamNaradiReader, IAnswer<OvereniUnikatnostiRequest, OvereniUnikatnostiResponse>>();
