@@ -22,30 +22,23 @@ namespace ServiceLib
         private class Folder : IDocumentFolder
         {
             private DocumentStorePostgres _parent;
-            private string _path;
-            
-            public Folder(DocumentStorePostgres parent, string path)
+            private string _folderName;
+
+            public Folder(DocumentStorePostgres parent, string folderName)
             {
                 _parent = parent;
-                _path = path;
-            }
-
-            public IDocumentFolder SubFolder(string name)
-            {
-                if (!_parent.VerifyPath(name))
-                    throw new ArgumentOutOfRangeException("name", string.Format("Name {0} is not valid", name));
-                return new Folder(_parent, _path + "/" + name);
+                _folderName = folderName;
             }
 
             public void DeleteAll(Action onComplete, Action<Exception> onError)
             {
-                new DeleteAllWorker(_parent, _path, onComplete, onError).Execute();
+                new DeleteAllWorker(_parent, _folderName, onComplete, onError).Execute();
             }
 
             public void GetDocument(string name, Action<int, string> onFound, Action onMissing, Action<Exception> onError)
             {
                 if (_parent.VerifyPath(name))
-                    new GetDocumentWorker(_parent, _path, name, 0, onFound, null, onMissing, onError).Execute();
+                    new GetDocumentWorker(_parent, _folderName, name, 0, onFound, null, onMissing, onError).Execute();
                 else
                     onError(new ArgumentOutOfRangeException("name", string.Format("Name {0} is not valid", name)));
             }
@@ -53,7 +46,7 @@ namespace ServiceLib
             public void GetNewerDocument(string name, int knownVersion, Action<int, string> onFoundNewer, Action onNotModified, Action onMissing, Action<Exception> onError)
             {
                 if (_parent.VerifyPath(name))
-                    new GetDocumentWorker(_parent, _path, name, knownVersion, onFoundNewer, onNotModified, onMissing, onError).Execute();
+                    new GetDocumentWorker(_parent, _folderName, name, knownVersion, onFoundNewer, onNotModified, onMissing, onError).Execute();
                 else
                     onError(new ArgumentOutOfRangeException("name", string.Format("Name {0} is not valid", name)));
             }
@@ -61,7 +54,7 @@ namespace ServiceLib
             public void SaveDocument(string name, string value, DocumentStoreVersion expectedVersion, Action onSave, Action onConcurrency, Action<Exception> onError)
             {
                 if (_parent.VerifyPath(name))
-                    new SaveDocumentWorker(_parent, _path, name, value, expectedVersion, onSave, onConcurrency, onError).Execute();
+                    new SaveDocumentWorker(_parent, _folderName, name, value, expectedVersion, onSave, onConcurrency, onError).Execute();
                 else
                     onError(new ArgumentOutOfRangeException("name", string.Format("Name {0} is not valid", name)));
             }
@@ -71,8 +64,7 @@ namespace ServiceLib
         {
             _db = db;
             _executor = executor;
-            _root = new Folder(this, "");
-            _pathRegex = new Regex(@"^[a-zA-Z0-9\-._/]+$", RegexOptions.Compiled);
+            _pathRegex = new Regex(@"^[a-zA-Z0-9\-_]+$", RegexOptions.Compiled);
             _partition = partition;
             _lock = new object();
         }
@@ -90,8 +82,20 @@ namespace ServiceLib
             using (var cmd = conn.CreateCommand())
             {
                 cmd.CommandText = string.Concat(
-                    "CREATE TABLE IF NOT EXISTS ", _partition, 
-                    " (key varchar PRIMARY KEY, version integer NOT NULL, contents text NOT NULL)");
+                    "CREATE TABLE IF NOT EXISTS ", _partition,
+                    " (folder varchar NOT NULL, document varchar NOT NULL, version integer NOT NULL, contents text NOT NULL, PRIMARY KEY (folder, document))");
+                cmd.ExecuteNonQuery();
+            }
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = string.Concat(
+                    "CREATE TABLE IF NOT EXISTS ", _partition,
+                    "_idx (folder varchar NOT NULL, value varchar NOT NULL, document varchar NOT NULL, PRIMARY KEY (folder, value, document))");
+                cmd.ExecuteNonQuery();
+            }
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = string.Concat("CREATE INDEX ON ", _partition, "_idx (folder, document)");
                 cmd.ExecuteNonQuery();
             }
         }
@@ -101,29 +105,9 @@ namespace ServiceLib
             return _pathRegex.IsMatch(path);
         }
 
-        public IDocumentFolder SubFolder(string name)
+        public IDocumentFolder GetFolder(string name)
         {
-            return _root.SubFolder(name);
-        }
-
-        public void DeleteAll(Action onComplete, Action<Exception> onError)
-        {
-            _root.DeleteAll(onComplete, onError);
-        }
-
-        public void GetDocument(string name, Action<int, string> onFound, Action onMissing, Action<Exception> onError)
-        {
-            _root.GetDocument(name, onFound, onMissing, onError);
-        }
-
-        public void SaveDocument(string name, string value, DocumentStoreVersion expectedVersion, Action onSave, Action onConcurrency, Action<Exception> onError)
-        {
-            _root.SaveDocument(name, value, expectedVersion, onSave, onConcurrency, onError);
-        }
-
-        public void GetNewerDocument(string name, int knownVersion, Action<int, string> onFoundNewer, Action onNotModified, Action onMissing, Action<Exception> onError)
-        {
-            _root.GetNewerDocument(name, knownVersion, onFoundNewer, onNotModified, onMissing, onError);
+            return new Folder(this, name);
         }
 
         private class DeleteAllWorker

@@ -214,7 +214,7 @@ namespace ServiceLib
             _folders = new ConcurrentDictionary<string, DocumentFolder>();
         }
 
-        public IDocumentFolder SubFolder(string name)
+        public IDocumentFolder GetFolder(string name)
         {
             if (!_nameRegex.IsMatch(name))
                 throw new ArgumentOutOfRangeException(name, "Invalid characters in name");
