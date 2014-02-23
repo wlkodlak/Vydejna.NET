@@ -14,6 +14,9 @@ namespace ServiceLib
         void Insert(string key, int version, T value, int validity = -1, int expiration = -1, bool dirty = false);
         void Evict(string key);
         void Invalidate(string key);
+        void Clear();
+        void Flush(Action onCompleted, Action<Exception> onError, Action<IMemoryCacheSave<T>> saveAction);
+        List<T> GetAllChanges();
     }
 
     public interface IMemoryCacheLoad<T>
@@ -173,7 +176,7 @@ namespace ServiceLib
                 if (currentTime >= _nextEvictTime)
                 {
                     var rounds = (int)((currentTime - _lastEvictTime) / _ticksPerRound);
-                    shift = Math.Min(64, rounds *_agingShift);
+                    shift = Math.Min(64, rounds * _agingShift);
                     _lastEvictTime = currentTime;
                     _nextEvictTime = currentTime + _ticksPerRound;
                 }
@@ -199,13 +202,14 @@ namespace ServiceLib
         {
             public Action<int, T> OnLoaded;
             public Action<Exception> OnError;
+            public Action OnSaved;
         }
 
-        private class MemoryCacheItem : IMemoryCacheLoad<T>
+        private class MemoryCacheItem : IMemoryCacheLoad<T>, IMemoryCacheSave<T>
         {
             private readonly MemoryCache<T> _parent;
             private readonly string _key;
-            private bool _loadInProgress, _hasValue;
+            private bool _ioInProgress, _hasValue, _dirty;
             private int _version;
             private long _validUntil, _expiresOn;
             private long _loadingValidity, _loadingExpiration;
@@ -228,12 +232,13 @@ namespace ServiceLib
             public int OldVersion { get { return _version; } }
             public T OldValue { get { return _value; } }
             public bool OldValueAvailable { get { return _version != -1; } }
+            public bool Dirty { get { return _dirty; } }
 
             public void SetLoadedValue(int version, T value)
             {
                 lock (this)
                 {
-                    _loadInProgress = false;
+                    _ioInProgress = false;
                     var currentTime = _parent.GetTime();
                     _expiresOn = currentTime + _loadingExpiration;
                     _validUntil = currentTime + _loadingValidity;
@@ -241,7 +246,8 @@ namespace ServiceLib
                     _value = value;
                     _hasValue = true;
                     foreach (var waiter in _waiters)
-                        _parent._executor.Enqueue(new MemoryCacheLoaded<T>(waiter.OnLoaded, _version, _value));
+                        if (waiter.OnLoaded != null)
+                            _parent._executor.Enqueue(new MemoryCacheLoaded<T>(waiter.OnLoaded, _version, _value));
                     _waiters.Clear();
                 }
             }
@@ -250,12 +256,13 @@ namespace ServiceLib
             {
                 lock (this)
                 {
-                    _loadInProgress = false;
+                    _ioInProgress = false;
                     var currentTime = _parent.GetTime();
                     _expiresOn = currentTime + _loadingExpiration;
                     _validUntil = currentTime + _loadingValidity;
                     foreach (var waiter in _waiters)
-                        _parent._executor.Enqueue(new MemoryCacheLoaded<T>(waiter.OnLoaded, _version, _value));
+                        if (waiter.OnLoaded != null)
+                            _parent._executor.Enqueue(new MemoryCacheLoaded<T>(waiter.OnLoaded, _version, _value));
                     _waiters.Clear();
                 }
             }
@@ -264,7 +271,7 @@ namespace ServiceLib
             {
                 lock (this)
                 {
-                    _loadInProgress = false;
+                    _ioInProgress = false;
                     foreach (var waiter in _waiters)
                         _parent._executor.Enqueue(waiter.OnError, exception);
                     _waiters.Clear();
@@ -287,26 +294,42 @@ namespace ServiceLib
 
             public bool ShouldReturnImmediately(bool nowait, long currentTime)
             {
-                if (_expiresOn <= currentTime)
+                if (_dirty)
+                    return true;
+                else if (_expiresOn <= currentTime)
                 {
                     _version = -1;
                     _value = default(T);
-                    return false;
+                    return nowait;
                 }
+                else if (_hasValue && _validUntil > currentTime)
+                    return true;
                 else
-                    return _hasValue && _validUntil > currentTime;
+                    return nowait;
             }
 
             public void AddWaiter(Action<int, T> onLoaded, Action<Exception> onError)
             {
                 _waiters.Add(new Waiter { OnLoaded = onLoaded, OnError = onError });
             }
+            public void AddWaiter(Action onSaved, Action<Exception> onError)
+            {
+                _waiters.Add(new Waiter { OnSaved = onSaved, OnError = onError });
+            }
 
             public bool StartLoading()
             {
-                if (_loadInProgress)
+                if (_ioInProgress)
                     return false;
-                _loadInProgress = true;
+                _ioInProgress = true;
+                return true;
+            }
+
+            public bool StartSaving()
+            {
+                if (!_dirty || _ioInProgress)
+                    return false;
+                _ioInProgress = true;
                 return true;
             }
 
@@ -314,6 +337,8 @@ namespace ServiceLib
             {
                 lock (this)
                 {
+                    if (_dirty)
+                        return false;
                     if (_expiresOn <= currentTime)
                         return true;
                     if (shift > 0)
@@ -335,10 +360,48 @@ namespace ServiceLib
 
             public void Insert(int version, T value, int validity, int expiration, bool dirty)
             {
-                if (_loadInProgress)
+                if (_ioInProgress)
                     return;
                 Expires(validity, expiration);
+                if (dirty)
+                    _dirty = true;
                 SetLoadedValue(version, value);
+            }
+
+            public int Version
+            {
+                get { return _version; }
+            }
+
+            public T Value
+            {
+                get { return _value; }
+            }
+
+            public void SavedAsVersion(int version)
+            {
+                lock (this)
+                {
+                    _ioInProgress = false;
+                    _dirty = false;
+                    _version = version;
+                    var currentTime = _parent.GetTime();
+                    _expiresOn = currentTime + _loadingExpiration;
+                    _validUntil = currentTime + _loadingValidity;
+                    foreach (var waiter in _waiters)
+                    {
+                        if (waiter.OnSaved != null)
+                            _parent._executor.Enqueue(waiter.OnSaved);
+                        if (waiter.OnLoaded != null)
+                            _parent._executor.Enqueue(new MemoryCacheLoaded<T>(waiter.OnLoaded, _version, _value));
+                    }
+                    _waiters.Clear();
+                }
+            }
+
+            public void SavingFailed(Exception exception)
+            {
+                LoadingFailed(exception);
             }
         }
 
@@ -349,17 +412,39 @@ namespace ServiceLib
 
         public void Clear()
         {
-            throw new NotImplementedException();
+            _contents.Clear();
         }
 
         public void Flush(Action onCompleted, Action<Exception> onError, Action<IMemoryCacheSave<T>> saveAction)
         {
-            throw new NotImplementedException();
+            foreach (var data in _contents.Values)
+            {
+                lock (data)
+                {
+                    if (!data.StartSaving())
+                        continue;
+                    data.AddWaiter(
+                        () => Flush(onCompleted, onError, saveAction),
+                        onError);
+                }
+                saveAction(data);
+                return;
+            }
+            onCompleted();
         }
 
         public List<T> GetAllChanges()
         {
-            throw new NotImplementedException();
+            var changes = new List<T>();
+            foreach (var data in _contents.Values)
+            {
+                lock (data)
+                {
+                    if (data.Dirty && data.OldValueAvailable)
+                        changes.Add(data.OldValue);
+                }
+            }
+            return changes;
         }
     }
 }
