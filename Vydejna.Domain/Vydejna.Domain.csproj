@@ -60,6 +60,7 @@
     <Compile Include="DefinovaneNaradi.cs" />
     <Compile Include="DefinovaneNaradiRepository.cs" />
     <Compile Include="DetailNaradiProjection.cs" />
+    <Compile Include="IndexObjednavekProjection.cs" />
     <Compile Include="MnozinaNecislovanehoNaradi.cs" />
     <Compile Include="NecislovaneNaradi.cs" />
     <Compile Include="NecislovaneNaradiRepository.cs" />
