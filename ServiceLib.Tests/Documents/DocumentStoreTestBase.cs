@@ -103,7 +103,7 @@ namespace ServiceLib.Tests.Documents
         {
             string resultSave = null;
             Store.GetFolder(folder).SaveDocument(name, contents, expectedVersion, null, 
-                () => resultSave = "saved", () => resultSave = "conflict", ex => resultSave = "error");
+                () => resultSave = "saved", () => resultSave = "conflict", ex => resultSave = "error:" + ex.Message);
             Executor.Process();
             Assert.AreEqual(expectedOutcome, resultSave, "Outcome for {0}", name);
         }
