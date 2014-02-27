@@ -6,3 +6,5 @@ TestResult.xml
 *.sln.VisualState.xml
 *.jmx
 /TestResults
+/Vydejna.Domain/Vydejna.Domain.csproj.user
+/Vydejna.Web/Vydejna.Web.csproj.user
