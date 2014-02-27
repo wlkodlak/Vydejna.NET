@@ -127,4 +127,58 @@ namespace Vydejna.Domain
             return data == null ? "" : JsonSerializer.SerializeToString(data);
         }
     }
+
+    public class SeznamVadReader
+        : IAnswer<ZiskatSeznamVadRequest, ZiskatSeznamVadResponse>
+    {
+        private IDocumentFolder _store;
+        private IMemoryCache<ZiskatSeznamVadResponse> _cache;
+        private SeznamVadDataSerializer _serializer;
+
+        public SeznamVadReader(IDocumentFolder store, IQueueExecution executor, ITime time)
+        {
+            _store = store;
+            _cache = new MemoryCache<ZiskatSeznamVadResponse>(executor, time);
+            _serializer = new SeznamVadDataSerializer();
+        }
+
+        public void Handle(QueryExecution<ZiskatSeznamVadRequest, ZiskatSeznamVadResponse> message)
+        {
+            _cache.Get("vady",
+                (verze, data) => message.OnCompleted(data),
+                message.OnError,
+                NacistDataVad
+                );
+        }
+
+        private void NacistDataVad(IMemoryCacheLoad<ZiskatSeznamVadResponse> load)
+        {
+            if (load.OldValueAvailable)
+            {
+                _store.GetNewerDocument("seznamvad", load.OldVersion,
+                    (verze, obsah) => load.SetLoadedValue(verze, VytvoritReponse(obsah)),
+                    () => load.ValueIsStillValid(),
+                    () => load.SetLoadedValue(0, VytvoritReponse(null)),
+                    load.LoadingFailed
+                    );
+            }
+            else
+            {
+                _store.GetDocument("seznamvad",
+                    (verze, obsah) => load.SetLoadedValue(verze, VytvoritReponse(obsah)),
+                    () => load.SetLoadedValue(0, VytvoritReponse(null)),
+                    load.LoadingFailed
+                    );
+            }
+        }
+
+        private ZiskatSeznamVadResponse VytvoritReponse(string obsah)
+        {
+            var zaklad = _serializer.Deserialize(obsah);
+            return new ZiskatSeznamVadResponse
+            {
+                Seznam = zaklad.Seznam
+            };
+        }
+    }
 }

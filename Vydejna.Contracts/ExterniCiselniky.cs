@@ -35,7 +35,7 @@ namespace Vydejna.Contracts
         public string Dic { get; set; }
     }
     public class ZiskatSeznamDodavateluRequest { }
-    public class ZiskatSeznamDodavateluReponse
+    public class ZiskatSeznamDodavateluResponse
     {
         public List<SeznamDodavateluPolozka> Seznam { get; set; }
     }
@@ -69,6 +69,32 @@ namespace Vydejna.Contracts
         public bool Aktivni { get; set; }
     }
 
+    public class NajitDodaciListRequest
+    {
+        public string DodaciList { get; set; }
+    }
+    public class NajitDodaciListResponse
+    {
+        public string DodaciList { get; set; }
+        public bool Nalezen { get; set; }
+        public string KodDodavatele { get; set; }
+        public string NazevDodavatele { get; set; }
+        public string Objednavka { get; set; }
+    }
+
+    public class NajitObjednavkuRequest
+    {
+        public string Objednavka { get; set; }
+    }
+    public class NajitObjednavkuResponse
+    {
+        public string Objednavka { get; set; }
+        public bool Nalezena { get; set; }
+        public string KodDodavatele { get; set; }
+        public string NazevDodavatele { get; set; }
+        public DateTime? TerminDodani { get; set; }
+    }
+
     public class ExterniCiselnikyTypeMapping : IRegisterTypes
     {
         public void Register(TypeMapper mapper)
@@ -76,9 +102,11 @@ namespace Vydejna.Contracts
             mapper.Register<DefinovanaVadaNaradiEvent>();
             mapper.Register<ZiskatSeznamVadResponse>();
             mapper.Register<DefinovanDodavatelEvent>();
-            mapper.Register<ZiskatSeznamDodavateluReponse>();
+            mapper.Register<ZiskatSeznamDodavateluResponse>();
             mapper.Register<DefinovanoPracovisteEvent>();
             mapper.Register<ZiskatSeznamPracovistResponse>();
+            mapper.Register<NajitDodaciListResponse>();
+            mapper.Register<NajitObjednavkuResponse>();
         }
     }
 }

@@ -129,4 +129,49 @@ namespace Vydejna.Domain
             return data == null ? "" : JsonSerializer.SerializeToString(data);
         }
     }
+
+    public class SeznamPracovistReader
+           : IAnswer<ZiskatSeznamPracovistRequest, ZiskatSeznamPracovistResponse>
+    {
+        private IMemoryCache<ZiskatSeznamPracovistResponse> _cache;
+        private IDocumentFolder _store;
+        private SeznamPracovistDataSerializer _serializer;
+
+        public SeznamPracovistReader(IDocumentFolder store, IQueueExecution executor, ITime time)
+        {
+            _store = store;
+            _cache = new MemoryCache<ZiskatSeznamPracovistResponse>(executor, time);
+            _serializer = new SeznamPracovistDataSerializer();
+        }
+
+        public void Handle(QueryExecution<ZiskatSeznamPracovistRequest, ZiskatSeznamPracovistResponse> message)
+        {
+            _cache.Get("all", (verze, data) => message.OnCompleted(data), message.OnError, NacistDodavatele);
+        }
+
+        private void NacistDodavatele(IMemoryCacheLoad<ZiskatSeznamPracovistResponse> load)
+        {
+            if (load.OldValueAvailable)
+            {
+                _store.GetNewerDocument("seznampracovist", load.OldVersion,
+                    (verze, data) => load.SetLoadedValue(verze, VytvoritResponse(data)),
+                    () => load.ValueIsStillValid(),
+                    () => load.SetLoadedValue(0, VytvoritResponse(null)),
+                    load.LoadingFailed);
+            }
+            else
+            {
+                _store.GetDocument("seznampracovist",
+                    (verze, data) => load.SetLoadedValue(verze, VytvoritResponse(data)),
+                    () => load.SetLoadedValue(0, VytvoritResponse(null)),
+                    load.LoadingFailed);
+            }
+        }
+
+        private ZiskatSeznamPracovistResponse VytvoritResponse(string data)
+        {
+            var zaklad = _serializer.Deserialize(data);
+            return new ZiskatSeznamPracovistResponse { Seznam = zaklad.Seznam };
+        }
+    }
 }

@@ -137,4 +137,49 @@ namespace Vydejna.Domain
             return JsonSerializer.SerializeToString(data);
         }
     }
+
+    public class SeznamDodavateluReader
+        : IAnswer<ZiskatSeznamDodavateluRequest, ZiskatSeznamDodavateluResponse>
+    {
+        private IMemoryCache<ZiskatSeznamDodavateluResponse> _cache;
+        private IDocumentFolder _store;
+        private SeznamDodavateluDataSerializer _serializer;
+
+        public SeznamDodavateluReader(IDocumentFolder store, IQueueExecution executor, ITime time)
+        {
+            _store = store;
+            _cache = new MemoryCache<ZiskatSeznamDodavateluResponse>(executor, time);
+            _serializer = new SeznamDodavateluDataSerializer(null);
+        }
+
+        public void Handle(QueryExecution<ZiskatSeznamDodavateluRequest, ZiskatSeznamDodavateluResponse> message)
+        {
+            _cache.Get("all", (verze, data) => message.OnCompleted(data), message.OnError, NacistDodavatele);
+        }
+
+        private void NacistDodavatele(IMemoryCacheLoad<ZiskatSeznamDodavateluResponse> load)
+        {
+            if (load.OldValueAvailable)
+            {
+                _store.GetNewerDocument("seznamdodavatelu", load.OldVersion,
+                    (verze, data) => load.SetLoadedValue(verze, VytvoritResponse(data)),
+                    () => load.ValueIsStillValid(),
+                    () => load.SetLoadedValue(0, VytvoritResponse(null)),
+                    load.LoadingFailed);
+            }
+            else
+            {
+                _store.GetDocument("seznamdodavatelu",
+                    (verze, data) => load.SetLoadedValue(verze, VytvoritResponse(data)),
+                    () => load.SetLoadedValue(0, VytvoritResponse(null)),
+                    load.LoadingFailed);
+            }
+        }
+
+        private ZiskatSeznamDodavateluResponse VytvoritResponse(string data)
+        {
+            var zaklad = _serializer.Deserialize(data);
+            return new ZiskatSeznamDodavateluResponse { Seznam = zaklad.Seznam };
+        }
+    }
 }
