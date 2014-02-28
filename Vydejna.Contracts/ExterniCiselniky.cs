@@ -77,9 +77,14 @@ namespace Vydejna.Contracts
     {
         public string DodaciList { get; set; }
         public bool Nalezen { get; set; }
+        public List<NalezenyDodaciList> Kandidati { get; set; }
+    }
+    public class NalezenyDodaciList
+    {
+        public string DodaciList { get; set; }
         public string KodDodavatele { get; set; }
         public string NazevDodavatele { get; set; }
-        public string Objednavka { get; set; }
+        public List<string> Objednavky { get; set; }
     }
 
     public class NajitObjednavkuRequest
@@ -90,9 +95,14 @@ namespace Vydejna.Contracts
     {
         public string Objednavka { get; set; }
         public bool Nalezena { get; set; }
+        public List<NalezenaObjednavka> Kandidati { get; set; }
+    }
+    public class NalezenaObjednavka
+    {
+        public string Objednavka { get; set; }
         public string KodDodavatele { get; set; }
         public string NazevDodavatele { get; set; }
-        public DateTime? TerminDodani { get; set; }
+        public DateTime TerminDodani { get; set; }
     }
 
     public class ExterniCiselnikyTypeMapping : IRegisterTypes
