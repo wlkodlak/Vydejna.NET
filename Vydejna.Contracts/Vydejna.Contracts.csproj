@@ -44,6 +44,7 @@
   <ItemGroup>
     <Compile Include="CislovaneNaradi.cs" />
     <Compile Include="ExterniCiselniky.cs" />
+    <Compile Include="NaradiNaUmisteni.cs" />
     <Compile Include="NecislovaneNaradi.cs" />
     <Compile Include="ObecneNaradi.cs" />
     <Compile Include="PrehledNaradi.cs" />

@@ -80,11 +80,11 @@ namespace Vydejna.Domain
 
         public void Handle(CommandExecution<DefinovanoPracovisteEvent> message)
         {
-            var vzor = new SeznamPracovistPolozka { Kod = message.Command.Kod };
+            var vzor = new InformaceOPracovisti { Kod = message.Command.Kod };
             var index = _data.Seznam.BinarySearch(vzor, _comparer);
             if (index < 0)
             {
-                var pracoviste = new SeznamPracovistPolozka();
+                var pracoviste = new InformaceOPracovisti();
                 pracoviste.Kod = message.Command.Kod;
                 pracoviste.Nazev = message.Command.Nazev;
                 pracoviste.Stredisko = message.Command.Stredisko;
@@ -104,12 +104,12 @@ namespace Vydejna.Domain
 
     public class SeznamPracovistData
     {
-        public List<SeznamPracovistPolozka> Seznam { get; set; }
+        public List<InformaceOPracovisti> Seznam { get; set; }
     }
     public class SeznamPracovistDataPracovisteKodComparer
-        : IComparer<SeznamPracovistPolozka>
+        : IComparer<InformaceOPracovisti>
     {
-        public int Compare(SeznamPracovistPolozka x, SeznamPracovistPolozka y)
+        public int Compare(InformaceOPracovisti x, InformaceOPracovisti y)
         {
             return string.CompareOrdinal(x.Kod, y.Kod);
         }
@@ -121,7 +121,7 @@ namespace Vydejna.Domain
         {
             var data = string.IsNullOrEmpty(raw) ? null : JsonSerializer.DeserializeFromString<SeznamPracovistData>(raw);
             data = data ?? new SeznamPracovistData();
-            data.Seznam = data.Seznam ?? new List<SeznamPracovistPolozka>();
+            data.Seznam = data.Seznam ?? new List<InformaceOPracovisti>();
             return data;
         }
         public string Serialize(SeznamPracovistData data)

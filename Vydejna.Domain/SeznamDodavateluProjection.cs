@@ -80,10 +80,10 @@ namespace Vydejna.Domain
 
         public void Handle(CommandExecution<DefinovanDodavatelEvent> message)
         {
-            SeznamDodavateluPolozka dodavatel;
+            InformaceODodavateli dodavatel;
             if (!_data.PodleKodu.TryGetValue(message.Command.Kod, out dodavatel))
             {
-                dodavatel = new SeznamDodavateluPolozka();
+                dodavatel = new InformaceODodavateli();
                 dodavatel.Kod = message.Command.Kod;
                 _data.PodleKodu[dodavatel.Kod] = dodavatel;
             }
@@ -98,13 +98,13 @@ namespace Vydejna.Domain
 
     public class SeznamDodavateluData
     {
-        public List<SeznamDodavateluPolozka> Seznam { get; set; }
-        public Dictionary<string, SeznamDodavateluPolozka> PodleKodu;
+        public List<InformaceODodavateli> Seznam { get; set; }
+        public Dictionary<string, InformaceODodavateli> PodleKodu;
     }
     public class SeznamDodavateluNazevComparer
-        : IComparer<SeznamDodavateluPolozka>
+        : IComparer<InformaceODodavateli>
     {
-        public int Compare(SeznamDodavateluPolozka x, SeznamDodavateluPolozka y)
+        public int Compare(InformaceODodavateli x, InformaceODodavateli y)
         {
             return string.Compare(x.Nazev, y.Nazev);
         }
@@ -112,9 +112,9 @@ namespace Vydejna.Domain
 
     public class SeznamDodavateluDataSerializer
     {
-        private IComparer<SeznamDodavateluPolozka> _comparer;
+        private IComparer<InformaceODodavateli> _comparer;
 
-        public SeznamDodavateluDataSerializer(IComparer<SeznamDodavateluPolozka> comparer)
+        public SeznamDodavateluDataSerializer(IComparer<InformaceODodavateli> comparer)
         {
             _comparer = comparer;
         }
@@ -122,8 +122,8 @@ namespace Vydejna.Domain
         {
             var data = string.IsNullOrEmpty(raw) ? null : JsonSerializer.DeserializeFromString<SeznamDodavateluData>(raw);
             data = data ?? new SeznamDodavateluData();
-            data.Seznam = data.Seznam ?? new List<SeznamDodavateluPolozka>();
-            data.PodleKodu = new Dictionary<string, SeznamDodavateluPolozka>(data.Seznam.Count);
+            data.Seznam = data.Seznam ?? new List<InformaceODodavateli>();
+            data.PodleKodu = new Dictionary<string, InformaceODodavateli>(data.Seznam.Count);
             foreach (var dodavatel in data.Seznam)
                 data.PodleKodu[dodavatel.Kod] = dodavatel;
             return data;
@@ -132,7 +132,7 @@ namespace Vydejna.Domain
         {
             if (data == null)
                 return "";
-            data.Seznam = new List<SeznamDodavateluPolozka>(data.PodleKodu.Values);
+            data.Seznam = new List<InformaceODodavateli>(data.PodleKodu.Values);
             data.Seznam.Sort(_comparer);
             return JsonSerializer.SerializeToString(data);
         }

@@ -37,9 +37,9 @@ namespace Vydejna.Contracts
     public class ZiskatSeznamDodavateluRequest { }
     public class ZiskatSeznamDodavateluResponse
     {
-        public List<SeznamDodavateluPolozka> Seznam { get; set; }
+        public List<InformaceODodavateli> Seznam { get; set; }
     }
-    public class SeznamDodavateluPolozka
+    public class InformaceODodavateli
     {
         public string Kod { get; set; }
         public string Nazev { get; set; }
@@ -59,9 +59,9 @@ namespace Vydejna.Contracts
     public class ZiskatSeznamPracovistRequest { }
     public class ZiskatSeznamPracovistResponse 
     {
-        public List<SeznamPracovistPolozka> Seznam { get; set; }
+        public List<InformaceOPracovisti> Seznam { get; set; }
     }
-    public class SeznamPracovistPolozka
+    public class InformaceOPracovisti
     {
         public string Kod { get; set; }
         public string Nazev { get; set; }
