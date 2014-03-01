@@ -9,6 +9,7 @@ namespace Vydejna.Contracts
         public Guid EventId { get; set; }
         public Guid NaradiId { get; set; }
         public int CisloNaradi { get; set; }
+        public int Verze { get; set; }
         public DateTime Datum { get; set; }
         public decimal CenaPredchozi { get; set; }
         public decimal CenaNova { get; set; }

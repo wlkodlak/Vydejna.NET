@@ -1,9 +1,6 @@
 ﻿using ServiceLib;
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Vydejna.Contracts
 {
@@ -21,6 +18,7 @@ namespace Vydejna.Contracts
     public class NaradiNaPracovisti
     {
         public Guid NaradiId { get; set; }
+        public int VerzeNaradi { get; set; }
         public string Vykres { get; set; }
         public string Rozmer { get; set; }
         public string Druh { get; set; }

@@ -62,6 +62,7 @@
     <Compile Include="DetailNaradiProjection.cs" />
     <Compile Include="IndexObjednavekProjection.cs" />
     <Compile Include="MnozinaNecislovanehoNaradi.cs" />
+    <Compile Include="NaradiNaPracovistiProjection.cs" />
     <Compile Include="NecislovaneNaradi.cs" />
     <Compile Include="NecislovaneNaradiRepository.cs" />
     <Compile Include="NecislovaneNaradiService.cs" />

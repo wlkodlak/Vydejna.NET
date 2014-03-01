@@ -119,8 +119,8 @@ namespace Vydejna.Domain
                         DocumentStoreVersion.At(save.Version),
                         null,
                         () => save.SavedAsVersion(save.Version + 1),
-                        () => _onError(new ProjectorMessages.ConcurrencyException()),
-                        _onError);
+                        () => save.SavingFailed(new ProjectorMessages.ConcurrencyException()),
+                        save.SavingFailed);
                 });
             }
 
@@ -134,8 +134,8 @@ namespace Vydejna.Domain
                         DocumentStoreVersion.At(save.Version),
                         null,
                         () => save.SavedAsVersion(save.Version + 1),
-                        () => _onError(new ProjectorMessages.ConcurrencyException()),
-                        _onError);
+                        () => save.SavingFailed(new ProjectorMessages.ConcurrencyException()),
+                        save.SavingFailed);
                 });
             }
         }

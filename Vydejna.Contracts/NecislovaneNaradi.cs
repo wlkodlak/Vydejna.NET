@@ -31,6 +31,7 @@ namespace Vydejna.Contracts
     {
         public Guid EventId { get; set; }
         public Guid NaradiId { get; set; }
+        public int Verze { get; set; }
         public int Pocet { get; set; }
         public decimal? CenaNova { get; set; }
         public DateTime Datum { get; set; }

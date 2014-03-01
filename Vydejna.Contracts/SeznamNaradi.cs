@@ -207,6 +207,14 @@ namespace Vydejna.Contracts
         public int NovyStav { get; set; }
     }
 
+    public class InformaceONaradi
+    {
+        public Guid NaradiId { get; set; }
+        public string Vykres { get; set; }
+        public string Rozmer { get; set; }
+        public string Druh { get; set; }
+    }
+
     public class SeznamNaradiTypeMapping : IRegisterTypes
     {
         public void Register(TypeMapper mapper)
