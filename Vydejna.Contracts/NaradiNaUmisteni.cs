@@ -18,7 +18,6 @@ namespace Vydejna.Contracts
     public class NaradiNaPracovisti
     {
         public Guid NaradiId { get; set; }
-        public int VerzeNaradi { get; set; }
         public string Vykres { get; set; }
         public string Rozmer { get; set; }
         public string Druh { get; set; }
@@ -39,6 +38,7 @@ namespace Vydejna.Contracts
         public InformaceODodavateli Dodavatel { get; set; }
         public string Objednavka { get; set; }
         public DateTime? TerminDodani { get; set; }
+        public int PocetCelkem { get; set; }
         public List<NaradiNaObjednavce> Seznam { get; set; }
     }
     public class NaradiNaObjednavce

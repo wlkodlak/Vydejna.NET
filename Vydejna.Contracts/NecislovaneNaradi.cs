@@ -33,6 +33,8 @@ namespace Vydejna.Contracts
         public Guid NaradiId { get; set; }
         public int Verze { get; set; }
         public int Pocet { get; set; }
+        public int PocetNaPredchozim { get; set; }
+        public int PocetNaNovem { get; set; }
         public decimal? CenaNova { get; set; }
         public DateTime Datum { get; set; }
         public decimal CelkovaCenaPredchozi { get; set; }

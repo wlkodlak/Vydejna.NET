@@ -1,10 +1,8 @@
-﻿using System;
+﻿using ServiceLib;
+using ServiceStack.Text;
+using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using ServiceLib;
-using ServiceStack.Text;
 using Vydejna.Contracts;
 
 namespace Vydejna.Domain
@@ -144,25 +142,14 @@ namespace Vydejna.Domain
                 onError,
                 load =>
                 {
-                    if (load.OldValueAvailable)
-                    {
-                        _store.GetNewerDocument(load.Key, load.OldVersion,
-                            (verze, raw) => load.SetLoadedValue(verze, _serializer.NacistPracovisteKompletni(raw)),
-                            () => load.ValueIsStillValid(),
-                            () => load.SetLoadedValue(0, _serializer.NacistPracovisteKompletni(null)),
-                            load.LoadingFailed);
-                    }
-                    else
-                    {
-                        _store.GetDocument(load.Key,
-                            (verze, raw) => load.SetLoadedValue(verze, _serializer.NacistPracovisteKompletni(raw)),
-                            () => load.SetLoadedValue(0, _serializer.NacistPracovisteKompletni(null)),
-                            load.LoadingFailed);
-                    }
+                    _store.GetDocument(load.Key,
+                        (verze, raw) => load.SetLoadedValue(verze, _serializer.NacistPracovisteKompletni(raw)),
+                        () => load.SetLoadedValue(0, _serializer.NacistPracovisteKompletni(null)),
+                        load.LoadingFailed);
                 });
         }
 
-        private void UpravitNaradiNaPracovisti(string kodPracoviste, Action onComplete, Action<Exception> onError, Guid naradiId, int cisloNaradi, int zmenaPoctu, DateTime? datumVydeje, int verzeNaradi)
+        private void UpravitNaradiNaPracovisti(string kodPracoviste, Action onComplete, Action<Exception> onError, Guid naradiId, int cisloNaradi, int novyPocet, DateTime? datumVydeje)
         {
             UpravitPracoviste(kodPracoviste, onComplete, onError, data => {
                 NaradiNaPracovisti naradiNaPracovisti;
@@ -179,36 +166,21 @@ namespace Vydejna.Domain
                     naradiNaPracovisti.Druh = naradiInfo.Druh;
                 }
 
-                if (cisloNaradi == 0)
-                {
-                    if (naradiNaPracovisti.VerzeNaradi < verzeNaradi)
-                        naradiNaPracovisti.VerzeNaradi = verzeNaradi;
-                    else
-                        return;
-                }
-                else
-                {
-                    if (naradiNaPracovisti.VerzeNaradi < verzeNaradi)
-                        naradiNaPracovisti.VerzeNaradi = verzeNaradi;
-                    else
-                        return;
-                }
-
                 if (datumVydeje.HasValue)
                     naradiNaPracovisti.DatumPoslednihoVydeje = datumVydeje.Value;
-                data.PocetCelkem += zmenaPoctu;
-                naradiNaPracovisti.PocetCelkem += zmenaPoctu;
-                if (cisloNaradi > 0)
+                if (cisloNaradi == 0)
                 {
-                    naradiNaPracovisti.PocetNecislovanych += zmenaPoctu;
+                    naradiNaPracovisti.PocetNecislovanych = novyPocet;
                 }
                 else
                 {
-                    if (zmenaPoctu > 0)
+                    if (novyPocet == 1 && !naradiNaPracovisti.SeznamCislovanych.Contains(cisloNaradi))
                         naradiNaPracovisti.SeznamCislovanych.Add(cisloNaradi);
-                    else if (zmenaPoctu < 0)
+                    else if (novyPocet == 0)
                         naradiNaPracovisti.SeznamCislovanych.Remove(cisloNaradi);
                 }
+                naradiNaPracovisti.PocetCelkem = naradiNaPracovisti.PocetNecislovanych + naradiNaPracovisti.SeznamCislovanych.Count;
+                data.PocetCelkem = data.IndexPodleIdNaradi.Values.Sum(n => n.PocetCelkem);
             });
         }
 
@@ -228,22 +200,22 @@ namespace Vydejna.Domain
 
         public void Handle(CommandExecution<CislovaneNaradiVydanoDoVyrobyEvent> message)
         {
-            UpravitNaradiNaPracovisti(message.Command.KodPracoviste, message.OnCompleted, message.OnError, message.Command.NaradiId, message.Command.CisloNaradi, 1, message.Command.Datum, message.Command.Verze);
+            UpravitNaradiNaPracovisti(message.Command.KodPracoviste, message.OnCompleted, message.OnError, message.Command.NaradiId, message.Command.CisloNaradi, 1, message.Command.Datum);
         }
 
         public void Handle(CommandExecution<CislovaneNaradiPrijatoZVyrobyEvent> message)
         {
-            UpravitNaradiNaPracovisti(message.Command.KodPracoviste, message.OnCompleted, message.OnError, message.Command.NaradiId, message.Command.CisloNaradi, -1, null, message.Command.Verze);
+            UpravitNaradiNaPracovisti(message.Command.KodPracoviste, message.OnCompleted, message.OnError, message.Command.NaradiId, message.Command.CisloNaradi, 0, null);
         }
 
         public void Handle(CommandExecution<NecislovaneNaradiVydanoDoVyrobyEvent> message)
         {
-            UpravitNaradiNaPracovisti(message.Command.KodPracoviste, message.OnCompleted, message.OnError, message.Command.NaradiId, 0, message.Command.Pocet, message.Command.Datum, message.Command.Verze);
+            UpravitNaradiNaPracovisti(message.Command.KodPracoviste, message.OnCompleted, message.OnError, message.Command.NaradiId, 0, message.Command.PocetNaNovem, message.Command.Datum);
         }
 
         public void Handle(CommandExecution<NecislovaneNaradiPrijatoZVyrobyEvent> message)
         {
-            UpravitNaradiNaPracovisti(message.Command.KodPracoviste, message.OnCompleted, message.OnError, message.Command.NaradiId, 0, -message.Command.Pocet, null, message.Command.Verze);
+            UpravitNaradiNaPracovisti(message.Command.KodPracoviste, message.OnCompleted, message.OnError, message.Command.NaradiId, 0, message.Command.PocetNaPredchozim, null);
         }
 
         public void Handle(CommandExecution<DefinovanoNaradiEvent> message)
@@ -299,7 +271,7 @@ namespace Vydejna.Domain
 
         public string UlozitPracoviste(NaradiNaPracovistiDataPracoviste data)
         {
-            data.Seznam = data.IndexPodleIdNaradi.Values.ToList();
+            data.Seznam = data.IndexPodleIdNaradi.Values.Where(n => n.PocetCelkem > 0).ToList();
             return JsonSerializer.SerializeToString(data);
         }
     }
