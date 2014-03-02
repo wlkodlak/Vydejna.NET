@@ -22,6 +22,7 @@ namespace Vydejna.Domain
         private PrehledObjednavekDataObjednavek _objednavkyData;
         private int _ciselnikyVerze, _objednavkyVerze;
         private bool _ciselnikyDirty, _objednavkyDirty;
+        private bool _dokoncenFlush;
 
         public PrehledObjednavekProjection(IDocumentFolder store)
         {
@@ -145,7 +146,7 @@ namespace Vydejna.Domain
                         DocumentStoreVersion.At(_parent._objednavkyVerze), null,
                         () => { 
                             _parent._objednavkyVerze++;
-                            _parent._objednavkyData.PocetZpravPredFlushem = _parent._objednavkyData.ZpracovaneZpravy.Count;
+                            _parent._dokoncenFlush = true;
                             _onComplete(); },
                         Concurrency, _onError);
                 }
@@ -159,8 +160,17 @@ namespace Vydejna.Domain
             }
         }
 
+        private void EliminovatZbytecneZpravy()
+        {
+            if (!_dokoncenFlush)
+                return;
+            _dokoncenFlush = false;
+            _objednavkyData.PocetZpravPredFlushem = _objednavkyData.ZpracovaneZpravy.Count;
+        }
+
         public void Handle(CommandExecution<DefinovanDodavatelEvent> message)
         {
+            EliminovatZbytecneZpravy();
             PrehledObjednavekDataDodavatele dodavatel;
             if (!_ciselnikyData.IndexDodavatelu.TryGetValue(message.Command.Kod, out dodavatel))
             {
@@ -183,6 +193,7 @@ namespace Vydejna.Domain
 
         private void UpravitObjednavku(Action onComplete, Action<Exception> onError, string kodDodavatele, string cisloObjednavky, Guid eventId, DateTime? termin, Action<ObjednavkaVPrehledu> zmena)
         {
+            EliminovatZbytecneZpravy();
             if (_objednavkyData.IndexZprav.Contains(eventId))
             {
                 onComplete();
@@ -288,7 +299,7 @@ namespace Vydejna.Domain
                 result.IndexObjednavek[Tuple.Create(objednavka.KodDodavatele, objednavka.Objednavka)] = objednavka;
             result.ZpracovaneZpravy = new List<Guid>();
             result.IndexZprav = new HashSet<Guid>(result.ZpracovaneZpravy);
-            result.PocetZpravPredFlushem = result.ZpracovaneZpravy.Count;
+            result.PocetZpravPredFlushem = 0;
             return result;
         }
 
