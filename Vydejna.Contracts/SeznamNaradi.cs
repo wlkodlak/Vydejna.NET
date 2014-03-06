@@ -7,37 +7,26 @@ namespace Vydejna.Contracts
 {
     public class ZiskatSeznamNaradiRequest
     {
-        public ZiskatSeznamNaradiRequest(int offset, int pocet)
+        public ZiskatSeznamNaradiRequest(int stranka)
         {
-            this.Offset = offset;
-            this.MaxPocet = pocet;
+            this.Stranka = stranka;
         }
-        public int Offset { get; set; }
-        public int MaxPocet { get; set; }
+        public int Stranka { get; set; }
 
-        public override bool Equals(object obj)
-        {
-            return DtoUtils.Equals(this, obj);
-        }
-        public override int GetHashCode()
-        {
-            return DtoUtils.GetHashCode(this);
-        }
-        public override string ToString()
-        {
-            return DtoUtils.ToString(this);
-        }
+        public const int VelikostStranky = 100;
     }
 
     public class ZiskatSeznamNaradiResponse
     {
-        public int Offset { get; set; }
+        public int Stranka { get; set; }
+        public int PocetStranek { get; set; }
         public int PocetCelkem { get; set; }
         public List<TypNaradiDto> SeznamNaradi { get; set; }
 
         public ZiskatSeznamNaradiResponse()
         {
-            this.Offset = 0;
+            this.Stranka = 0;
+            this.PocetStranek = 0;
             this.PocetCelkem = 0;
             this.SeznamNaradi = new List<TypNaradiDto>();
         }
@@ -70,19 +59,6 @@ namespace Vydejna.Contracts
         {
             this.Vykres = vykres;
             this.Rozmer = rozmer;
-        }
-
-        public override bool Equals(object obj)
-        {
-            return DtoUtils.Equals(this, obj);
-        }
-        public override int GetHashCode()
-        {
-            return DtoUtils.GetHashCode(this);
-        }
-        public override string ToString()
-        {
-            return DtoUtils.ToString(this);
         }
     }
 

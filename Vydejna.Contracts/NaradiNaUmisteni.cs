@@ -52,9 +52,14 @@ namespace Vydejna.Contracts
         public List<int> SeznamCislovanych { get; set; }
     }
 
-    public class ZiskatNaradiNaVydejneRequest { }
+    public class ZiskatNaradiNaVydejneRequest {
+        public int Stranka { get; set; }
+    }
     public class ZiskatNaradiNaVydejneResponse
     {
+        public int Stranka { get; set; }
+        public int PocetStranek { get; set; }
+        public int PocetCelkem { get; set; }
         public List<NaradiNaVydejne> Seznam { get; set; }
     }
     public class NaradiNaVydejne
@@ -69,13 +74,22 @@ namespace Vydejna.Contracts
         public List<int> SeznamCislovanych { get; set; }
     }
 
-    public class PrehledObjednavekRequest { }
+    public class PrehledObjednavekRequest
+    {
+        public string FiltrPodleDodavatele { get; set; }
+        public int Stranka { get; set; }
+    }
     public class PrehledObjednavekResponse
     {
+        public string FiltrPodleDodavatele { get; set; }
+        public int Stranka { get; set; }
+        public int PocetStranek { get; set; }
+        public int PocetCelkem { get; set; }
         public List<ObjednavkaVPrehledu> Seznam { get; set; }
     }
     public class ObjednavkaVPrehledu
     {
+        public DateTime DatumObjednani { get; set; }
         public string KodDodavatele { get; set; }
         public string NazevDodavatele { get; set; }
         public string Objednavka { get; set; }
@@ -85,9 +99,15 @@ namespace Vydejna.Contracts
         public DateTime TerminDodani { get; set; }
     }
 
-    public class PrehledCislovanehoNaradiRequest { }
+    public class PrehledCislovanehoNaradiRequest
+    {
+        public int Stranka { get; set; }
+    }
     public class PrehledCislovanehoNaradiResponse
     {
+        public int Stranka { get; set; }
+        public int PocetStranek { get; set; }
+        public int PocetCelkem { get; set; }
         public List<CislovaneNaradiVPrehledu> Seznam { get; set; }
     }
     public class CislovaneNaradiVPrehledu

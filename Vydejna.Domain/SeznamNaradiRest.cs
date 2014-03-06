@@ -84,10 +84,9 @@ namespace Vydejna.Domain
         {
             try
             {
-                int offset = context.Parameter("offset").AsInteger().Default(0).Get();
-                int pocet = context.Parameter("pocet").AsInteger().Default(int.MaxValue).Get();
+                int stranka = context.Parameter("stranka").AsInteger().Default(0).Get();
                 var execution = new QueryExecution<ZiskatSeznamNaradiRequest, ZiskatSeznamNaradiResponse>(
-                    new ZiskatSeznamNaradiRequest(offset, pocet),
+                    new ZiskatSeznamNaradiRequest(stranka),
                     result => OnQueryCompleted(context, result),
                     exception => OnQueryFailed(context, exception));
                 _executor.Enqueue(_seznamNaradi, execution);

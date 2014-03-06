@@ -9,9 +9,14 @@ namespace Vydejna.Contracts
 {
     public class PrehledNaradiRequest
     {
+        public int Stranka { get; set; }
+        public const int VelikostStranky = 100;
     }
     public class PrehledNaradiResponse
     {
+        public int Stranka { get; set; }
+        public int PocetStranek { get; set; }
+        public int PocetCelkem { get; set; }
         public List<PrehledNaradiPolozka> Naradi { get; set; }
     }
     public class PrehledNaradiPolozka

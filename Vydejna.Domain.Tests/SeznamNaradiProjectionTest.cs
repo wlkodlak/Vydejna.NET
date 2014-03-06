@@ -53,11 +53,11 @@ namespace Vydejna.Domain.Tests
             _locking.SendLock();
         }
 
-        private ZiskatSeznamNaradiResponse ZiskatVsechnoNaradi()
+        private ZiskatSeznamNaradiResponse ZiskatPrvniStrankuNaradi()
         {
             ZiskatSeznamNaradiResponse response = null;
             _reader.Handle(new QueryExecution<ZiskatSeznamNaradiRequest, ZiskatSeznamNaradiResponse>(
-                new ZiskatSeznamNaradiRequest(0, int.MaxValue),
+                new ZiskatSeznamNaradiRequest(1),
                 r => response = r, ex => { throw ex.PreserveStackTrace(); }));
             _executor.Process();
             return response;
@@ -82,7 +82,7 @@ namespace Vydejna.Domain.Tests
             _streaming.MarkEndOfStream();
             _executor.Process();
 
-            var seznam = ZiskatVsechnoNaradi();
+            var seznam = ZiskatPrvniStrankuNaradi();
             Assert.AreEqual(8, seznam.PocetCelkem, "PocetCelkem");
             var serazeneGuidy = new Guid[] { Id(101), Id(571), Id(124), Id(924), Id(199), Id(284), Id(335), Id(140) };
             var guidyVysledku = seznam.SeznamNaradi.Select(n => n.Id).ToArray();
@@ -105,7 +105,7 @@ namespace Vydejna.Domain.Tests
             _streaming.MarkEndOfStream();
             _executor.Process();
 
-            var seznam = ZiskatVsechnoNaradi();
+            var seznam = ZiskatPrvniStrankuNaradi();
             var aktivniGuid = seznam.SeznamNaradi.Where(n => n.Aktivni).Select(n => n.Id).ToArray();
             var neaktivniGuid = seznam.SeznamNaradi.Where(n => !n.Aktivni).Select(n => n.Id).ToArray();
             var aktivniOcekavane = new Guid[] { Id(101), Id(124), Id(335) };
@@ -132,7 +132,7 @@ namespace Vydejna.Domain.Tests
             _streaming.MarkEndOfStream();
             _executor.Process();
 
-            var seznam = ZiskatVsechnoNaradi();
+            var seznam = ZiskatPrvniStrankuNaradi();
             var aktivniGuid = seznam.SeznamNaradi.Where(n => n.Aktivni).Select(n => n.Id).ToArray();
             var neaktivniGuid = seznam.SeznamNaradi.Where(n => !n.Aktivni).Select(n => n.Id).ToArray();
             var aktivniOcekavane = new Guid[] { Id(124), Id(335), Id(140) };

@@ -59,8 +59,13 @@ namespace Vydejna.Domain
             {
                 var response = new ZiskatSeznamNaradiResponse();
                 response.PocetCelkem = data.Seznam.Count;
-                response.Offset = _request.Request.Offset;
-                response.SeznamNaradi = data.Seznam.Skip(_request.Request.Offset).Take(_request.Request.MaxPocet).ToList();
+                response.PocetStranek = (
+                    data.Seznam.Count + 
+                    ZiskatSeznamNaradiRequest.VelikostStranky - 1
+                    ) / ZiskatSeznamNaradiRequest.VelikostStranky;
+                response.Stranka = _request.Request.Stranka;
+                var offset = (response.Stranka - 1) * ZiskatSeznamNaradiRequest.VelikostStranky;
+                response.SeznamNaradi = data.Seznam.Skip(offset).Take(ZiskatSeznamNaradiRequest.VelikostStranky).ToList();
                 _request.OnCompleted(response);
             }
 
