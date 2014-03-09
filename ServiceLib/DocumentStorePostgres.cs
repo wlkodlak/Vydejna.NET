@@ -58,9 +58,15 @@ namespace ServiceLib
                     onError(new ArgumentOutOfRangeException("name", string.Format("Name {0} is not valid", name)));
             }
 
-            public void FindDocuments(string indexName, string minValue, string maxValue, Action<IList<string>> onFoundKeys, Action<Exception> onError)
+            public void FindDocumentKeys(string indexName, string minValue, string maxValue, Action<IList<string>> onFoundKeys, Action<Exception> onError)
             {
                 new FindDocumentsWorker(_parent, _folderName, indexName, minValue, maxValue, onFoundKeys, onError).Execute();
+            }
+
+
+            public void FindDocuments(string indexName, string minValue, string maxValue, int skip, int maxCount, bool ascending, Action<DocumentStoreFoundDocuments> onFoundDocuments, Action<Exception> onError)
+            {
+                throw new NotImplementedException();
             }
         }
 

@@ -316,7 +316,7 @@ namespace Vydejna.Domain
                 });
         }
 
-        private ZiskatNaradiNaVydejneResponse VytvoritResponse(ZiskatNaradiNaVydejneRequest request,DocumentStoreFoundDocuments list)
+        private ZiskatNaradiNaVydejneResponse VytvoritResponse(ZiskatNaradiNaVydejneRequest request, DocumentStoreFoundDocuments list)
         {
             var response = new ZiskatNaradiNaVydejneResponse();
             response.Stranka = request.Stranka;

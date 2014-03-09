@@ -93,7 +93,17 @@ namespace Vydejna.Domain
             }
             public void Execute()
             {
+                GenerovatReferenceDetailu();
                 FlushDodavatelu();
+            }
+            private void GenerovatReferenceDetailu()
+            {
+                foreach (var detail in _parent._cacheDetail.GetAllChanges())
+                {
+                    detail.ReferenceDodavatelu = detail.ReferenceDodavatelu ?? GenerovatReferenceDodavatelu(detail);
+                    detail.ReferencePracovist = detail.ReferencePracovist ?? GenerovatReferencePracovist(detail);
+                    detail.ReferenceVad = detail.ReferenceVad ?? GenerovatReferenceVad(detail);
+                }
             }
             private void FlushDodavatelu()
             {
@@ -127,7 +137,9 @@ namespace Vydejna.Domain
                     _cacheDetail.Insert(naradiId.ToString("N"), verze, data, dirty: true);
                     onCompleted();
                 }, onError,
-                load => _repository.NacistDetail(naradiId, load.OldVersion, load.SetLoadedValue, load.ValueIsStillValid, load.LoadingFailed));
+                load => _repository.NacistDetail(naradiId, load.OldVersion,
+                    (verze, data) => load.SetLoadedValue(verze, RozsiritData(data)),
+                    load.ValueIsStillValid, load.LoadingFailed));
         }
 
         public void Handle(CommandExecution<DefinovanoNaradiEvent> message)
@@ -169,18 +181,6 @@ namespace Vydejna.Domain
                     DetailNaradiDataDodavatel existujici;
                     var novy = message.Command;
                     bool zmeneno = false;
-                    if (ciselnik == null)
-                    {
-                        ciselnik = new DetailNaradiDataDodavatele();
-                        ciselnik.Dodavatele = new List<DetailNaradiDataDodavatel>();
-                        ciselnik.IndexDodavatelu = new Dictionary<string, DetailNaradiDataDodavatel>();
-                    }
-                    else if (ciselnik.IndexDodavatelu == null)
-                    {
-                        ciselnik.IndexDodavatelu = new Dictionary<string, DetailNaradiDataDodavatel>();
-                        foreach (var dodavatel in ciselnik.Dodavatele)
-                            ciselnik.IndexDodavatelu[dodavatel.Kod] = dodavatel;
-                    }
 
                     if (!ciselnik.IndexDodavatelu.TryGetValue(novy.Kod, out existujici))
                     {
@@ -197,32 +197,13 @@ namespace Vydejna.Domain
                         existujici.Nazev = novy.Nazev;
                     }
                     if (zmeneno)
-                    {
                         _cacheDodavatele.Insert("dodavatele", verze, ciselnik, dirty: true);
-
-                        var kesovane = _cacheDetail.GetAllChanges();
-                        foreach (var data in kesovane)
-                        {
-                            foreach (var naradi in data.IndexCislovane.Values)
-                            {
-                                if (naradi.VOprave != null && string.Equals(naradi.VOprave.KodDodavatele, novy.Kod, StringComparison.Ordinal))
-                                    naradi.VOprave.NazevDodavatele = novy.Nazev;
-                            }
-                            foreach (var naradi in data.IndexPodleObjednavky.Values)
-                            {
-                                if (naradi.VOprave != null && string.Equals(naradi.VOprave.KodDodavatele, novy.Kod, StringComparison.Ordinal))
-                                    naradi.VOprave.NazevDodavatele = novy.Nazev;
-                            }
-                        }
-
-                        var aktualizace = new AktualizaceReferenci(this, message.OnCompleted, message.OnError);
-                        _repository.NajitDetailyPodleDodavatele(novy.Kod, aktualizace.Execute, message.OnError);
-                    }
-                    else
-                        message.OnCompleted();
+                    message.OnCompleted();
                 },
                 message.OnError,
-                load => _repository.NacistDodavatele(load.SetLoadedValue, load.LoadingFailed)
+                load => _repository.NacistDodavatele(
+                    (verze, data) => load.SetLoadedValue(verze, RozsiritData(data)),
+                    load.LoadingFailed)
                 );
         }
 
@@ -259,27 +240,13 @@ namespace Vydejna.Domain
                         existujici.Nazev = nova.Nazev;
                     }
                     if (zmeneno)
-                    {
                         _cacheVady.Insert("vady", verze, ciselnik, dirty: true);
-
-                        var kesovane = _cacheDetail.GetAllChanges();
-                        foreach (var data in kesovane)
-                        {
-                            foreach (var naradi in data.IndexCislovane.Values)
-                            {
-                                if (naradi.NaVydejne != null && string.Equals(naradi.NaVydejne.KodVady, nova.Kod, StringComparison.Ordinal))
-                                    naradi.NaVydejne.NazevVady = nova.Nazev;
-                            }
-                        }
-
-                        var aktualizace = new AktualizaceReferenci(this, message.OnCompleted, message.OnError);
-                        _repository.NajitDetailyPodleVady(nova.Kod, aktualizace.Execute, message.OnError);
-                    }
-                    else
-                        message.OnCompleted();
+                    message.OnCompleted();
                 },
                 message.OnError,
-                load => _repository.NacistVady(load.SetLoadedValue, load.LoadingFailed));
+                load => _repository.NacistVady(
+                    (verze, data) => load.SetLoadedValue(verze, RozsiritData(data)),
+                    load.LoadingFailed));
         }
 
         public void Handle(CommandExecution<DefinovanoPracovisteEvent> message)
@@ -302,186 +269,25 @@ namespace Vydejna.Domain
                         existujici = nove;
                     }
                     if (zmeneno)
-                    {
                         _cachePracoviste.Insert(existujici.Kod, verze, existujici, dirty: true);
-
-                        var kesovane = _cacheDetail.GetAllChanges();
-                        foreach (var data in kesovane)
-                        {
-                            foreach (var naradi in data.IndexCislovane.Values)
-                            {
-                                if (naradi.VeVyrobe != null && string.Equals(naradi.VeVyrobe.KodPracoviste, nove.Kod, StringComparison.Ordinal))
-                                {
-                                    naradi.VeVyrobe.NazevPracoviste = nove.Nazev;
-                                    naradi.VeVyrobe.StrediskoPracoviste = nove.Stredisko;
-                                }
-                            }
-                            foreach (var naradi in data.IndexPodlePracoviste.Values)
-                            {
-                                if (naradi.VeVyrobe != null && string.Equals(naradi.VeVyrobe.KodPracoviste, nove.Kod, StringComparison.Ordinal))
-                                {
-                                    naradi.VeVyrobe.NazevPracoviste = nove.Nazev;
-                                    naradi.VeVyrobe.StrediskoPracoviste = nove.Stredisko;
-                                }
-                            }
-                        }
-
-                        var aktualizace = new AktualizaceReferenci(this, message.OnCompleted, message.OnError);
-                        _repository.NajitDetailyPodlePracoviste(nove.Kod, aktualizace.Execute, message.OnError);
-                    }
+                    message.OnCompleted();
                 },
                 message.OnError,
                 load => _repository.NacistPracoviste(load.Key, load.SetLoadedValue, load.LoadingFailed));
         }
 
-        private class AktualizaceReferenci
+        private static bool UmisteniNaVydejne(UmisteniNaradiDto umisteni)
         {
-            private Action _onComplete;
-            private Action<Exception> _onError;
-            private IList<string> _kody;
-            private int _pozice;
-            private DetailNaradiProjection _parent;
-
-            public AktualizaceReferenci(DetailNaradiProjection parent, Action onComplete, Action<Exception> onError)
-            {
-                _parent = parent;
-                _onComplete = onComplete;
-                _onError = onError;
-            }
-
-            public void Execute(IList<string> kody)
-            {
-                _kody = kody;
-                _pozice = 0;
-                Iterace();
-            }
-
-            private void Iterace()
-            {
-                if (_pozice >= _kody.Count)
-                    _onComplete();
-                else
-                {
-                    var nazevDokumentu = _kody[_pozice];
-                    _parent._cacheDetail.Get(
-                        _kody[_pozice],
-                        (verze, data) =>
-                        {
-                            var zmeneno = AktualizovatNaradi(data);
-                            if (zmeneno)
-                                _parent._cacheDetail.Insert(_kody[_pozice], verze, data, dirty: true);
-                            Iterace();
-                        }, _onError, _parent.NacistDataNaradi);
-                }
-            }
-
-            private bool AktualizovatNaradi(DetailNaradiDataDetail data)
-            {
-                var zmeneno = false;
-
-                foreach (var item in data.IndexCislovane.Values)
-                    zmeneno = AktualizovatDetail(item) | zmeneno;
-                foreach (var item in data.IndexPodleObjednavky.Values)
-                    zmeneno = AktualizovatDetail(item) | zmeneno;
-                foreach (var item in data.IndexPodlePracoviste.Values)
-                    zmeneno = AktualizovatDetail(item) | zmeneno;
-                foreach (var item in data.IndexPodleStavu.Values)
-                    zmeneno = AktualizovatDetail(item) | zmeneno;
-
-                return zmeneno;
-            }
-
-            private bool AktualizovatDetail(DetailNaradiCislovane item)
-            {
-                bool zmeneno = false;
-                if (item.NaVydejne != null && item.NaVydejne.KodVady != null)
-                {
-                    DefinovanaVadaNaradiEvent vada;
-                    if (_parent._ciselnikyData.IndexVad.TryGetValue(item.NaVydejne.KodVady, out vada))
-                    {
-                        if (!string.Equals(item.NaVydejne.NazevVady, vada.Nazev))
-                        {
-                            item.NaVydejne.NazevVady = vada.Nazev;
-                            zmeneno = true;
-                        }
-                    }
-                }
-                if (item.VeVyrobe != null && item.VeVyrobe.KodPracoviste != null)
-                {
-                    DefinovanoPracovisteEvent pracoviste;
-                    if (_parent._ciselnikyData.IndexPracovist.TryGetValue(item.VeVyrobe.KodPracoviste, out pracoviste))
-                    {
-                        if (!string.Equals(item.VeVyrobe.NazevPracoviste, pracoviste.Nazev))
-                        {
-                            item.VeVyrobe.NazevPracoviste = pracoviste.Nazev;
-                            zmeneno = true;
-                        }
-                        if (!string.Equals(item.VeVyrobe.StrediskoPracoviste, pracoviste.Stredisko))
-                        {
-                            item.VeVyrobe.StrediskoPracoviste = pracoviste.Stredisko;
-                            zmeneno = true;
-                        }
-                    }
-                }
-                if (item.VOprave != null && item.VOprave.KodDodavatele != null)
-                {
-                    DetailNaradiDataDodavatel dodavatel;
-                    if (_parent._ciselnikyData.IndexDodavatelu.TryGetValue(item.VOprave.KodDodavatele, out dodavatel))
-                    {
-                        if (!string.Equals(item.VOprave.NazevDodavatele, dodavatel.Nazev))
-                        {
-                            item.VOprave.NazevDodavatele = dodavatel.Nazev;
-                            zmeneno = true;
-                        }
-                    }
-                }
-                return zmeneno;
-            }
-
-            private bool AktualizovatDetail(DetailNaradiNecislovane item)
-            {
-                bool zmeneno = false;
-                if (item.VeVyrobe != null && item.VeVyrobe.KodPracoviste != null)
-                {
-                    DefinovanoPracovisteEvent pracoviste;
-                    if (_parent._ciselnikyData.IndexPracovist.TryGetValue(item.VeVyrobe.KodPracoviste, out pracoviste))
-                    {
-                        if (!string.Equals(item.VeVyrobe.NazevPracoviste, pracoviste.Nazev))
-                        {
-                            item.VeVyrobe.NazevPracoviste = pracoviste.Nazev;
-                            zmeneno = true;
-                        }
-                        if (!string.Equals(item.VeVyrobe.StrediskoPracoviste, pracoviste.Stredisko))
-                        {
-                            item.VeVyrobe.StrediskoPracoviste = pracoviste.Stredisko;
-                            zmeneno = true;
-                        }
-                    }
-                }
-                if (item.VOprave != null && item.VOprave.KodDodavatele != null)
-                {
-                    DetailNaradiDataDodavatel dodavatel;
-                    if (_parent._ciselnikyData.IndexDodavatelu.TryGetValue(item.VOprave.KodDodavatele, out dodavatel))
-                    {
-                        if (!string.Equals(item.VOprave.NazevDodavatele, dodavatel.Nazev))
-                        {
-                            item.VOprave.NazevDodavatele = dodavatel.Nazev;
-                            zmeneno = true;
-                        }
-                    }
-                }
-                return zmeneno;
-            }
+            return umisteni != null && umisteni.ZakladniUmisteni == ZakladUmisteni.NaVydejne;
         }
 
-        private DetailNaradiNaVydejne PrevodUmisteniNaVydejne(UmisteniNaradiDto umisteni, string kodVady)
+        private static DetailNaradiNaVydejne PrevodUmisteniNaVydejne(UmisteniNaradiDto umisteni, string kodVady, DefinovanaVadaNaradiEvent vada)
         {
-            if (umisteni == null || umisteni.ZakladniUmisteni != ZakladUmisteni.NaVydejne)
+            if (!UmisteniNaVydejne(umisteni))
                 return null;
-            DefinovanaVadaNaradiEvent vada;
             var detail = new DetailNaradiNaVydejne();
             detail.KodVady = kodVady;
-            if (kodVady != null && _ciselnikyData.IndexVad.TryGetValue(kodVady, out vada))
+            if (vada != null)
             {
                 detail.NazevVady = vada.Nazev;
             }
@@ -503,14 +309,24 @@ namespace Vydejna.Domain
             return detail;
         }
 
-        private DetailNaradiVeVyrobe PrevodUmisteniVeVyrobe(UmisteniNaradiDto umisteni)
+        private static bool UmisteniVeVyrobe(UmisteniNaradiDto umisteni)
         {
-            if (umisteni == null || umisteni.ZakladniUmisteni != ZakladUmisteni.VeVyrobe)
+            if (umisteni == null)
+                return false;
+            if (umisteni.ZakladniUmisteni == ZakladUmisteni.VeVyrobe)
+                return true;
+            if (umisteni.ZakladniUmisteni == ZakladUmisteni.Spotrebovano)
+                return true;
+            return false;
+        }
+
+        private static DetailNaradiVeVyrobe PrevodUmisteniVeVyrobe(UmisteniNaradiDto umisteni, DefinovanoPracovisteEvent pracoviste)
+        {
+            if (!UmisteniVeVyrobe(umisteni))
                 return null;
-            DefinovanoPracovisteEvent pracoviste;
             var detail = new DetailNaradiVeVyrobe();
             detail.KodPracoviste = umisteni.Pracoviste;
-            if (_ciselnikyData.IndexPracovist.TryGetValue(umisteni.Pracoviste, out pracoviste))
+            if (pracoviste != null)
             {
                 detail.NazevPracoviste = pracoviste.Nazev;
                 detail.StrediskoPracoviste = pracoviste.Stredisko;
@@ -518,15 +334,19 @@ namespace Vydejna.Domain
             return detail;
         }
 
-        private DetailNaradiVOprave PrevodUmisteniVOprave(UmisteniNaradiDto umisteni, DateTime terminDodani)
+        private static bool UmisteniVOprave(UmisteniNaradiDto umisteni)
         {
-            if (umisteni == null || umisteni.ZakladniUmisteni != ZakladUmisteni.VOprave)
+            return umisteni != null && umisteni.ZakladniUmisteni == ZakladUmisteni.VOprave;
+        }
+
+        private static DetailNaradiVOprave PrevodUmisteniVOprave(UmisteniNaradiDto umisteni, DateTime terminDodani, DetailNaradiDataDodavatel dodavatel)
+        {
+            if (!UmisteniVOprave(umisteni))
                 return null;
-            DetailNaradiDataDodavatel dodavatel;
             var detail = new DetailNaradiVOprave();
             detail.Objednavka = umisteni.Objednavka;
             detail.KodDodavatele = umisteni.Dodavatel;
-            if (detail.KodDodavatele != null && _ciselnikyData.IndexDodavatelu.TryGetValue(detail.KodDodavatele, out dodavatel))
+            if (detail.KodDodavatele != null && dodavatel != null)
             {
                 detail.NazevDodavatele = dodavatel.Nazev;
             }
@@ -534,7 +354,7 @@ namespace Vydejna.Domain
             return detail;
         }
 
-        private void UpravitPocty(DetailNaradiDataPocty pocty, UmisteniNaradiDto umisteni, int zmena)
+        private static void UpravitPocty(DetailNaradiDataPocty pocty, UmisteniNaradiDto umisteni, int zmena)
         {
             switch (umisteni.ZakladniUmisteni)
             {
@@ -561,58 +381,239 @@ namespace Vydejna.Domain
             }
         }
 
-        private void ZpracovatCislovaneNaradi(
-            Guid naradiId, Action onCompleted, Action<Exception> onError, int cisloNaradi,
-            UmisteniNaradiDto predchoziUmisteni, UmisteniNaradiDto noveUmisteni,
-            string vada = null, DateTime terminDodani = default(DateTime))
+        private static DetailNaradiDataVady RozsiritData(DetailNaradiDataVady data)
         {
-            ZpracovatNaradi(naradiId, onCompleted, onError, data =>
+            if (data == null)
+            {
+                data = new DetailNaradiDataVady();
+                data.Vady = new List<DefinovanaVadaNaradiEvent>();
+                data.IndexVad = new Dictionary<string, DefinovanaVadaNaradiEvent>();
+            }
+            else if (data.IndexVad == null)
+            {
+                data.IndexVad = new Dictionary<string, DefinovanaVadaNaradiEvent>();
+                foreach (var vada in data.Vady)
+                    data.IndexVad[vada.Kod] = vada;
+            }
+            return data;
+        }
+
+        private static DetailNaradiDataDodavatele RozsiritData(DetailNaradiDataDodavatele data)
+        {
+            if (data == null)
+            {
+                data = new DetailNaradiDataDodavatele();
+                data.Dodavatele = new List<DetailNaradiDataDodavatel>();
+                data.IndexDodavatelu = new Dictionary<string, DetailNaradiDataDodavatel>();
+            }
+            else if (data.IndexDodavatelu == null)
+            {
+                data.IndexDodavatelu = new Dictionary<string, DetailNaradiDataDodavatel>();
+                foreach (var dodavatel in data.Dodavatele)
+                    data.IndexDodavatelu[dodavatel.Kod] = dodavatel;
+            }
+            return data;
+        }
+
+        private static DetailNaradiDataDetail RozsiritData(DetailNaradiDataDetail data)
+        {
+            if (data == null)
+            {
+                data = new DetailNaradiDataDetail();
+                data.Cislovane = new List<DetailNaradiCislovane>();
+                data.Necislovane = new List<DetailNaradiNecislovane>();
+                data.ReferenceDodavatelu = new List<string>();
+                data.ReferencePracovist = new List<string>();
+                data.ReferenceVad = new List<string>();
+                data.IndexCislovane = new Dictionary<int, DetailNaradiCislovane>();
+                data.IndexPodleObjednavky = new Dictionary<string, DetailNaradiNecislovane>();
+                data.IndexPodlePracoviste = new Dictionary<string, DetailNaradiNecislovane>();
+                data.IndexPodleStavu = new Dictionary<StavNaradi, DetailNaradiNecislovane>();
+            }
+            else
+            {
+                data.IndexCislovane = data.Cislovane.ToDictionary(c => c.CisloNaradi);
+                data.IndexPodleStavu = new Dictionary<StavNaradi, DetailNaradiNecislovane>();
+                data.IndexPodlePracoviste = new Dictionary<string, DetailNaradiNecislovane>();
+                data.IndexPodleObjednavky = new Dictionary<string, DetailNaradiNecislovane>();
+                foreach (var naradi in data.Necislovane)
+                {
+                    if (naradi.NaVydejne != null)
+                        data.IndexPodleStavu[naradi.NaVydejne.StavNaradi] = naradi;
+                    if (naradi.VeVyrobe != null)
+                        data.IndexPodlePracoviste[naradi.VeVyrobe.KodPracoviste] = naradi;
+                    if (naradi.VOprave != null)
+                    {
+                        var klic = DetailNaradiProjection.KlicIndexuOprav(naradi.VOprave.KodDodavatele, naradi.VOprave.Objednavka);
+                        data.IndexPodleObjednavky[klic] = naradi;
+                    }
+                }
+            }
+            return data;
+        }
+
+        private class ZpracovatCislovaneNaradi
+        {
+            private DetailNaradiProjection _parent;
+            private Guid _naradiId;
+            private Action _onCompleted;
+            private Action<Exception> _onError;
+            private int _cisloNaradi;
+            private UmisteniNaradiDto _predchoziUmisteni;
+            private UmisteniNaradiDto _noveUmisteni;
+            private DateTime _terminDodani;
+
+            private string _kodVady;
+            private string _kodDodavatele;
+            private string _kodPracoviste;
+
+            private DefinovanaVadaNaradiEvent _nactenaVada;
+            private DetailNaradiDataDodavatel _nactenyDodavatel;
+            private DefinovanoPracovisteEvent _nactenePracoviste;
+            private DetailNaradiDataDetail _nactenyDetail;
+            private int _verzeDetailu;
+
+            public ZpracovatCislovaneNaradi(
+                DetailNaradiProjection parent,
+                Guid naradiId, Action onCompleted, Action<Exception> onError, int cisloNaradi,
+                UmisteniNaradiDto predchoziUmisteni, UmisteniNaradiDto noveUmisteni,
+                string kodVady = null, DateTime terminDodani = default(DateTime))
+            {
+                _parent = parent;
+                _naradiId = naradiId;
+                _onCompleted = onCompleted;
+                _onError = onError;
+                _cisloNaradi = cisloNaradi;
+                _predchoziUmisteni = predchoziUmisteni;
+                _noveUmisteni = noveUmisteni;
+                _kodVady = kodVady;
+                _terminDodani = terminDodani;
+            }
+
+            public void Execute()
+            {
+                _kodPracoviste = UmisteniVeVyrobe(_noveUmisteni) ? _noveUmisteni.Pracoviste : null;
+                _kodDodavatele = UmisteniVOprave(_noveUmisteni) ? _noveUmisteni.Dodavatel : null;
+
+                _parent._cacheDetail.Get(_naradiId.ToString("N"), NactenDetail, _onError,
+                    load => _parent._repository.NacistDetail(_naradiId, load.OldVersion,
+                        (verze, data) => load.SetLoadedValue(verze, RozsiritData(data)),
+                        load.ValueIsStillValid, load.LoadingFailed));
+            }
+            private void NactenDetail(int verze, DetailNaradiDataDetail data)
+            {
+                _verzeDetailu = verze;
+                _nactenyDetail = data;
+                NacistVady();
+            }
+
+            private void NacistVady()
+            {
+                if (_kodVady != null)
+                {
+                    _parent._cacheVady.Get("vady", NactenyVady, _onError,
+                        load => _parent._repository.NacistVady(
+                            (verze, data) => load.SetLoadedValue(verze, RozsiritData(data)),
+                            load.LoadingFailed));
+                }
+                else
+                    NactenyVady(0, null);
+            }
+
+            private void NactenyVady(int verze, DetailNaradiDataVady data)
+            {
+                if (data != null && _kodVady != null)
+                    data.IndexVad.TryGetValue(_kodVady, out _nactenaVada);
+                NacistDodavatele();
+            }
+
+            private void NacistDodavatele()
+            {
+                if (_kodDodavatele != null)
+                {
+                    _parent._cacheDodavatele.Get("dodavatele", NacteniDodavatele, _onError,
+                        load => _parent._repository.NacistDodavatele(
+                            (verze, data) => load.SetLoadedValue(verze, RozsiritData(data)),
+                            load.LoadingFailed));
+                }
+                else
+                    NacteniDodavatele(0, null);
+            }
+
+            private void NacteniDodavatele(int verze, DetailNaradiDataDodavatele data)
+            {
+                if (data != null && _kodDodavatele != null)
+                    data.IndexDodavatelu.TryGetValue(_kodDodavatele, out _nactenyDodavatel);
+                NacistPracoviste();
+            }
+
+            private void NacistPracoviste()
+            {
+                if (_kodPracoviste != null)
+                {
+                    _parent._cachePracoviste.Get(_kodPracoviste, NactenoPracoviste, _onError, 
+                        load => _parent._repository.NacistPracoviste(_kodPracoviste, load.SetLoadedValue, load.LoadingFailed));
+                }
+                else
+                    NactenoPracoviste(0, null);
+            }
+
+            private void NactenoPracoviste(int verze, DefinovanoPracovisteEvent data)
+            {
+                _nactenePracoviste = data;
+                ExecuteInternal();
+            }
+
+            private void ExecuteInternal()
             {
                 DetailNaradiCislovane cislovane;
-                if (!data.IndexCislovane.TryGetValue(cisloNaradi, out cislovane))
+                if (!_nactenyDetail.IndexCislovane.TryGetValue(_cisloNaradi, out cislovane))
                     return;
 
                 var puvodniVada = (cislovane.NaVydejne != null) ? cislovane.NaVydejne.KodVady : null;
                 var puvodniPracoviste = (cislovane.VeVyrobe != null) ? cislovane.VeVyrobe.KodPracoviste : null;
                 var puvodniDodavatel = (cislovane.VOprave != null) ? cislovane.VOprave.KodDodavatele : null;
 
-                cislovane.ZakladUmisteni = noveUmisteni.ZakladniUmisteni;
-                cislovane.NaVydejne = PrevodUmisteniNaVydejne(noveUmisteni, vada);
-                cislovane.VeVyrobe = PrevodUmisteniVeVyrobe(noveUmisteni);
-                cislovane.VOprave = PrevodUmisteniVOprave(noveUmisteni, terminDodani);
+                cislovane.ZakladUmisteni = _noveUmisteni.ZakladniUmisteni;
+                cislovane.NaVydejne = PrevodUmisteniNaVydejne(_noveUmisteni, _kodVady, _nactenaVada);
+                cislovane.VeVyrobe = PrevodUmisteniVeVyrobe(_noveUmisteni, _nactenePracoviste);
+                cislovane.VOprave = PrevodUmisteniVOprave(_noveUmisteni, _terminDodani, _nactenyDodavatel);
 
                 var novaVada = (cislovane.NaVydejne != null) ? cislovane.NaVydejne.KodVady : null;
                 var novePracoviste = (cislovane.VeVyrobe != null) ? cislovane.VeVyrobe.KodPracoviste : null;
                 var novyDodavatel = (cislovane.VOprave != null) ? cislovane.VOprave.KodDodavatele : null;
 
+                UpravitPocty(_nactenyDetail.PoctyCelkem, _predchoziUmisteni, -1);
+                UpravitPocty(_nactenyDetail.PoctyCelkem, _noveUmisteni, 1);
+                UpravitPocty(_nactenyDetail.PoctyCislovane, _predchoziUmisteni, -1);
+                UpravitPocty(_nactenyDetail.PoctyCislovane, _noveUmisteni, 1);
+
                 if (puvodniVada != novaVada)
-                    data.ReferenceVad = null;
+                    _nactenyDetail.ReferenceVad = null;
                 if (puvodniPracoviste != novePracoviste)
-                    data.ReferencePracovist = null;
+                    _nactenyDetail.ReferencePracovist = null;
                 if (puvodniDodavatel != novyDodavatel)
-                    data.ReferenceDodavatelu = null;
+                    _nactenyDetail.ReferenceDodavatelu = null;
 
-                UpravitPocty(data.PoctyCelkem, predchoziUmisteni, -1);
-                UpravitPocty(data.PoctyCelkem, noveUmisteni, 1);
-                UpravitPocty(data.PoctyCislovane, predchoziUmisteni, -1);
-                UpravitPocty(data.PoctyCislovane, noveUmisteni, 1);
-
-                if (noveUmisteni.ZakladniUmisteni == ZakladUmisteni.VeSrotu)
+                if (_noveUmisteni.ZakladniUmisteni == ZakladUmisteni.VeSrotu)
                 {
-                    data.IndexCislovane.Remove(cisloNaradi);
-                    data.Cislovane = null;
+                    _nactenyDetail.IndexCislovane.Remove(_cisloNaradi);
+                    _nactenyDetail.Cislovane = null;
                 }
-            });
+
+                _parent._cacheDetail.Insert(_naradiId.ToString("N"), _verzeDetailu, _nactenyDetail, dirty: true);
+                _onCompleted();
+            }
         }
 
         public void Handle(CommandExecution<CislovaneNaradiPrijatoNaVydejnuEvent> message)
         {
             var evnt = message.Command;
-            ZpracovatNaradi(evnt.NaradiId, message.OnCompleted, message.OnError, data =>
+            ZpracovatHoleNaradi(evnt.NaradiId, message.OnCompleted, message.OnError, data =>
             {
                 var cislovane = new DetailNaradiCislovane();
                 cislovane.CisloNaradi = evnt.CisloNaradi;
-                cislovane.NaVydejne = PrevodUmisteniNaVydejne(evnt.NoveUmisteni, null);
+                cislovane.NaVydejne = PrevodUmisteniNaVydejne(evnt.NoveUmisteni, null, null);
                 data.Cislovane = null;
                 data.IndexCislovane[evnt.CisloNaradi] = cislovane;
                 data.PoctyCelkem.VPoradku += 1;
@@ -623,49 +624,49 @@ namespace Vydejna.Domain
         public void Handle(CommandExecution<CislovaneNaradiVydanoDoVyrobyEvent> message)
         {
             var evnt = message.Command;
-            ZpracovatCislovaneNaradi(evnt.NaradiId, message.OnCompleted, message.OnError, evnt.CisloNaradi,
-                evnt.PredchoziUmisteni, evnt.NoveUmisteni);
+            new ZpracovatCislovaneNaradi(this, evnt.NaradiId, message.OnCompleted, message.OnError, evnt.CisloNaradi,
+                evnt.PredchoziUmisteni, evnt.NoveUmisteni).Execute();
         }
 
         public void Handle(CommandExecution<CislovaneNaradiPrijatoZVyrobyEvent> message)
         {
             var evnt = message.Command;
-            ZpracovatCislovaneNaradi(evnt.NaradiId, message.OnCompleted, message.OnError, evnt.CisloNaradi,
-                evnt.PredchoziUmisteni, evnt.NoveUmisteni, vada: evnt.KodVady);
+            new ZpracovatCislovaneNaradi(this, evnt.NaradiId, message.OnCompleted, message.OnError, evnt.CisloNaradi,
+                evnt.PredchoziUmisteni, evnt.NoveUmisteni, kodVady: evnt.KodVady).Execute();
         }
 
         public void Handle(CommandExecution<CislovaneNaradiPredanoKOpraveEvent> message)
         {
             var evnt = message.Command;
-            ZpracovatCislovaneNaradi(evnt.NaradiId, message.OnCompleted, message.OnError, evnt.CisloNaradi,
-                evnt.PredchoziUmisteni, evnt.NoveUmisteni, terminDodani: evnt.TerminDodani);
+            new ZpracovatCislovaneNaradi(this, evnt.NaradiId, message.OnCompleted, message.OnError, evnt.CisloNaradi,
+                evnt.PredchoziUmisteni, evnt.NoveUmisteni, terminDodani: evnt.TerminDodani).Execute();
         }
 
         public void Handle(CommandExecution<CislovaneNaradiPrijatoZOpravyEvent> message)
         {
             var evnt = message.Command;
-            ZpracovatCislovaneNaradi(evnt.NaradiId, message.OnCompleted, message.OnError, evnt.CisloNaradi,
-                evnt.PredchoziUmisteni, evnt.NoveUmisteni);
+            new ZpracovatCislovaneNaradi(this, evnt.NaradiId, message.OnCompleted, message.OnError, evnt.CisloNaradi,
+                evnt.PredchoziUmisteni, evnt.NoveUmisteni).Execute();
         }
 
         public void Handle(CommandExecution<CislovaneNaradiPredanoKeSesrotovaniEvent> message)
         {
             var evnt = message.Command;
-            ZpracovatCislovaneNaradi(evnt.NaradiId, message.OnCompleted, message.OnError, evnt.CisloNaradi,
-                evnt.PredchoziUmisteni, evnt.NoveUmisteni);
+            new ZpracovatCislovaneNaradi(this, evnt.NaradiId, message.OnCompleted, message.OnError, evnt.CisloNaradi,
+                evnt.PredchoziUmisteni, evnt.NoveUmisteni).Execute();
         }
 
         public void Handle(CommandExecution<NecislovaneNaradiPrijatoNaVydejnuEvent> message)
         {
             var evnt = message.Command;
-            ZpracovatNaradi(evnt.NaradiId, message.OnCompleted, message.OnError, data =>
+            ZpracovatHoleNaradi(evnt.NaradiId, message.OnCompleted, message.OnError, data =>
             {
                 DetailNaradiNecislovane naradi;
                 if (!data.IndexPodleStavu.TryGetValue(StavNaradi.VPoradku, out naradi))
                 {
                     naradi = new DetailNaradiNecislovane();
                     naradi.ZakladUmisteni = evnt.NoveUmisteni.ZakladniUmisteni;
-                    naradi.NaVydejne = PrevodUmisteniNaVydejne(evnt.NoveUmisteni, null);
+                    naradi.NaVydejne = PrevodUmisteniNaVydejne(evnt.NoveUmisteni, null, null);
                     data.IndexPodleStavu[StavNaradi.VPoradku] = naradi;
                     data.Necislovane = null;
                     data.PoctyCelkem.VPoradku += evnt.Pocet;
@@ -675,123 +676,260 @@ namespace Vydejna.Domain
             });
         }
 
-        private void ZpracovatNecislovaneNaradi(
-            Guid naradiId, Action onCompleted, Action<Exception> onError,
-            UmisteniNaradiDto predchozi, UmisteniNaradiDto nove, int pocet,
-            DateTime terminDodani = default(DateTime))
+        private class ZpracovatNecislovaneNaradi
         {
-            ZpracovatNaradi(naradiId, onCompleted, onError, data =>
+            private DetailNaradiProjection _parent;
+            private Guid _naradiId;
+            private Action _onCompleted;
+            private Action<Exception> _onError;
+            private UmisteniNaradiDto _predchozi;
+            private UmisteniNaradiDto _nove;
+            private int _pocet;
+            private DateTime _terminDodani;
+
+            private string _kodDodavatele;
+            private string _kodPracoviste;
+
+            private DetailNaradiDataDodavatel _nactenyDodavatel;
+            private DefinovanoPracovisteEvent _nactenePracoviste;
+            private DetailNaradiDataDetail _nactenyDetail;
+            private int _verzeDetailu;
+
+            public ZpracovatNecislovaneNaradi(
+                DetailNaradiProjection parent,
+                Guid naradiId, Action onCompleted, Action<Exception> onError,
+                UmisteniNaradiDto predchozi, UmisteniNaradiDto nove, int pocet,
+                DateTime terminDodani = default(DateTime))
             {
-                var proOdebrani = NajitNecislovane(data, predchozi, DateTime.MaxValue);
-                var proPridani = NajitNecislovane(data, predchozi, terminDodani);
-                proOdebrani.Pocet -= pocet;
+                _parent = parent;
+                _naradiId = naradiId;
+                _onCompleted = onCompleted;
+                _onError = onError;
+                _predchozi = predchozi;
+                _nove = nove;
+                _pocet = pocet;
+                _terminDodani = terminDodani;
+            }
+
+            public void Execute()
+            {
+                _kodPracoviste = UmisteniVeVyrobe(_nove) ? _nove.Pracoviste : null;
+                _kodDodavatele = UmisteniVOprave(_nove) ? _nove.Dodavatel : null;
+
+                _parent._cacheDetail.Get(
+                    _naradiId.ToString("N"),
+                    NactenDetail,
+                    _onError,
+                    load => _parent._repository.NacistDetail(_naradiId, load.OldVersion,
+                        (verze, data) => load.SetLoadedValue(verze, RozsiritData(data)),
+                        load.ValueIsStillValid, load.LoadingFailed)
+                    );
+            }
+
+            private void NactenDetail(int verze, DetailNaradiDataDetail data)
+            {
+                _verzeDetailu = verze;
+                _nactenyDetail = data;
+
+                if (_kodDodavatele != null)
+                {
+                    _parent._cacheDodavatele.Get("dodavatele", NacteniDodavatele, _onError,
+                        load => _parent._repository.NacistDodavatele((v, d) => load.SetLoadedValue(v, RozsiritData(d)), load.LoadingFailed));
+                }
+                else
+                    NacteniDodavatele(0, null);
+            }
+
+            private void NacteniDodavatele(int verze, DetailNaradiDataDodavatele data)
+            {
+                if (data != null && _kodDodavatele != null)
+                    data.IndexDodavatelu.TryGetValue(_kodDodavatele, out _nactenyDodavatel);
+
+                if (_kodPracoviste != null)
+                {
+                    _parent._cachePracoviste.Get(
+                        _kodPracoviste, NactenoPracoviste, _onError,
+                        load => _parent._repository.NacistPracoviste(_kodPracoviste, load.SetLoadedValue, load.LoadingFailed)
+                        );
+                }
+                else
+                    NactenoPracoviste(0, null);
+            }
+
+            private void NactenoPracoviste(int verze, DefinovanoPracovisteEvent data)
+            {
+                throw new NotImplementedException();
+            }
+
+            private void ExecuteInternal()
+            {
+                var proOdebrani = NajitNecislovane(_nactenyDetail, _predchozi, DateTime.MaxValue);
+                var proPridani = NajitNecislovane(_nactenyDetail, _nove, _terminDodani);
+
+                if (proPridani.VeVyrobe != null && _nactenePracoviste != null)
+                {
+                    proPridani.VeVyrobe.NazevPracoviste = _nactenePracoviste.Nazev;
+                    proPridani.VeVyrobe.StrediskoPracoviste = _nactenePracoviste.Stredisko;
+                }
+                if (proPridani.VOprave != null && _nactenyDodavatel != null)
+                {
+                    proPridani.VOprave.NazevDodavatele = _nactenyDodavatel.Nazev;
+                }
+
+                proOdebrani.Pocet -= _pocet;
                 if (proOdebrani.Pocet == 0 || proPridani.Pocet == 0)
-                    data.Necislovane = null;
-                proPridani.Pocet += pocet;
-                if (terminDodani != default(DateTime) && proPridani.VOprave != null)
-                    proPridani.VOprave.TerminDodani = terminDodani;
-                UpravitPocty(data.PoctyCelkem, predchozi, -pocet);
-                UpravitPocty(data.PoctyNecislovane, predchozi, -pocet);
-                UpravitPocty(data.PoctyCelkem, nove, pocet);
-                UpravitPocty(data.PoctyNecislovane, nove, pocet);
-            });
-        }
+                    _nactenyDetail.Necislovane = null;
+                proPridani.Pocet += _pocet;
+                if (_terminDodani != default(DateTime) && proPridani.VOprave != null)
+                    proPridani.VOprave.TerminDodani = _terminDodani;
+                UpravitPocty(_nactenyDetail.PoctyCelkem, _predchozi, -_pocet);
+                UpravitPocty(_nactenyDetail.PoctyNecislovane, _predchozi, -_pocet);
+                UpravitPocty(_nactenyDetail.PoctyCelkem, _nove, _pocet);
+                UpravitPocty(_nactenyDetail.PoctyNecislovane, _nove, _pocet);
+            }
 
-        private DetailNaradiNecislovane NajitNecislovane(DetailNaradiDataDetail data, UmisteniNaradiDto umisteni, DateTime terminDodani)
-        {
-            DetailNaradiNecislovane naradi;
-            StavNaradi stav;
-            switch (umisteni.ZakladniUmisteni)
+            private DetailNaradiNecislovane NajitNecislovane(DetailNaradiDataDetail data, UmisteniNaradiDto umisteni, DateTime terminDodani)
             {
-                case ZakladUmisteni.NaVydejne:
-                    switch (umisteni.UpresneniZakladu)
-                    {
-                        case "VPoradku":
-                            stav = StavNaradi.VPoradku;
-                            break;
-                        case "NutnoOpravit":
-                            stav = StavNaradi.NutnoOpravit;
-                            break;
-                        case "Neopravitelne":
-                            stav = StavNaradi.Neopravitelne;
-                            break;
-                        default:
-                            return null;
-                    }
-                    if (!data.IndexPodleStavu.TryGetValue(stav, out naradi))
-                    {
-                        naradi = new DetailNaradiNecislovane
+                DetailNaradiNecislovane naradi;
+                StavNaradi stav;
+                switch (umisteni.ZakladniUmisteni)
+                {
+                    case ZakladUmisteni.NaVydejne:
+                        switch (umisteni.UpresneniZakladu)
                         {
-                            ZakladUmisteni = ZakladUmisteni.NaVydejne,
-                            NaVydejne = new DetailNaradiNaVydejne { StavNaradi = stav }
-                        };
-                        data.IndexPodleStavu[stav] = naradi;
-                    }
-                    return naradi;
-
-                case ZakladUmisteni.VeVyrobe:
-                    if (!data.IndexPodlePracoviste.TryGetValue(umisteni.Pracoviste, out naradi))
-                    {
-                        naradi = new DetailNaradiNecislovane
+                            case "VPoradku":
+                                stav = StavNaradi.VPoradku;
+                                break;
+                            case "NutnoOpravit":
+                                stav = StavNaradi.NutnoOpravit;
+                                break;
+                            case "Neopravitelne":
+                                stav = StavNaradi.Neopravitelne;
+                                break;
+                            default:
+                                return null;
+                        }
+                        if (!data.IndexPodleStavu.TryGetValue(stav, out naradi))
                         {
-                            ZakladUmisteni = ZakladUmisteni.VeVyrobe,
-                            VeVyrobe = PrevodUmisteniVeVyrobe(umisteni)
-                        };
-                        data.IndexPodlePracoviste[umisteni.Pracoviste] = naradi;
-                    }
-                    return naradi;
+                            naradi = new DetailNaradiNecislovane
+                            {
+                                ZakladUmisteni = ZakladUmisteni.NaVydejne,
+                                NaVydejne = new DetailNaradiNaVydejne { StavNaradi = stav }
+                            };
+                            data.IndexPodleStavu[stav] = naradi;
+                        }
+                        return naradi;
 
-                case ZakladUmisteni.VOprave:
-                    var klicObjednavky = KlicIndexuOprav(umisteni.Dodavatel, umisteni.Objednavka);
-                    if (!data.IndexPodleObjednavky.TryGetValue(klicObjednavky, out naradi))
-                    {
-                        naradi = new DetailNaradiNecislovane
+                    case ZakladUmisteni.VeVyrobe:
+                        if (!data.IndexPodlePracoviste.TryGetValue(umisteni.Pracoviste, out naradi))
                         {
-                            ZakladUmisteni = ZakladUmisteni.VOprave,
-                            VOprave = PrevodUmisteniVOprave(umisteni, terminDodani)
-                        };
-                        data.IndexPodleObjednavky[klicObjednavky] = naradi;
-                    }
-                    return naradi;
+                            naradi = new DetailNaradiNecislovane
+                            {
+                                ZakladUmisteni = ZakladUmisteni.VeVyrobe,
+                                VeVyrobe = PrevodUmisteniVeVyrobe(umisteni, null)
+                            };
+                            data.IndexPodlePracoviste[umisteni.Pracoviste] = naradi;
+                        }
+                        return naradi;
 
-                default:
-                    return null;
+                    case ZakladUmisteni.VOprave:
+                        var klicObjednavky = KlicIndexuOprav(umisteni.Dodavatel, umisteni.Objednavka);
+                        if (!data.IndexPodleObjednavky.TryGetValue(klicObjednavky, out naradi))
+                        {
+                            naradi = new DetailNaradiNecislovane
+                            {
+                                ZakladUmisteni = ZakladUmisteni.VOprave,
+                                VOprave = PrevodUmisteniVOprave(umisteni, terminDodani, null)
+                            };
+                            data.IndexPodleObjednavky[klicObjednavky] = naradi;
+                        }
+                        return naradi;
+
+                    default:
+                        return null;
+                }
             }
         }
 
         public void Handle(CommandExecution<NecislovaneNaradiVydanoDoVyrobyEvent> message)
         {
             var evnt = message.Command;
-            ZpracovatNecislovaneNaradi(evnt.NaradiId, message.OnCompleted, message.OnError,
-                evnt.PredchoziUmisteni, evnt.NoveUmisteni, evnt.Pocet);
+            new ZpracovatNecislovaneNaradi(this, evnt.NaradiId, message.OnCompleted, message.OnError,
+                evnt.PredchoziUmisteni, evnt.NoveUmisteni, evnt.Pocet).Execute();
         }
 
         public void Handle(CommandExecution<NecislovaneNaradiPrijatoZVyrobyEvent> message)
         {
             var evnt = message.Command;
-            ZpracovatNecislovaneNaradi(evnt.NaradiId, message.OnCompleted, message.OnError,
-                evnt.PredchoziUmisteni, evnt.NoveUmisteni, evnt.Pocet);
+            new ZpracovatNecislovaneNaradi(this, evnt.NaradiId, message.OnCompleted, message.OnError,
+                evnt.PredchoziUmisteni, evnt.NoveUmisteni, evnt.Pocet).Execute();
         }
 
         public void Handle(CommandExecution<NecislovaneNaradiPredanoKOpraveEvent> message)
         {
             var evnt = message.Command;
-            ZpracovatNecislovaneNaradi(evnt.NaradiId, message.OnCompleted, message.OnError,
-                evnt.PredchoziUmisteni, evnt.NoveUmisteni, evnt.Pocet, terminDodani: evnt.TerminDodani);
+            new ZpracovatNecislovaneNaradi(this, evnt.NaradiId, message.OnCompleted, message.OnError,
+                evnt.PredchoziUmisteni, evnt.NoveUmisteni, evnt.Pocet, terminDodani: evnt.TerminDodani).Execute();
         }
 
         public void Handle(CommandExecution<NecislovaneNaradiPrijatoZOpravyEvent> message)
         {
             var evnt = message.Command;
-            ZpracovatNecislovaneNaradi(evnt.NaradiId, message.OnCompleted, message.OnError,
-                evnt.PredchoziUmisteni, evnt.NoveUmisteni, evnt.Pocet);
+            new ZpracovatNecislovaneNaradi(this, evnt.NaradiId, message.OnCompleted, message.OnError,
+                evnt.PredchoziUmisteni, evnt.NoveUmisteni, evnt.Pocet).Execute();
         }
 
         public void Handle(CommandExecution<NecislovaneNaradiPredanoKeSesrotovaniEvent> message)
         {
             var evnt = message.Command;
-            ZpracovatNecislovaneNaradi(evnt.NaradiId, message.OnCompleted, message.OnError,
-                evnt.PredchoziUmisteni, evnt.NoveUmisteni, evnt.Pocet);
+            new ZpracovatNecislovaneNaradi(this, evnt.NaradiId, message.OnCompleted, message.OnError,
+                evnt.PredchoziUmisteni, evnt.NoveUmisteni, evnt.Pocet).Execute();
+        }
+
+        private static List<string> GenerovatReferenceDodavatelu(DetailNaradiDataDetail data)
+        {
+            var dodavatele = new HashSet<string>();
+            foreach (var naradi in data.Necislovane)
+            {
+                if (naradi.VOprave != null && !string.IsNullOrEmpty(naradi.VOprave.KodDodavatele))
+                    dodavatele.Add(naradi.VOprave.KodDodavatele);
+            }
+            foreach (var naradi in data.Cislovane)
+            {
+                if (naradi.VOprave != null && !string.IsNullOrEmpty(naradi.VOprave.KodDodavatele))
+                    dodavatele.Add(naradi.VOprave.KodDodavatele);
+            }
+            return dodavatele.ToList();
+        }
+        private static List<string> GenerovatReferencePracovist(DetailNaradiDataDetail data)
+        {
+            var pracoviste = new HashSet<string>();
+            foreach (var naradi in data.Necislovane)
+            {
+                if (naradi.VeVyrobe != null && !string.IsNullOrEmpty(naradi.VeVyrobe.KodPracoviste))
+                    pracoviste.Add(naradi.VeVyrobe.KodPracoviste);
+            }
+            foreach (var naradi in data.Cislovane)
+            {
+                if (naradi.VeVyrobe != null && !string.IsNullOrEmpty(naradi.VeVyrobe.KodPracoviste))
+                    pracoviste.Add(naradi.VeVyrobe.KodPracoviste);
+            }
+            return pracoviste.ToList();
+        }
+        private static List<string> GenerovatReferenceVad(DetailNaradiDataDetail data)
+        {
+            var vady = new HashSet<string>();
+            foreach (var naradi in data.Necislovane)
+            {
+                if (naradi.NaVydejne != null && !string.IsNullOrEmpty(naradi.NaVydejne.KodVady))
+                    vady.Add(naradi.NaVydejne.KodVady);
+            }
+            foreach (var naradi in data.Cislovane)
+            {
+                if (naradi.NaVydejne != null && !string.IsNullOrEmpty(naradi.NaVydejne.KodVady))
+                    vady.Add(naradi.NaVydejne.KodVady);
+            }
+            return vady.ToList();
         }
     }
 
@@ -882,9 +1020,21 @@ namespace Vydejna.Domain
             return indexy;
         }
 
-        public void NajitDetailyPodleDodavatele(string kodDodavatele, Action<IList<string>> onNalezenSeznam, Action<Exception> onError)
+        public void NajitDetailyPodleDodavatele(string kodDodavatele, Action<IList<Guid>> onNalezenSeznam, Action<Exception> onError)
         {
-            _folder.FindDocumentKeys("dodavatele", kodDodavatele, kodDodavatele, onNalezenSeznam, onError);
+            _folder.FindDocumentKeys("dodavatele", kodDodavatele, kodDodavatele, nalezene => onNalezenSeznam(VytvoritSeznamNaradi(nalezene)), onError);
+        }
+
+        private IList<Guid> VytvoritSeznamNaradi(IList<string> nalezene)
+        {
+            var result = new List<Guid>(nalezene.Count);
+            foreach (var retezec in nalezene)
+            {
+                Guid guid;
+                if (retezec.StartsWith("naradi-") && Guid.TryParseExact(retezec.Substring(7), "N", out guid))
+                    result.Add(guid);
+            }
+            return result;
         }
 
         public void NacistDodavatele(Action<int, DetailNaradiDataDodavatele> onLoaded, Action<Exception> onError)
@@ -926,14 +1076,14 @@ namespace Vydejna.Domain
                 ex => onError(ex));
         }
 
-        public void NajitDetailyPodleVady(string kodVady, Action<IList<string>> onNalezenSeznam, Action<Exception> onError)
+        public void NajitDetailyPodleVady(string kodVady, Action<IList<Guid>> onNalezenSeznam, Action<Exception> onError)
         {
-            _folder.FindDocumentKeys("vady", kodVady, kodVady, onNalezenSeznam, onError);
+            _folder.FindDocumentKeys("vady", kodVady, kodVady, nalezene => onNalezenSeznam(VytvoritSeznamNaradi(nalezene)), onError);
         }
 
-        public void NajitDetailyPodlePracoviste(string kodPracoviste, Action<IList<string>> onNalezenSeznam, Action<Exception> onError)
+        public void NajitDetailyPodlePracoviste(string kodPracoviste, Action<IList<Guid>> onNalezenSeznam, Action<Exception> onError)
         {
-            _folder.FindDocumentKeys("pracoviste", kodPracoviste, kodPracoviste, onNalezenSeznam, onError);
+            _folder.FindDocumentKeys("pracoviste", kodPracoviste, kodPracoviste, nalezene => onNalezenSeznam(VytvoritSeznamNaradi(nalezene)), onError);
         }
 
         public void NacistPracoviste(string kodPracoviste, Action<int, DefinovanoPracovisteEvent> onLoaded, Action<Exception> onError)
@@ -950,127 +1100,11 @@ namespace Vydejna.Domain
                 "pracoviste-" + kodPracoviste,
                 JsonSerializer.SerializeToString(pracoviste),
                 DocumentStoreVersion.At(verze),
-                null, 
+                null,
                 () => onSaved(verze + 1),
                 () => onError(new ProjectorMessages.ConcurrencyException()),
                 ex => onError(ex)
                 );
-        }
-    }
-
-    public class DetailNaradiSerializer
-    {
-        private List<string> GenerovatReferenceDodavatelu(DetailNaradiDataDetail data)
-        {
-            var dodavatele = new HashSet<string>();
-            foreach (var naradi in data.Necislovane)
-            {
-                if (naradi.VOprave != null && !string.IsNullOrEmpty(naradi.VOprave.KodDodavatele))
-                    dodavatele.Add(naradi.VOprave.KodDodavatele);
-            }
-            foreach (var naradi in data.Cislovane)
-            {
-                if (naradi.VOprave != null && !string.IsNullOrEmpty(naradi.VOprave.KodDodavatele))
-                    dodavatele.Add(naradi.VOprave.KodDodavatele);
-            }
-            return dodavatele.ToList();
-        }
-        private List<string> GenerovatReferencePracovist(DetailNaradiDataDetail data)
-        {
-            var pracoviste = new HashSet<string>();
-            foreach (var naradi in data.Necislovane)
-            {
-                if (naradi.VeVyrobe != null && !string.IsNullOrEmpty(naradi.VeVyrobe.KodPracoviste))
-                    pracoviste.Add(naradi.VeVyrobe.KodPracoviste);
-            }
-            foreach (var naradi in data.Cislovane)
-            {
-                if (naradi.VeVyrobe != null && !string.IsNullOrEmpty(naradi.VeVyrobe.KodPracoviste))
-                    pracoviste.Add(naradi.VeVyrobe.KodPracoviste);
-            }
-            return pracoviste.ToList();
-        }
-        private List<string> GenerovatReferenceVad(DetailNaradiDataDetail data)
-        {
-            var vady = new HashSet<string>();
-            foreach (var naradi in data.Necislovane)
-            {
-                if (naradi.NaVydejne != null && !string.IsNullOrEmpty(naradi.NaVydejne.KodVady))
-                    vady.Add(naradi.NaVydejne.KodVady);
-            }
-            foreach (var naradi in data.Cislovane)
-            {
-                if (naradi.NaVydejne != null && !string.IsNullOrEmpty(naradi.NaVydejne.KodVady))
-                    vady.Add(naradi.NaVydejne.KodVady);
-            }
-            return vady.ToList();
-        }
-        public DetailNaradiDataDetail DeserializeNaradiForReader(string raw)
-        {
-            DetailNaradiDataDetail data;
-            if (string.IsNullOrEmpty(raw))
-                data = new DetailNaradiDataDetail();
-            else
-                data = JsonSerializer.DeserializeFromString<DetailNaradiDataDetail>(raw);
-
-            data.PoctyCelkem = data.PoctyCelkem ?? new DetailNaradiDataPocty();
-            data.PoctyCislovane = data.PoctyCislovane ?? new DetailNaradiDataPocty();
-            data.PoctyNecislovane = data.PoctyNecislovane ?? new DetailNaradiDataPocty();
-            data.Necislovane = data.Necislovane ?? new List<DetailNaradiNecislovane>();
-            data.Cislovane = data.Cislovane ?? new List<DetailNaradiCislovane>();
-            data.ReferenceDodavatelu = data.ReferenceDodavatelu ?? new List<string>();
-            data.ReferencePracovist = data.ReferencePracovist ?? new List<string>();
-            data.ReferenceVad = data.ReferenceVad ?? new List<string>();
-            return data;
-        }
-        public DetailNaradiDataDetail DeserializeNaradi(string raw)
-        {
-            var data = DeserializeNaradiForReader(raw);
-            data.IndexCislovane = data.Cislovane.ToDictionary(c => c.CisloNaradi);
-            data.IndexPodleStavu = new Dictionary<StavNaradi, DetailNaradiNecislovane>();
-            data.IndexPodlePracoviste = new Dictionary<string, DetailNaradiNecislovane>();
-            data.IndexPodleObjednavky = new Dictionary<string, DetailNaradiNecislovane>();
-            foreach (var naradi in data.Necislovane)
-            {
-                if (naradi.NaVydejne != null)
-                    data.IndexPodleStavu[naradi.NaVydejne.StavNaradi] = naradi;
-                if (naradi.VeVyrobe != null)
-                    data.IndexPodlePracoviste[naradi.VeVyrobe.KodPracoviste] = naradi;
-                if (naradi.VOprave != null)
-                {
-                    var klic = DetailNaradiProjection.KlicIndexuOprav(naradi.VOprave.KodDodavatele, naradi.VOprave.Objednavka);
-                    data.IndexPodleObjednavky[klic] = naradi;
-                }
-            }
-            return data;
-        }
-
-        public string SerializeCiselniky(DetailNaradiDataCiselniky ciselniky)
-        {
-            return JsonSerializer.SerializeToString(ciselniky);
-        }
-        public DetailNaradiDataCiselniky DeserializeCiselniky(string raw)
-        {
-            DetailNaradiDataCiselniky ciselniky = null;
-            if (!string.IsNullOrEmpty(raw))
-                ciselniky = JsonSerializer.DeserializeFromString<DetailNaradiDataCiselniky>(raw);
-            ciselniky = ciselniky ?? new DetailNaradiDataCiselniky();
-            ciselniky.Pracoviste = ciselniky.Pracoviste ?? new List<DefinovanoPracovisteEvent>();
-            ciselniky.Vady = ciselniky.Vady ?? new List<DefinovanaVadaNaradiEvent>();
-            ciselniky.Dodavatele = ciselniky.Dodavatele ?? new List<DetailNaradiDataDodavatel>();
-            ciselniky.IndexDodavatelu = ciselniky.Dodavatele.ToDictionary(d => d.Kod);
-            ciselniky.IndexPracovist = ciselniky.Pracoviste.ToDictionary(p => p.Kod);
-            ciselniky.IndexVad = ciselniky.Vady.ToDictionary(v => v.Kod);
-            return ciselniky;
-        }
-
-        public IList<DocumentIndexing> IndexNaradi(DetailNaradiDataDetail data)
-        {
-            var indexy = new List<DocumentIndexing>();
-            indexy.Add(new DocumentIndexing("vady", data.ReferenceVad));
-            indexy.Add(new DocumentIndexing("pracoviste", data.ReferencePracovist));
-            indexy.Add(new DocumentIndexing("dodavatele", data.ReferenceDodavatelu));
-            return indexy;
         }
     }
 }

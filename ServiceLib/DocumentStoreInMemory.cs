@@ -172,7 +172,7 @@ namespace ServiceLib
                 }
             }
 
-            public void FindDocuments(string indexName, string minValue, string maxValue, Action<IList<string>> onFoundKeys, Action<Exception> onError)
+            public void FindDocumentKeys(string indexName, string minValue, string maxValue, Action<IList<string>> onFoundKeys, Action<Exception> onError)
             {
                 Index index;
                 if (!_indexes.TryGetValue(indexName, out index))
@@ -201,6 +201,12 @@ namespace ServiceLib
                     }
                 }
                 onFoundKeys(foundKeys);
+            }
+
+
+            public void FindDocuments(string indexName, string minValue, string maxValue, int skip, int maxCount, bool ascending, Action<DocumentStoreFoundDocuments> onFoundDocuments, Action<Exception> onError)
+            {
+                throw new NotImplementedException();
             }
         }
 

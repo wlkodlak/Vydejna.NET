@@ -204,7 +204,7 @@ namespace ServiceLib.Tests.TestUtils
             }
         }
 
-        public void FindDocuments(string indexName, string minValue, string maxValue, Action<IList<string>> onFoundKeys, Action<Exception> onError)
+        public void FindDocumentKeys(string indexName, string minValue, string maxValue, Action<IList<string>> onFoundKeys, Action<Exception> onError)
         {
             Index index;
             if (!_indexes.TryGetValue(indexName, out index))
@@ -216,6 +216,11 @@ namespace ServiceLib.Tests.TestUtils
                 .Where(t => string.CompareOrdinal(minValue, t.Item1) <= 0 && string.CompareOrdinal(t.Item1, maxValue) <= 0)
                 .Select(t => t.Item2).Distinct().ToList();
             _executor.Enqueue(new FindDocumentsCompleted(onFoundKeys, result));
+        }
+
+        public void FindDocuments(string indexName, string minValue, string maxValue, int skip, int maxCount, bool ascending, Action<DocumentStoreFoundDocuments> onFoundDocuments, Action<Exception> onError)
+        {
+            throw new NotImplementedException();
         }
     }
 }
