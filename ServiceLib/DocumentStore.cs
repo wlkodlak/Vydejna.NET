@@ -9,11 +9,29 @@ namespace ServiceLib
         void GetDocument(string name, Action<int, string> onFound, Action onMissing, Action<Exception> onError);
         void GetNewerDocument(string name, int knownVersion, Action<int, string> onFoundNewer, Action onNotModified, Action onMissing, Action<Exception> onError);
         void SaveDocument(string name, string value, DocumentStoreVersion expectedVersion, IList<DocumentIndexing> indexes, Action onSave, Action onConcurrency, Action<Exception> onError);
-        void FindDocuments(string indexName, string minValue, string maxValue, Action<IList<string>> onFoundKeys, Action<Exception> onError);
+        void FindDocumentKeys(string indexName, string minValue, string maxValue, Action<IList<string>> onFoundKeys, Action<Exception> onError);
+        void FindDocuments(string indexName, string minValue, string maxValue, int skip, int maxCount, bool ascending, Action<DocumentStoreFoundDocuments> onFoundDocuments, Action<Exception> onError);
     }
     public interface IDocumentStore
     {
         IDocumentFolder GetFolder(string name);
+    }
+    public class DocumentStoreFoundDocuments : List<DocumentStoreFoundDocument>
+    {
+        public int TotalFound { get; private set; }
+    }
+    public class DocumentStoreFoundDocument
+    {
+        public string Name { get; private set; }
+        public int Version { get; private set; }
+        public string Contents { get; private set; }
+
+        public DocumentStoreFoundDocument(string name, int version, string contents)
+        {
+            Name = name;
+            Version = version;
+            Contents = contents;
+        }
     }
     public class DocumentStoreVersion
     {
@@ -97,6 +115,12 @@ namespace ServiceLib
         {
             IndexName = indexName;
             Values = values;
+        }
+
+        public DocumentIndexing(string indexName, string value)
+        {
+            IndexName = indexName;
+            Values = new[] { value };
         }
     }
 }

@@ -9,9 +9,7 @@ namespace Vydejna.Domain
 {
     public class DetailNaradiProjection
         : IEventProjection
-        , IHandle<CommandExecution<ProjectorMessages.RebuildFinished>>
         , IHandle<CommandExecution<ProjectorMessages.Flush>>
-        , IHandle<CommandExecution<ProjectorMessages.Resume>>
         , IHandle<CommandExecution<DefinovanoNaradiEvent>>
         , IHandle<CommandExecution<AktivovanoNaradiEvent>>
         , IHandle<CommandExecution<DeaktivovanoNaradiEvent>>
@@ -32,19 +30,19 @@ namespace Vydejna.Domain
         , IHandle<CommandExecution<NecislovaneNaradiPredanoKeSesrotovaniEvent>>
     {
         private const string _version = "0.01";
-        private IDocumentFolder _store;
-        private DetailNaradiSerializer _serializer;
-        private DetailNaradiDataCiselniky _ciselnikyData;
-        private bool _ciselnikyDirty;
-        private int _ciselnikyVerze;
-        private MemoryCache<DetailNaradiData> _naradiCache;
+        private DetailNaradiRepository _repository;
+        private MemoryCache<DetailNaradiDataDetail> _cacheDetail;
+        private MemoryCache<DetailNaradiDataDodavatele> _cacheDodavatele;
+        private MemoryCache<DetailNaradiDataVady> _cacheVady;
+        private MemoryCache<DefinovanoPracovisteEvent> _cachePracoviste;
 
-        public DetailNaradiProjection(IDocumentFolder store, IQueueExecution executor, ITime time)
+        public DetailNaradiProjection(DetailNaradiRepository repository, IQueueExecution executor, ITime time)
         {
-            _store = store;
-            _serializer = new DetailNaradiSerializer();
-            _ciselnikyData = null;
-            _naradiCache = new MemoryCache<DetailNaradiData>(executor, time).SetupExpiration(60000, 60000, 1000);
+            _repository = repository;
+            _cacheDetail = new MemoryCache<DetailNaradiDataDetail>(executor, time);
+            _cacheDodavatele = new MemoryCache<DetailNaradiDataDodavatele>(executor, time);
+            _cachePracoviste = new MemoryCache<DefinovanoPracovisteEvent>(executor, time);
+            _cacheVady = new MemoryCache<DetailNaradiDataVady>(executor, time);
         }
 
         public static string KlicIndexuOprav(string dodavatel, string objednavka)
@@ -64,21 +62,16 @@ namespace Vydejna.Domain
 
         public void Handle(CommandExecution<ProjectorMessages.Reset> message)
         {
-            _ciselnikyData = _serializer.DeserializeCiselniky(null);
-            _ciselnikyDirty = false;
-            _ciselnikyVerze = 0;
-            _naradiCache.Clear();
-            _store.DeleteAll(message.OnCompleted, message.OnError);
+            _cacheDetail.Clear();
+            _cacheDodavatele.Clear();
+            _cachePracoviste.Clear();
+            _cacheVady.Clear();
+            _repository.Reset(message.OnCompleted, message.OnError);
         }
 
         public void Handle(CommandExecution<ProjectorMessages.UpgradeFrom> message)
         {
             throw new NotSupportedException();
-        }
-
-        public void Handle(CommandExecution<ProjectorMessages.RebuildFinished> message)
-        {
-            new FlushWorker(this, message.OnCompleted, message.OnError).Execute();
         }
 
         public void Handle(CommandExecution<ProjectorMessages.Flush> message)
@@ -100,85 +93,47 @@ namespace Vydejna.Domain
             }
             public void Execute()
             {
-                if (_parent._ciselnikyDirty)
-                {
-                    _parent._ciselnikyDirty = false;
-                    var serializovaneCiselniky = _parent._serializer.SerializeCiselniky(_parent._ciselnikyData);
-                    _parent._store.SaveDocument("ciselniky", serializovaneCiselniky, DocumentStoreVersion.At(_parent._ciselnikyVerze), null, FlushNaradi, OnConcurrency, _onError);
-                }
-                else
-                    FlushNaradi();
+                FlushDodavatelu();
             }
-
-            private void FlushNaradi()
+            private void FlushDodavatelu()
             {
-                _parent._naradiCache.Flush(_onCompleted, _onError, save =>
-                {
-                    var serialized = _parent._serializer.SerializeNaradi(save.Value);
-                    var indexy = _parent._serializer.IndexNaradi(save.Value);
-                    _parent._store.SaveDocument(save.Key, serialized, DocumentStoreVersion.At(save.Version), indexy,
-                        () => save.SavedAsVersion(save.Version + 1),
-                        () => save.SavingFailed(new ProjectorMessages.ConcurrencyException()),
-                        ex => save.SavingFailed(ex));
-                });
+                _parent._cacheDodavatele.Flush(FlushPracovist, _onError,
+                    save => _parent._repository.UlozitDodavatele(save.Version, save.Value, save.SavedAsVersion, save.SavingFailed));
             }
-
-            private void OnConcurrency()
+            private void FlushPracovist()
             {
-                _onError(new ProjectorMessages.ConcurrencyException());
+                _parent._cachePracoviste.Flush(FlushVad, _onError,
+                    save => _parent._repository.UlozitPracoviste(save.Key, save.Version, save.Value, save.SavedAsVersion, save.SavingFailed));
+            }
+            private void FlushVad()
+            {
+                _parent._cacheVady.Flush(FlushDetailu, _onError,
+                    save => _parent._repository.UlozitVadu(save.Version, save.Value, save.SavedAsVersion, save.SavingFailed));
+            }
+            private void FlushDetailu()
+            {
+                _parent._cacheDetail.Flush(_onCompleted, _onError,
+                    save => _parent._repository.UlozitDetail(save.Value.NaradiId, save.Version, save.Value, save.SavedAsVersion, save.SavingFailed));
             }
         }
 
-        public void Handle(CommandExecution<ProjectorMessages.Resume> message)
+        private void ZpracovatHoleNaradi(Guid naradiId, Action onCompleted, Action<Exception> onError, Action<DetailNaradiDataDetail> updateAction)
         {
-            Action<int, string> onFound = (version, raw) =>
-            {
-                _ciselnikyVerze = version;
-                _ciselnikyDirty = false;
-                _ciselnikyData = _serializer.DeserializeCiselniky(raw);
-                message.OnCompleted();
-            };
-            _store.GetDocument("ciselniky", onFound, () => onFound(0, null), message.OnError);
-        }
-
-        private void ZpracovatNaradi(Guid naradiId, Action onCompleted, Action<Exception> onError, Action<DetailNaradiData> updateAction)
-        {
-            var nazevDokumentu = string.Concat("naradi-", naradiId.ToString("N"));
-            _naradiCache.Get(
-                nazevDokumentu,
+            _cacheDetail.Get(
+                naradiId.ToString("N"),
                 (verze, data) =>
                 {
                     updateAction(data);
-                    _naradiCache.Insert(nazevDokumentu, verze, data, dirty: true);
+                    _cacheDetail.Insert(naradiId.ToString("N"), verze, data, dirty: true);
                     onCompleted();
-                }, onError, NacistDataNaradi);
-        }
-
-        private void NacistDataNaradi(IMemoryCacheLoad<DetailNaradiData> load)
-        {
-            if (load.OldValueAvailable)
-            {
-                _store.GetNewerDocument(load.Key, load.OldVersion,
-                    (version, raw) => load.SetLoadedValue(version, _serializer.DeserializeNaradi(raw)),
-                    () => load.ValueIsStillValid(),
-                    () => load.SetLoadedValue(0, _serializer.DeserializeNaradi(null)),
-                    ex => load.LoadingFailed(ex)
-                    );
-            }
-            else
-            {
-                _store.GetDocument(load.Key,
-                    (version, raw) => load.SetLoadedValue(version, _serializer.DeserializeNaradi(raw)),
-                    () => load.SetLoadedValue(0, _serializer.DeserializeNaradi(null)),
-                    ex => load.LoadingFailed(ex)
-                    );
-            }
+                }, onError,
+                load => _repository.NacistDetail(naradiId, load.OldVersion, load.SetLoadedValue, load.ValueIsStillValid, load.LoadingFailed));
         }
 
         public void Handle(CommandExecution<DefinovanoNaradiEvent> message)
         {
             var evnt = message.Command;
-            ZpracovatNaradi(evnt.NaradiId, message.OnCompleted, message.OnError, data =>
+            ZpracovatHoleNaradi(evnt.NaradiId, message.OnCompleted, message.OnError, data =>
             {
                 data.NaradiId = evnt.NaradiId;
                 data.Vykres = evnt.Vykres;
@@ -191,7 +146,7 @@ namespace Vydejna.Domain
         public void Handle(CommandExecution<AktivovanoNaradiEvent> message)
         {
             var evnt = message.Command;
-            ZpracovatNaradi(evnt.NaradiId, message.OnCompleted, message.OnError, data =>
+            ZpracovatHoleNaradi(evnt.NaradiId, message.OnCompleted, message.OnError, data =>
             {
                 data.Aktivni = true;
             });
@@ -200,7 +155,7 @@ namespace Vydejna.Domain
         public void Handle(CommandExecution<DeaktivovanoNaradiEvent> message)
         {
             var evnt = message.Command;
-            ZpracovatNaradi(evnt.NaradiId, message.OnCompleted, message.OnError, data =>
+            ZpracovatHoleNaradi(evnt.NaradiId, message.OnCompleted, message.OnError, data =>
             {
                 data.Aktivni = true;
             });
@@ -208,118 +163,175 @@ namespace Vydejna.Domain
 
         public void Handle(CommandExecution<DefinovanDodavatelEvent> message)
         {
-            DetailNaradiDataDodavatel existujici;
-            var novy = message.Command;
-            bool zmeneno = false;
-            if (!_ciselnikyData.IndexDodavatelu.TryGetValue(novy.Kod, out existujici))
-            {
-                zmeneno = true;
-                existujici = new DetailNaradiDataDodavatel();
-                existujici.Kod = novy.Kod;
-                existujici.Nazev = novy.Nazev;
-                _ciselnikyData.IndexDodavatelu[novy.Kod] = existujici;
-                _ciselnikyData.Dodavatele.Add(existujici);
-            }
-            else
-            {
-                zmeneno = existujici.Nazev != novy.Nazev;
-                existujici.Nazev = novy.Nazev;
-            }
-            _ciselnikyDirty |= zmeneno;
-
-            var kesovane = _naradiCache.GetAllChanges();
-            foreach (var data in kesovane)
-            {
-                foreach (var naradi in data.IndexCislovane.Values)
+            _cacheDodavatele.Get("dodavatele",
+                (verze, ciselnik) =>
                 {
-                    if (naradi.VOprave != null && string.Equals(naradi.VOprave.KodDodavatele, novy.Kod, StringComparison.Ordinal))
-                        naradi.VOprave.NazevDodavatele = novy.Nazev;
-                }
-                foreach (var naradi in data.IndexPodleObjednavky.Values)
-                {
-                    if (naradi.VOprave != null && string.Equals(naradi.VOprave.KodDodavatele, novy.Kod, StringComparison.Ordinal))
-                        naradi.VOprave.NazevDodavatele = novy.Nazev;
-                }
-            }
+                    DetailNaradiDataDodavatel existujici;
+                    var novy = message.Command;
+                    bool zmeneno = false;
+                    if (ciselnik == null)
+                    {
+                        ciselnik = new DetailNaradiDataDodavatele();
+                        ciselnik.Dodavatele = new List<DetailNaradiDataDodavatel>();
+                        ciselnik.IndexDodavatelu = new Dictionary<string, DetailNaradiDataDodavatel>();
+                    }
+                    else if (ciselnik.IndexDodavatelu == null)
+                    {
+                        ciselnik.IndexDodavatelu = new Dictionary<string, DetailNaradiDataDodavatel>();
+                        foreach (var dodavatel in ciselnik.Dodavatele)
+                            ciselnik.IndexDodavatelu[dodavatel.Kod] = dodavatel;
+                    }
 
-            var aktualizace = new AktualizaceReferenci(this, message.OnCompleted, message.OnError);
-            _store.FindDocuments("dodavatele", novy.Kod, novy.Kod, aktualizace.Execute, message.OnError);
+                    if (!ciselnik.IndexDodavatelu.TryGetValue(novy.Kod, out existujici))
+                    {
+                        zmeneno = true;
+                        existujici = new DetailNaradiDataDodavatel();
+                        existujici.Kod = novy.Kod;
+                        existujici.Nazev = novy.Nazev;
+                        ciselnik.IndexDodavatelu[novy.Kod] = existujici;
+                        ciselnik.Dodavatele.Add(existujici);
+                    }
+                    else
+                    {
+                        zmeneno = existujici.Nazev != novy.Nazev;
+                        existujici.Nazev = novy.Nazev;
+                    }
+                    if (zmeneno)
+                    {
+                        _cacheDodavatele.Insert("dodavatele", verze, ciselnik, dirty: true);
+
+                        var kesovane = _cacheDetail.GetAllChanges();
+                        foreach (var data in kesovane)
+                        {
+                            foreach (var naradi in data.IndexCislovane.Values)
+                            {
+                                if (naradi.VOprave != null && string.Equals(naradi.VOprave.KodDodavatele, novy.Kod, StringComparison.Ordinal))
+                                    naradi.VOprave.NazevDodavatele = novy.Nazev;
+                            }
+                            foreach (var naradi in data.IndexPodleObjednavky.Values)
+                            {
+                                if (naradi.VOprave != null && string.Equals(naradi.VOprave.KodDodavatele, novy.Kod, StringComparison.Ordinal))
+                                    naradi.VOprave.NazevDodavatele = novy.Nazev;
+                            }
+                        }
+
+                        var aktualizace = new AktualizaceReferenci(this, message.OnCompleted, message.OnError);
+                        _repository.NajitDetailyPodleDodavatele(novy.Kod, aktualizace.Execute, message.OnError);
+                    }
+                    else
+                        message.OnCompleted();
+                },
+                message.OnError,
+                load => _repository.NacistDodavatele(load.SetLoadedValue, load.LoadingFailed)
+                );
         }
 
         public void Handle(CommandExecution<DefinovanaVadaNaradiEvent> message)
         {
-            DefinovanaVadaNaradiEvent existujici;
-            var nova = message.Command;
-            bool zmeneno = false;
-            if (_ciselnikyData.IndexVad.TryGetValue(nova.Kod, out existujici))
-            {
-                zmeneno = true;
-                _ciselnikyData.IndexVad[nova.Kod] = nova;
-                _ciselnikyData.Vady.Add(nova);
-            }
-            else
-            {
-                zmeneno = existujici.Nazev != nova.Nazev;
-                existujici.Nazev = nova.Nazev;
-            }
-            _ciselnikyDirty |= zmeneno;
-
-            var kesovane = _naradiCache.GetAllChanges();
-            foreach (var data in kesovane)
-            {
-                foreach (var naradi in data.IndexCislovane.Values)
+            _cacheVady.Get("vady",
+                (verze, ciselnik) =>
                 {
-                    if (naradi.NaVydejne != null && string.Equals(naradi.NaVydejne.KodVady, nova.Kod, StringComparison.Ordinal))
-                        naradi.NaVydejne.NazevVady = nova.Nazev;
-                }
-            }
+                    DefinovanaVadaNaradiEvent existujici;
+                    var nova = message.Command;
+                    bool zmeneno = false;
+                    if (ciselnik == null)
+                    {
+                        ciselnik = new DetailNaradiDataVady();
+                        ciselnik.Vady = new List<DefinovanaVadaNaradiEvent>();
+                        ciselnik.IndexVad = new Dictionary<string, DefinovanaVadaNaradiEvent>();
+                    }
+                    else if (ciselnik.IndexVad == null)
+                    {
+                        ciselnik.IndexVad = new Dictionary<string, DefinovanaVadaNaradiEvent>();
+                        foreach (var vada in ciselnik.Vady)
+                            ciselnik.IndexVad[vada.Kod] = vada;
+                    }
 
-            var aktualizace = new AktualizaceReferenci(this, message.OnCompleted, message.OnError);
-            _store.FindDocuments("vady", nova.Kod, nova.Kod, aktualizace.Execute, message.OnError);
+                    if (ciselnik.IndexVad.TryGetValue(nova.Kod, out existujici))
+                    {
+                        zmeneno = true;
+                        ciselnik.IndexVad[nova.Kod] = nova;
+                        ciselnik.Vady.Add(nova);
+                    }
+                    else
+                    {
+                        zmeneno = existujici.Nazev != nova.Nazev;
+                        existujici.Nazev = nova.Nazev;
+                    }
+                    if (zmeneno)
+                    {
+                        _cacheVady.Insert("vady", verze, ciselnik, dirty: true);
+
+                        var kesovane = _cacheDetail.GetAllChanges();
+                        foreach (var data in kesovane)
+                        {
+                            foreach (var naradi in data.IndexCislovane.Values)
+                            {
+                                if (naradi.NaVydejne != null && string.Equals(naradi.NaVydejne.KodVady, nova.Kod, StringComparison.Ordinal))
+                                    naradi.NaVydejne.NazevVady = nova.Nazev;
+                            }
+                        }
+
+                        var aktualizace = new AktualizaceReferenci(this, message.OnCompleted, message.OnError);
+                        _repository.NajitDetailyPodleVady(nova.Kod, aktualizace.Execute, message.OnError);
+                    }
+                    else
+                        message.OnCompleted();
+                },
+                message.OnError,
+                load => _repository.NacistVady(load.SetLoadedValue, load.LoadingFailed));
         }
 
         public void Handle(CommandExecution<DefinovanoPracovisteEvent> message)
         {
-            DefinovanoPracovisteEvent existujici;
-            var nove = message.Command;
-            bool zmeneno = false;
-            if (_ciselnikyData.IndexPracovist.TryGetValue(nove.Kod, out existujici))
-            {
-                zmeneno = true;
-                _ciselnikyData.IndexPracovist[nove.Kod] = nove;
-                _ciselnikyData.Pracoviste.Add(nove);
-            }
-            else
-            {
-                zmeneno = existujici.Nazev != nove.Nazev || existujici.Stredisko != nove.Stredisko;
-                existujici.Nazev = nove.Nazev;
-                existujici.Stredisko = nove.Stredisko;
-            }
-            _ciselnikyDirty |= zmeneno;
-
-            var kesovane = _naradiCache.GetAllChanges();
-            foreach (var data in kesovane)
-            {
-                foreach (var naradi in data.IndexCislovane.Values)
+            _cachePracoviste.Get(
+                message.Command.Kod,
+                (verze, existujici) =>
                 {
-                    if (naradi.VeVyrobe != null && string.Equals(naradi.VeVyrobe.KodPracoviste, nove.Kod, StringComparison.Ordinal))
+                    var nove = message.Command;
+                    bool zmeneno = false;
+                    if (existujici != null)
                     {
-                        naradi.VeVyrobe.NazevPracoviste = nove.Nazev;
-                        naradi.VeVyrobe.StrediskoPracoviste = nove.Stredisko;
+                        zmeneno = existujici.Nazev != nove.Nazev || existujici.Stredisko != nove.Stredisko;
+                        existujici.Nazev = nove.Nazev;
+                        existujici.Stredisko = nove.Stredisko;
                     }
-                }
-                foreach (var naradi in data.IndexPodlePracoviste.Values)
-                {
-                    if (naradi.VeVyrobe != null && string.Equals(naradi.VeVyrobe.KodPracoviste, nove.Kod, StringComparison.Ordinal))
+                    else
                     {
-                        naradi.VeVyrobe.NazevPracoviste = nove.Nazev;
-                        naradi.VeVyrobe.StrediskoPracoviste = nove.Stredisko;
+                        zmeneno = true;
+                        existujici = nove;
                     }
-                }
-            }
+                    if (zmeneno)
+                    {
+                        _cachePracoviste.Insert(existujici.Kod, verze, existujici, dirty: true);
 
-            var aktualizace = new AktualizaceReferenci(this, message.OnCompleted, message.OnError);
-            _store.FindDocuments("pracoviste", nove.Kod, nove.Kod, aktualizace.Execute, message.OnError);
+                        var kesovane = _cacheDetail.GetAllChanges();
+                        foreach (var data in kesovane)
+                        {
+                            foreach (var naradi in data.IndexCislovane.Values)
+                            {
+                                if (naradi.VeVyrobe != null && string.Equals(naradi.VeVyrobe.KodPracoviste, nove.Kod, StringComparison.Ordinal))
+                                {
+                                    naradi.VeVyrobe.NazevPracoviste = nove.Nazev;
+                                    naradi.VeVyrobe.StrediskoPracoviste = nove.Stredisko;
+                                }
+                            }
+                            foreach (var naradi in data.IndexPodlePracoviste.Values)
+                            {
+                                if (naradi.VeVyrobe != null && string.Equals(naradi.VeVyrobe.KodPracoviste, nove.Kod, StringComparison.Ordinal))
+                                {
+                                    naradi.VeVyrobe.NazevPracoviste = nove.Nazev;
+                                    naradi.VeVyrobe.StrediskoPracoviste = nove.Stredisko;
+                                }
+                            }
+                        }
+
+                        var aktualizace = new AktualizaceReferenci(this, message.OnCompleted, message.OnError);
+                        _repository.NajitDetailyPodlePracoviste(nove.Kod, aktualizace.Execute, message.OnError);
+                    }
+                },
+                message.OnError,
+                load => _repository.NacistPracoviste(load.Key, load.SetLoadedValue, load.LoadingFailed));
         }
 
         private class AktualizaceReferenci
@@ -351,19 +363,19 @@ namespace Vydejna.Domain
                 else
                 {
                     var nazevDokumentu = _kody[_pozice];
-                    _parent._naradiCache.Get(
+                    _parent._cacheDetail.Get(
                         _kody[_pozice],
                         (verze, data) =>
                         {
                             var zmeneno = AktualizovatNaradi(data);
                             if (zmeneno)
-                                _parent._naradiCache.Insert(_kody[_pozice], verze, data, dirty: true);
+                                _parent._cacheDetail.Insert(_kody[_pozice], verze, data, dirty: true);
                             Iterace();
                         }, _onError, _parent.NacistDataNaradi);
                 }
             }
 
-            private bool AktualizovatNaradi(DetailNaradiData data)
+            private bool AktualizovatNaradi(DetailNaradiDataDetail data)
             {
                 var zmeneno = false;
 
@@ -422,7 +434,7 @@ namespace Vydejna.Domain
                             zmeneno = true;
                         }
                     }
-                } 
+                }
                 return zmeneno;
             }
 
@@ -457,7 +469,7 @@ namespace Vydejna.Domain
                             zmeneno = true;
                         }
                     }
-                } 
+                }
                 return zmeneno;
             }
         }
@@ -685,7 +697,7 @@ namespace Vydejna.Domain
             });
         }
 
-        private DetailNaradiNecislovane NajitNecislovane(DetailNaradiData data, UmisteniNaradiDto umisteni, DateTime terminDodani)
+        private DetailNaradiNecislovane NajitNecislovane(DetailNaradiDataDetail data, UmisteniNaradiDto umisteni, DateTime terminDodani)
         {
             DetailNaradiNecislovane naradi;
             StavNaradi stav;
@@ -783,7 +795,7 @@ namespace Vydejna.Domain
         }
     }
 
-    public class DetailNaradiData
+    public class DetailNaradiDataDetail
     {
         public Guid NaradiId { get; set; }
         public string Vykres { get; set; }
@@ -812,35 +824,143 @@ namespace Vydejna.Domain
         public string Kod { get; set; }
         public string Nazev { get; set; }
     }
-    public class DetailNaradiDataCiselniky
+    public class DetailNaradiDataVady
     {
         public List<DefinovanaVadaNaradiEvent> Vady { get; set; }
-        public List<DetailNaradiDataDodavatel> Dodavatele { get; set; }
-        public List<DefinovanoPracovisteEvent> Pracoviste { get; set; }
         public Dictionary<string, DefinovanaVadaNaradiEvent> IndexVad;
+    }
+    public class DetailNaradiDataDodavatele
+    {
+        public List<DetailNaradiDataDodavatel> Dodavatele { get; set; }
         public Dictionary<string, DetailNaradiDataDodavatel> IndexDodavatelu;
-        public Dictionary<string, DefinovanoPracovisteEvent> IndexPracovist;
+    }
+
+    public class DetailNaradiRepository
+    {
+        private IDocumentFolder _folder;
+
+        public DetailNaradiRepository(IDocumentFolder folder)
+        {
+            _folder = folder;
+        }
+
+        public void Reset(Action onComplete, Action<Exception> onError)
+        {
+            _folder.DeleteAll(onComplete, onError);
+        }
+
+        public void NacistDetail(Guid naradiId, int oldVersion, Action<int, DetailNaradiDataDetail> onLoaded, Action onValid, Action<Exception> onError)
+        {
+            _folder.GetNewerDocument(
+                string.Concat("detail-", naradiId.ToString("N")),
+                oldVersion,
+                (verze, raw) => onLoaded(verze, string.IsNullOrEmpty(raw) ? null : JsonSerializer.DeserializeFromString<DetailNaradiDataDetail>(raw)),
+                () => onValid(),
+                () => onLoaded(0, null),
+                ex => onError(ex));
+        }
+
+        public void UlozitDetail(Guid naradiId, int verze, DetailNaradiDataDetail data, Action<int> onSaved, Action<Exception> onError)
+        {
+            _folder.SaveDocument(
+                string.Concat("detail-", naradiId.ToString("N")),
+                JsonSerializer.SerializeToString(data),
+                DocumentStoreVersion.At(verze),
+                IndexyDetailu(data),
+                () => onSaved(verze + 1),
+                () => onError(new ProjectorMessages.ConcurrencyException()),
+                ex => onError(ex)
+                );
+        }
+
+        private IList<DocumentIndexing> IndexyDetailu(DetailNaradiDataDetail data)
+        {
+            var indexy = new List<DocumentIndexing>(4);
+            indexy.Add(new DocumentIndexing("vady", data.ReferenceVad));
+            indexy.Add(new DocumentIndexing("pracoviste", data.ReferencePracovist));
+            indexy.Add(new DocumentIndexing("dodavatele", data.ReferenceDodavatelu));
+            return indexy;
+        }
+
+        public void NajitDetailyPodleDodavatele(string kodDodavatele, Action<IList<string>> onNalezenSeznam, Action<Exception> onError)
+        {
+            _folder.FindDocumentKeys("dodavatele", kodDodavatele, kodDodavatele, onNalezenSeznam, onError);
+        }
+
+        public void NacistDodavatele(Action<int, DetailNaradiDataDodavatele> onLoaded, Action<Exception> onError)
+        {
+            _folder.GetDocument(
+                "dodavatele",
+                (verze, raw) => onLoaded(verze, string.IsNullOrEmpty(raw) ? null : JsonSerializer.DeserializeFromString<DetailNaradiDataDodavatele>(raw)),
+                () => onLoaded(0, null),
+                ex => onError(ex));
+        }
+
+        public void UlozitDodavatele(int verze, DetailNaradiDataDodavatele ciselnik, Action<int> onSaved, Action<Exception> onError)
+        {
+            _folder.SaveDocument("dodavatele",
+                JsonSerializer.SerializeToString(ciselnik),
+                DocumentStoreVersion.At(verze),
+                null,
+                () => onSaved(verze + 1),
+                () => onError(new ProjectorMessages.ConcurrencyException()),
+                ex => onError(ex));
+        }
+
+        public void NacistVady(Action<int, DetailNaradiDataVady> onLoaded, Action<Exception> onError)
+        {
+            _folder.GetDocument("vady",
+                (verze, raw) => onLoaded(verze, string.IsNullOrEmpty(raw) ? null : JsonSerializer.DeserializeFromString<DetailNaradiDataVady>(raw)),
+                () => onLoaded(0, null),
+                ex => onError(ex));
+        }
+
+        public void UlozitVadu(int verze, DetailNaradiDataVady ciselnik, Action<int> onSaved, Action<Exception> onError)
+        {
+            _folder.SaveDocument("vady",
+                JsonSerializer.SerializeToString(ciselnik),
+                DocumentStoreVersion.At(verze),
+                null,
+                () => onSaved(verze + 1),
+                () => onError(new ProjectorMessages.ConcurrencyException()),
+                ex => onError(ex));
+        }
+
+        public void NajitDetailyPodleVady(string kodVady, Action<IList<string>> onNalezenSeznam, Action<Exception> onError)
+        {
+            _folder.FindDocumentKeys("vady", kodVady, kodVady, onNalezenSeznam, onError);
+        }
+
+        public void NajitDetailyPodlePracoviste(string kodPracoviste, Action<IList<string>> onNalezenSeznam, Action<Exception> onError)
+        {
+            _folder.FindDocumentKeys("pracoviste", kodPracoviste, kodPracoviste, onNalezenSeznam, onError);
+        }
+
+        public void NacistPracoviste(string kodPracoviste, Action<int, DefinovanoPracovisteEvent> onLoaded, Action<Exception> onError)
+        {
+            _folder.GetDocument(
+                "pracoviste-" + kodPracoviste,
+                (verze, raw) => onLoaded(verze, string.IsNullOrEmpty(raw) ? null : JsonSerializer.DeserializeFromString<DefinovanoPracovisteEvent>(raw)),
+                () => onLoaded(0, null), ex => onError(ex));
+        }
+
+        public void UlozitPracoviste(string kodPracoviste, int verze, DefinovanoPracovisteEvent pracoviste, Action<int> onSaved, Action<Exception> onError)
+        {
+            _folder.SaveDocument(
+                "pracoviste-" + kodPracoviste,
+                JsonSerializer.SerializeToString(pracoviste),
+                DocumentStoreVersion.At(verze),
+                null, 
+                () => onSaved(verze + 1),
+                () => onError(new ProjectorMessages.ConcurrencyException()),
+                ex => onError(ex)
+                );
+        }
     }
 
     public class DetailNaradiSerializer
     {
-        public string SerializeNaradi(DetailNaradiData data)
-        {
-            data.ReferenceDodavatelu = data.ReferenceDodavatelu ?? GenerovatReferenceDodavatelu(data);
-            data.ReferencePracovist = data.ReferencePracovist ?? GenerovatReferencePracovist(data);
-            data.ReferenceVad = data.ReferenceVad ?? GenerovatReferenceVad(data);
-            if (data.Cislovane == null)
-                data.Cislovane = data.IndexCislovane.Values.ToList();
-            if (data.Necislovane == null)
-            {
-                data.Necislovane = new List<DetailNaradiNecislovane>();
-                data.Necislovane.AddRange(data.IndexPodleStavu.Values.Where(n => n.Pocet > 0));
-                data.Necislovane.AddRange(data.IndexPodlePracoviste.Values.Where(n => n.Pocet > 0));
-                data.Necislovane.AddRange(data.IndexPodleObjednavky.Values.Where(n => n.Pocet > 0));
-            }
-            return JsonSerializer.SerializeToString(data);
-        }
-        private List<string> GenerovatReferenceDodavatelu(DetailNaradiData data)
+        private List<string> GenerovatReferenceDodavatelu(DetailNaradiDataDetail data)
         {
             var dodavatele = new HashSet<string>();
             foreach (var naradi in data.Necislovane)
@@ -855,7 +975,7 @@ namespace Vydejna.Domain
             }
             return dodavatele.ToList();
         }
-        private List<string> GenerovatReferencePracovist(DetailNaradiData data)
+        private List<string> GenerovatReferencePracovist(DetailNaradiDataDetail data)
         {
             var pracoviste = new HashSet<string>();
             foreach (var naradi in data.Necislovane)
@@ -870,7 +990,7 @@ namespace Vydejna.Domain
             }
             return pracoviste.ToList();
         }
-        private List<string> GenerovatReferenceVad(DetailNaradiData data)
+        private List<string> GenerovatReferenceVad(DetailNaradiDataDetail data)
         {
             var vady = new HashSet<string>();
             foreach (var naradi in data.Necislovane)
@@ -885,13 +1005,13 @@ namespace Vydejna.Domain
             }
             return vady.ToList();
         }
-        public DetailNaradiData DeserializeNaradiForReader(string raw)
+        public DetailNaradiDataDetail DeserializeNaradiForReader(string raw)
         {
-            DetailNaradiData data;
+            DetailNaradiDataDetail data;
             if (string.IsNullOrEmpty(raw))
-                data = new DetailNaradiData();
+                data = new DetailNaradiDataDetail();
             else
-                data = JsonSerializer.DeserializeFromString<DetailNaradiData>(raw);
+                data = JsonSerializer.DeserializeFromString<DetailNaradiDataDetail>(raw);
 
             data.PoctyCelkem = data.PoctyCelkem ?? new DetailNaradiDataPocty();
             data.PoctyCislovane = data.PoctyCislovane ?? new DetailNaradiDataPocty();
@@ -903,7 +1023,7 @@ namespace Vydejna.Domain
             data.ReferenceVad = data.ReferenceVad ?? new List<string>();
             return data;
         }
-        public DetailNaradiData DeserializeNaradi(string raw)
+        public DetailNaradiDataDetail DeserializeNaradi(string raw)
         {
             var data = DeserializeNaradiForReader(raw);
             data.IndexCislovane = data.Cislovane.ToDictionary(c => c.CisloNaradi);
@@ -944,7 +1064,7 @@ namespace Vydejna.Domain
             return ciselniky;
         }
 
-        public IList<DocumentIndexing> IndexNaradi(DetailNaradiData data)
+        public IList<DocumentIndexing> IndexNaradi(DetailNaradiDataDetail data)
         {
             var indexy = new List<DocumentIndexing>();
             indexy.Add(new DocumentIndexing("vady", data.ReferenceVad));
