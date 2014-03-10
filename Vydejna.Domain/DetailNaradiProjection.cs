@@ -93,13 +93,27 @@ namespace Vydejna.Domain
             }
             public void Execute()
             {
-                GenerovatReferenceDetailu();
+                KorekceDetailuPredUlozenim();
                 FlushDodavatelu();
             }
-            private void GenerovatReferenceDetailu()
+            private void KorekceDetailuPredUlozenim()
             {
                 foreach (var detail in _parent._cacheDetail.GetAllChanges())
                 {
+                    if (detail.Cislovane == null)
+                        detail.Cislovane = new List<DetailNaradiCislovane>(detail.IndexCislovane.Count);
+                    else
+                        detail.Cislovane.Clear();
+                    detail.Cislovane.AddRange(detail.IndexCislovane.Values);
+
+                    if (detail.Necislovane == null)
+                        detail.Necislovane = new List<DetailNaradiNecislovane>();
+                    else
+                        detail.Necislovane.Clear();
+                    detail.Necislovane.AddRange(detail.IndexPodleStavu.Values);
+                    detail.Necislovane.AddRange(detail.IndexPodlePracoviste.Values);
+                    detail.Necislovane.AddRange(detail.IndexPodleObjednavky.Values);
+
                     detail.ReferenceDodavatelu = detail.ReferenceDodavatelu ?? GenerovatReferenceDodavatelu(detail);
                     detail.ReferencePracovist = detail.ReferencePracovist ?? GenerovatReferencePracovist(detail);
                     detail.ReferenceVad = detail.ReferenceVad ?? GenerovatReferenceVad(detail);
@@ -551,7 +565,7 @@ namespace Vydejna.Domain
             {
                 if (_kodPracoviste != null)
                 {
-                    _parent._cachePracoviste.Get(_kodPracoviste, NactenoPracoviste, _onError, 
+                    _parent._cachePracoviste.Get(_kodPracoviste, NactenoPracoviste, _onError,
                         load => _parent._repository.NacistPracoviste(_kodPracoviste, load.SetLoadedValue, load.LoadingFailed));
                 }
                 else
@@ -758,13 +772,16 @@ namespace Vydejna.Domain
 
             private void NactenoPracoviste(int verze, DefinovanoPracovisteEvent data)
             {
-                throw new NotImplementedException();
+                _nactenePracoviste = data;
+                ExecuteInternal();
+                _parent._cacheDetail.Insert(_naradiId.ToString("N"), _verzeDetailu, _nactenyDetail, dirty: true);
+                _onCompleted();
             }
 
             private void ExecuteInternal()
             {
-                var proOdebrani = NajitNecislovane(_nactenyDetail, _predchozi, DateTime.MaxValue);
-                var proPridani = NajitNecislovane(_nactenyDetail, _nove, _terminDodani);
+                var proOdebrani = NajitNecislovane(_nactenyDetail, _predchozi, DateTime.MaxValue, false);
+                var proPridani = NajitNecislovane(_nactenyDetail, _nove, _terminDodani, true);
 
                 if (proPridani.VeVyrobe != null && _nactenePracoviste != null)
                 {
@@ -776,9 +793,12 @@ namespace Vydejna.Domain
                     proPridani.VOprave.NazevDodavatele = _nactenyDodavatel.Nazev;
                 }
 
-                proOdebrani.Pocet -= _pocet;
-                if (proOdebrani.Pocet == 0 || proPridani.Pocet == 0)
-                    _nactenyDetail.Necislovane = null;
+                if (proOdebrani != null)
+                {
+                    proOdebrani.Pocet -= _pocet;
+                    if (proOdebrani.Pocet == 0 || proPridani.Pocet == 0)
+                        _nactenyDetail.Necislovane = null;
+                }
                 proPridani.Pocet += _pocet;
                 if (_terminDodani != default(DateTime) && proPridani.VOprave != null)
                     proPridani.VOprave.TerminDodani = _terminDodani;
@@ -788,7 +808,7 @@ namespace Vydejna.Domain
                 UpravitPocty(_nactenyDetail.PoctyNecislovane, _nove, _pocet);
             }
 
-            private DetailNaradiNecislovane NajitNecislovane(DetailNaradiDataDetail data, UmisteniNaradiDto umisteni, DateTime terminDodani)
+            private DetailNaradiNecislovane NajitNecislovane(DetailNaradiDataDetail data, UmisteniNaradiDto umisteni, DateTime terminDodani, bool vytvoritPokudChybi)
             {
                 DetailNaradiNecislovane naradi;
                 StavNaradi stav;
@@ -809,7 +829,7 @@ namespace Vydejna.Domain
                             default:
                                 return null;
                         }
-                        if (!data.IndexPodleStavu.TryGetValue(stav, out naradi))
+                        if (!data.IndexPodleStavu.TryGetValue(stav, out naradi) && vytvoritPokudChybi)
                         {
                             naradi = new DetailNaradiNecislovane
                             {
@@ -821,7 +841,7 @@ namespace Vydejna.Domain
                         return naradi;
 
                     case ZakladUmisteni.VeVyrobe:
-                        if (!data.IndexPodlePracoviste.TryGetValue(umisteni.Pracoviste, out naradi))
+                        if (!data.IndexPodlePracoviste.TryGetValue(umisteni.Pracoviste, out naradi) && vytvoritPokudChybi)
                         {
                             naradi = new DetailNaradiNecislovane
                             {
@@ -834,7 +854,7 @@ namespace Vydejna.Domain
 
                     case ZakladUmisteni.VOprave:
                         var klicObjednavky = KlicIndexuOprav(umisteni.Dodavatel, umisteni.Objednavka);
-                        if (!data.IndexPodleObjednavky.TryGetValue(klicObjednavky, out naradi))
+                        if (!data.IndexPodleObjednavky.TryGetValue(klicObjednavky, out naradi) && vytvoritPokudChybi)
                         {
                             naradi = new DetailNaradiNecislovane
                             {
@@ -1105,6 +1125,63 @@ namespace Vydejna.Domain
                 () => onError(new ProjectorMessages.ConcurrencyException()),
                 ex => onError(ex)
                 );
+        }
+    }
+
+    public class DetailNaradiReader
+        : IAnswer<DetailNaradiRequest, DetailNaradiResponse>
+    {
+        private DetailNaradiRepository _repository;
+        private MemoryCache<DetailNaradiResponse> _cacheDetaily;
+
+        public DetailNaradiReader(DetailNaradiRepository repository, IQueueExecution executor, ITime time)
+        {
+            _repository = repository;
+            _cacheDetaily = new MemoryCache<DetailNaradiResponse>(executor, time);
+        }
+
+        public void Handle(QueryExecution<DetailNaradiRequest, DetailNaradiResponse> message)
+        {
+            _cacheDetaily.Get(
+                message.Request.NaradiId.ToString("N"),
+                (verze, data) => message.OnCompleted(data),
+                message.OnError,
+                load => _repository.NacistDetail(
+                    message.Request.NaradiId, load.OldVersion,
+                    (verze, data) => load.SetLoadedValue(verze, VytvoritResponse(message.Request, data)),
+                    load.ValueIsStillValid, load.LoadingFailed)
+                );
+        }
+
+        private DetailNaradiResponse VytvoritResponse(DetailNaradiRequest request, DetailNaradiDataDetail data)
+        {
+            var response = new DetailNaradiResponse();
+            if (data == null)
+            {
+                response.NaradiId = request.NaradiId;
+                response.Cislovane = new List<DetailNaradiCislovane>();
+                response.Necislovane = new List<DetailNaradiNecislovane>();
+                response.PoctyCelkem = new DetailNaradiDataPocty();
+                response.PoctyCislovane = new DetailNaradiDataPocty();
+                response.PoctyNecislovane = new DetailNaradiDataPocty();
+            }
+            else
+            {
+                response.NaradiId = data.NaradiId;
+                response.Vykres = data.Vykres;
+                response.Rozmer = data.Rozmer;
+                response.Druh = data.Druh;
+                response.Aktivni = data.Aktivni;
+
+                response.Cislovane = data.Cislovane;
+                response.Necislovane = data.Necislovane;
+
+                response.NaSklade = data.NaSklade;
+                response.PoctyCelkem = data.PoctyCelkem;
+                response.PoctyCislovane = data.PoctyCislovane;
+                response.PoctyNecislovane = data.PoctyNecislovane;
+            }
+            return response;
         }
     }
 }
