@@ -22,9 +22,12 @@ namespace Vydejna.Domain
         private MemoryCache<InformaceONaradi> _cacheNaradi;
         private MemoryCache<NaradiNaObjednavceDataDodavatele> _cacheDodavatele;
 
-        public NaradiNaObjednavceProjection(IDocumentFolder store, IQueueExecution executor, ITime time)
+        public NaradiNaObjednavceProjection(NaradiNaObjednavceRepository repository, IQueueExecution executor, ITime time)
         {
+            _repository = repository;
             _cacheObjednavek = new MemoryCache<NaradiNaObjednavceDataObjednavky>(executor, time);
+            _cacheNaradi = new MemoryCache<InformaceONaradi>(executor, time);
+            _cacheDodavatele = new MemoryCache<NaradiNaObjednavceDataDodavatele>(executor, time);
         }
 
         public string GetVersion()
