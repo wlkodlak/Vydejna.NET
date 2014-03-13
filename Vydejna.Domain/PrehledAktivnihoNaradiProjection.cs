@@ -48,6 +48,7 @@ namespace Vydejna.Domain
 
         public void Handle(CommandExecution<ProjectorMessages.Reset> message)
         {
+            _cacheNaradi.Clear();
             _repository.Reset(message.OnCompleted, message.OnError);
         }
 
