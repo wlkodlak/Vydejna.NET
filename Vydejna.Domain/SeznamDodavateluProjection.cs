@@ -9,22 +9,17 @@ namespace Vydejna.Domain
     public class SeznamDodavateluProjection
         : IEventProjection
         , IHandle<CommandExecution<ProjectorMessages.Flush>>
-        , IHandle<CommandExecution<ProjectorMessages.Resume>>
         , IHandle<CommandExecution<DefinovanDodavatelEvent>>
     {
-        private IDocumentFolder _store;
-        private SeznamDodavateluData _data;
-        private int _dataVersion;
-        private SeznamDodavateluDataSerializer _serializer;
+        private SeznamDodavateluRepository _repository;
         private SeznamDodavateluNazevComparer _comparer;
+        private MemoryCache<SeznamDodavateluData> _cache;
 
-        public SeznamDodavateluProjection(IDocumentFolder store)
+        public SeznamDodavateluProjection(SeznamDodavateluRepository repository, IQueueExecution executor, ITime time)
         {
-            _store = store;
+            _repository = repository;
             _comparer = new SeznamDodavateluNazevComparer();
-            _serializer = new SeznamDodavateluDataSerializer(_comparer);
-            _data = null;
-            _dataVersion = 0;
+            _cache = new MemoryCache<SeznamDodavateluData>(executor, time);
         }
 
         public string GetVersion()
@@ -39,9 +34,8 @@ namespace Vydejna.Domain
 
         public void Handle(CommandExecution<ProjectorMessages.Reset> message)
         {
-            _store.DeleteAll(message.OnCompleted, message.OnError);
-            _data = _serializer.Deserialize(null);
-            _dataVersion = 0;
+            _cache.Clear();
+            _repository.Reset(message.OnCompleted, message.OnError);
         }
 
         public void Handle(CommandExecution<ProjectorMessages.UpgradeFrom> message)
@@ -51,48 +45,48 @@ namespace Vydejna.Domain
 
         public void Handle(CommandExecution<ProjectorMessages.Flush> message)
         {
-            var serialized = _serializer.Serialize(_data);
-            _store.SaveDocument(
-                "seznamdodavatelu", serialized, DocumentStoreVersion.At(_dataVersion), null,
-                () => { _dataVersion++; message.OnCompleted(); },
-                () => message.OnError(new ProjectorMessages.ConcurrencyException()),
-                message.OnError);
-        }
-
-        public void Handle(CommandExecution<ProjectorMessages.Resume> message)
-        {
-            _store.GetDocument(
-                "seznamdodavatelu",
-                (version, content) =>
-                {
-                    _dataVersion = version;
-                    _data = _serializer.Deserialize(content);
-                    message.OnCompleted();
-                },
-                () =>
-                {
-                    _dataVersion = 0;
-                    _data = _serializer.Deserialize(null);
-                    message.OnCompleted();
-                },
-                message.OnError);
+            _cache.Flush(message.OnCompleted, message.OnError, save => _repository.UlozitDodavatele(save.Version, save.Value, save.SavedAsVersion, save.SavingFailed));
         }
 
         public void Handle(CommandExecution<DefinovanDodavatelEvent> message)
         {
-            InformaceODodavateli dodavatel;
-            if (!_data.PodleKodu.TryGetValue(message.Command.Kod, out dodavatel))
+            _cache.Get("dodavatele", (verze, data) =>
+                {
+                    InformaceODodavateli dodavatel;
+                    if (!data.PodleKodu.TryGetValue(message.Command.Kod, out dodavatel))
+                    {
+                        dodavatel = new InformaceODodavateli();
+                        dodavatel.Kod = message.Command.Kod;
+                        data.PodleKodu[dodavatel.Kod] = dodavatel;
+                    }
+                    dodavatel.Nazev = message.Command.Nazev;
+                    dodavatel.Adresa = message.Command.Adresa;
+                    dodavatel.Ico = message.Command.Ico;
+                    dodavatel.Dic = message.Command.Dic;
+                    dodavatel.Aktivni = !message.Command.Deaktivovan;
+                    
+                    _cache.Insert("dodavatele", verze, data, dirty: true);
+                    message.OnCompleted();
+                },
+                message.OnError,
+                load => _repository.NacistDodavatele((verze, data) => load.SetLoadedValue(verze, RozsiritData(data)), load.LoadingFailed));
+        }
+
+        private SeznamDodavateluData RozsiritData(SeznamDodavateluData data)
+        {
+            if (data == null)
             {
-                dodavatel = new InformaceODodavateli();
-                dodavatel.Kod = message.Command.Kod;
-                _data.PodleKodu[dodavatel.Kod] = dodavatel;
+                data = new SeznamDodavateluData();
+                data.Seznam = new List<InformaceODodavateli>();
+                data.PodleKodu = new Dictionary<string, InformaceODodavateli>();
             }
-            dodavatel.Nazev = message.Command.Nazev;
-            dodavatel.Adresa = message.Command.Adresa;
-            dodavatel.Ico = message.Command.Ico;
-            dodavatel.Dic = message.Command.Dic;
-            dodavatel.Aktivni = !message.Command.Deaktivovan;
-            message.OnCompleted();
+            else if (data.PodleKodu == null)
+            {
+                data.PodleKodu = new Dictionary<string, InformaceODodavateli>(data.Seznam.Count);
+                foreach (var dodavatel in data.Seznam)
+                    data.PodleKodu[dodavatel.Kod] = dodavatel;
+            }
+            return data;
         }
     }
 
@@ -110,31 +104,37 @@ namespace Vydejna.Domain
         }
     }
 
-    public class SeznamDodavateluDataSerializer
+    public class SeznamDodavateluRepository
     {
-        private IComparer<InformaceODodavateli> _comparer;
+        private IDocumentFolder _folder;
 
-        public SeznamDodavateluDataSerializer(IComparer<InformaceODodavateli> comparer)
+        public SeznamDodavateluRepository(IDocumentFolder folder)
         {
-            _comparer = comparer;
+            _folder = folder;
         }
-        public SeznamDodavateluData Deserialize(string raw)
+
+        public void Reset(Action onComplete, Action<Exception> onError)
         {
-            var data = string.IsNullOrEmpty(raw) ? null : JsonSerializer.DeserializeFromString<SeznamDodavateluData>(raw);
-            data = data ?? new SeznamDodavateluData();
-            data.Seznam = data.Seznam ?? new List<InformaceODodavateli>();
-            data.PodleKodu = new Dictionary<string, InformaceODodavateli>(data.Seznam.Count);
-            foreach (var dodavatel in data.Seznam)
-                data.PodleKodu[dodavatel.Kod] = dodavatel;
-            return data;
+            _folder.DeleteAll(onComplete, onError);
         }
-        public string Serialize(SeznamDodavateluData data)
+
+        public void NacistDodavatele(Action<int, SeznamDodavateluData> onLoaded, Action<Exception> onError)
         {
-            if (data == null)
-                return "";
-            data.Seznam = new List<InformaceODodavateli>(data.PodleKodu.Values);
-            data.Seznam.Sort(_comparer);
-            return JsonSerializer.SerializeToString(data);
+            _folder.GetDocument("dodavatele",
+                (verze, raw) => onLoaded(verze, string.IsNullOrEmpty(raw) ? null : JsonSerializer.DeserializeFromString<SeznamDodavateluData>(raw)),
+                () => onLoaded(0, null), ex => onError(ex));
+        }
+
+        public void UlozitDodavatele(int verze, SeznamDodavateluData data, Action<int> onSaved, Action<Exception> onError)
+        {
+            _folder.SaveDocument("dodavatele",
+                JsonSerializer.SerializeToString(data),
+                DocumentStoreVersion.At(verze),
+                null,
+                () => onSaved(verze + 1),
+                () => onError(new ProjectorMessages.ConcurrencyException()),
+                ex => onError(ex)
+                );
         }
     }
 
@@ -142,44 +142,28 @@ namespace Vydejna.Domain
         : IAnswer<ZiskatSeznamDodavateluRequest, ZiskatSeznamDodavateluResponse>
     {
         private IMemoryCache<ZiskatSeznamDodavateluResponse> _cache;
-        private IDocumentFolder _store;
-        private SeznamDodavateluDataSerializer _serializer;
+        private SeznamDodavateluRepository _repository;
 
-        public SeznamDodavateluReader(IDocumentFolder store, IQueueExecution executor, ITime time)
+        public SeznamDodavateluReader(SeznamDodavateluRepository repository, IQueueExecution executor, ITime time)
         {
-            _store = store;
+            _repository = repository;
             _cache = new MemoryCache<ZiskatSeznamDodavateluResponse>(executor, time);
-            _serializer = new SeznamDodavateluDataSerializer(null);
         }
 
         public void Handle(QueryExecution<ZiskatSeznamDodavateluRequest, ZiskatSeznamDodavateluResponse> message)
         {
-            _cache.Get("all", (verze, data) => message.OnCompleted(data), message.OnError, NacistDodavatele);
+            _cache.Get("dodavatele", (verze, data) => message.OnCompleted(data), message.OnError,
+                load => _repository.NacistDodavatele((verze, data) => load.SetLoadedValue(verze, VytvoritResponse(data)), load.LoadingFailed));
         }
 
-        private void NacistDodavatele(IMemoryCacheLoad<ZiskatSeznamDodavateluResponse> load)
+        private ZiskatSeznamDodavateluResponse VytvoritResponse(SeznamDodavateluData zaklad)
         {
-            if (load.OldValueAvailable)
-            {
-                _store.GetNewerDocument("seznamdodavatelu", load.OldVersion,
-                    (verze, data) => load.SetLoadedValue(verze, VytvoritResponse(data)),
-                    () => load.ValueIsStillValid(),
-                    () => load.SetLoadedValue(0, VytvoritResponse(null)),
-                    load.LoadingFailed);
-            }
+            var response = new ZiskatSeznamDodavateluResponse();
+            if (zaklad == null)
+                response.Seznam = new List<InformaceODodavateli>();
             else
-            {
-                _store.GetDocument("seznamdodavatelu",
-                    (verze, data) => load.SetLoadedValue(verze, VytvoritResponse(data)),
-                    () => load.SetLoadedValue(0, VytvoritResponse(null)),
-                    load.LoadingFailed);
-            }
-        }
-
-        private ZiskatSeznamDodavateluResponse VytvoritResponse(string data)
-        {
-            var zaklad = _serializer.Deserialize(data);
-            return new ZiskatSeznamDodavateluResponse { Seznam = zaklad.Seznam };
+                response.Seznam = zaklad.Seznam;
+            return response;
         }
     }
 }

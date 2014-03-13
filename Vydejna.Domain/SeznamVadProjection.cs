@@ -9,22 +9,17 @@ namespace Vydejna.Domain
     public class SeznamVadProjection
         : IEventProjection
         , IHandle<CommandExecution<ProjectorMessages.Flush>>
-        , IHandle<CommandExecution<ProjectorMessages.Resume>>
         , IHandle<CommandExecution<DefinovanaVadaNaradiEvent>>
     {
-        private IDocumentFolder _store;
-        private SeznamVadData _data;
-        private int _dataVersion;
-        private SeznamVadDataSerializer _serializer;
-        private SeznamVadKodComparer _comparer;
+        private SeznamVadRepository _repository;
+        private MemoryCache<SeznamVadData> _cache;
+        private IComparer<SeznamVadPolozka> _comparer;
 
-        public SeznamVadProjection(IDocumentFolder store)
+        public SeznamVadProjection(SeznamVadRepository repository, IQueueExecution executor, ITime time)
         {
-            _store = store;
-            _serializer = new SeznamVadDataSerializer();
+            _repository = repository;
+            _cache = new MemoryCache<SeznamVadData>(executor, time);
             _comparer = new SeznamVadKodComparer();
-            _data = null;
-            _dataVersion = 0;
         }
 
         public string GetVersion()
@@ -39,9 +34,8 @@ namespace Vydejna.Domain
 
         public void Handle(CommandExecution<ProjectorMessages.Reset> message)
         {
-            _store.DeleteAll(message.OnCompleted, message.OnError);
-            _data = _serializer.Deserialize(null);
-            _dataVersion = 0;
+            _cache.Clear();
+            _repository.Reset(message.OnCompleted, message.OnError);
         }
 
         public void Handle(CommandExecution<ProjectorMessages.UpgradeFrom> message)
@@ -51,52 +45,44 @@ namespace Vydejna.Domain
 
         public void Handle(CommandExecution<ProjectorMessages.Flush> message)
         {
-            var serialized = _serializer.Serialize(_data);
-            _store.SaveDocument(
-                "seznamvad", serialized, DocumentStoreVersion.At(_dataVersion), null,
-                () => { _dataVersion++; message.OnCompleted(); },
-                () => message.OnError(new ProjectorMessages.ConcurrencyException()),
-                message.OnError);
-        }
-
-        public void Handle(CommandExecution<ProjectorMessages.Resume> message)
-        {
-            _store.GetDocument(
-                "seznamvad",
-                (version, content) =>
-                {
-                    _dataVersion = version;
-                    _data = _serializer.Deserialize(content);
-                    message.OnCompleted();
-                },
-                () =>
-                {
-                    _dataVersion = 0;
-                    _data = _serializer.Deserialize(null);
-                    message.OnCompleted();
-                },
-                message.OnError);
+            _cache.Flush(message.OnCompleted, message.OnError, save => _repository.UlozitVady(save.Version, save.Value, save.SavedAsVersion, save.SavingFailed));
         }
 
         public void Handle(CommandExecution<DefinovanaVadaNaradiEvent> message)
         {
-            var vzor = new SeznamVadPolozka { Kod = message.Command.Kod };
-            var index = _data.Seznam.BinarySearch(vzor, _comparer);
-            if (index < 0)
+            _cache.Get("vady", (verze, seznamVad) =>
+                {
+                    var vzor = new SeznamVadPolozka { Kod = message.Command.Kod };
+                    var index = seznamVad.Seznam.BinarySearch(vzor, _comparer);
+                    SeznamVadPolozka vada;
+                    if (index >= 0)
+                    {
+                        vada = seznamVad.Seznam[index];
+                    }
+                    else
+                    {
+                        vada = new SeznamVadPolozka();
+                        vada.Kod = message.Command.Kod;
+                        seznamVad.Seznam.Insert(~index, vada);
+                    }
+                    vada.Nazev = message.Command.Nazev;
+                    vada.Aktivni = !message.Command.Deaktivovana;
+
+                    _cache.Insert("vady", verze, seznamVad, dirty: true);
+                    message.OnCompleted();
+                }, 
+                message.OnError, 
+                load => _repository.NacistVady((verze, data) => load.SetLoadedValue(verze, RozsiritData(data)), load.LoadingFailed));
+        }
+
+        private SeznamVadData RozsiritData(SeznamVadData data)
+        {
+            if (data == null)
             {
-                var vada = new SeznamVadPolozka();
-                vada.Kod = message.Command.Kod;
-                vada.Nazev = message.Command.Nazev;
-                vada.Aktivni = !message.Command.Deaktivovana;
-                _data.Seznam.Insert(~index, vada);
+                data = new SeznamVadData();
+                data.Seznam = new List<SeznamVadPolozka>();
             }
-            else
-            {
-                var vada = _data.Seznam[index];
-                vada.Nazev = message.Command.Nazev;
-                vada.Aktivni = !message.Command.Deaktivovana;
-            }
-            message.OnCompleted();
+            return data;
         }
     }
 
@@ -104,81 +90,75 @@ namespace Vydejna.Domain
     {
         public List<SeznamVadPolozka> Seznam { get; set; }
     }
-    public class SeznamVadKodComparer
-        : IComparer<SeznamVadPolozka>
-    {
-        public int Compare(SeznamVadPolozka x, SeznamVadPolozka y)
-        {
-            return string.CompareOrdinal(x.Kod, y.Kod);
-        }
-    }
 
-    public class SeznamVadDataSerializer
+    public class SeznamVadRepository
     {
-        public SeznamVadData Deserialize(string raw)
+        private IDocumentFolder _folder;
+
+        public SeznamVadRepository(IDocumentFolder folder)
         {
-            var data = string.IsNullOrEmpty(raw) ? null : JsonSerializer.DeserializeFromString<SeznamVadData>(raw);
-            data = data ?? new SeznamVadData();
-            data.Seznam = data.Seznam ?? new List<SeznamVadPolozka>();
-            return data;
+            _folder = folder;
         }
-        public string Serialize(SeznamVadData data)
+
+        public void Reset(Action onComplete, Action<Exception> onError)
         {
-            return data == null ? "" : JsonSerializer.SerializeToString(data);
+            _folder.DeleteAll(onComplete, onError);
+        }
+
+        public void NacistVady(Action<int, SeznamVadData> onLoaded, Action<Exception> onError)
+        {
+            _folder.GetDocument("vady",
+                (verze, raw) => onLoaded(verze, string.IsNullOrEmpty(raw) ? null : JsonSerializer.DeserializeFromString<SeznamVadData>(raw)),
+                () => onLoaded(0, null), ex => onError(ex));
+        }
+
+        public void UlozitVady(int verze, SeznamVadData data, Action<int> onSaved, Action<Exception> onError)
+        {
+            _folder.SaveDocument("vady",
+                JsonSerializer.SerializeToString(data),
+                DocumentStoreVersion.At(verze),
+                null,
+                () => onSaved(verze + 1),
+                () => onError(new ProjectorMessages.ConcurrencyException()),
+                ex => onError(ex)
+                );
         }
     }
 
     public class SeznamVadReader
         : IAnswer<ZiskatSeznamVadRequest, ZiskatSeznamVadResponse>
     {
-        private IDocumentFolder _store;
+        private SeznamVadRepository _repository;
         private IMemoryCache<ZiskatSeznamVadResponse> _cache;
-        private SeznamVadDataSerializer _serializer;
 
-        public SeznamVadReader(IDocumentFolder store, IQueueExecution executor, ITime time)
+        public SeznamVadReader(SeznamVadRepository repository, IQueueExecution executor, ITime time)
         {
-            _store = store;
+            _repository = repository;
             _cache = new MemoryCache<ZiskatSeznamVadResponse>(executor, time);
-            _serializer = new SeznamVadDataSerializer();
         }
 
         public void Handle(QueryExecution<ZiskatSeznamVadRequest, ZiskatSeznamVadResponse> message)
         {
-            _cache.Get("vady",
-                (verze, data) => message.OnCompleted(data),
-                message.OnError,
-                NacistDataVad
-                );
+            _cache.Get("vady", (verze, data) => message.OnCompleted(data), message.OnError,
+                load => _repository.NacistVady((verze, data) => load.SetLoadedValue(verze, VytvoritResponse(data)), load.LoadingFailed));
         }
 
-        private void NacistDataVad(IMemoryCacheLoad<ZiskatSeznamVadResponse> load)
+        private ZiskatSeznamVadResponse VytvoritResponse(SeznamVadData zaklad)
         {
-            if (load.OldValueAvailable)
-            {
-                _store.GetNewerDocument("seznamvad", load.OldVersion,
-                    (verze, obsah) => load.SetLoadedValue(verze, VytvoritReponse(obsah)),
-                    () => load.ValueIsStillValid(),
-                    () => load.SetLoadedValue(0, VytvoritReponse(null)),
-                    load.LoadingFailed
-                    );
-            }
+            var response = new ZiskatSeznamVadResponse();
+            if (zaklad == null)
+                response.Seznam = new List<SeznamVadPolozka>();
             else
-            {
-                _store.GetDocument("seznamvad",
-                    (verze, obsah) => load.SetLoadedValue(verze, VytvoritReponse(obsah)),
-                    () => load.SetLoadedValue(0, VytvoritReponse(null)),
-                    load.LoadingFailed
-                    );
-            }
+                response.Seznam = zaklad.Seznam;
+            return response;
         }
+    }
 
-        private ZiskatSeznamVadResponse VytvoritReponse(string obsah)
+    public class SeznamVadKodComparer : IComparer<SeznamVadPolozka>
+    {
+        public int Compare(SeznamVadPolozka x, SeznamVadPolozka y)
         {
-            var zaklad = _serializer.Deserialize(obsah);
-            return new ZiskatSeznamVadResponse
-            {
-                Seznam = zaklad.Seznam
-            };
+            return string.CompareOrdinal(x.Kod, y.Kod);
         }
     }
 }
