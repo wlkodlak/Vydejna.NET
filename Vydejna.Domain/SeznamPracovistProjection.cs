@@ -1,6 +1,7 @@
 ﻿using ServiceLib;
 using ServiceStack.Text;
 using System;
+using System.Linq;
 using System.Collections.Generic;
 using Vydejna.Contracts;
 
@@ -9,22 +10,17 @@ namespace Vydejna.Domain
     public class SeznamPracovistProjection
         : IEventProjection
         , IHandle<CommandExecution<ProjectorMessages.Flush>>
-        , IHandle<CommandExecution<ProjectorMessages.Resume>>
         , IHandle<CommandExecution<DefinovanoPracovisteEvent>>
     {
-        private IDocumentFolder _store;
-        private SeznamPracovistData _data;
-        private int _dataVersion;
-        private SeznamPracovistDataSerializer _serializer;
+        private SeznamPracovistRepository _repository;
+        private MemoryCache<InformaceOPracovisti> _cachePracovist;
         private SeznamPracovistDataPracovisteKodComparer _comparer;
 
-        public SeznamPracovistProjection(IDocumentFolder store)
+        public SeznamPracovistProjection(SeznamPracovistRepository repository, IQueueExecution executor, ITime time)
         {
-            _store = store;
-            _serializer = new SeznamPracovistDataSerializer();
+            _repository = repository;
             _comparer = new SeznamPracovistDataPracovisteKodComparer();
-            _data = null;
-            _dataVersion = 0;
+            _cachePracovist = new MemoryCache<InformaceOPracovisti>(executor, time);
         }
 
         public string GetVersion()
@@ -39,9 +35,8 @@ namespace Vydejna.Domain
 
         public void Handle(CommandExecution<ProjectorMessages.Reset> message)
         {
-            _store.DeleteAll(message.OnCompleted, message.OnError);
-            _data = _serializer.Deserialize(null);
-            _dataVersion = 0;
+            _cachePracovist.Clear();
+            _repository.Reset(message.OnCompleted, message.OnError);
         }
 
         public void Handle(CommandExecution<ProjectorMessages.UpgradeFrom> message)
@@ -51,61 +46,34 @@ namespace Vydejna.Domain
 
         public void Handle(CommandExecution<ProjectorMessages.Flush> message)
         {
-            var serialized = _serializer.Serialize(_data);
-            _store.SaveDocument(
-                "seznampracovist", serialized, DocumentStoreVersion.At(_dataVersion), null,
-                () => { _dataVersion++; message.OnCompleted(); },
-                () => message.OnError(new ProjectorMessages.ConcurrencyException()),
-                message.OnError);
-        }
-
-        public void Handle(CommandExecution<ProjectorMessages.Resume> message)
-        {
-            _store.GetDocument(
-                "seznampracovist",
-                (version, content) =>
-                {
-                    _dataVersion = version;
-                    _data = _serializer.Deserialize(content);
-                    message.OnCompleted();
-                },
-                () =>
-                {
-                    _dataVersion = 0;
-                    _data = _serializer.Deserialize(null);
-                    message.OnCompleted();
-                },
-                message.OnError);
+            _cachePracovist.Flush(message.OnCompleted, message.OnError, 
+                save => _repository.UlozitPracoviste(save.Version, save.Value, save.Value.Aktivni, save.SavedAsVersion, save.SavingFailed));
         }
 
         public void Handle(CommandExecution<DefinovanoPracovisteEvent> message)
         {
-            var vzor = new InformaceOPracovisti { Kod = message.Command.Kod };
-            var index = _data.Seznam.BinarySearch(vzor, _comparer);
-            if (index < 0)
-            {
-                var pracoviste = new InformaceOPracovisti();
-                pracoviste.Kod = message.Command.Kod;
-                pracoviste.Nazev = message.Command.Nazev;
-                pracoviste.Stredisko = message.Command.Stredisko;
-                pracoviste.Aktivni = !message.Command.Deaktivovano;
-                _data.Seznam.Insert(~index, pracoviste);
-            }
-            else
-            {
-                var pracoviste = _data.Seznam[index];
-                pracoviste.Nazev = message.Command.Nazev;
-                pracoviste.Stredisko = message.Command.Stredisko;
-                pracoviste.Aktivni = !message.Command.Deaktivovano;
-            }
-            message.OnCompleted();
+            _cachePracovist.Get(
+                message.Command.Kod,
+                (verze, pracoviste) =>
+                {
+                    if (pracoviste == null)
+                    {
+                        pracoviste = new InformaceOPracovisti();
+                        pracoviste.Kod = message.Command.Kod;
+                    }
+                    pracoviste.Nazev = message.Command.Nazev;
+                    pracoviste.Stredisko = message.Command.Stredisko;
+                    pracoviste.Aktivni = !message.Command.Deaktivovano;
+
+                    _cachePracovist.Insert(message.Command.Kod, verze, pracoviste, dirty: true);
+                    message.OnCompleted();
+                },
+                message.OnError,
+                load => _repository.NacistPracoviste(message.Command.Kod, load.SetLoadedValue, load.LoadingFailed)
+                );
         }
     }
 
-    public class SeznamPracovistData
-    {
-        public List<InformaceOPracovisti> Seznam { get; set; }
-    }
     public class SeznamPracovistDataPracovisteKodComparer
         : IComparer<InformaceOPracovisti>
     {
@@ -115,63 +83,83 @@ namespace Vydejna.Domain
         }
     }
 
-    public class SeznamPracovistDataSerializer
+    public class SeznamPracovistRepository
     {
-        public SeznamPracovistData Deserialize(string raw)
+        private IDocumentFolder _folder;
+
+        public SeznamPracovistRepository(IDocumentFolder folder)
         {
-            var data = string.IsNullOrEmpty(raw) ? null : JsonSerializer.DeserializeFromString<SeznamPracovistData>(raw);
-            data = data ?? new SeznamPracovistData();
-            data.Seznam = data.Seznam ?? new List<InformaceOPracovisti>();
-            return data;
+            _folder = folder;
         }
-        public string Serialize(SeznamPracovistData data)
+
+        public void Reset(Action onComplete, Action<Exception> onError)
         {
-            return data == null ? "" : JsonSerializer.SerializeToString(data);
+            _folder.DeleteAll(onComplete, onError);
+        }
+
+        public void NacistPracoviste(string kodPracoviste, Action<int, InformaceOPracovisti> onLoaded, Action<Exception> onError)
+        {
+            _folder.GetDocument(kodPracoviste,
+                (verze, raw) => onLoaded(verze, DeserializovatPracoviste(raw)),
+                () => onLoaded(0, null), ex => onError(ex));
+        }
+
+        private static InformaceOPracovisti DeserializovatPracoviste(string raw)
+        {
+            return string.IsNullOrEmpty(raw) ? null : JsonSerializer.DeserializeFromString<InformaceOPracovisti>(raw);
+        }
+
+        public void UlozitPracoviste(int verze, InformaceOPracovisti data, bool zobrazitVSeznamu, Action<int> onSaved, Action<Exception> onError)
+        {
+            _folder.SaveDocument(data.Kod,
+                JsonSerializer.SerializeToString(data),
+                DocumentStoreVersion.At(verze),
+                zobrazitVSeznamu ? new[] { new DocumentIndexing("kodPracoviste", data.Kod) } : null,
+                () => onSaved(verze + 1),
+                () => onError(new ProjectorMessages.ConcurrencyException()),
+                ex => onError(ex));
+        }
+
+        public void NacistSeznamPracovist(int offset, int pocet, Action<int, List<InformaceOPracovisti>> onLoaded, Action<Exception> onError)
+        {
+            _folder.FindDocuments("kodPracoviste", null, null, offset, pocet, true,
+                list => onLoaded(list.TotalFound, list.Select(p => DeserializovatPracoviste(p.Contents)).ToList()),
+                ex => onError(ex));
         }
     }
 
     public class SeznamPracovistReader
            : IAnswer<ZiskatSeznamPracovistRequest, ZiskatSeznamPracovistResponse>
     {
+        private SeznamPracovistRepository _repository;
         private IMemoryCache<ZiskatSeznamPracovistResponse> _cache;
-        private IDocumentFolder _store;
-        private SeznamPracovistDataSerializer _serializer;
 
-        public SeznamPracovistReader(IDocumentFolder store, IQueueExecution executor, ITime time)
+        public SeznamPracovistReader(SeznamPracovistRepository repository, IQueueExecution executor, ITime time)
         {
-            _store = store;
+            _repository = repository;
             _cache = new MemoryCache<ZiskatSeznamPracovistResponse>(executor, time);
-            _serializer = new SeznamPracovistDataSerializer();
         }
 
         public void Handle(QueryExecution<ZiskatSeznamPracovistRequest, ZiskatSeznamPracovistResponse> message)
         {
-            _cache.Get("all", (verze, data) => message.OnCompleted(data), message.OnError, NacistDodavatele);
+            _cache.Get(
+                message.Request.Stranka.ToString(),
+                (verze, response) => message.OnCompleted(response),
+                ex => message.OnError(ex),
+                load => _repository.NacistSeznamPracovist(message.Request.Stranka * 100 - 100, 100,
+                    (celkem, seznam) => load.SetLoadedValue(1, VytvoritResponse(message.Request, celkem, seznam)),
+                    ex => load.LoadingFailed(ex)));
         }
 
-        private void NacistDodavatele(IMemoryCacheLoad<ZiskatSeznamPracovistResponse> load)
+        private ZiskatSeznamPracovistResponse VytvoritResponse(ZiskatSeznamPracovistRequest request, int celkem, List<InformaceOPracovisti> seznam)
         {
-            if (load.OldValueAvailable)
+            return new ZiskatSeznamPracovistResponse
             {
-                _store.GetNewerDocument("seznampracovist", load.OldVersion,
-                    (verze, data) => load.SetLoadedValue(verze, VytvoritResponse(data)),
-                    () => load.ValueIsStillValid(),
-                    () => load.SetLoadedValue(0, VytvoritResponse(null)),
-                    load.LoadingFailed);
-            }
-            else
-            {
-                _store.GetDocument("seznampracovist",
-                    (verze, data) => load.SetLoadedValue(verze, VytvoritResponse(data)),
-                    () => load.SetLoadedValue(0, VytvoritResponse(null)),
-                    load.LoadingFailed);
-            }
-        }
-
-        private ZiskatSeznamPracovistResponse VytvoritResponse(string data)
-        {
-            var zaklad = _serializer.Deserialize(data);
-            return new ZiskatSeznamPracovistResponse { Seznam = zaklad.Seznam };
+                 Stranka = request.Stranka,
+                 PocetCelkem = celkem,
+                 PocetStranek = (celkem + 99)/100,
+                 Seznam = seznam
+            };
         }
     }
 }

@@ -56,9 +56,14 @@ namespace Vydejna.Contracts
         public string Nazev { get; set; }
         public string Stredisko { get; set; }
     }
-    public class ZiskatSeznamPracovistRequest { }
+    public class ZiskatSeznamPracovistRequest {
+        public int Stranka { get; set; }
+    }
     public class ZiskatSeznamPracovistResponse 
     {
+        public int Stranka { get; set; }
+        public int PocetCelkem { get; set; }
+        public int PocetStranek { get; set; }
         public List<InformaceOPracovisti> Seznam { get; set; }
     }
     public class InformaceOPracovisti
