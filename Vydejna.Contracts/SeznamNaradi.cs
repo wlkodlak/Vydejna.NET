@@ -40,6 +40,8 @@ namespace Vydejna.Contracts
         public string Druh { get; set; }
         public bool Aktivni { get; set; }
 
+        public TypNaradiDto() { }
+
         public TypNaradiDto(Guid id, string vykres, string rozmer, string druh, bool aktivni)
         {
             this.Id = id;

@@ -1,6 +1,7 @@
 ﻿using ServiceLib;
 using ServiceStack.Text;
 using System;
+using System.Linq;
 using System.Collections.Generic;
 using Vydejna.Contracts;
 
@@ -8,7 +9,6 @@ namespace Vydejna.Domain
 {
     public class PrehledObjednavekProjection
         : IEventProjection
-        , IHandle<CommandExecution<ProjectorMessages.Resume>>
         , IHandle<CommandExecution<ProjectorMessages.Flush>>
         , IHandle<CommandExecution<DefinovanDodavatelEvent>>
         , IHandle<CommandExecution<CislovaneNaradiPredanoKOpraveEvent>>

@@ -7,263 +7,314 @@ using Vydejna.Contracts;
 
 namespace Vydejna.Domain
 {
-    public class SeznamNaradiReader
-        : IAnswer<ZiskatSeznamNaradiRequest, ZiskatSeznamNaradiResponse>
-        , IAnswer<OvereniUnikatnostiRequest, OvereniUnikatnostiResponse>
-    {
-        private PureProjectionReader<SeznamNaradiData> _reader;
-
-        public SeznamNaradiReader(IDocumentFolder store, SeznamNaradiSerializer serializer, IQueueExecution executor, ITime time, INotifyChange notifier)
-        {
-            _reader = new PureProjectionReader<SeznamNaradiData>(store, serializer, notifier, executor, time);
-        }
-
-        public SeznamNaradiReader SetupFreshness(int validityMs, int expirationMs)
-        {
-            _reader.SetupExpiration(validityMs, expirationMs);
-            return this;
-        }
-
-        public void Handle(QueryExecution<ZiskatSeznamNaradiRequest, ZiskatSeznamNaradiResponse> request)
-        {
-            new ZiskatSeznamNaradiWorker(this, request).Execute();
-        }
-
-        public void Handle(QueryExecution<OvereniUnikatnostiRequest, OvereniUnikatnostiResponse> request)
-        {
-            new OvereniUnikatnostiWorker(this, request).Execute();
-        }
-
-        public void Dispose()
-        {
-            _reader.Dispose();
-        }
-
-        private class ZiskatSeznamNaradiWorker
-        {
-            private SeznamNaradiReader _parent;
-            private QueryExecution<ZiskatSeznamNaradiRequest, ZiskatSeznamNaradiResponse> _request;
-
-            public ZiskatSeznamNaradiWorker(SeznamNaradiReader parent, QueryExecution<ZiskatSeznamNaradiRequest, ZiskatSeznamNaradiResponse> request)
-            {
-                this._parent = parent;
-                this._request = request;
-            }
-
-            public void Execute()
-            {
-                _parent._reader.Get("data", DataLoaded, OnError);
-            }
-
-            private void DataLoaded(SeznamNaradiData data)
-            {
-                var response = new ZiskatSeznamNaradiResponse();
-                response.PocetCelkem = data.Seznam.Count;
-                response.PocetStranek = (
-                    data.Seznam.Count + 
-                    ZiskatSeznamNaradiRequest.VelikostStranky - 1
-                    ) / ZiskatSeznamNaradiRequest.VelikostStranky;
-                response.Stranka = _request.Request.Stranka;
-                var offset = (response.Stranka - 1) * ZiskatSeznamNaradiRequest.VelikostStranky;
-                response.SeznamNaradi = data.Seznam.Skip(offset).Take(ZiskatSeznamNaradiRequest.VelikostStranky).ToList();
-                _request.OnCompleted(response);
-            }
-
-            private void OnError(Exception exception)
-            {
-                _request.OnError(exception);
-            }
-        }
-
-        private class OvereniUnikatnostiWorker
-        {
-            private SeznamNaradiReader _parent;
-            private QueryExecution<OvereniUnikatnostiRequest, OvereniUnikatnostiResponse> _request;
-
-            public OvereniUnikatnostiWorker(SeznamNaradiReader parent, QueryExecution<OvereniUnikatnostiRequest, OvereniUnikatnostiResponse> request)
-            {
-                this._parent = parent;
-                this._request = request;
-            }
-
-            public void Execute()
-            {
-                _parent._reader.Get("data", DataLoaded, OnError);
-            }
-
-            private void DataLoaded(SeznamNaradiData data)
-            {
-                var response = new OvereniUnikatnostiResponse();
-                response.Vykres = _request.Request.Vykres;
-                response.Rozmer = _request.Request.Rozmer;
-                response.Existuje = data.ExistujiciVykresy.Contains(Tuple.Create(_request.Request.Vykres, _request.Request.Rozmer));
-                _request.OnCompleted(response);
-            }
-
-            private void OnError(Exception exception)
-            {
-                _request.OnError(exception);
-            }
-        }
-    }
-
-    public class SeznamNaradiData
-    {
-        public List<TypNaradiDto> Seznam { get; set; }
-        public string Token { get; set; }
-        public HashSet<Tuple<string, string>> ExistujiciVykresy;
-        public Dictionary<Guid, TypNaradiDto> PodleId;
-        public EventStoreToken LastToken;
-        public SeznamNaradiData()
-        {
-            Seznam = new List<TypNaradiDto>();
-            Token = "";
-        }
-    }
-
-    public class SeznamNaradiSerializer : IPureProjectionSerializer<SeznamNaradiData>
-    {
-        public string Serialize(SeznamNaradiData data)
-        {
-            data.Token = data.LastToken.ToString();
-            return JsonSerializer.SerializeToString(data);
-        }
-        public SeznamNaradiData Deserialize(string serialized)
-        {
-            var data = string.IsNullOrEmpty(serialized) ? new SeznamNaradiData() : JsonSerializer.DeserializeFromString<SeznamNaradiData>(serialized);
-            data.ExistujiciVykresy = new HashSet<Tuple<string, string>>(data.Seznam.Select(n => Tuple.Create(n.Vykres, n.Rozmer)));
-            data.PodleId = data.Seznam.ToDictionary(n => n.Id);
-            data.LastToken = new EventStoreToken(data.Token);
-            return data;
-        }
-
-        public SeznamNaradiData InitialState()
-        {
-            return Deserialize(null);
-        }
-    }
-
     public class SeznamNaradiProjection
-        : IPureProjection<SeznamNaradiData>
-        , IPureProjectionHandler<SeznamNaradiData, DefinovanoNaradiEvent>
-        , IPureProjectionHandler<SeznamNaradiData, AktivovanoNaradiEvent>
-        , IPureProjectionHandler<SeznamNaradiData, DeaktivovanoNaradiEvent>
+        : IEventProjection
+        , IHandle<CommandExecution<ProjectorMessages.Flush>>
+        , IHandle<CommandExecution<DefinovanoNaradiEvent>>
+        , IHandle<CommandExecution<AktivovanoNaradiEvent>>
+        , IHandle<CommandExecution<DeaktivovanoNaradiEvent>>
     {
-        private SeznamNaradiSerializer _serializer;
-        private IComparer<TypNaradiDto> _dtoComparer;
+        private SeznamNaradiRepository _repository;
+        private MemoryCache<TypNaradiDto> _cacheNaradi;
+        private MemoryCache<int> _cacheTag;
 
-        public SeznamNaradiProjection(SeznamNaradiSerializer serializer)
+        public SeznamNaradiProjection(SeznamNaradiRepository repository, IQueueExecution executor, ITime time)
         {
-            _serializer = serializer;
-            _dtoComparer = new TypNaradiDtoPodleVykresu();
-        }
-
-        private class TypNaradiDtoPodleVykresu : IComparer<TypNaradiDto>
-        {
-            public int Compare(TypNaradiDto x, TypNaradiDto y)
-            {
-                int compare;
-                if (ReferenceEquals(x, null))
-                    return ReferenceEquals(y, null) ? 0 : -1;
-                else if (ReferenceEquals(y, null))
-                    return 1;
-                compare = string.CompareOrdinal(x.Vykres, y.Vykres);
-                if (compare != 0)
-                    return compare;
-                return string.CompareOrdinal(x.Rozmer, y.Rozmer);
-            }
-        }
-
-        public void Subscribe(IPureProjectionDispatcher<SeznamNaradiData> dispatcher)
-        {
-            dispatcher.Register<DefinovanoNaradiEvent>(this);
-            dispatcher.Register<AktivovanoNaradiEvent>(this);
-            dispatcher.Register<DeaktivovanoNaradiEvent>(this);
+            _repository = repository;
+            _cacheNaradi = new MemoryCache<TypNaradiDto>(executor, time);
+            _cacheTag = new MemoryCache<int>(executor, time);
         }
 
         public string GetVersion()
         {
-            return "1.0";
+            return "0.1";
         }
 
-        public bool NeedsRebuild(string storedVersion)
+        public EventProjectionUpgradeMode UpgradeMode(string storedVersion)
         {
-            return storedVersion != "1.0";
+            return GetVersion() == storedVersion ? EventProjectionUpgradeMode.NotNeeded : EventProjectionUpgradeMode.Rebuild;
         }
 
-        public string Serialize(SeznamNaradiData state)
+        public void Handle(CommandExecution<ProjectorMessages.Reset> message)
         {
-            return _serializer.Serialize(state);
+            _cacheTag.Clear();
+            _cacheNaradi.Clear();
+            _repository.Reset(message.OnCompleted, message.OnError);
         }
 
-        public SeznamNaradiData Deserialize(string serializedState)
+        public void Handle(CommandExecution<ProjectorMessages.UpgradeFrom> message)
         {
-            return _serializer.Deserialize(serializedState);
+            throw new NotSupportedException();
         }
 
-        public SeznamNaradiData InitialState()
+        public void Handle(CommandExecution<ProjectorMessages.Flush> message)
         {
-            return _serializer.Deserialize(null);
+            _cacheNaradi.Flush(
+                () => _cacheTag.Flush(message.OnCompleted, message.OnError, save => _repository.UlozitTagSeznamu(save.Version, save.Value, save.SavedAsVersion, save.SavingFailed)),
+                message.OnError, save => _repository.UlozitNaradi(save.Version, save.Value, save.SavedAsVersion, save.SavingFailed));
         }
 
-        public SeznamNaradiData SetTokenInState(SeznamNaradiData state, EventStoreToken token)
+        private class ZpracovatNaradi
         {
-            state.LastToken = token;
-            return state;
-        }
-
-        public EventStoreToken GetTokenFromState(SeznamNaradiData state)
-        {
-            return state.LastToken;
-        }
-
-        public string Partition(DefinovanoNaradiEvent evnt)
-        {
-            return "data";
-        }
-
-        public SeznamNaradiData ApplyEvent(SeznamNaradiData state, DefinovanoNaradiEvent evnt, EventStoreToken token)
-        {
-            TypNaradiDto naradi;
-            if (state.PodleId.TryGetValue(evnt.NaradiId, out naradi))
-                naradi.Aktivni = true;
-            else
+            private SeznamNaradiProjection _parent;
+            private Action _onComplete;
+            private Action<Exception> _onError;
+            private Guid _naradiId;
+            private Action<TypNaradiDto> _akce;
+            
+            private int _verzeTagu;
+            private int _obsahTagu;
+            
+            public ZpracovatNaradi(SeznamNaradiProjection parent, Action onComplete, Action<Exception> onError, Guid naradiId, Action<TypNaradiDto> akce)
             {
-                naradi = new TypNaradiDto(evnt.NaradiId, evnt.Vykres, evnt.Rozmer, evnt.Druh, true);
-                state.PodleId[naradi.Id] = naradi;
-                state.ExistujiciVykresy.Add(Tuple.Create(evnt.Vykres, evnt.Rozmer));
-                var index = state.Seznam.BinarySearch(naradi, _dtoComparer);
-                if (index < 0)
-                    index = ~index;
-                state.Seznam.Insert(index, naradi);
+                _parent = parent;
+                _onComplete = onComplete;
+                _onError = onError;
+                _naradiId = naradiId;
+                _akce = akce;
             }
-            return state;
+
+            public void Execute()
+            {
+                _parent._cacheTag.Get("tag", NactenTag, _onError, load => _parent._repository.NacistTagSeznamu(load.SetLoadedValue, load.LoadingFailed));
+            }
+
+            private void NactenTag(int verzeTagu, int obsahTagu)
+            {
+                _verzeTagu = verzeTagu;
+                _obsahTagu = obsahTagu;
+
+                _parent._cacheNaradi.Get(_naradiId.ToString(), NactenoNaradi, _onError, 
+                    load => _parent._repository.NacistNaradi(_naradiId, load.SetLoadedValue, load.LoadingFailed));
+            }
+
+            private void NactenoNaradi(int verzeNaradi, TypNaradiDto naradi)
+            {
+                if (naradi == null)
+                {
+                    naradi = new TypNaradiDto();
+                    naradi.Id = _naradiId;
+                }
+                _akce(naradi);
+                _obsahTagu++;
+                _parent._cacheNaradi.Insert(_naradiId.ToString(), verzeNaradi, naradi, dirty: true);
+                _parent._cacheTag.Insert("tag", _verzeTagu, _obsahTagu, dirty: true);
+                _onComplete();
+            }
+
+
         }
 
-        public string Partition(AktivovanoNaradiEvent evnt)
+        public void Handle(CommandExecution<DefinovanoNaradiEvent> message)
         {
-            return "data";
-        }
-
-        public SeznamNaradiData ApplyEvent(SeznamNaradiData state, AktivovanoNaradiEvent evnt, EventStoreToken token)
-        {
-            TypNaradiDto naradi;
-            if (state.PodleId.TryGetValue(evnt.NaradiId, out naradi))
+            new ZpracovatNaradi(this, message.OnCompleted, message.OnError, message.Command.NaradiId, naradi =>
+            {
+                naradi.Vykres = message.Command.Vykres;
+                naradi.Rozmer = message.Command.Rozmer;
+                naradi.Druh = message.Command.Druh;
                 naradi.Aktivni = true;
-            return state;
+            }).Execute();
         }
 
-        public string Partition(DeaktivovanoNaradiEvent evnt)
+        public void Handle(CommandExecution<AktivovanoNaradiEvent> message)
         {
-            return "data";
+            new ZpracovatNaradi(this, message.OnCompleted, message.OnError, message.Command.NaradiId, naradi =>
+            {
+                naradi.Aktivni = true;
+            }).Execute();
         }
 
-        public SeznamNaradiData ApplyEvent(SeznamNaradiData state, DeaktivovanoNaradiEvent evnt, EventStoreToken token)
+        public void Handle(CommandExecution<DeaktivovanoNaradiEvent> message)
         {
-            TypNaradiDto naradi;
-            if (state.PodleId.TryGetValue(evnt.NaradiId, out naradi))
+            new ZpracovatNaradi(this, message.OnCompleted, message.OnError, message.Command.NaradiId, naradi =>
+            {
                 naradi.Aktivni = false;
-            return state;
+            }).Execute();
         }
+    }
+
+    public class SeznamNaradiRepository
+    {
+        private IDocumentFolder _folder;
+
+        public SeznamNaradiRepository(IDocumentFolder folder)
+        {
+            _folder = folder;
+        }
+
+        public void Reset(Action onComplete, Action<Exception> onError)
+        {
+            _folder.DeleteAll(onComplete, onError);
+        }
+
+        public void NacistNaradi(Guid naradiId, Action<int, TypNaradiDto> onLoaded, Action<Exception> onError)
+        {
+            _folder.GetDocument(
+                naradiId.ToString("N"),
+                (verze, raw) => onLoaded(verze, DeserializovatNaradi(raw)),
+                () => onLoaded(0, null),
+                ex => onError(ex));
+        }
+
+        public void NacistVsechnoNaradi(Action<List<TypNaradiDto>> onLoaded, Action<Exception> onError)
+        {
+            _folder.FindDocuments("vykresRozmer", null, null, 0, int.MaxValue, true,
+                list => onLoaded(list.Select(n => DeserializovatNaradi(n.Contents)).ToList()), onError);
+        }
+
+        private TypNaradiDto DeserializovatNaradi(string raw)
+        {
+            return string.IsNullOrEmpty(raw) ? null : JsonSerializer.DeserializeFromString<TypNaradiDto>(raw);
+        }
+
+        public void UlozitNaradi(int verze, TypNaradiDto data, Action<int> onSaved, Action<Exception> onError)
+        {
+            _folder.SaveDocument(
+                data.Id.ToString("N"),
+                JsonSerializer.SerializeToString(data),
+                DocumentStoreVersion.At(verze),
+                new[] { new DocumentIndexing("vykresRozmer", string.Concat(data.Vykres, " ", data.Rozmer)) },
+                () => onSaved(verze + 1),
+                () => onError(new ProjectorMessages.ConcurrencyException()),
+                ex => onError(ex));
+        }
+
+        public void NacistTagSeznamu(Action<int, int> onLoaded, Action<Exception> onError)
+        {
+            _folder.GetDocument("tag", (verze, raw) => onLoaded(verze, DeserializovatTag(raw)), () => onLoaded(0, 0), onError);
+        }
+
+        private int DeserializovatTag(string raw)
+        {
+            int tag;
+            int.TryParse(raw, out tag);
+            return tag;
+        }
+
+        public void UlozitTagSeznamu(int verze, int hodnota, Action<int> onSaved, Action<Exception> onError)
+        {
+            _folder.SaveDocument("tag", hodnota.ToString(), DocumentStoreVersion.At(verze), null,
+                () => onSaved(verze + 1), () => onError(new ProjectorMessages.ConcurrencyException()), ex => onError(ex));
+        }
+    }
+
+    public class SeznamNaradiCachedData
+    {
+        public int VerzeSeznamu;
+        public List<TypNaradiDto> Seznam;
+        public int PocetCelkem, PocetStranek;
+    }
+
+    public class SeznamNaradiReader
+        : IAnswer<ZiskatSeznamNaradiRequest, ZiskatSeznamNaradiResponse>
+        , IAnswer<OvereniUnikatnostiRequest, OvereniUnikatnostiResponse>
+    {
+        private MemoryCache<SeznamNaradiCachedData> _cache;
+        private SeznamNaradiRepository _repository;
+        private UnikatnostComparer _comparer;
+
+        public SeznamNaradiReader(SeznamNaradiRepository repository, IQueueExecution executor, ITime time)
+        {
+            _repository = repository;
+            _cache = new MemoryCache<SeznamNaradiCachedData>(executor, time);
+            _comparer = new UnikatnostComparer();
+        }
+
+        public void Handle(QueryExecution<ZiskatSeznamNaradiRequest, ZiskatSeznamNaradiResponse> message)
+        {
+            _cache.Get("seznam",
+                (verze, seznam) => message.OnCompleted(VytvoritResponseSeznamu(message.Request, seznam)),
+                ex => message.OnError(ex), load => new NacistCacheWorker(this, load).Execute());
+        }
+
+        private ZiskatSeznamNaradiResponse VytvoritResponseSeznamu(ZiskatSeznamNaradiRequest request, SeznamNaradiCachedData seznam)
+        {
+            return new ZiskatSeznamNaradiResponse
+            {
+                PocetCelkem = seznam.PocetCelkem,
+                PocetStranek = seznam.PocetStranek,
+                Stranka = request.Stranka,
+                SeznamNaradi = seznam.Seznam.Skip(request.Stranka * 100 - 100).Take(100).ToList()
+            };
+        }
+
+        public void Handle(QueryExecution<OvereniUnikatnostiRequest, OvereniUnikatnostiResponse> message)
+        {
+            _cache.Get("seznam",
+                (verze, seznam) => message.OnCompleted(VytvoritResponseUnikatnosti(message.Request, seznam)),
+                ex => message.OnError(ex), load => new NacistCacheWorker(this, load).Execute());
+        }
+
+        private OvereniUnikatnostiResponse VytvoritResponseUnikatnosti(OvereniUnikatnostiRequest request, SeznamNaradiCachedData seznam)
+        {
+            var vzor = new TypNaradiDto { Vykres = request.Vykres, Rozmer = request.Rozmer };
+            var index = seznam.Seznam.BinarySearch(vzor, _comparer);
+            return new OvereniUnikatnostiResponse
+            {
+                Vykres = request.Vykres,
+                Rozmer = request.Rozmer,
+                Existuje = index >= 0
+            };
+        }
+
+        private class UnikatnostComparer : IComparer<TypNaradiDto>
+        {
+            public int Compare(TypNaradiDto x, TypNaradiDto y)
+            {
+                int compare;
+                compare = string.Compare(x.Vykres, y.Vykres);
+                if (compare != 0)
+                    return compare;
+                compare = string.Compare(x.Rozmer, y.Rozmer);
+                return compare;
+            }
+        }
+
+        private class NacistCacheWorker
+        {
+            private SeznamNaradiReader _parent;
+            private IMemoryCacheLoad<SeznamNaradiCachedData> _load;
+            private int _verzeSeznamu;
+
+            public NacistCacheWorker(SeznamNaradiReader parent, IMemoryCacheLoad<SeznamNaradiCachedData> load)
+            {
+                _parent = parent;
+                _load = load;
+            }
+
+            public void Execute()
+            {
+                _parent._repository.NacistTagSeznamu(NactenTag, _load.LoadingFailed);
+            }
+
+            private void NactenTag(int verzeTagu, int obsahTagu)
+            {
+                _verzeSeznamu = obsahTagu;
+                if (!_load.OldValueAvailable || _load.OldValue == null || _load.OldValue.VerzeSeznamu != _verzeSeznamu)
+                {
+                    _parent._repository.NacistVsechnoNaradi(NactenoNaradi, _load.LoadingFailed);
+                }
+                else
+                {
+                    _load.ValueIsStillValid();
+                }
+            }
+
+            private void NactenoNaradi(List<TypNaradiDto> seznam)
+            {
+                if (seznam == null)
+                    seznam = new List<TypNaradiDto>();
+                var data = new SeznamNaradiCachedData
+                {
+                    VerzeSeznamu = _verzeSeznamu,
+                    Seznam = new List<TypNaradiDto>(seznam),
+                    PocetCelkem = seznam.Count,
+                    PocetStranek = (seznam.Count + 99) / 100
+                };
+                data.Seznam.Sort(_parent._comparer);
+                _load.SetLoadedValue(_load.OldVersion + 1, data);
+            }
+        }
+
     }
 }
