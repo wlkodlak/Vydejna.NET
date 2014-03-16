@@ -3,11 +3,11 @@
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-    <ProjectGuid>{0C8F5F40-BAFC-42F9-A3FB-03BF11433B25}</ProjectGuid>
+    <ProjectGuid>{FCD996A1-E8CC-44F3-A5D2-477DF183A4F3}</ProjectGuid>
     <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>ServiceLib.Tests</RootNamespace>
-    <AssemblyName>ServiceLib.Tests</AssemblyName>
+    <RootNamespace>Vydejna.Projections.Tests</RootNamespace>
+    <AssemblyName>Vydejna.Projections.Tests</AssemblyName>
     <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <ProjectTypeGuids>{3AC096D0-A1C2-E12C-1390-A8335801FDAB};{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}</ProjectTypeGuids>
@@ -37,26 +37,19 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="Microsoft.CSharp" />
-    <Reference Include="Mono.Security, Version=4.0.0.0, Culture=neutral, PublicKeyToken=0738eb9f132ed756, processorArchitecture=MSIL">
-      <SpecificVersion>False</SpecificVersion>
+    <Reference Include="Mono.Security">
       <HintPath>..\packages\Npgsql.2.0.14.3\lib\net45\Mono.Security.dll</HintPath>
     </Reference>
     <Reference Include="Moq">
       <HintPath>..\packages\Moq.4.2.1312.1622\lib\net40\Moq.dll</HintPath>
     </Reference>
-    <Reference Include="Npgsql, Version=2.0.14.3, Culture=neutral, PublicKeyToken=5d8b90d52f46fda7, processorArchitecture=MSIL">
-      <SpecificVersion>False</SpecificVersion>
+    <Reference Include="Npgsql">
       <HintPath>..\packages\Npgsql.2.0.14.3\lib\net45\Npgsql.dll</HintPath>
     </Reference>
-    <Reference Include="ServiceStack.Text, Version=4.0.5.0, Culture=neutral, processorArchitecture=MSIL">
-      <SpecificVersion>False</SpecificVersion>
+    <Reference Include="ServiceStack.Text">
       <HintPath>..\packages\ServiceStack.Text.4.0.5\lib\net40\ServiceStack.Text.dll</HintPath>
     </Reference>
     <Reference Include="System" />
-    <Reference Include="System.Data" />
-    <Reference Include="System.XML" />
-    <Reference Include="System.Xml.Linq" />
   </ItemGroup>
   <Choose>
     <When Condition="('$(VisualStudioVersion)' == '10.0' or '$(VisualStudioVersion)' == '') and '$(TargetFrameworkVersion)' == 'v3.5'">
@@ -71,66 +64,7 @@
     </Otherwise>
   </Choose>
   <ItemGroup>
-    <Compile Include="Caching\MemoryCacheTest.cs" />
-    <Compile Include="Documents\DocumentStoreInMemoryTests.cs" />
-    <Compile Include="Documents\DocumentStoreTestBase.cs" />
-    <Compile Include="Documents\DocumentStoreVersionTests.cs" />
-    <Compile Include="Documents\EventHandlerMetadataTests.cs" />
-    <Compile Include="Documents\NodeLockManagerTests.cs" />
-    <Compile Include="Documents\NodeLockTests.cs" />
-    <Compile Include="EventHandlers\EventProcessSimpleTests.cs" />
-    <Compile Include="EventHandlers\EventProjectorSimpleTests.cs" />
-    <Compile Include="EventHandlers\PureProjectionDispatcherTests.cs" />
-    <Compile Include="EventHandlers\PureProjectionProcessTests.cs" />
-    <Compile Include="EventHandlers\PureProjectionReaderTests.cs" />
-    <Compile Include="EventHandlers\PureProjectionStateCacheTests.cs" />
-    <Compile Include="EventHandlers\PureProjectionTestBase.cs" />
-    <Compile Include="EventSourced\AggregateTests.cs" />
-    <Compile Include="EventSourced\EventStoreInMemoryTests.cs" />
-    <Compile Include="EventSourced\EventStoreTestBase.cs" />
-    <Compile Include="EventSourced\EventStoreTokenTests.cs" />
-    <Compile Include="EventSourced\EventStoreVersionTests.cs" />
-    <Compile Include="EventSourced\EventStreamingDeserializedTests.cs" />
-    <Compile Include="EventSourced\EventStreamingTests.cs" />
-    <Compile Include="EventSourced\GenericRepositoryTests.cs" />
-    <Compile Include="EventSourced\SerializerTests.cs" />
-    <Compile Include="Http\HttpClientTests.cs" />
-    <Compile Include="Http\HttpRouterConfigTests.cs" />
-    <Compile Include="Http\HttpRouterTests.cs" />
-    <Compile Include="Http\HttpRouteStagedHandlerTests.cs" />
-    <Compile Include="Http\HttpSerializationTests.cs" />
-    <Compile Include="Http\HttpServerDispatcherTests.cs" />
-    <Compile Include="Http\HttpServerStagedContextTests.cs" />
-    <Compile Include="Http\HttpStagedContextHeadersTests.cs" />
-    <Compile Include="Http\HttpStagedParametersTests.cs" />
-    <Compile Include="Http\ParametrizedUrlTest.cs" />
-    <Compile Include="Http\RestClientTest.cs" />
-    <Compile Include="Messaging\BusTests.cs" />
-    <Compile Include="Messaging\CommandSubscriptionManagerTests.cs" />
-    <Compile Include="Messaging\NetworkBusTests.cs" />
-    <Compile Include="Messaging\QueuedExecutionTests.cs" />
-    <Compile Include="Messaging\SubscriptionManagerTests.cs" />
-    <Compile Include="Messaging\TypeMapperTests.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="TestUtils\AssertHelper.cs" />
-    <Compile Include="TestUtils\PreserveExceptionStackTrace.cs" />
-    <Compile Include="TestUtils\TestDocumentFolder.cs" />
-    <Compile Include="TestUtils\TestEventStore.cs" />
-    <Compile Include="TestUtils\TestExecutor.cs" />
-    <Compile Include="TestUtils\TestMetadataInstance.cs" />
-    <Compile Include="TestUtils\TestNodeLock.cs" />
-    <Compile Include="TestUtils\TestRawContext.cs" />
-    <Compile Include="TestUtils\TestRepository.cs" />
-    <Compile Include="TestUtils\TestStagedContext.cs" />
-    <Compile Include="TestUtils\TestStreaming.cs" />
-    <Compile Include="TestUtils\VirtualTime.cs" />
-  </ItemGroup>
-  <ItemGroup />
-  <ItemGroup>
-    <ProjectReference Include="..\ServiceLib\ServiceLib.csproj">
-      <Project>{8cb4d646-008c-4e91-b860-c32e2db195dd}</Project>
-      <Name>ServiceLib</Name>
-    </ProjectReference>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
