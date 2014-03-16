@@ -444,7 +444,7 @@ namespace ServiceLib
                             list.Add(reader.GetString(0));
                     }
                 }
-                _parent._executor.Enqueue(new FindDocumentsCompleted(_onFoundKeys, list));
+                _parent._executor.Enqueue(new FindDocumentKeysCompleted(_onFoundKeys, list));
             }
         }
     }

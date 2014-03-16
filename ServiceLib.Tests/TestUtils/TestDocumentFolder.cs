@@ -201,26 +201,52 @@ namespace ServiceLib.Tests.TestUtils
                     _indexes[indexChanges.IndexName] = index = new Index();
                 index.RemoveAll(t => string.Equals(t.Item2, name));
                 index.AddRange(indexChanges.Values.Select(v => Tuple.Create(v, name)));
+                index.Sort((x, y) => string.CompareOrdinal(x.Item1, y.Item1));
             }
         }
 
         public void FindDocumentKeys(string indexName, string minValue, string maxValue, Action<IList<string>> onFoundKeys, Action<Exception> onError)
         {
+            List<string> result;
             Index index;
-            if (!_indexes.TryGetValue(indexName, out index))
+            if (_indexes.TryGetValue(indexName, out index))
             {
-                onError(new ArgumentOutOfRangeException("indexName", "Index not found"));
-                return;
+                var query = index.AsEnumerable();
+                if (minValue != null)
+                    query = query.Where(t => string.CompareOrdinal(minValue, t.Item1) <= 0);
+                if (maxValue != null)
+                    query = query.Where(t => string.CompareOrdinal(t.Item1, maxValue) <= 0);
+                result = query.Select(t => t.Item2).Distinct().ToList();
             }
-            var result = index
-                .Where(t => string.CompareOrdinal(minValue, t.Item1) <= 0 && string.CompareOrdinal(t.Item1, maxValue) <= 0)
-                .Select(t => t.Item2).Distinct().ToList();
-            _executor.Enqueue(new FindDocumentsCompleted(onFoundKeys, result));
+            else
+                result = new List<string>();
+            _executor.Enqueue(new FindDocumentKeysCompleted(onFoundKeys, result));
         }
-
         public void FindDocuments(string indexName, string minValue, string maxValue, int skip, int maxCount, bool ascending, Action<DocumentStoreFoundDocuments> onFoundDocuments, Action<Exception> onError)
         {
-            throw new NotImplementedException();
+            Index index;
+            var result = new DocumentStoreFoundDocuments();
+            if (_indexes.TryGetValue(indexName, out index))
+            {
+                var allKeys = new HashSet<string>();
+                foreach (var pair in index.OrderBy(t => t.Item1))
+                {
+                    if (minValue != null && string.CompareOrdinal(minValue, pair.Item1) > 0)
+                        continue;
+                    if (maxValue != null && string.CompareOrdinal(pair.Item1, maxValue) > 0)
+                        continue;
+                    if (allKeys.Add(pair.Item2))
+                    {
+                        Document document;
+                        if (_data.TryGetValue(pair.Item2, out document))
+                        {
+                            result.Add(new DocumentStoreFoundDocument(pair.Item1, document.Version, document.Contents));
+                        }
+                    }
+                }
+                result.TotalFound = allKeys.Count;
+            }
+            _executor.Enqueue(new FindDocumentsCompleted(onFoundDocuments, result));
         }
     }
 }

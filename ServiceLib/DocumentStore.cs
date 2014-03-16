@@ -18,7 +18,7 @@ namespace ServiceLib
     }
     public class DocumentStoreFoundDocuments : List<DocumentStoreFoundDocument>
     {
-        public int TotalFound { get; private set; }
+        public int TotalFound { get; set; }
     }
     public class DocumentStoreFoundDocument
     {
@@ -89,12 +89,12 @@ namespace ServiceLib
         }
     }
 
-    public class FindDocumentsCompleted : IQueuedExecutionDispatcher
+    public class FindDocumentKeysCompleted : IQueuedExecutionDispatcher
     {
         private Action<IList<string>> _onFoundKeys;
         private List<string> _list;
 
-        public FindDocumentsCompleted(Action<IList<string>> onFoundKeys, List<string> list)
+        public FindDocumentKeysCompleted(Action<IList<string>> onFoundKeys, List<string> list)
         {
             _onFoundKeys = onFoundKeys;
             _list = list;
@@ -103,6 +103,23 @@ namespace ServiceLib
         public void Execute()
         {
             _onFoundKeys(_list);
+        }
+    }
+
+    public class FindDocumentsCompleted : IQueuedExecutionDispatcher
+    {
+        private Action<DocumentStoreFoundDocuments> _onFoundDocuments;
+        private DocumentStoreFoundDocuments _list;
+
+        public FindDocumentsCompleted(Action<DocumentStoreFoundDocuments> onFoundDocuments, DocumentStoreFoundDocuments list)
+        {
+            _onFoundDocuments = onFoundDocuments;
+            _list = list;
+        }
+
+        public void Execute()
+        {
+            _onFoundDocuments(_list);
         }
     }
 

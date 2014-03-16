@@ -12,45 +12,30 @@ namespace Vydejna.Domain.Tests
     public class SeznamNaradiProjectionTest
     {
         private TestExecutor _executor;
-        private TestDocumentFolder _store;
-        private TestNodeLock _locking;
+        private TestDocumentFolder _folder;
         private TestStreaming _streaming;
+        private VirtualTime _time;
 
         private SeznamNaradiProjection _projekce;
         private SeznamNaradiReader _reader;
-        private PureProjectionProcess<SeznamNaradiData> _process;
-        private SeznamNaradiSerializer _serializer;
-        private IPureProjectionDispatcher<SeznamNaradiData> _dispatcher;
-        private VirtualTime _time;
-        private NotifyChangeDirect _notifier;
-        private PureProjectionStateCache<SeznamNaradiData> _projectionCache;
         
         [TestInitialize]
         public void Initialize()
         {
             _executor = new TestExecutor();
-            _store = new TestDocumentFolder(_executor);
-            _serializer = new SeznamNaradiSerializer();
-            _projekce = new SeznamNaradiProjection(_serializer);
-            _time = new VirtualTime();
-            _time.SetTime(new DateTime(2014, 1, 8, 17, 22, 16));
-            _notifier = new NotifyChangeDirect(_executor);
-            _reader = new SeznamNaradiReader(_store, _serializer, _executor, _time, _notifier);
-            _reader.SetupFreshness(0, 5000);
-            _locking = new TestNodeLock();
+            _folder = new TestDocumentFolder(_executor);
             _streaming = new TestStreaming(_executor);
-            _dispatcher = new PureProjectionDispatcherDeduplication<SeznamNaradiData>(
-                new PureProjectionDispatcher<SeznamNaradiData>(),
-                _projekce);
-            _dispatcher.Register<DefinovanoNaradiEvent>(_projekce);
-            _dispatcher.Register<AktivovanoNaradiEvent>(_projekce);
-            _dispatcher.Register<DeaktivovanoNaradiEvent>(_projekce);
-            _projectionCache = new PureProjectionStateCache<SeznamNaradiData>(_store, _projekce);
-            _projectionCache.SetupNotificator(_notifier);
-            _process = new PureProjectionProcess<SeznamNaradiData>("SeznamNaradiProjection", _projekce, _locking,
-                _projectionCache, _dispatcher, _streaming);
-            _process.Start();
-            _locking.SendLock();
+            _time = new VirtualTime();
+            _time.SetTime(new DateTime(2014, 2, 18, 14, 33, 20));
+            var repository = new SeznamNaradiRepository(_folder);
+            _projekce = new SeznamNaradiProjection(repository, _executor, _time);
+            _reader = new SeznamNaradiReader(repository, _executor, _time);
+            var metadata = new TestMetadataInstance();
+            var subscriptions = new QueuedCommandSubscriptionManager(new CommandSubscriptionManager(), _executor);
+            _projekce.Subscribe(subscriptions);
+            var proces = new EventProjectorSimple(_projekce, metadata, _streaming, subscriptions);
+            proces.Start();
+            metadata.SendLock();
         }
 
         private ZiskatSeznamNaradiResponse ZiskatPrvniStrankuNaradi()

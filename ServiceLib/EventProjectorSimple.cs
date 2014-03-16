@@ -204,17 +204,15 @@ namespace ServiceLib
         {
             _flushNeeded = false;
             _metadataDirty = false;
-            if (_upgradeMode != EventProjectionUpgradeMode.Rebuild)
+            if (_upgradeMode == EventProjectionUpgradeMode.Rebuild)
             {
                 _upgradeMode = EventProjectionUpgradeMode.NotNeeded;
-                CallHandler(new ProjectorMessages.Flush(), FlushReported, OnNotifyError);
+                CallHandler(new ProjectorMessages.RebuildFinished(), TokenSaved, OnNotifyError);
             }
-            else if (_currentEvent != null)
-                FlushReported();
             else
             {
                 _upgradeMode = EventProjectionUpgradeMode.NotNeeded;
-                CallHandler(new ProjectorMessages.RebuildFinished(), FlushReported, OnNotifyError);
+                CallHandler(new ProjectorMessages.Flush(), FlushReported, OnNotifyError);
             }
         }
         private void FlushReported()
