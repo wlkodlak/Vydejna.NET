@@ -339,7 +339,7 @@ namespace Vydejna.Domain
 
         public void NacistObjednavku(string cisloObjednavky, int znamaVerze, Action<int, IndexObjednavekDataObjednavek> onLoaded, Action onValid, Action<Exception> onError)
         {
-            _folder.GetNewerDocument(NazevDokumentu("objednavka-", cisloObjednavky), znamaVerze,
+            _folder.GetNewerDocument(NazevDokumentuObjednavky(cisloObjednavky), znamaVerze,
                 (verze, raw) => onLoaded(verze, JsonSerializer.DeserializeFromString<IndexObjednavekDataObjednavek>(raw)),
                 () => onValid(), () => onLoaded(0, null), ex => onError(ex));
         }
@@ -347,7 +347,7 @@ namespace Vydejna.Domain
         public void UlozitObjednavku(int verze, IndexObjednavekDataObjednavek data, Action<int> onSaved, Action<Exception> onError)
         {
             _folder.SaveDocument(
-                NazevDokumentu("objednavka-", data.CisloObjednavky),
+                NazevDokumentuObjednavky(data.CisloObjednavky),
                 JsonSerializer.SerializeToString(data),
                 DocumentStoreVersion.At(verze),
                 null,
@@ -358,7 +358,7 @@ namespace Vydejna.Domain
 
         public void NacistDodaciList(string cisloDodacihoListu, int znamaVerze, Action<int, IndexObjednavekDataDodacichListu> onLoaded, Action onValid, Action<Exception> onError)
         {
-            _folder.GetNewerDocument(NazevDokumentu("dodacilist-", cisloDodacihoListu), znamaVerze,
+            _folder.GetNewerDocument(NazevDokumentuDodacihoListu(cisloDodacihoListu), znamaVerze,
                 (verze, raw) => onLoaded(verze, JsonSerializer.DeserializeFromString<IndexObjednavekDataDodacichListu>(raw)),
                 () => onValid(), () => onLoaded(0, null), ex => onError(ex));
         }
@@ -366,7 +366,7 @@ namespace Vydejna.Domain
         public void UlozitDodaciList(int verze, IndexObjednavekDataDodacichListu data, Action<int> onSaved, Action<Exception> onError)
         {
             _folder.SaveDocument(
-                NazevDokumentu("dodacilist-", data.CisloDodacihoListu),
+                NazevDokumentuDodacihoListu(data.CisloDodacihoListu),
                 JsonSerializer.SerializeToString(data),
                 DocumentStoreVersion.At(verze),
                 null,
@@ -375,24 +375,14 @@ namespace Vydejna.Domain
                 ex => onError(ex));
         }
 
-        private static string NazevDokumentu(string prefix, string cislo)
+        private static string NazevDokumentuObjednavky(string cislo)
         {
-            var chars = new char[prefix.Length + cislo.Length];
-            prefix.CopyTo(0, chars, 0, prefix.Length);
-            prefix.CopyTo(0, chars, prefix.Length, cislo.Length);
-            int pozice = prefix.Length;
-            for (int i = 0; i < cislo.Length; i++, pozice++)
-            {
-                var znak = cislo[i];
-                if (znak >= '0' && znak <= '9')
-                    continue;
-                if (znak >= 'a' && znak <= 'z')
-                    continue;
-                if (znak >= 'A' && znak <= 'Z')
-                    continue;
-                chars[pozice] = '_';
-            }
-            return new string(chars);
+            return DocumentStoreUtils.CreateBasicDocumentName("objednavka-", cislo);
+        }
+
+        private static string NazevDokumentuDodacihoListu(string cislo)
+        {
+            return DocumentStoreUtils.CreateBasicDocumentName("dodacilist-", cislo);
         }
 
         public void Reset(Action onComplete, Action<Exception> onError)

@@ -74,14 +74,19 @@ namespace Vydejna.Contracts
         public List<int> SeznamCislovanych { get; set; }
     }
 
+    public enum PrehledObjednavekRazeni
+    {
+        PodleDataObjednani,
+        PodleCislaObjednavky
+    }
     public class PrehledObjednavekRequest
     {
-        public string FiltrPodleDodavatele { get; set; }
+        public PrehledObjednavekRazeni Razeni { get; set; }
         public int Stranka { get; set; }
     }
     public class PrehledObjednavekResponse
     {
-        public string FiltrPodleDodavatele { get; set; }
+        public PrehledObjednavekRazeni Razeni { get; set; }
         public int Stranka { get; set; }
         public int PocetStranek { get; set; }
         public int PocetCelkem { get; set; }

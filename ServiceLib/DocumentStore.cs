@@ -123,4 +123,48 @@ namespace ServiceLib
             Values = new[] { value };
         }
     }
+
+    public static class DocumentStoreUtils
+    {
+        public static string CreateBasicDocumentName(params string[] parts)
+        {
+            if (parts == null || parts.Length == 0)
+                return "__default__";
+            int size = parts.Length;
+            int[] lengths = new int[size];
+            int[] offsets = new int[size];
+            int totalLength = 0;
+            for (int i = 0; i < size; i++)
+            {
+                int length = parts[i].Length;
+                lengths[i] = length;
+                offsets[i] = totalLength;
+                totalLength += length;
+            }
+            var chars = new char[totalLength];
+            for (int i = 0; i < size; i++)
+            {
+                parts[i].CopyTo(0, chars, offsets[i], lengths[i]);
+            }
+            for (int i = 0; i < totalLength; i++)
+            {
+                if (!IsCharacterAllowed(chars[i]))
+                    chars[i] = '_';
+            }
+            return new string(chars);
+        }
+
+        private static bool IsCharacterAllowed(char c)
+        {
+            if (c >= 'a' && c <= 'z')
+                return true;
+            if (c >= 'A' && c <= 'Z')
+                return true;
+            if (c >= '0' && c <= '9')
+                return true;
+            if (c == '_' || c == '-')
+                return true;
+            return false;
+        }
+    }
 }

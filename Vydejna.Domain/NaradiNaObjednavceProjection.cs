@@ -359,34 +359,7 @@ namespace Vydejna.Domain
 
         public static string DokumentObjednavky(string kodDodavatele, string cisloObjednavky)
         {
-            var vystup = new char[11 + kodDodavatele.Length + cisloObjednavky.Length + 1];
-            int pozice = 0;
-            "objednavka-".CopyTo(0, vystup, 0, 11);
-            pozice += 11;
-            kodDodavatele.CopyTo(0, vystup, pozice, kodDodavatele.Length);
-            pozice += kodDodavatele.Length;
-            vystup[pozice] = '-';
-            pozice++;
-            cisloObjednavky.CopyTo(0, vystup, pozice, cisloObjednavky.Length);
-            for (int i = 0; i < vystup.Length; i++)
-            {
-                if (!ZnakPovolenVNazvu(vystup[i]))
-                    vystup[i] = '_';
-            }
-            return new string(vystup);
-        }
-
-        private static bool ZnakPovolenVNazvu(char c)
-        {
-            if (c >= '0' && c <= '9')
-                return true;
-            if (c >= 'a' && c <= 'z')
-                return true;
-            if (c >= 'A' && c <= 'Z')
-                return true;
-            if (c == '-' || c == '_')
-                return true;
-            return false;
+            return DocumentStoreUtils.CreateBasicDocumentName("objednavka-", kodDodavatele, "-", cisloObjednavky);
         }
 
         public void NacistObjednavku(string kodDodavatele, string cisloObjednavky, Action<int, NaradiNaObjednavceDataObjednavky> onLoaded, Action<Exception> onError)

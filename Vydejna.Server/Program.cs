@@ -182,23 +182,20 @@ namespace Vydejna.Server
 
             For<IProcessWorker>().Singleton().Use(x =>
                 {
-                    var serializer = x.GetInstance<SeznamNaradiSerializer>();
-                    var projekce = new SeznamNaradiProjection(serializer);
-                    var locking = new NodeLock(x.GetInstance<INodeLockManager>(), "SeznamNaradi");
-                    var store = x.GetInstance<IDocumentStore>().GetFolder("SeznamNaradi");
-                    var dispatcher = new PureProjectionDispatcherDeduplication<SeznamNaradiData>(
-                        new PureProjectionDispatcher<SeznamNaradiData>(), projekce);
-                    var cache = new PureProjectionStateCache<SeznamNaradiData>(store, serializer);
-                    var notificator = x.TryGetInstance<INotifyChange>("NotifySeznamNaradi");
-                    if (notificator != null)
-                        cache.SetupNotificator(notificator);
-                    var proces = new PureProjectionProcess<SeznamNaradiData>(
-                        "SeznamNaradiProjection", projekce, locking, cache,
-                        dispatcher, x.GetInstance<IEventStreamingDeserialized>());
+                    var folder = x.GetInstance<IDocumentStore>().GetFolder("SeznamNaradi");
+                    var executor = x.GetInstance<IQueueExecution>();
+                    var time = x.GetInstance<ITime>();
+                    var repository = new SeznamNaradiRepository(folder);
+                    var projekce = new SeznamNaradiProjection(repository, executor, time);
+                    var metadata = x.GetInstance<IMetadataManager>().GetConsumer("SeznamNaradi");
+                    var streaming = x.GetInstance<IEventStreamingDeserialized>();
+                    var rawSubscriptions = new CommandSubscriptionManager();
+                    var subscriptions = new QueuedCommandSubscriptionManager(rawSubscriptions, executor);
+                    projekce.Subscribe(subscriptions);
+                    var proces = new EventProjectorSimple(projekce, metadata, streaming, subscriptions);
                     return proces;
                 }).Named("SeznamNaradiProjection");
 
-            For<SeznamNaradiSerializer>().Singleton().Use<SeznamNaradiSerializer>().Named("SeznamNaradiSerializer");
             For<SeznamNaradiReader>().Singleton().Use<SeznamNaradiReader>().Named("ViewServiceSeznamNaradi")
                 .Ctor<IDocumentFolder>("store").Is(x => x.GetInstance<IDocumentStore>().GetFolder("SeznamNaradi"))
                 .Ctor<INotifyChange>("notifier").Is(x => x.GetInstance<INotifyChange>("NotifySeznamNaradi"));

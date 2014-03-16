@@ -25,6 +25,14 @@ namespace Vydejna.Domain
             _cacheTag = new MemoryCache<int>(executor, time);
         }
 
+        public void Subscribe(ICommandSubscriptionManager subscriptions)
+        {
+            subscriptions.Register<ProjectorMessages.Flush>(this);
+            subscriptions.Register<DefinovanoNaradiEvent>(this);
+            subscriptions.Register<AktivovanoNaradiEvent>(this);
+            subscriptions.Register<DeaktivovanoNaradiEvent>(this);
+        }
+
         public string GetVersion()
         {
             return "0.1";
