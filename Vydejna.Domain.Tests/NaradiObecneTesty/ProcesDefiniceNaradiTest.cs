@@ -3,6 +3,7 @@ using ServiceLib;
 using ServiceLib.Tests.TestUtils;
 using System;
 using Vydejna.Contracts;
+using Vydejna.Domain.Procesy;
 
 namespace Vydejna.Domain.Tests.NaradiObecneTesty
 {

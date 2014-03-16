@@ -218,7 +218,7 @@ namespace ServiceLib.Tests.EventHandlers
             _executor.Process();
 
             Assert.AreEqual(
-                "Reset\r\nTestEvent1: 47\r\nTestEvent2: 75\r\nRebuildFinished\r\n" +
+                "Reset\r\nTestEvent1: 47\r\nTestEvent2: 75\r\nRebuildFinished\r\nFlush\r\n" +
                 "TestEvent2: 32\r\nTestEvent1: 14\r\nFlush", 
                 _projection.LogText);
             Assert.AreEqual(ProcessState.Inactive, _process.State, "Process state");

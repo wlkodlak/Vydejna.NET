@@ -4,6 +4,7 @@ using ServiceLib.Tests.TestUtils;
 using System;
 using System.Collections.Generic;
 using Vydejna.Contracts;
+using Vydejna.Domain.DefinovaneNaradi;
 
 namespace Vydejna.Domain.Tests.NaradiObecneTesty
 {
@@ -74,17 +75,17 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
                 _parent = parent;
             }
 
-            public void Load(IAggregateId id, Action<DefinovaneNaradi> onLoaded, Action onMissing, Action<Exception> onError)
+            public void Load(IAggregateId id, Action<DefinovaneNaradiAggregate> onLoaded, Action onMissing, Action<Exception> onError)
             {
                 List<object> udalosti;
                 var guid = ((AggregateIdGuid)id).Guid;
                 if (!_parent._obsahRepository.TryGetValue(guid, out udalosti))
                     onMissing();
                 else
-                    onLoaded(DefinovaneNaradi.LoadFrom(udalosti));
+                    onLoaded(DefinovaneNaradiAggregate.LoadFrom(udalosti));
             }
 
-            public void Save(DefinovaneNaradi aggregate, Action onSaved, Action onConcurrency, Action<Exception> onError)
+            public void Save(DefinovaneNaradiAggregate aggregate, Action onSaved, Action onConcurrency, Action<Exception> onError)
             {
                 var udalosti = (aggregate as IEventSourcedAggregate).GetChanges();
                 _parent._udalosti.AddRange(udalosti);

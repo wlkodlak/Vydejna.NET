@@ -77,7 +77,6 @@
     <Compile Include="NecislovaneNaradiTesty\VydejDoVyrobyTest.cs" />
     <Compile Include="NecislovaneNaradiTesty\VydejNaOpravuTest.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="SeznamNaradiProjectionTest.cs" />
     <Compile Include="NaradiObecneTesty\DefinovaneNaradiServiceTest.cs" />
     <Compile Include="NaradiObecneTesty\UmisteniNaradiTest.cs" />
     <Compile Include="NaradiObecneTesty\UnikatnostNaradiServiceTest.cs" />

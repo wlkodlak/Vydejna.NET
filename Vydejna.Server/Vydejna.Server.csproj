@@ -67,6 +67,10 @@
       <Project>{e7f219e1-6d36-496c-a78e-318ae2b374b1}</Project>
       <Name>Vydejna.Domain</Name>
     </ProjectReference>
+    <ProjectReference Include="..\Vydejna.Projections\Vydejna.Projections.csproj">
+      <Project>{04c17084-6f40-41cf-bb29-f8690645e473}</Project>
+      <Name>Vydejna.Projections</Name>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <Import Project="$(SolutionDir)\.nuget\NuGet.targets" Condition="Exists('$(SolutionDir)\.nuget\NuGet.targets')" />

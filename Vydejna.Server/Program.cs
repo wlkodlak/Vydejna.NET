@@ -6,6 +6,11 @@ using Vydejna.Domain;
 using StructureMap;
 using StructureMap.Configuration.DSL;
 using StructureMap.Pipeline;
+using Vydejna.Domain.DefinovaneNaradi;
+using Vydejna.Domain.UnikatnostNaradi;
+using Vydejna.Domain.Procesy;
+using Vydejna.Projections.RestInterface;
+using Vydejna.Projections.SeznamNaradiReadModel;
 
 namespace Vydejna.Server
 {

@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using Vydejna.Domain.NecislovaneNaradi;
 
 namespace Vydejna.Domain.Tests.NecislovaneNaradiTesty
 {

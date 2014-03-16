@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using Vydejna.Contracts;
+using Vydejna.Domain.ObecneNaradi;
 
 namespace Vydejna.Domain.Tests.NecislovaneNaradiTesty
 {

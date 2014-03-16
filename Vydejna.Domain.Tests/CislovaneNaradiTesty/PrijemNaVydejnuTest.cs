@@ -2,6 +2,7 @@
 using System;
 using Vydejna.Contracts;
 using Vydejna.Domain;
+using Vydejna.Domain.ObecneNaradi;
 
 namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
 {

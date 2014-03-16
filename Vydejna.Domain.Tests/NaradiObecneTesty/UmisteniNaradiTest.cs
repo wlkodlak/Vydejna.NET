@@ -1,5 +1,6 @@
 ﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Vydejna.Contracts;
+using Vydejna.Domain.ObecneNaradi;
 
 namespace Vydejna.Domain.Tests.NaradiObecneTesty
 {

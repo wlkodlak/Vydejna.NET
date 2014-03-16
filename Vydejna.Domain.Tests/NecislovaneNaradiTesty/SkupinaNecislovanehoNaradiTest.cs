@@ -1,6 +1,7 @@
 ﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using Vydejna.Contracts;
+using Vydejna.Domain.NecislovaneNaradi;
 
 namespace Vydejna.Domain.Tests.NecislovaneNaradiTesty
 {

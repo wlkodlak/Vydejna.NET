@@ -4,6 +4,7 @@ using ServiceLib.Tests.TestUtils;
 using System;
 using System.Collections.Generic;
 using Vydejna.Contracts;
+using Vydejna.Domain.UnikatnostNaradi;
 
 namespace Vydejna.Domain.Tests.NaradiObecneTesty
 {
@@ -70,12 +71,12 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
                 _parent = parent;
             }
 
-            public void Load(Action<UnikatnostNaradi> onLoaded, Action<Exception> onError)
+            public void Load(Action<UnikatnostNaradiAggregate> onLoaded, Action<Exception> onError)
             {
-                onLoaded(UnikatnostNaradi.LoadFrom(_parent._obsahRepository));
+                onLoaded(UnikatnostNaradiAggregate.LoadFrom(_parent._obsahRepository));
             }
 
-            public void Save(UnikatnostNaradi unikatnost, Action onSaved, Action onConcurrency, Action<Exception> onError)
+            public void Save(UnikatnostNaradiAggregate unikatnost, Action onSaved, Action onConcurrency, Action<Exception> onError)
             {
                 var udalosti = (unikatnost as IEventSourcedAggregate).GetChanges();
                 _parent._udalosti.AddRange(udalosti);

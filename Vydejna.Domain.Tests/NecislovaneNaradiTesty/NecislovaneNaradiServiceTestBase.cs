@@ -3,11 +3,13 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Vydejna.Contracts;
+using Vydejna.Domain.NecislovaneNaradi;
+using Vydejna.Domain.ObecneNaradi;
 using Vydejna.Domain.Tests.NaradiObecneTesty;
 
 namespace Vydejna.Domain.Tests.NecislovaneNaradiTesty
 {
-    public class NecislovaneNaradiServiceTestBase : ObecneNaradiServiceTestBase<NecislovaneNaradi, NecislovaneNaradiService>
+    public class NecislovaneNaradiServiceTestBase : ObecneNaradiServiceTestBase<NecislovaneNaradiAggregate, NecislovaneNaradiService>
     {
         protected Guid _naradiId;
         protected List<object> _given;

@@ -1,10 +1,12 @@
 ﻿using System;
 using Vydejna.Contracts;
+using Vydejna.Domain.CislovaneNaradi;
+using Vydejna.Domain.ObecneNaradi;
 using Vydejna.Domain.Tests.NaradiObecneTesty;
 
 namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
 {
-    public class CislovaneNaradiServiceTestBase : ObecneNaradiServiceTestBase<CislovaneNaradi, CislovaneNaradiService>
+    public class CislovaneNaradiServiceTestBase : ObecneNaradiServiceTestBase<CislovaneNaradiAggregate, CislovaneNaradiService>
     {
         protected override CislovaneNaradiService CreateService()
         {
