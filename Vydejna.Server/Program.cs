@@ -9,7 +9,6 @@ using StructureMap.Pipeline;
 using Vydejna.Domain.DefinovaneNaradi;
 using Vydejna.Domain.UnikatnostNaradi;
 using Vydejna.Domain.Procesy;
-using Vydejna.Projections.RestInterface;
 using Vydejna.Projections.SeznamNaradiReadModel;
 
 namespace Vydejna.Server
@@ -40,7 +39,6 @@ namespace Vydejna.Server
             _processes.RegisterGlobal("SeznamNaradiProjection", ObjectFactory.GetNamedInstance<IProcessWorker>("SeznamNaradiProjection"), 0, 0);
 
             _router = ObjectFactory.GetNamedInstance<IHttpRouteCommonConfigurator>("HttpConfigRoot");
-            ObjectFactory.GetInstance<SeznamNaradiRest>().RegisterHttpHandlers(_router);
             _router.Commit();
         }
 
@@ -220,7 +218,6 @@ namespace Vydejna.Server
             For<IUnikatnostNaradiRepository>().Use<UnikatnostNaradiRepository>().Named("RepositoryUnikatnost")
                 .Ctor<string>("prefix").Is("unikatnost_naradi");
 
-            For<SeznamNaradiRest>().Singleton().Use<SeznamNaradiRest>().Named("RestServiceSeznamNaradi");
             For<IEventSourcedSerializer>().Add<EventSourcedJsonSerializer>().Named("EventSourcedSerializerPrimary");
             For<IRegisterTypes>().AddInstances(b => {
                 b.Type<SeznamNaradiTypeMapping>();
