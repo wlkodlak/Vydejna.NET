@@ -51,7 +51,8 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
                     KodDodavatele = "E7",
                     PrijemZeSkladu = false,
                     CenaNova = 3,
-                    NoveUmisteni = UmisteniNaradi.NaVydejne(StavNaradi.VPoradku).Dto()
+                    NoveUmisteni = UmisteniNaradi.NaVydejne(StavNaradi.VPoradku).Dto(),
+                    Verze = 1
                 });
             Execute(new CislovaneNaradiPrijmoutNaVydejnuCommand
             {
@@ -97,6 +98,8 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
             Assert.AreNotEqual(Guid.Empty, udalost.EventId, "EventId");
             Assert.AreEqual(GetUtcTime(), udalost.Datum, "Datum");
             Assert.AreEqual(0m, udalost.CenaPredchozi, "CenaPredchozi");
+            Assert.AreEqual(UmisteniNaradi.VeSkladu().Dto(), udalost.PredchoziUmisteni, "PredchoziUmisteni");
+            Assert.AreEqual(1, udalost.Verze, "Verze");
         }
 
         [TestMethod]
@@ -158,6 +161,8 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
             Assert.AreEqual(naradiId, udalost.NaradiId, "NaradiId");
             Assert.AreEqual(TypZmenyNaSklade.SnizitStav, udalost.TypZmeny, "TypZmeny");
             Assert.AreEqual(1, udalost.Hodnota, "Hodnota");
+            Assert.AreEqual(2, udalost.Verze, "Verze");
+            Assert.AreEqual(cmd.CisloNaradi, udalost.CisloNaradi, "CisloNaradi");
         }
     }
 }

@@ -108,6 +108,7 @@ namespace Vydejna.Contracts
     public class DefinovanoNaradiEvent
     {
         public Guid NaradiId { get; set; }
+        public int Verze { get; set; }
         public string Vykres { get; set; }
         public string Rozmer { get; set; }
         public string Druh { get; set; }
@@ -116,16 +117,19 @@ namespace Vydejna.Contracts
     public class AktivovanoNaradiEvent
     {
         public Guid NaradiId { get; set; }
+        public int Verze { get; set; }
     }
 
     public class DeaktivovanoNaradiEvent
     {
         public Guid NaradiId { get; set; }
+        public int Verze { get; set; }
     }
 
     public class ZahajenaDefiniceNaradiEvent
     {
         public Guid NaradiId { get; set; }
+        public int Verze { get; set; }
         public string Vykres { get; set; }
         public string Rozmer { get; set; }
         public string Druh { get; set; }
@@ -134,6 +138,7 @@ namespace Vydejna.Contracts
     public class DokoncenaDefiniceNaradiEvent
     {
         public Guid NaradiId { get; set; }
+        public int Verze { get; set; }
         public string Vykres { get; set; }
         public string Rozmer { get; set; }
         public string Druh { get; set; }
@@ -142,6 +147,7 @@ namespace Vydejna.Contracts
     public class ZahajenaAktivaceNaradiEvent
     {
         public Guid NaradiId { get; set; }
+        public int Verze { get; set; }
     }
 
     public enum TypZmenyNaSklade
@@ -171,6 +177,8 @@ namespace Vydejna.Contracts
     public class NastalaPotrebaUpravitStavNaSkladeEvent
     {
         public Guid NaradiId { get; set; }
+        public int CisloNaradi { get; set; }
+        public int Verze { get; set; }
         public TypZmenyNaSklade TypZmeny { get; set; }
         public int Hodnota { get; set; }
     }
@@ -178,6 +186,7 @@ namespace Vydejna.Contracts
     public class ZmenenStavNaSkladeEvent
     {
         public Guid NaradiId { get; set; }
+        public int Verze { get; set; }
         public TypZmenyNaSklade TypZmeny { get; set; }
         public ZdrojZmenyNaSklade ZdrojZmeny { get; set; }
         public int Hodnota { get; set; }

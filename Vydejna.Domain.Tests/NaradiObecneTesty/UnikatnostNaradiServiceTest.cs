@@ -95,6 +95,7 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
             Assert.AreEqual("1248-5574-b", evt.Vykres, "Vykres");
             Assert.AreEqual("o 500", evt.Rozmer, "Rozmer");
             Assert.AreEqual("", evt.Druh, "Druh");
+            Assert.AreNotEqual(0, evt.Verze, "Verze");
             ZadneDalsiUdalosti();
         }
 
@@ -108,6 +109,7 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
             Assert.AreEqual("1248-5574-b", evt.Vykres, "Vykres");
             Assert.AreEqual("o 500", evt.Rozmer, "Rozmer");
             Assert.AreEqual("", evt.Druh, "Druh");
+            Assert.AreNotEqual(0, evt.Verze, "Verze");
             ZadneDalsiUdalosti();
         }
 
@@ -123,6 +125,7 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
             ZpracovatPrikaz(new DefinovatNaradiCommand { NaradiId = Guid.NewGuid(), Vykres = "1248-5574-b", Rozmer = "o 500", Druh = "" });
             var evt = OcekavanaUdalost<ZahajenaAktivaceNaradiEvent>();
             Assert.AreEqual(naradiId, evt.NaradiId, "NaradiId");
+            Assert.AreNotEqual(0, evt.Verze, "Verze");
             ZadneDalsiUdalosti();
         }
 
@@ -152,6 +155,7 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
             Assert.AreEqual("1248-5574-b", evt.Vykres, "Vykres");
             Assert.AreEqual("o 500", evt.Rozmer, "Rozmer");
             Assert.AreEqual("", evt.Druh, "Druh");
+            Assert.AreNotEqual(0, evt.Verze, "Verze");
             ZadneDalsiUdalosti();
         }
     }

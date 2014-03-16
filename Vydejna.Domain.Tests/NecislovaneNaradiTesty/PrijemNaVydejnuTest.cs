@@ -95,6 +95,26 @@ namespace Vydejna.Domain.Tests.NecislovaneNaradiTesty
             Assert.AreEqual(GetUtcTime(), udalost.Datum, "Datum");
             Assert.AreEqual(UmisteniNaradi.VeSkladu().Dto(), udalost.PredchoziUmisteni, "PredchoziUmisteni");
             Assert.AreEqual(UmisteniNaradi.NaVydejne(StavNaradi.VPoradku).Dto(), udalost.NoveUmisteni, "NoveUmisteni");
+            Assert.AreEqual(1, udalost.Verze, "Verze");
+        }
+
+        [TestMethod]
+        public void PocetKusuNaUmisteni()
+        {
+            var naradiId = Guid.NewGuid();
+            Given(naradiId, Prijate(3));
+            var cmd = new NecislovaneNaradiPrijmoutNaVydejnuCommand
+            {
+                NaradiId = naradiId,
+                Pocet = 7,
+                CenaNova = 40m,
+                KodDodavatele = "D58",
+                PrijemZeSkladu = false
+            };
+            Execute(cmd);
+            var udalost = NewEventOfType<NecislovaneNaradiPrijatoNaVydejnuEvent>();
+            Assert.AreEqual(0, udalost.PocetNaPredchozim, "PocetNaPredchozim");
+            Assert.AreEqual(10, udalost.PocetNaNovem, "PocetNaNovem");
         }
 
         [TestMethod]
@@ -169,6 +189,7 @@ namespace Vydejna.Domain.Tests.NecislovaneNaradiTesty
             Assert.AreEqual(naradiId, udalost.NaradiId, "NaradiId");
             Assert.AreEqual(TypZmenyNaSklade.SnizitStav, udalost.TypZmeny, "TypZmeny");
             Assert.AreEqual(7, udalost.Hodnota, "Hodnota");
+            Assert.AreEqual(2, udalost.Verze, "Verze");
         }
     }
 }

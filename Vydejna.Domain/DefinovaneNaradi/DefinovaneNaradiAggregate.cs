@@ -18,13 +18,13 @@ namespace Vydejna.Domain.DefinovaneNaradi
         public void Aktivovat()
         {
             if (!_aktivni)
-                ApplyChange(new AktivovanoNaradiEvent { NaradiId = GetGuid() });
+                ApplyChange(new AktivovanoNaradiEvent { NaradiId = GetGuid(), Verze = CurrentVersion + 1 });
         }
 
         public void Deaktivovat()
         {
             if (_aktivni)
-                ApplyChange(new DeaktivovanoNaradiEvent { NaradiId = GetGuid() });
+                ApplyChange(new DeaktivovanoNaradiEvent { NaradiId = GetGuid(), Verze = CurrentVersion + 1 });
         }
 
         private void ApplyChange(DefinovanoNaradiEvent ev)
@@ -54,7 +54,8 @@ namespace Vydejna.Domain.DefinovaneNaradi
                 NaradiId = id,
                 Vykres = vykres,
                 Rozmer = rozmer,
-                Druh = druh
+                Druh = druh,
+                Verze = 1
             });
             return naradi;
         }

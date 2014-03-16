@@ -152,6 +152,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
             Assert.AreEqual(GetUtcTime(), udalost.Datum, "Datum");
             Assert.AreEqual(300m, udalost.CenaPredchozi, "CenaPredchozi");
             Assert.AreEqual(UmisteniNaradi.NaVydejne(StavNaradi.VPoradku).Dto(), udalost.PredchoziUmisteni, "PredchoziUmisteni");
+            Assert.AreEqual(2, udalost.Verze, "Verze");
         }
     }
 }

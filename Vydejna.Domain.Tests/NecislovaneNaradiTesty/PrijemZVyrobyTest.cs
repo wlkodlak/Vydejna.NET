@@ -80,6 +80,7 @@ namespace Vydejna.Domain.Tests.NecislovaneNaradiTesty
             var evnt = NewEventOfType<NecislovaneNaradiPrijatoZVyrobyEvent>();
             Assert.AreNotEqual(Guid.Empty, evnt.EventId, "EventId");
             Assert.AreEqual(GetUtcTime(), evnt.Datum, "Datum");
+            Assert.AreNotEqual(0, evnt.Verze, "Verze");
         }
 
         [TestMethod]
@@ -91,19 +92,20 @@ namespace Vydejna.Domain.Tests.NecislovaneNaradiTesty
             Execute(cmd);
             var evnt = NewEventOfType<NecislovaneNaradiPrijatoZVyrobyEvent>();
             Assert.AreEqual(UmisteniNaradi.NaPracovisti(cmd.KodPracoviste).Dto(), evnt.PredchoziUmisteni, "PredchoziUmisteni");
-            Assert.AreEqual(UmisteniNaradi.NaVydejne(cmd.StavNaradi).Dto(), evnt.NoveUmisteni, "NoveUmisteni");
+            Assert.AreEqual(10 - cmd.Pocet, evnt.PocetNaPredchozim, "PocetNaPredchozim");
         }
 
         [TestMethod]
         public void DoplniSeNoveUmisteniPodleStavu()
         {
+            Poskozene(4);
             Vydane(10);
             var cmd = ZakladniPrikaz();
             cmd.StavNaradi = StavNaradi.NutnoOpravit;
             Execute(cmd);
             var evnt = NewEventOfType<NecislovaneNaradiPrijatoZVyrobyEvent>();
-            Assert.AreEqual(UmisteniNaradi.NaPracovisti(cmd.KodPracoviste).Dto(), evnt.PredchoziUmisteni, "PredchoziUmisteni");
             Assert.AreEqual(UmisteniNaradi.NaVydejne(cmd.StavNaradi).Dto(), evnt.NoveUmisteni, "NoveUmisteni");
+            Assert.AreEqual(4 + cmd.Pocet, evnt.PocetNaNovem, "PocetNaNovem");
         }
 
         [TestMethod]

@@ -39,15 +39,15 @@ namespace Vydejna.Domain.UnikatnostNaradi
             {
                 if (idNaradi == Guid.Empty)
                     idNaradi = Guid.NewGuid();
-                ApplyChange(new ZahajenaDefiniceNaradiEvent { NaradiId = idNaradi, Vykres = vykres, Rozmer = rozmer, Druh = druh });
+                ApplyChange(new ZahajenaDefiniceNaradiEvent { NaradiId = idNaradi, Vykres = vykres, Rozmer = rozmer, Druh = druh, Verze = CurrentVersion + 1 });
             }
             else if (stav.DokoncenaDefinice)
-                ApplyChange(new ZahajenaAktivaceNaradiEvent { NaradiId = stav.Id });
+                ApplyChange(new ZahajenaAktivaceNaradiEvent { NaradiId = stav.Id, Verze = CurrentVersion + 1 });
         }
 
         public void DokoncitDefinici(Guid idNaradi, string vykres, string rozmer, string druh)
         {
-            ApplyChange(new DokoncenaDefiniceNaradiEvent { NaradiId = idNaradi, Vykres = vykres, Rozmer = rozmer, Druh = druh });
+            ApplyChange(new DokoncenaDefiniceNaradiEvent { NaradiId = idNaradi, Vykres = vykres, Rozmer = rozmer, Druh = druh, Verze = CurrentVersion + 1 });
         }
 
         private void ApplyChange(ZahajenaDefiniceNaradiEvent evt)

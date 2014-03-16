@@ -76,6 +76,7 @@ namespace Vydejna.Domain.Tests.NecislovaneNaradiTesty
             var evnt = NewEventOfType<NecislovaneNaradiVydanoDoVyrobyEvent>();
             Assert.AreNotEqual(Guid.Empty, evnt.EventId, "EventId");
             Assert.AreEqual(GetUtcTime(), evnt.Datum, "Datum");
+            Assert.AreNotEqual(0, evnt.Verze, "Verze");
         }
 
         [TestMethod]
@@ -87,6 +88,18 @@ namespace Vydejna.Domain.Tests.NecislovaneNaradiTesty
             var evnt = NewEventOfType<NecislovaneNaradiVydanoDoVyrobyEvent>();
             Assert.AreEqual(UmisteniNaradi.NaVydejne(StavNaradi.VPoradku).Dto(), evnt.PredchoziUmisteni, "PredchoziUmisteni");
             Assert.AreEqual(UmisteniNaradi.NaPracovisti(cmd.KodPracoviste).Dto(), evnt.NoveUmisteni, "NoveUmisteni");
+        }
+
+        [TestMethod]
+        public void DoplniSePoctyNaUmisteni()
+        {
+            Vydane(5);
+            Prijate(10);
+            var cmd = ZakladniPrikaz(pocet: 8);
+            Execute(cmd);
+            var evnt = NewEventOfType<NecislovaneNaradiVydanoDoVyrobyEvent>();
+            Assert.AreEqual(2, evnt.PocetNaPredchozim, "PocetNaPredchozim");
+            Assert.AreEqual(13, evnt.PocetNaNovem, "PocetNaNovem");
         }
 
         [TestMethod]

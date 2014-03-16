@@ -193,6 +193,27 @@ namespace Vydejna.Domain.Tests.NecislovaneNaradiTesty
             return evnt;
         }
 
+        protected NecislovaneNaradiPredanoKeSesrotovaniEvent Sesrotovane(int pocet, int datum = 0)
+        {
+            var prev = Znicene(pocet, 0m, datum);
+            var evnt = new NecislovaneNaradiPredanoKeSesrotovaniEvent
+            {
+                EventId = Guid.NewGuid(),
+                Datum = Datum(datum),
+                Pocet = pocet,
+                CenaNova = 0,
+                NaradiId = _naradiId,
+                CelkovaCenaPredchozi = prev.CelkovaCenaNova,
+                CelkovaCenaNova = 0,
+                PredchoziUmisteni = prev.NoveUmisteni,
+                PouziteKusy = prev.NoveKusy,
+                NoveUmisteni = UmisteniNaradi.NaVydejne(StavNaradi.Neopravitelne).Dto(),
+                NoveKusy = new List<SkupinaNecislovanehoNaradiDto> { Kus(Datum(datum), 0, 'P', pocet) }
+            };
+            _given.Add(evnt);
+            return evnt;
+        }
+
         protected NecislovaneNaradiPredanoKOpraveEvent Opravovane(int pocet, decimal? cena = 0m, int datum = 0, string dodavatel = "D48", string objednavka = "111/2014")
         {
             var prev = Poskozene(pocet, 0m, datum);

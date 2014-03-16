@@ -9,15 +9,6 @@ namespace Vydejna.Domain.Tests.NecislovaneNaradiTesty
     [TestClass]
     public class PrijemZOpravyTest : NecislovaneNaradiServiceTestBase
     {
-        /*
-         * Cena nesmi byt zaporna
-         * Pocet musi byt kladny
-         * Nutne zadat dodavatele
-         * Nutne zadat objednavku
-         * Nutne zadat dodaci list
-         * Nutne urcit typ opravy
-         * Nutne urcit vysledek opravy
-         */
         [TestMethod]
         public void CenaNesmiBytZaporna()
         {
@@ -122,6 +113,7 @@ namespace Vydejna.Domain.Tests.NecislovaneNaradiTesty
             Execute(ZakladniPrikaz());
             var evnt = NewEventOfType<NecislovaneNaradiPrijatoZOpravyEvent>();
             Assert.AreNotEqual(Guid.Empty, evnt.EventId, "EventId");
+            Assert.AreNotEqual(0, evnt.Verze, "Verze");
             Assert.AreEqual(GetUtcTime(), evnt.Datum, "Datum");
         }
 
@@ -133,17 +125,20 @@ namespace Vydejna.Domain.Tests.NecislovaneNaradiTesty
             Execute(cmd);
             var evnt = NewEventOfType<NecislovaneNaradiPrijatoZOpravyEvent>();
             Assert.AreEqual(UmisteniNaradi.NaOprave(cmd.TypOpravy, cmd.KodDodavatele, cmd.Objednavka).Dto(), evnt.PredchoziUmisteni, "PredchoziUmisteni");
+            Assert.AreEqual(10 - cmd.Pocet, evnt.PocetNaPredchozim, "PocetNaPredchozim");
         }
 
         [TestMethod]
         public void DoplniSeNoveUmisteni_Opraveno()
         {
+            Opravene(3);
             Opravovane(10);
             var cmd = ZakladniPrikaz();
             cmd.Opraveno = StavNaradiPoOprave.Opraveno;
             Execute(cmd);
             var evnt = NewEventOfType<NecislovaneNaradiPrijatoZOpravyEvent>();
             Assert.AreEqual(UmisteniNaradi.NaVydejne(StavNaradi.VPoradku).Dto(), evnt.NoveUmisteni, "NoveUmisteni");
+            Assert.AreEqual(cmd.Pocet + 3, evnt.PocetNaNovem, "PocetNaNovem");
         }
 
         [TestMethod]

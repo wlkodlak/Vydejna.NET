@@ -105,6 +105,7 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
             ZpracovatPrikaz(new AktivovatNaradiCommand { NaradiId = idNaradi });
             var evt = OcekavanaUdalost<AktivovanoNaradiEvent>();
             Assert.AreEqual(idNaradi, evt.NaradiId, "NaradiId");
+            Assert.AreNotEqual(0, evt.Verze, "Verze");
             ZadneDalsiUdalosti();
         }
 
@@ -139,6 +140,7 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
             ZpracovatPrikaz(new DeaktivovatNaradiCommand { NaradiId = idNaradi });
             var evt = OcekavanaUdalost<DeaktivovanoNaradiEvent>();
             Assert.AreEqual(idNaradi, evt.NaradiId, "NaradiId");
+            Assert.AreNotEqual(0, evt.Verze, "Verze");
             ZadneDalsiUdalosti();
         }
 
@@ -174,6 +176,7 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
             Assert.AreEqual("5555", evt.Vykres, "Vykres");
             Assert.AreEqual("0000", evt.Rozmer, "Rozmer");
             Assert.AreEqual("", evt.Druh, "Druh");
+            Assert.AreNotEqual(0, evt.Verze, "Verze");
             ZadneDalsiUdalosti();
         }
 

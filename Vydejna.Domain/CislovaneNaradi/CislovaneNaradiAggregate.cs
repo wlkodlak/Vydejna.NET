@@ -45,7 +45,7 @@ namespace Vydejna.Domain.CislovaneNaradi
                 CisloNaradi = _cisloNaradi,
                 Cena = _cena,
                 Umisteni = _umisteni.Dto(),
-                Version = CurrentVersion
+                Version = CurrentVersion + 1
             };
         }
 
@@ -64,7 +64,8 @@ namespace Vydejna.Domain.CislovaneNaradi
                 CenaNova = cmd.CenaNova,
                 CenaPredchozi = 0,
                 PredchoziUmisteni = UmisteniNaradi.VeSkladu().Dto(),
-                NoveUmisteni = UmisteniNaradi.NaVydejne(StavNaradi.VPoradku).Dto()
+                NoveUmisteni = UmisteniNaradi.NaVydejne(StavNaradi.VPoradku).Dto(),
+                Verze = CurrentVersion + 1
             });
             if (cmd.PrijemZeSkladu)
             {
@@ -72,7 +73,9 @@ namespace Vydejna.Domain.CislovaneNaradi
                 {
                     NaradiId = cmd.NaradiId,
                     TypZmeny = TypZmenyNaSklade.SnizitStav,
-                    Hodnota = 1
+                    Hodnota = 1,
+                    Verze = CurrentVersion + 1,
+                    CisloNaradi = cmd.CisloNaradi
                 });
             }
         }
@@ -108,7 +111,8 @@ namespace Vydejna.Domain.CislovaneNaradi
                 KodPracoviste = cmd.KodPracoviste,
                 PredchoziUmisteni = _umisteni.Dto(),
                 CenaPredchozi = _cena,
-                NoveUmisteni = UmisteniNaradi.NaPracovisti(cmd.KodPracoviste).Dto()
+                NoveUmisteni = UmisteniNaradi.NaPracovisti(cmd.KodPracoviste).Dto(),
+                Verze = CurrentVersion + 1
             });
         }
 
@@ -137,7 +141,8 @@ namespace Vydejna.Domain.CislovaneNaradi
                 CenaPredchozi = _cena,
                 StavNaradi = cmd.StavNaradi,
                 KodVady = cmd.KodVady,
-                NoveUmisteni = UmisteniNaradi.NaVydejne(cmd.StavNaradi).Dto()
+                NoveUmisteni = UmisteniNaradi.NaVydejne(cmd.StavNaradi).Dto(),
+                Verze = CurrentVersion + 1
             });
         }
 
@@ -168,7 +173,8 @@ namespace Vydejna.Domain.CislovaneNaradi
                 TypOpravy = cmd.TypOpravy,
                 PredchoziUmisteni = _umisteni.Dto(),
                 CenaPredchozi = _cena,
-                NoveUmisteni = UmisteniNaradi.NaOprave(cmd.TypOpravy, cmd.KodDodavatele, cmd.Objednavka).Dto()
+                NoveUmisteni = UmisteniNaradi.NaOprave(cmd.TypOpravy, cmd.KodDodavatele, cmd.Objednavka).Dto(),
+                Verze = CurrentVersion + 1
             });
         }
 
@@ -201,7 +207,8 @@ namespace Vydejna.Domain.CislovaneNaradi
                 Opraveno = cmd.Opraveno,
                 DodaciList = cmd.DodaciList,
                 StavNaradi = novyStav,
-                NoveUmisteni = UmisteniNaradi.NaVydejne(novyStav).Dto()
+                NoveUmisteni = UmisteniNaradi.NaVydejne(novyStav).Dto(),
+                Verze = CurrentVersion + 1
             });
         }
 
@@ -226,7 +233,8 @@ namespace Vydejna.Domain.CislovaneNaradi
                 CisloNaradi = cmd.CisloNaradi,
                 PredchoziUmisteni = _umisteni.Dto(),
                 CenaPredchozi = _cena,
-                NoveUmisteni = UmisteniNaradi.VeSrotu().Dto()
+                NoveUmisteni = UmisteniNaradi.VeSrotu().Dto(),
+                Verze = CurrentVersion + 1
             });
         }
 

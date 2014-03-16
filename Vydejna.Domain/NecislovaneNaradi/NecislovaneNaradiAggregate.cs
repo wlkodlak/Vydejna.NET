@@ -62,21 +62,26 @@ namespace Vydejna.Domain.NecislovaneNaradi
 
         public void Execute(NecislovaneNaradiPrijmoutNaVydejnuCommand cmd, ITime time)
         {
+            var predchoziUmisteni = UmisteniNaradi.VeSkladu();
+            var noveUmisteni = UmisteniNaradi.NaVydejne(StavNaradi.VPoradku);
             var evnt = new NecislovaneNaradiPrijatoNaVydejnuEvent
             {
                 NaradiId = cmd.NaradiId,
+                Verze = CurrentVersion + 1,
                 CenaNova = cmd.CenaNova,
                 KodDodavatele = cmd.KodDodavatele,
                 Pocet = cmd.Pocet,
                 PrijemZeSkladu = cmd.PrijemZeSkladu,
                 EventId = Guid.NewGuid(),
                 Datum = time.GetUtcTime(),
-                PredchoziUmisteni = UmisteniNaradi.VeSkladu().Dto(),
-                NoveUmisteni = UmisteniNaradi.NaVydejne(StavNaradi.VPoradku).Dto(),
+                PredchoziUmisteni = predchoziUmisteni.Dto(),
+                NoveUmisteni = noveUmisteni.Dto(),
                 CelkovaCenaNova = cmd.Pocet * cmd.CenaNova,
                 CelkovaCenaPredchozi = 0m,
                 NoveKusy = new List<SkupinaNecislovanehoNaradiDto>()
             };
+            evnt.PocetNaPredchozim = 0;
+            evnt.PocetNaNovem = NajitUmisteni(noveUmisteni, false).PocetCelkem + evnt.Pocet;
             evnt.NoveKusy.Add(new SkupinaNecislovanehoNaradi(evnt.Datum, evnt.CenaNova ?? 0, CerstvostNecislovanehoNaradi.Nove, evnt.Pocet).Dto());
             ApplyChange(evnt);
 
@@ -85,6 +90,8 @@ namespace Vydejna.Domain.NecislovaneNaradi
                 ApplyChange(new NastalaPotrebaUpravitStavNaSkladeEvent
                 {
                     NaradiId = cmd.NaradiId,
+                    Verze = CurrentVersion + 1,
+                    CisloNaradi = 0,
                     TypZmeny = TypZmenyNaSklade.SnizitStav,
                     Hodnota = cmd.Pocet
                 });
@@ -112,6 +119,7 @@ namespace Vydejna.Domain.NecislovaneNaradi
             var evnt = new NecislovaneNaradiVydanoDoVyrobyEvent
             {
                 NaradiId = cmd.NaradiId,
+                Verze = CurrentVersion + 1,
                 CenaNova = cmd.CenaNova,
                 KodPracoviste = cmd.KodPracoviste,
                 Pocet = cmd.Pocet,
@@ -128,6 +136,8 @@ namespace Vydejna.Domain.NecislovaneNaradi
             evnt.NoveKusy = pouziteKusy.Select(k => NovaSkupina(k, cmd.CenaNova, 'P').Dto()).ToList();
             evnt.CelkovaCenaPredchozi = pouziteKusy.Sum(k => k.Cena * k.Pocet);
             evnt.CelkovaCenaNova = cmd.CenaNova.HasValue ? cmd.Pocet * cmd.CenaNova.Value : evnt.CelkovaCenaPredchozi;
+            evnt.PocetNaPredchozim = NajitUmisteni(predchoziUmisteni, false).PocetCelkem - evnt.Pocet;
+            evnt.PocetNaNovem = NajitUmisteni(noveUmisteni, false).PocetCelkem + evnt.Pocet;
             ApplyChange(evnt);
         }
 
@@ -149,6 +159,7 @@ namespace Vydejna.Domain.NecislovaneNaradi
             var evnt = new NecislovaneNaradiPrijatoZVyrobyEvent
             {
                 NaradiId = cmd.NaradiId,
+                Verze = CurrentVersion + 1,
                 CenaNova = cmd.CenaNova,
                 KodPracoviste = cmd.KodPracoviste,
                 StavNaradi = cmd.StavNaradi,
@@ -166,6 +177,8 @@ namespace Vydejna.Domain.NecislovaneNaradi
             evnt.NoveKusy = pouziteKusy.Select(k => NovaSkupina(k, cmd.CenaNova, null).Dto()).ToList();
             evnt.CelkovaCenaPredchozi = pouziteKusy.Sum(k => k.Cena * k.Pocet);
             evnt.CelkovaCenaNova = cmd.CenaNova.HasValue ? cmd.Pocet * cmd.CenaNova.Value : evnt.CelkovaCenaPredchozi;
+            evnt.PocetNaPredchozim = NajitUmisteni(predchoziUmisteni, false).PocetCelkem - evnt.Pocet;
+            evnt.PocetNaNovem = NajitUmisteni(noveUmisteni, false).PocetCelkem + evnt.Pocet;
             ApplyChange(evnt);
         }
 
@@ -187,6 +200,7 @@ namespace Vydejna.Domain.NecislovaneNaradi
             var evnt = new NecislovaneNaradiPredanoKOpraveEvent
             {
                 NaradiId = cmd.NaradiId,
+                Verze = CurrentVersion + 1,
                 CenaNova = cmd.CenaNova,
                 TypOpravy = cmd.TypOpravy,
                 KodDodavatele = cmd.KodDodavatele,
@@ -206,6 +220,8 @@ namespace Vydejna.Domain.NecislovaneNaradi
             evnt.NoveKusy = pouziteKusy.Select(k => NovaSkupina(k, cmd.CenaNova, null).Dto()).ToList();
             evnt.CelkovaCenaPredchozi = pouziteKusy.Sum(k => k.Cena * k.Pocet);
             evnt.CelkovaCenaNova = cmd.CenaNova.HasValue ? cmd.Pocet * cmd.CenaNova.Value : evnt.CelkovaCenaPredchozi;
+            evnt.PocetNaPredchozim = NajitUmisteni(predchoziUmisteni, false).PocetCelkem - evnt.Pocet;
+            evnt.PocetNaNovem = NajitUmisteni(noveUmisteni, false).PocetCelkem + evnt.Pocet;
             ApplyChange(evnt);
         }
 
@@ -229,6 +245,7 @@ namespace Vydejna.Domain.NecislovaneNaradi
             var evnt = new NecislovaneNaradiPrijatoZOpravyEvent
             {
                 NaradiId = cmd.NaradiId,
+                Verze = CurrentVersion + 1,
                 CenaNova = cmd.CenaNova,
                 TypOpravy = cmd.TypOpravy,
                 KodDodavatele = cmd.KodDodavatele,
@@ -250,6 +267,8 @@ namespace Vydejna.Domain.NecislovaneNaradi
             evnt.NoveKusy = pouziteKusy.Select(k => NovaSkupina(k, cmd.CenaNova, cerstvost).Dto()).ToList();
             evnt.CelkovaCenaPredchozi = pouziteKusy.Sum(k => k.Cena * k.Pocet);
             evnt.CelkovaCenaNova = cmd.CenaNova.HasValue ? cmd.Pocet * cmd.CenaNova.Value : evnt.CelkovaCenaPredchozi;
+            evnt.PocetNaPredchozim = NajitUmisteni(predchoziUmisteni, false).PocetCelkem - evnt.Pocet;
+            evnt.PocetNaNovem = NajitUmisteni(noveUmisteni, false).PocetCelkem + evnt.Pocet;
             ApplyChange(evnt);
         }
 
@@ -271,6 +290,7 @@ namespace Vydejna.Domain.NecislovaneNaradi
             var evnt = new NecislovaneNaradiPredanoKeSesrotovaniEvent
             {
                 NaradiId = cmd.NaradiId,
+                Verze = CurrentVersion + 1,
                 Pocet = cmd.Pocet,
                 EventId = Guid.NewGuid(),
                 Datum = time.GetUtcTime(),
@@ -283,6 +303,8 @@ namespace Vydejna.Domain.NecislovaneNaradi
             var pouziteKusy = mnozina.Pouzit(cmd.Pocet);
             evnt.PouziteKusy = pouziteKusy.Select(k => k.Dto()).ToList();
             evnt.CelkovaCenaPredchozi = pouziteKusy.Sum(k => k.Cena * k.Pocet);
+            evnt.PocetNaPredchozim = NajitUmisteni(predchoziUmisteni, false).PocetCelkem - evnt.Pocet;
+            evnt.PocetNaNovem = 0;
             ApplyChange(evnt);
         }
 
