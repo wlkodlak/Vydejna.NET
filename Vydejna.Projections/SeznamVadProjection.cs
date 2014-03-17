@@ -1,6 +1,7 @@
 ﻿using ServiceLib;
 using ServiceStack.Text;
 using System;
+using System.Linq;
 using System.Collections.Generic;
 using Vydejna.Contracts;
 
@@ -149,7 +150,7 @@ namespace Vydejna.Projections.SeznamVadReadModel
             if (zaklad == null)
                 response.Seznam = new List<SeznamVadPolozka>();
             else
-                response.Seznam = zaklad.Seznam;
+                response.Seznam = zaklad.Seznam.Where(v => v.Aktivni).ToList();
             return response;
         }
     }

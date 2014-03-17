@@ -4,7 +4,7 @@ using ServiceLib.Tests.TestUtils;
 using System;
 using System.Threading;
 
-namespace Vydejna.Projections.Tests
+namespace ServiceLib.TestUtils
 {
     public abstract class ReadModelTestBase
     {
