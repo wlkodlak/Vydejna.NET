@@ -1,6 +1,7 @@
 ﻿using ServiceLib;
 using ServiceStack.Text;
 using System;
+using System.Linq;
 using System.Collections.Generic;
 using Vydejna.Contracts;
 
@@ -58,6 +59,7 @@ namespace Vydejna.Projections.SeznamDodavateluReadModel
                         dodavatel = new InformaceODodavateli();
                         dodavatel.Kod = message.Command.Kod;
                         data.PodleKodu[dodavatel.Kod] = dodavatel;
+                        data.Seznam.Add(dodavatel);
                     }
                     dodavatel.Nazev = message.Command.Nazev;
                     dodavatel.Adresa = message.Command.Adresa;
@@ -162,7 +164,7 @@ namespace Vydejna.Projections.SeznamDodavateluReadModel
             if (zaklad == null)
                 response.Seznam = new List<InformaceODodavateli>();
             else
-                response.Seznam = zaklad.Seznam;
+                response.Seznam = zaklad.Seznam.Where(d => d.Aktivni).OrderBy(d => d.Nazev).ToList();
             return response;
         }
     }
