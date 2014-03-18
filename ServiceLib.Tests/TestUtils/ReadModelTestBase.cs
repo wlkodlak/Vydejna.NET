@@ -4,7 +4,7 @@ using ServiceLib.Tests.TestUtils;
 using System;
 using System.Threading;
 
-namespace ServiceLib.TestUtils
+namespace ServiceLib.Tests.TestUtils
 {
     public abstract class ReadModelTestBase
     {

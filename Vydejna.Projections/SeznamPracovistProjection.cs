@@ -157,7 +157,7 @@ namespace Vydejna.Projections.SeznamPracovistReadModel
             {
                  Stranka = request.Stranka,
                  PocetCelkem = celkem,
-                 PocetStranek = (celkem + 99)/100,
+                 PocetStranek = (celkem + 99) / 100,
                  Seznam = seznam
             };
         }

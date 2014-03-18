@@ -235,13 +235,20 @@ namespace ServiceLib.Tests.TestUtils
                         continue;
                     if (maxValue != null && string.CompareOrdinal(pair.Item1, maxValue) > 0)
                         continue;
-                    if (allKeys.Add(pair.Item2))
+                    if (!allKeys.Add(pair.Item2))
+                        continue;
+                    if (skip > 0)
                     {
-                        Document document;
-                        if (_data.TryGetValue(pair.Item2, out document))
-                        {
-                            result.Add(new DocumentStoreFoundDocument(pair.Item1, document.Version, document.Contents));
-                        }
+                        skip--;
+                        continue;
+                    }
+                    if (maxCount == 0)
+                        continue;
+                    maxCount--;
+                    Document document;
+                    if (_data.TryGetValue(pair.Item2, out document))
+                    {
+                        result.Add(new DocumentStoreFoundDocument(pair.Item1, document.Version, document.Contents));
                     }
                 }
                 result.TotalFound = allKeys.Count;
