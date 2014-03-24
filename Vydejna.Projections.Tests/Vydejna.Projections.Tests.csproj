@@ -64,8 +64,17 @@
     </Otherwise>
   </Choose>
   <ItemGroup>
+    <Compile Include="DetailNaradiReadModelTests.cs" />
+    <Compile Include="IndexObjednavekReadModelTests.cs" />
+    <Compile Include="NaradiNaPracovistiReadModelTests.cs" />
+    <Compile Include="NaradiNaVydejneReadModelTests.cs" />
+    <Compile Include="NaradiNaObjednavceReadModelTests.cs" />
+    <Compile Include="PrehledAktivnihoNaradiReadModelTests.cs" />
+    <Compile Include="PrehledCislovanehoNaradiReadModelTests.cs" />
+    <Compile Include="PrehledObjednavekReadModelTests.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="SeznamDodavateluReadModelTests.cs" />
+    <Compile Include="SeznamNaradiReadModelTests.cs" />
     <Compile Include="SeznamPracovistReadModelTests.cs" />
     <Compile Include="SeznamVadReadModelTests.cs" />
   </ItemGroup>
