@@ -10,6 +10,7 @@ namespace Vydejna.Projections.PrehledObjednavekReadModel
     public class PrehledObjednavekProjection
         : IEventProjection
         , IHandle<CommandExecution<DefinovanDodavatelEvent>>
+        , IHandle<CommandExecution<ProjectorMessages.Flush>>
         , IHandle<CommandExecution<CislovaneNaradiPredanoKOpraveEvent>>
         , IHandle<CommandExecution<CislovaneNaradiPrijatoZOpravyEvent>>
         , IHandle<CommandExecution<NecislovaneNaradiPredanoKOpraveEvent>>
@@ -49,6 +50,43 @@ namespace Vydejna.Projections.PrehledObjednavekReadModel
         public void Handle(CommandExecution<ProjectorMessages.UpgradeFrom> message)
         {
             throw new NotSupportedException();
+        }
+
+        public void Handle(CommandExecution<ProjectorMessages.Flush> message)
+        {
+            new FlushWorker(this, message.OnCompleted, message.OnError).Execute();
+        }
+
+        private class FlushWorker
+        {
+            private PrehledObjednavekProjection _parent;
+            private Action _onComplete;
+            private Action<Exception> _onError;
+
+            public FlushWorker(PrehledObjednavekProjection parent, Action onComplete, Action<Exception> onError)
+            {
+                this._parent = parent;
+                this._onComplete = onComplete;
+                this._onError = onError;
+            }
+
+            public void Execute()
+            {
+                _parent._cacheDodavatelu.Flush(FlushObjednavek, _onError,
+                    save => _parent._repository.UlozitDodavatele(save.Version, save.Value, save.SavedAsVersion, save.SavingFailed));
+            }
+
+            private void FlushObjednavek()
+            {
+                _parent._cacheObjednavek.Flush(FlushVerze, _onError,
+                    save => _parent._repository.UlozitObjednavku(save.Version, save.Value, save.SavedAsVersion, save.SavingFailed));
+            }
+
+            private void FlushVerze()
+            {
+                _parent._cacheVerze.Flush(_onComplete, _onError,
+                    save => _parent._repository.UlozitVerziSeznamu(save.Version, save.Value, save.SavedAsVersion, save.SavingFailed));
+            }
         }
 
         public void Handle(CommandExecution<DefinovanDodavatelEvent> message)
@@ -110,6 +148,7 @@ namespace Vydejna.Projections.PrehledObjednavekReadModel
             private string _kodDodavatele;
             private string _cisloObjednavky;
             private Guid _eventId;
+            private DateTime? _datum;
             private DateTime? _termin;
             private Action<ObjednavkaVPrehledu> _zmena;
 
@@ -121,7 +160,7 @@ namespace Vydejna.Projections.PrehledObjednavekReadModel
             private string _dokumentObjednavky;
 
             public UpravitObjednavku(PrehledObjednavekProjection parent, Action onComplete, Action<Exception> onError,
-                string kodDodavatele, string cisloObjednavky, Guid eventId, DateTime? termin, Action<ObjednavkaVPrehledu> zmena)
+                string kodDodavatele, string cisloObjednavky, Guid eventId, DateTime? datum, DateTime? termin, Action<ObjednavkaVPrehledu> zmena)
             {
                 _parent = parent;
                 _onComplete = onComplete;
@@ -129,6 +168,7 @@ namespace Vydejna.Projections.PrehledObjednavekReadModel
                 _kodDodavatele = kodDodavatele;
                 _cisloObjednavky = cisloObjednavky;
                 _eventId = eventId;
+                _datum = datum;
                 _termin = termin;
                 _zmena = zmena;
                 _dokumentObjednavky = PrehledObjednavekProjection.DokumentObjednavky(_kodDodavatele, _cisloObjednavky);
@@ -145,7 +185,7 @@ namespace Vydejna.Projections.PrehledObjednavekReadModel
                 _verzeDokumentuVerze = verzeSeznamu;
                 _verzeSeznamu = verzeSeznamu;
 
-                _parent._cacheDodavatelu.Get(_kodDodavatele, NactenDodavatel, _onError, _parent.NacistDodavatele);
+                _parent._cacheDodavatelu.Get("dodavatele", NactenDodavatel, _onError, _parent.NacistDodavatele);
             }
 
             private void NactenDodavatel(int verzeDodavatelu, PrehledObjednavekDataSeznamDodavatelu seznamDodavatelu)
@@ -184,23 +224,26 @@ namespace Vydejna.Projections.PrehledObjednavekReadModel
                 if (_dodavatel != null)
                     _objednavka.NazevDodavatele = _dodavatel.NazevDodavatele;
 
+                if (_datum.HasValue)
+                    _objednavka.DatumObjednani = _datum.Value;
                 if (_termin.HasValue)
                     _objednavka.TerminDodani = _termin.Value;
 
                 _zmena(_objednavka);
-                _onComplete();
             }
         }
 
         public void Handle(CommandExecution<CislovaneNaradiPredanoKOpraveEvent> message)
         {
-            new UpravitObjednavku(this, message.OnCompleted, message.OnError, message.Command.KodDodavatele, message.Command.Objednavka, message.Command.EventId, message.Command.TerminDodani,
+            new UpravitObjednavku(this, message.OnCompleted, message.OnError, message.Command.KodDodavatele, message.Command.Objednavka,
+                message.Command.EventId, message.Command.Datum, message.Command.TerminDodani,
                 obj => { obj.PocetObjednanych += 1; }).Execute();
         }
 
         public void Handle(CommandExecution<CislovaneNaradiPrijatoZOpravyEvent> message)
         {
-            new UpravitObjednavku(this, message.OnCompleted, message.OnError, message.Command.KodDodavatele, message.Command.Objednavka, message.Command.EventId, null,
+            new UpravitObjednavku(this, message.OnCompleted, message.OnError, message.Command.KodDodavatele, message.Command.Objednavka,
+                message.Command.EventId, null, null,
                 obj =>
                 {
                     if (message.Command.Opraveno == StavNaradiPoOprave.Neopravitelne)
@@ -212,13 +255,15 @@ namespace Vydejna.Projections.PrehledObjednavekReadModel
 
         public void Handle(CommandExecution<NecislovaneNaradiPredanoKOpraveEvent> message)
         {
-            new UpravitObjednavku(this, message.OnCompleted, message.OnError, message.Command.KodDodavatele, message.Command.Objednavka, message.Command.EventId, message.Command.TerminDodani,
+            new UpravitObjednavku(this, message.OnCompleted, message.OnError, message.Command.KodDodavatele, message.Command.Objednavka,
+                message.Command.EventId, message.Command.Datum, message.Command.TerminDodani,
                 obj => { obj.PocetObjednanych += message.Command.Pocet; }).Execute();
         }
 
         public void Handle(CommandExecution<NecislovaneNaradiPrijatoZOpravyEvent> message)
         {
-            new UpravitObjednavku(this, message.OnCompleted, message.OnError, message.Command.KodDodavatele, message.Command.Objednavka, message.Command.EventId, null,
+            new UpravitObjednavku(this, message.OnCompleted, message.OnError, message.Command.KodDodavatele, message.Command.Objednavka,
+                message.Command.EventId, null, null,
                 obj =>
                 {
                     if (message.Command.Opraveno == StavNaradiPoOprave.Neopravitelne)
@@ -451,6 +496,7 @@ namespace Vydejna.Projections.PrehledObjednavekReadModel
             {
                 return new PrehledObjednavekResponse
                 {
+                    Stranka = _stranka,
                     Razeni = _razeni,
                     PocetCelkem = celkem,
                     PocetStranek = (celkem + 99) / 100,
