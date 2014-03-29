@@ -182,7 +182,7 @@ namespace Vydejna.Projections.PrehledObjednavekReadModel
 
             private void NactenaVerzeSeznamu(int verzeDokumentu, int verzeSeznamu)
             {
-                _verzeDokumentuVerze = verzeSeznamu;
+                _verzeDokumentuVerze = verzeDokumentu;
                 _verzeSeznamu = verzeSeznamu;
 
                 _parent._cacheDodavatelu.Get("dodavatele", NactenDodavatel, _onError, _parent.NacistDodavatele);
