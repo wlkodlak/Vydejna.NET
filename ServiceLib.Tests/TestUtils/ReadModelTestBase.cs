@@ -15,6 +15,8 @@ namespace ServiceLib.Tests.TestUtils
         protected object _reader;
         private bool _inRebuildMode, _isStarted, _isFlushed;
 
+        protected DateTime CurrentTime { get { return _time.GetUtcTime(); } }
+
         [TestInitialize]
         public void Initialize()
         {
