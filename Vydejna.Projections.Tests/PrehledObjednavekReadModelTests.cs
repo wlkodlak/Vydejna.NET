@@ -151,6 +151,18 @@ namespace Vydejna.Projections.Tests
             AssertRazeni(4, "D005", "229/2014");
         }
 
+        [TestMethod, Ignore]
+        public void ObjednavkyMohouBytIProCislovaneNaradi()
+        {
+            SendDefinovanDodavatel("D008", "Opravar s.r.o.");
+            SendCislovaneDoOpravy("D008", "2014/3829", 1);
+            SendCislovaneDoOpravy("D008", "2014/3829", 2);
+            SendCislovaneDoOpravy("D008", "2014/3829", 3);
+            SendCislovaneDoOpravy("D008", "2014/3811", 4);
+            SendCislovaneDoOpravy("D008", "2014/3814", 5);
+            //SendCislovaneOpraveno("D008", "2014/3829", 2);
+        }
+
         private void AssertRazeni(int index, string dodavatel, string objednavka)
         {
             var radek = _response.Seznam[index];
@@ -200,6 +212,26 @@ namespace Vydejna.Projections.Tests
             });
         }
 
+        private void SendCislovaneDoOpravy(string dodavatel, string objednavka, int cisloNaradi)
+        {
+            SendEvent(new CislovaneNaradiPredanoKOpraveEvent
+            {
+                CenaNova = 4m,
+                Datum = _datum,
+                EventId = Guid.NewGuid(),
+                KodDodavatele = dodavatel,
+                NaradiId = Guid.NewGuid(),
+                CenaPredchozi = 0m,
+                CisloNaradi = cisloNaradi,
+                NoveUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.VOprave, Dodavatel = dodavatel, Objednavka = objednavka, UpresneniZakladu = "Oprava" },
+                Objednavka = objednavka,
+                PredchoziUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.NaVydejne, UpresneniZakladu = "NutnoOpravit" },
+                TerminDodani = _datum.AddDays(30),
+                TypOpravy = TypOpravy.Oprava,
+                Verze = 7
+            });
+        }
+
         private void SendOpraveno(string dodavatel, string objednavka, string dodaciList, int pocet, bool opraveno)
         {
             SendEvent(new NecislovaneNaradiPrijatoZOpravyEvent
@@ -224,6 +256,28 @@ namespace Vydejna.Projections.Tests
                 NoveUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.NaVydejne, UpresneniZakladu = opraveno ? "VPoradku" : "Neopravitelne" },
                 NoveKusy = new List<SkupinaNecislovanehoNaradiDto>() { new SkupinaNecislovanehoNaradiDto { Pocet = pocet, Cena = 4m, Cerstvost = "Opravene", Datum = _datum } },
                 PouziteKusy = new List<SkupinaNecislovanehoNaradiDto>() { new SkupinaNecislovanehoNaradiDto { Pocet = pocet, Cena = 0m, Cerstvost = "Pouzite", Datum = _datum.AddDays(-1) } },
+            });
+        }
+
+        private void SendCislovaneOpraveno(string dodavatel, string objednavka, string dodaciList, int cisloNaradi, bool opraveno)
+        {
+            SendEvent(new CislovaneNaradiPrijatoZOpravyEvent
+            {
+                CenaNova = opraveno ? 10m : 0m,
+                Datum = _datum,
+                DodaciList = dodaciList,
+                EventId = Guid.NewGuid(),
+                KodDodavatele = dodavatel,
+                NaradiId = Guid.NewGuid(),
+                Objednavka = objednavka,
+                Opraveno = opraveno ? StavNaradiPoOprave.Opraveno : StavNaradiPoOprave.Neopravitelne,
+                Verze = 9,
+                StavNaradi = opraveno ? StavNaradi.VPoradku : StavNaradi.Neopravitelne,
+                TypOpravy = TypOpravy.Oprava,
+                PredchoziUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.VOprave, Dodavatel = dodavatel, Objednavka = objednavka, UpresneniZakladu = "Oprava" },
+                NoveUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.NaVydejne, UpresneniZakladu = opraveno ? "VPoradku" : "Neopravitelne" },
+                CenaPredchozi = 4m,
+                CisloNaradi = cisloNaradi
             });
         }
 
