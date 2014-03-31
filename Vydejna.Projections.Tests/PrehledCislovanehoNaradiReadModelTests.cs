@@ -162,11 +162,6 @@ namespace Vydejna.Projections.Tests
             Assert.AreEqual(200, _response.Seznam[99].CisloNaradi);
         }
 
-        /*
-         * Seznam je serazen vzestupne podle cisla naradi
-         * Dlouhy serazeny seznam je strankovan
-         */
-
         private static UmisteniNaradiDto UmisteniVydejna(StavNaradi stavNaradi)
         {
             return new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.NaVydejne, UpresneniZakladu = stavNaradi.ToString() };

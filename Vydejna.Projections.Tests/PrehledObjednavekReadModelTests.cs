@@ -151,7 +151,7 @@ namespace Vydejna.Projections.Tests
             AssertRazeni(4, "D005", "229/2014");
         }
 
-        [TestMethod, Ignore]
+        [TestMethod]
         public void ObjednavkyMohouBytIProCislovaneNaradi()
         {
             SendDefinovanDodavatel("D008", "Opravar s.r.o.");
@@ -160,7 +160,13 @@ namespace Vydejna.Projections.Tests
             SendCislovaneDoOpravy("D008", "2014/3829", 3);
             SendCislovaneDoOpravy("D008", "2014/3811", 4);
             SendCislovaneDoOpravy("D008", "2014/3814", 5);
-            //SendCislovaneOpraveno("D008", "2014/3829", 2);
+            SendCislovaneOpraveno("D008", "2014/3829", 2, StavNaradiPoOprave.Opraveno);
+            SendCislovaneOpraveno("D008", "2014/3829", 3, StavNaradiPoOprave.Neopravitelne);
+            ZiskatStrankuPodleCisla();
+            var objednavka = _response.Seznam.FirstOrDefault(o => o.Objednavka == "2014/3829");
+            Assert.AreEqual(3, objednavka.PocetObjednanych, "PocetObjednanych");
+            Assert.AreEqual(1, objednavka.PocetOpravenych, "PocetOpravenych");
+            Assert.AreEqual(1, objednavka.PocetNeopravitelnych, "PocetNeopravitelnych");
         }
 
         private void AssertRazeni(int index, string dodavatel, string objednavka)
@@ -229,6 +235,28 @@ namespace Vydejna.Projections.Tests
                 TerminDodani = _datum.AddDays(30),
                 TypOpravy = TypOpravy.Oprava,
                 Verze = 7
+            });
+        }
+
+        private void SendCislovaneOpraveno(string dodavatel, string objednavka, int cisloNaradi, StavNaradiPoOprave stavNaradi)
+        {
+            SendEvent(new CislovaneNaradiPrijatoZOpravyEvent
+            {
+                CenaNova = 4m,
+                Datum = _datum,
+                EventId = Guid.NewGuid(),
+                KodDodavatele = dodavatel,
+                NaradiId = Guid.NewGuid(),
+                CenaPredchozi = 0m,
+                CisloNaradi = cisloNaradi,
+                PredchoziUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.VOprave, Dodavatel = dodavatel, Objednavka = objednavka, UpresneniZakladu = "Oprava" },
+                Objednavka = objednavka,
+                Opraveno = stavNaradi,
+                DodaciList = "D" + objednavka,
+                StavNaradi = stavNaradi == StavNaradiPoOprave.Opraveno ? StavNaradi.VPoradku : StavNaradi.Neopravitelne,
+                NoveUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.NaVydejne, UpresneniZakladu = "NutnoOpravit" },
+                TypOpravy = TypOpravy.Oprava,
+                Verze = 9
             });
         }
 
