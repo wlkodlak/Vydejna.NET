@@ -163,6 +163,7 @@ namespace Vydejna.Projections.IndexObjednavekReadModel
                 {
                     _objednavka = new IndexObjednavekDataObjednavek();
                     _objednavka.CisloObjednavky = _cisloObjednavky;
+                    _objednavka.Kandidati = new List<NalezenaObjednavka>();
                 }
                 var existujici = _objednavka.Kandidati.FirstOrDefault(k => k.KodDodavatele == _kodDodavatele);
                 if (existujici == null)
@@ -170,6 +171,7 @@ namespace Vydejna.Projections.IndexObjednavekReadModel
                     existujici = new NalezenaObjednavka();
                     existujici.Objednavka = _cisloObjednavky;
                     existujici.KodDodavatele = _kodDodavatele;
+                    _objednavka.Kandidati.Add(existujici);
                 }
                 IndexObjednavekDodavatel dodavatel;
                 if (_dodavatele.IndexDodavatelu.TryGetValue(_kodDodavatele, out dodavatel))
@@ -250,13 +252,15 @@ namespace Vydejna.Projections.IndexObjednavekReadModel
                 {
                     _dodaciListy = new IndexObjednavekDataDodacichListu();
                     _dodaciListy.CisloDodacihoListu = _cisloDodacihoListu;
+                    _dodaciListy.Kandidati = new List<NalezenyDodaciList>();
                 }
                 var existujici = _dodaciListy.Kandidati.FirstOrDefault(k => k.KodDodavatele == _kodDodavatele);
                 if (existujici == null)
                 {
                     existujici = new NalezenyDodaciList();
-                    existujici.DodaciList = _cisloObjednavky;
+                    existujici.DodaciList = _cisloDodacihoListu;
                     existujici.KodDodavatele = _kodDodavatele;
+                    _dodaciListy.Kandidati.Add(existujici);
                 }
                 existujici.Objednavky = existujici.Objednavky ?? new List<string>();
                 IndexObjednavekDodavatel dodavatel;
@@ -441,7 +445,7 @@ namespace Vydejna.Projections.IndexObjednavekReadModel
             {
                 Objednavka = cisloObjednavky,
                 Nalezena = zaklad != null,
-                Kandidati = zaklad.Kandidati
+                Kandidati = zaklad == null ? new List<NalezenaObjednavka>() : zaklad.Kandidati
             };
         }
 
@@ -459,7 +463,7 @@ namespace Vydejna.Projections.IndexObjednavekReadModel
             {
                 DodaciList = dodaciList,
                 Nalezen = zaklad != null,
-                Kandidati = zaklad.Kandidati
+                Kandidati = zaklad == null ? new List<NalezenyDodaciList>() : zaklad.Kandidati
             };
         }
     }
