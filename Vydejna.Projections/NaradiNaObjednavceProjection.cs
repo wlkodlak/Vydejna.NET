@@ -144,6 +144,8 @@ namespace Vydejna.Projections.NaradiNaObjednavceReadModel
             {
                 dodavatelInfo = new InformaceODodavateli();
                 dodavatelInfo.Kod = message.Command.Kod;
+                dodavatele.SeznamDodavatelu.Add(dodavatelInfo);
+                dodavatele.IndexDodavatelu[dodavatelInfo.Kod] = dodavatelInfo;
             }
             dodavatelInfo.Nazev = message.Command.Nazev;
             dodavatelInfo.Adresa = message.Command.Adresa;
@@ -164,6 +166,7 @@ namespace Vydejna.Projections.NaradiNaObjednavceReadModel
             private Guid _naradiId;
             private int _cisloNaradi;
             private int _novyPocet;
+            private DateTime? _terminDodani;
 
             private int _verzeObjednavky;
             private NaradiNaObjednavceDataObjednavky _dataObjednavky;
@@ -172,7 +175,7 @@ namespace Vydejna.Projections.NaradiNaObjednavceReadModel
             private string _nazevDokumentuObjednavky;
 
             public UpravitObjednavku(NaradiNaObjednavceProjection parent, string kodDodavatele, string cisloObjednavky, Action onComplete, Action<Exception> onError,
-                Guid naradiId, int cisloNaradi, int novyPocet)
+                Guid naradiId, int cisloNaradi, int novyPocet, DateTime? terminDodani)
             {
                 _parent = parent;
                 _onComplete = onComplete;
@@ -182,6 +185,7 @@ namespace Vydejna.Projections.NaradiNaObjednavceReadModel
                 _naradiId = naradiId;
                 _cisloNaradi = cisloNaradi;
                 _novyPocet = novyPocet;
+                _terminDodani = terminDodani;
             }
 
             public void Execute()
@@ -252,11 +256,14 @@ namespace Vydejna.Projections.NaradiNaObjednavceReadModel
 
                 _dataObjednavky.Objednavka = _cisloObjednavky;
                 _dataObjednavky.Dodavatel = _dodavatel;
+                if (_terminDodani != null)
+                    _dataObjednavky.TerminDodani = _terminDodani;
 
                 if (!_dataObjednavky.IndexPodleIdNaradi.TryGetValue(_naradiId, out naradiNaObjednavce))
                 {
                     naradiNaObjednavce = new NaradiNaObjednavce();
                     naradiNaObjednavce.NaradiId = _naradiId;
+                    naradiNaObjednavce.SeznamCislovanych = new List<int>();
                     _dataObjednavky.IndexPodleIdNaradi[_naradiId] = naradiNaObjednavce;
                     _dataObjednavky.Seznam.Add(naradiNaObjednavce);
                 }
@@ -292,25 +299,25 @@ namespace Vydejna.Projections.NaradiNaObjednavceReadModel
         public void Handle(CommandExecution<CislovaneNaradiPredanoKOpraveEvent> message)
         {
             new UpravitObjednavku(this, message.Command.KodDodavatele, message.Command.Objednavka, message.OnCompleted, message.OnError,
-                message.Command.NaradiId, message.Command.CisloNaradi, 1).Execute();
+                message.Command.NaradiId, message.Command.CisloNaradi, 1, message.Command.TerminDodani).Execute();
         }
 
         public void Handle(CommandExecution<CislovaneNaradiPrijatoZOpravyEvent> message)
         {
             new UpravitObjednavku(this, message.Command.KodDodavatele, message.Command.Objednavka, message.OnCompleted, message.OnError,
-                message.Command.NaradiId, message.Command.CisloNaradi, 0).Execute();
+                message.Command.NaradiId, message.Command.CisloNaradi, 0, null).Execute();
         }
 
         public void Handle(CommandExecution<NecislovaneNaradiPredanoKOpraveEvent> message)
         {
             new UpravitObjednavku(this, message.Command.KodDodavatele, message.Command.Objednavka, message.OnCompleted, message.OnError,
-                message.Command.NaradiId, 0, message.Command.PocetNaNovem).Execute();
+                message.Command.NaradiId, 0, message.Command.PocetNaNovem, message.Command.TerminDodani).Execute();
         }
 
         public void Handle(CommandExecution<NecislovaneNaradiPrijatoZOpravyEvent> message)
         {
             new UpravitObjednavku(this, message.Command.KodDodavatele, message.Command.Objednavka, message.OnCompleted, message.OnError,
-                message.Command.NaradiId, 0, message.Command.PocetNaPredchozim).Execute();
+                message.Command.NaradiId, 0, message.Command.PocetNaPredchozim, null).Execute();
         }
     }
 
@@ -432,7 +439,7 @@ namespace Vydejna.Projections.NaradiNaObjednavceReadModel
                 (verze, data) => message.OnCompleted(data),
                 message.OnError,
                 load => _repository.NacistObjednavku(message.Request.KodDodavatele, message.Request.Objednavka,
-                    (verze, data) => VytvoritResponse(message.Request.KodDodavatele, message.Request.Objednavka, data),
+                    (verze, data) => load.SetLoadedValue(verze, VytvoritResponse(message.Request.KodDodavatele, message.Request.Objednavka, data)),
                     load.LoadingFailed));
         }
 

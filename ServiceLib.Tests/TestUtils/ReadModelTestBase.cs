@@ -27,11 +27,19 @@ namespace ServiceLib.Tests.TestUtils
             InitializeCore();
             _projection = CreateProjection();
             _reader = CreateReader();
+            Given();
+            When();
         }
 
         protected abstract IEventProjection CreateProjection();
         protected abstract object CreateReader();
         protected virtual void InitializeCore()
+        {
+        }
+        protected virtual void Given()
+        {
+        }
+        protected virtual void When()
         {
         }
 
