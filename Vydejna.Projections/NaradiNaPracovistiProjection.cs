@@ -79,6 +79,14 @@ namespace Vydejna.Projections.NaradiNaPracovistiReadModel
             }
         }
 
+        private class NaradiIdComparer : IComparer<NaradiNaPracovisti>
+        {
+            public int Compare(NaradiNaPracovisti x, NaradiNaPracovisti y)
+            {
+                return x.NaradiId.CompareTo(y.NaradiId);
+            }
+        }
+
         private class UpravitNaradiNaPracovisti
         {
             private NaradiNaPracovistiProjection _parent;
@@ -139,6 +147,12 @@ namespace Vydejna.Projections.NaradiNaPracovistiReadModel
                 {
                     _dataPracoviste.IndexPodleIdNaradi[_naradiId] = naradiNaPracovisti = new NaradiNaPracovisti();
                     naradiNaPracovisti.NaradiId = _naradiId;
+                    naradiNaPracovisti.SeznamCislovanych = new List<int>();
+                    var naradiComparer = new NaradiIdComparer();
+                    var index = _dataPracoviste.Seznam.BinarySearch(naradiNaPracovisti, naradiComparer);
+                    if (index < 0)
+                        index = ~index;
+                    _dataPracoviste.Seznam.Insert(index, naradiNaPracovisti);
                 }
                 if (_naradiInfo != null)
                 {
@@ -161,6 +175,11 @@ namespace Vydejna.Projections.NaradiNaPracovistiReadModel
                         naradiNaPracovisti.SeznamCislovanych.Remove(_cisloNaradi);
                 }
                 naradiNaPracovisti.PocetCelkem = naradiNaPracovisti.PocetNecislovanych + naradiNaPracovisti.SeznamCislovanych.Count;
+                if (naradiNaPracovisti.PocetCelkem == 0)
+                {
+                    _dataPracoviste.Seznam.Remove(naradiNaPracovisti);
+                    _dataPracoviste.IndexPodleIdNaradi.Remove(naradiNaPracovisti.NaradiId);
+                }
                 _dataPracoviste.PocetCelkem = _dataPracoviste.IndexPodleIdNaradi.Values.Sum(n => n.PocetCelkem);
             }
         }
