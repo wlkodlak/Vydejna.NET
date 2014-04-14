@@ -46,9 +46,6 @@
     <Reference Include="Npgsql">
       <HintPath>..\packages\Npgsql.2.0.14.3\lib\net45\Npgsql.dll</HintPath>
     </Reference>
-    <Reference Include="ServiceStack.Text">
-      <HintPath>..\packages\ServiceStack.Text.4.0.5\lib\net40\ServiceStack.Text.dll</HintPath>
-    </Reference>
     <Reference Include="System" />
   </ItemGroup>
   <Choose>

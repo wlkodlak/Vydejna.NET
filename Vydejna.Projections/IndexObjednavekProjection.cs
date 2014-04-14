@@ -4,7 +4,6 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using ServiceLib;
-using ServiceStack.Text;
 using Vydejna.Contracts;
 
 namespace Vydejna.Projections.IndexObjednavekReadModel

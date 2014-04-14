@@ -38,11 +38,11 @@
     <Reference Include="Mono.Security">
       <HintPath>..\packages\Npgsql.2.0.14.3\lib\net45\Mono.Security.dll</HintPath>
     </Reference>
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>..\packages\Newtonsoft.Json.6.0.2\lib\net45\Newtonsoft.Json.dll</HintPath>
+    </Reference>
     <Reference Include="Npgsql">
       <HintPath>..\packages\Npgsql.2.0.14.3\lib\net45\Npgsql.dll</HintPath>
-    </Reference>
-    <Reference Include="ServiceStack.Text">
-      <HintPath>..\packages\ServiceStack.Text.4.0.5\lib\net40\ServiceStack.Text.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
@@ -56,6 +56,7 @@
   <ItemGroup>
     <Compile Include="DtoUtils.cs" />
     <Compile Include="EventSourcedServiceExecution.cs" />
+    <Compile Include="JsonSerializer.cs" />
     <Compile Include="LocalBus.cs" />
     <Compile Include="ContractTypes.cs" />
     <Compile Include="DatabasePostgres.cs" />
