@@ -12,6 +12,7 @@ namespace Vydejna.Projections.PrehledAktivnihoNaradiReadModel
         , IHandle<CommandExecution<DefinovanoNaradiEvent>>
         , IHandle<CommandExecution<AktivovanoNaradiEvent>>
         , IHandle<CommandExecution<DeaktivovanoNaradiEvent>>
+        , IHandle<CommandExecution<ZmenenStavNaSkladeEvent>>
         , IHandle<CommandExecution<CislovaneNaradiPrijatoNaVydejnuEvent>>
         , IHandle<CommandExecution<CislovaneNaradiVydanoDoVyrobyEvent>>
         , IHandle<CommandExecution<CislovaneNaradiPrijatoZVyrobyEvent>>
@@ -71,6 +72,11 @@ namespace Vydejna.Projections.PrehledAktivnihoNaradiReadModel
                     {
                         naradi = new PrehledAktivnihoNaradiDataNaradi();
                         naradi.NaradiId = naradiId;
+                        naradi.CislovaneOpravovane = new HashSet<int>();
+                        naradi.CislovanePoskozene = new HashSet<int>();
+                        naradi.CislovaneVeVyrobe = new HashSet<int>();
+                        naradi.CislovaneVPoradku = new HashSet<int>();
+                        naradi.CislovaneZnicene = new HashSet<int>();
                     }
                     handler(naradi);
                     _cacheNaradi.Insert(naradiId.ToString(), verze, naradi, dirty: true);
@@ -87,6 +93,7 @@ namespace Vydejna.Projections.PrehledAktivnihoNaradiReadModel
                 naradi.Vykres = message.Command.Vykres;
                 naradi.Rozmer = message.Command.Rozmer;
                 naradi.Druh = message.Command.Druh;
+                naradi.Aktivni = true;
             });
         }
 
@@ -103,6 +110,14 @@ namespace Vydejna.Projections.PrehledAktivnihoNaradiReadModel
             ZpracovatZakladniNaradi(message.OnCompleted, message.OnError, message.Command.NaradiId, naradi =>
             {
                 naradi.Aktivni = false;
+            });
+        }
+
+        public void Handle(CommandExecution<ZmenenStavNaSkladeEvent> message)
+        {
+            ZpracovatZakladniNaradi(message.OnCompleted, message.OnError, message.Command.NaradiId, naradi =>
+            {
+                naradi.NaSklade = message.Command.NovyStav;
             });
         }
 
