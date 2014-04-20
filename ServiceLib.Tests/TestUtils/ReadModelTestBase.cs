@@ -15,7 +15,11 @@ namespace ServiceLib.Tests.TestUtils
         protected object _reader;
         private bool _inRebuildMode, _isStarted, _isFlushed;
 
-        protected DateTime CurrentTime { get { return _time.GetUtcTime(); } }
+        public DateTime CurrentTime
+        {
+            get { return _time.GetUtcTime(); }
+            set { _time.SetTime(value); }
+        }
 
         [TestInitialize]
         public void Initialize()
@@ -43,7 +47,7 @@ namespace ServiceLib.Tests.TestUtils
         {
         }
 
-        protected TResponse ReadProjection<TRequest, TResponse>(TRequest request)
+        public TResponse ReadProjection<TRequest, TResponse>(TRequest request)
             where TRequest : class
             where TResponse : class
         {
@@ -75,7 +79,7 @@ namespace ServiceLib.Tests.TestUtils
             return null;
         }
 
-        protected void StartRebuild(string storedVersion = null)
+        public void StartRebuild(string storedVersion = null)
         {
             _inRebuildMode = true;
             var mode = _projection.UpgradeMode(storedVersion);
@@ -85,7 +89,7 @@ namespace ServiceLib.Tests.TestUtils
             _isFlushed = true;
         }
 
-        protected void Resume(string storedVersion)
+        public void Resume(string storedVersion)
         {
             var mode = _projection.UpgradeMode(storedVersion);
             Assert.AreEqual(EventProjectionUpgradeMode.NotNeeded, mode, "Rebuild unexpected");
@@ -94,7 +98,7 @@ namespace ServiceLib.Tests.TestUtils
             _isFlushed = true;
         }
 
-        protected void Flush()
+        public void Flush()
         {
             if (!_isStarted)
                 StartRebuild(null);
@@ -107,14 +111,14 @@ namespace ServiceLib.Tests.TestUtils
             _isFlushed = true;
         }
 
-        protected void SendEvent<T>(T evnt)
+        public void SendEvent<T>(T evnt)
         {
             if (!_isStarted)
                 StartRebuild(null);
             _isFlushed = false;
             SendEventInternal(evnt, true);
         }
-        
+
         private void SendEventInternal<T>(T evnt, bool mustImplement)
         {
             var mre = new ManualResetEventSlim();

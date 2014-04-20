@@ -66,6 +66,7 @@
     <Compile Include="NaradiNaPracovistiReadModelTests.cs" />
     <Compile Include="NaradiNaVydejneReadModelTests.cs" />
     <Compile Include="NaradiNaObjednavceReadModelTests.cs" />
+    <Compile Include="NaradiTestEventBuilder.cs" />
     <Compile Include="PrehledAktivnihoNaradiReadModelTests.cs" />
     <Compile Include="PrehledCislovanehoNaradiReadModelTests.cs" />
     <Compile Include="PrehledObjednavekReadModelTests.cs" />

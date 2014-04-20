@@ -46,14 +46,14 @@ namespace Vydejna.Contracts
         public bool Aktivni { get; set; }
         public int NaSklade { get; set; }
 
-        public DetailNaradiDataPocty PoctyCelkem { get; set; }
-        public DetailNaradiDataPocty PoctyNecislovane { get; set; }
-        public DetailNaradiDataPocty PoctyCislovane { get; set; }
+        public DetailNaradiPocty PoctyCelkem { get; set; }
+        public DetailNaradiPocty PoctyNecislovane { get; set; }
+        public DetailNaradiPocty PoctyCislovane { get; set; }
 
         public List<DetailNaradiNecislovane> Necislovane { get; set; }
         public List<DetailNaradiCislovane> Cislovane { get; set; }
     }
-    public class DetailNaradiDataPocty
+    public class DetailNaradiPocty
     {
         public int VPoradku { get; set; }
         public int VOprave { get; set; }

@@ -367,7 +367,7 @@ namespace Vydejna.Projections.DetailNaradiReadModel
             return detail;
         }
 
-        private static void UpravitPocty(DetailNaradiDataPocty pocty, UmisteniNaradiDto umisteni, int zmena)
+        private static void UpravitPocty(DetailNaradiPocty pocty, UmisteniNaradiDto umisteni, int zmena)
         {
             switch (umisteni.ZakladniUmisteni)
             {
@@ -433,6 +433,9 @@ namespace Vydejna.Projections.DetailNaradiReadModel
             if (data == null)
             {
                 data = new DetailNaradiDataDetail();
+                data.PoctyCelkem = new DetailNaradiPocty();
+                data.PoctyCislovane = new DetailNaradiPocty();
+                data.PoctyNecislovane = new DetailNaradiPocty();
                 data.Cislovane = new List<DetailNaradiCislovane>();
                 data.Necislovane = new List<DetailNaradiNecislovane>();
                 data.ReferenceDodavatelu = new List<string>();
@@ -961,9 +964,9 @@ namespace Vydejna.Projections.DetailNaradiReadModel
         public bool Aktivni { get; set; }
         public int NaSklade { get; set; }
 
-        public DetailNaradiDataPocty PoctyCelkem { get; set; }
-        public DetailNaradiDataPocty PoctyNecislovane { get; set; }
-        public DetailNaradiDataPocty PoctyCislovane { get; set; }
+        public DetailNaradiPocty PoctyCelkem { get; set; }
+        public DetailNaradiPocty PoctyNecislovane { get; set; }
+        public DetailNaradiPocty PoctyCislovane { get; set; }
 
         public List<DetailNaradiNecislovane> Necislovane { get; set; }
         public List<DetailNaradiCislovane> Cislovane { get; set; }
@@ -1160,9 +1163,10 @@ namespace Vydejna.Projections.DetailNaradiReadModel
                 response.NaradiId = request.NaradiId;
                 response.Cislovane = new List<DetailNaradiCislovane>();
                 response.Necislovane = new List<DetailNaradiNecislovane>();
-                response.PoctyCelkem = new DetailNaradiDataPocty();
-                response.PoctyCislovane = new DetailNaradiDataPocty();
-                response.PoctyNecislovane = new DetailNaradiDataPocty();
+                response.PoctyCelkem = new DetailNaradiPocty();
+                response.PoctyCislovane = new DetailNaradiPocty();
+                response.PoctyNecislovane = new DetailNaradiPocty();
+                response.Vykres = response.Rozmer = response.Druh = "";
             }
             else
             {
