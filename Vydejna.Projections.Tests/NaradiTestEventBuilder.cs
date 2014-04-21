@@ -182,6 +182,11 @@ namespace Vydejna.Projections.Tests
             return new PresunNaradiBuilder(this, "Vydej");
         }
 
+        public PresunNaradiBuilder Vratit()
+        {
+            return new PresunNaradiBuilder(this, "Vraceni");
+        }
+
         public class PresunNaradiBuilder
         {
             private NaradiTestEventBuilder _parent;
@@ -228,6 +233,12 @@ namespace Vydejna.Projections.Tests
                         _evnt.NoveUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.VeVyrobe };
                         Pracoviste("12345330");
                         break;
+                    case "Vraceni":
+                        _evnt = new CislovaneNaradiPrijatoZVyrobyEvent();
+                        _evnt.PredchoziUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.VeVyrobe };
+                        _evnt.NoveUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.NaVydejne, UpresneniZakladu = "VPoradku" };
+                        Pracoviste("12345220");
+                        break;
                     default:
                         throw new NotSupportedException("Rezim " + _rezim + " nepodporovan");
                 }
@@ -270,6 +281,34 @@ namespace Vydejna.Projections.Tests
                 return this;
             }
 
+            public PresunCislovanehoBuilder VPoradku(string vada)
+            {
+                return VeStavu(StavNaradi.VPoradku, vada);
+            }
+
+            public PresunCislovanehoBuilder Poskozene(string vada)
+            {
+                return VeStavu(StavNaradi.NutnoOpravit, vada);
+            }
+
+            public PresunCislovanehoBuilder Znicene(string vada)
+            {
+                return VeStavu(StavNaradi.Neopravitelne, vada);
+            }
+
+            public PresunCislovanehoBuilder VeStavu(StavNaradi stavNaradi, string vada)
+            {
+                var vraceni = _evnt as CislovaneNaradiPrijatoZVyrobyEvent;
+                if (vraceni != null)
+                {
+                    vraceni.StavNaradi = stavNaradi;
+                    vraceni.KodVady = vada;
+                    vraceni.NoveUmisteni.UpresneniZakladu = stavNaradi.ToString();
+                }
+
+                return this;
+            }
+
             public void Send()
             {
                 if (_evnt.PredchoziUmisteni == null)
@@ -284,6 +323,18 @@ namespace Vydejna.Projections.Tests
                         break;
                     case "Vydej":
                         _parent._test.SendEvent((CislovaneNaradiVydanoDoVyrobyEvent)_evnt);
+                        break;
+                    case "Vraceni":
+                        _parent._test.SendEvent((CislovaneNaradiPrijatoZVyrobyEvent)_evnt);
+                        break;
+                    case "Odeslani":
+                        _parent._test.SendEvent((CislovaneNaradiPredanoKOpraveEvent)_evnt);
+                        break;
+                    case "Opraveni":
+                        _parent._test.SendEvent((CislovaneNaradiPrijatoZOpravyEvent)_evnt);
+                        break;
+                    case "Srotovani":
+                        _parent._test.SendEvent((CislovaneNaradiPredanoKeSesrotovaniEvent)_evnt);
                         break;
                     default:
                         throw new NotSupportedException("Nepodporovany typ pro odesilani");
@@ -313,6 +364,12 @@ namespace Vydejna.Projections.Tests
                         _evnt = new NecislovaneNaradiVydanoDoVyrobyEvent();
                         _evnt.PredchoziUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.NaVydejne, UpresneniZakladu = "VPoradku" };
                         _evnt.NoveUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.VeVyrobe };
+                        Pracoviste("12345220");
+                        break;
+                    case "Vraceni":
+                        _evnt = new NecislovaneNaradiPrijatoZVyrobyEvent();
+                        _evnt.PredchoziUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.VeVyrobe };
+                        _evnt.NoveUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.NaVydejne, UpresneniZakladu = "VPoradku" };
                         Pracoviste("12345220");
                         break;
                     default:
@@ -359,6 +416,40 @@ namespace Vydejna.Projections.Tests
                     vydej.NoveUmisteni.Pracoviste = pracoviste;
                 }
 
+                var vraceni = _evnt as NecislovaneNaradiPrijatoZVyrobyEvent;
+                if (vraceni != null)
+                {
+                    vraceni.KodPracoviste = pracoviste;
+                    vraceni.PredchoziUmisteni.Pracoviste = pracoviste;
+                }
+
+                return this;
+            }
+
+            public PresunNecislovanehoBuilder VPoradku()
+            {
+                return VeStavu(StavNaradi.VPoradku);
+            }
+
+            public PresunNecislovanehoBuilder Poskozene()
+            {
+                return VeStavu(StavNaradi.NutnoOpravit);
+            }
+
+            public PresunNecislovanehoBuilder Znicene()
+            {
+                return VeStavu(StavNaradi.Neopravitelne);
+            }
+
+            public PresunNecislovanehoBuilder VeStavu(StavNaradi stavNaradi)
+            {
+                var vraceni = _evnt as NecislovaneNaradiPrijatoZVyrobyEvent;
+                if (vraceni != null)
+                {
+                    vraceni.StavNaradi = stavNaradi;
+                    vraceni.NoveUmisteni.UpresneniZakladu = stavNaradi.ToString();
+                }
+
                 return this;
             }
 
@@ -372,6 +463,18 @@ namespace Vydejna.Projections.Tests
                         break;
                     case "Vydej":
                         Send((NecislovaneNaradiVydanoDoVyrobyEvent)_evnt);
+                        break;
+                    case "Vraceni":
+                        Send((NecislovaneNaradiPrijatoZVyrobyEvent)_evnt);
+                        break;
+                    case "Odeslani":
+                        Send((NecislovaneNaradiPredanoKOpraveEvent)_evnt);
+                        break;
+                    case "Opraveni":
+                        Send((NecislovaneNaradiPrijatoZOpravyEvent)_evnt);
+                        break;
+                    case "Srotovani":
+                        Send((NecislovaneNaradiPredanoKeSesrotovaniEvent)_evnt);
                         break;
                     default:
                         throw new NotSupportedException("Rezim " + _rezim + " nepodporovan pro odesilani");

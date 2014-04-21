@@ -341,11 +341,102 @@ namespace Vydejna.Projections.Tests
         }
     }
 
+    [TestClass]
+    public class DetailNaradiReadModelTest_PrijemNaradiZVyroby : DetailNaradiReadModelPresunTestBase
+    {
+        protected override void Given()
+        {
+            base.Given();
+            _build.Prijmout().Necislovane(15).Send();
+            _build.Prijmout().Cislovane(3).Send();
+            _build.Vydat().Necislovane(10).Pracoviste("12345220").Send();
+            _build.Vydat().Necislovane(3).Pracoviste("48330330").Send();
+            _build.Vydat().Cislovane(3).Pracoviste("84773230").Send();
+            _build.Vratit().Necislovane(2).VPoradku().Pracoviste("12345220").Send();
+            _build.Vratit().Necislovane(2).VPoradku().Pracoviste("12345220").Send();
+            _build.Vratit().Necislovane(3).Poskozene().Pracoviste("12345220").Send();
+            _build.Vratit().Necislovane(3).Znicene().Pracoviste("12345220").Send();
+            _build.Vratit().Necislovane(1).VPoradku().Pracoviste("48330330").Send();
+            _build.Vratit().Cislovane(3).Poskozene("1").Send();
+        }
+
+        [TestMethod]
+        public void PocetVPoradku()
+        {
+            var naradi = NecislovaneNaVydejne(StavNaradi.VPoradku);
+            Assert.IsNotNull(naradi);
+            Assert.AreEqual(7, naradi.Pocet);
+        }
+
+        [TestMethod]
+        public void PocetPoskozenych()
+        {
+            var naradi = NecislovaneNaVydejne(StavNaradi.NutnoOpravit);
+            Assert.IsNotNull(naradi);
+            Assert.AreEqual(3, naradi.Pocet);
+        }
+
+        [TestMethod]
+        public void PocetZnicenych()
+        {
+            var naradi = NecislovaneNaVydejne(StavNaradi.Neopravitelne);
+            Assert.IsNotNull(naradi);
+            Assert.AreEqual(3, naradi.Pocet);
+        }
+
+        [TestMethod]
+        public void StavCislovaneho()
+        {
+            var naradi = Cislovane(3);
+            Assert.IsNotNull(naradi);
+            Assert.AreEqual(ZakladUmisteni.NaVydejne, naradi.ZakladUmisteni);
+            Assert.AreEqual(StavNaradi.NutnoOpravit, naradi.NaVydejne.StavNaradi);
+        }
+
+        [TestMethod]
+        public void VadaCislovaneho()
+        {
+            var naradi = Cislovane(3);
+            Assert.IsNotNull(naradi);
+            Assert.AreEqual("1", naradi.NaVydejne.KodVady);
+            Assert.AreEqual("klepe", naradi.NaVydejne.NazevVady);
+        }
+
+        [TestMethod]
+        public void ZbyvajiciNaPracovistiB()
+        {
+            var naradi = NecislovaneVeVyrobe("48330330");
+            Assert.IsNotNull(naradi);
+            Assert.AreEqual(2, naradi.Pocet);
+        }
+
+        [TestMethod]
+        public void OdstranenRadekPrazdnehoPracoviste()
+        {
+            var naradi = NecislovaneVeVyrobe("12345220");
+            Assert.IsNull(naradi);
+        }
+
+        [TestMethod]
+        public void CelkemNecislovanych()
+        {
+            AssertPocty(_response.PoctyNecislovane, 7, 2, 3, 0, 3);
+        }
+
+        [TestMethod]
+        public void CelkemCislovanych()
+        {
+            AssertPocty(_response.PoctyCislovane, 0, 0, 1, 0, 0);
+        }
+
+        [TestMethod]
+        public void CelkovePocty()
+        {
+            AssertPocty(_response.PoctyCelkem, 7, 2, 4, 0, 3);
+        }
+    }
+
     /*
-     * Vydej do vyroby
-     * - upravi se pocty
-     * - odstrani se puvodni detail, vytvori se detail ve vyrobe podle pracoviste
-     * - pri nulovem poctu na puvodnim umisteni se radek odstrani
      * Prijem poskozeneho
      * - upravi se pocty
      * - detail bude pro opravu podle objednavky vcetne dodavatele
