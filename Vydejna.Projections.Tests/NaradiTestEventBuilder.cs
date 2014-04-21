@@ -67,6 +67,8 @@ namespace Vydejna.Projections.Tests
         private int _verzeCislovanych;
         
         private int _pocetNaSklade;
+
+        public Guid NaradiId { get { return _naradiId; } }
         
         public NaradiTestEventBuilder(ReadModelTestBase test, string naradi)
         {
@@ -74,7 +76,7 @@ namespace Vydejna.Projections.Tests
             _naradiId = BuildNaradiId(naradi);
         }
 
-        protected static Guid BuildNaradiId(string naradi)
+        public static Guid BuildNaradiId(string naradi)
         {
             switch (naradi)
             {
@@ -86,7 +88,7 @@ namespace Vydejna.Projections.Tests
             }
         }
 
-        protected void Definovano(string vykres, string rozmer, string druh)
+        public void Definovano(string vykres, string rozmer, string druh)
         {
             _test.SendEvent(new DefinovanoNaradiEvent
             {
@@ -98,7 +100,7 @@ namespace Vydejna.Projections.Tests
             });
         }
 
-        protected void Deaktivovano()
+        public void Deaktivovano()
         {
             _test.SendEvent(new DeaktivovanoNaradiEvent
             {
@@ -107,7 +109,7 @@ namespace Vydejna.Projections.Tests
             });
         }
 
-        protected void Aktivovano()
+        public void Aktivovano()
         {
             _test.SendEvent(new AktivovanoNaradiEvent
             {
@@ -116,7 +118,7 @@ namespace Vydejna.Projections.Tests
             });
         }
 
-        protected void ZmenaNaSklade(int zmena, int novyStav, ZdrojZmenyNaSklade zdrojZmeny = ZdrojZmenyNaSklade.Manualne)
+        public void ZmenaNaSklade(int zmena, int novyStav, ZdrojZmenyNaSklade zdrojZmeny = ZdrojZmenyNaSklade.Manualne)
         {
             _test.SendEvent(new ZmenenStavNaSkladeEvent
             {

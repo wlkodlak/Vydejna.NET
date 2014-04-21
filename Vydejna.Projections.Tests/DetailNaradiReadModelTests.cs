@@ -14,13 +14,13 @@ namespace Vydejna.Projections.Tests
     {
         protected override void When()
         {
-            ZiskatNaradi("A");
+            ZiskatNaradi();
         }
 
         [TestMethod]
         public void NaradiIdPodleRequestu()
         {
-            Assert.AreEqual(NaradiId("A"), _response.NaradiId);
+            Assert.AreEqual(_build.NaradiId, _response.NaradiId);
         }
 
         [TestMethod]
@@ -56,18 +56,18 @@ namespace Vydejna.Projections.Tests
     {
         protected override void Given()
         {
-            SendDefinovanoNaradi("A", "4839-3341-0", "55x22", "kotouc");
+            _build.Definovano("4839-3341-0", "55x22", "kotouc");
         }
 
         protected override void When()
         {
-            ZiskatNaradi("A");
+            ZiskatNaradi();
         }
 
         [TestMethod]
         public void InformaceONaradiPrevzatyZDefinice()
         {
-            Assert.AreEqual(NaradiId("A"), _response.NaradiId);
+            Assert.AreEqual(_build.NaradiId, _response.NaradiId);
             Assert.AreEqual("4839-3341-0", _response.Vykres);
             Assert.AreEqual("55x22", _response.Rozmer);
             Assert.AreEqual("kotouc", _response.Druh);
@@ -94,26 +94,32 @@ namespace Vydejna.Projections.Tests
     }
 
     [TestClass]
-    public class DetailNaradiReadModelTest_NaradiPrijato : DetailNaradiReadModelTestBase
+    public class DetailNaradiReadModelTest_ZmenyNaSklade : DetailNaradiReadModelPresunTestBase
     {
         protected override void Given()
         {
             base.Given();
+            _build.ZmenaNaSklade(4, 4);
+            _build.ZmenaNaSklade(3, 7);
         }
 
+        [TestMethod]
+        public void NovyPocetNaSklade()
+        {
+            Assert.AreEqual(7, _response.NaSklade);
+        }
     }
 
     public class DetailNaradiReadModelPresunTestBase : DetailNaradiReadModelTestBase
     {
         protected override void Given()
         {
-            SendDefinovanoNaradi("A", "4839-3341-0", "55x22", "zvedak");
-            SendDefinovanoNaradi("B", "382-1432", "prum. 15", "kotouc");
+            _build.Definovano("4839-3341-0", "55x22", "zvedak");
         }
 
         protected override void When()
         {
-            ZiskatNaradi("A");
+            ZiskatNaradi();
         }
     }
 
@@ -149,104 +155,16 @@ namespace Vydejna.Projections.Tests
          * - cislovane naradi se odstranuje ze seznamu
          * - pri nulovem poctu na puvodnim umisteni se radek odstrani
          */
-        protected void SendDefinovanoNaradi(string naradiId, string vykres, string rozmer, string druh)
-        {
-            SendEvent(new DefinovanoNaradiEvent
-            {
-                NaradiId = NaradiId(naradiId),
-                Vykres = vykres,
-                Rozmer = rozmer,
-                Druh = druh,
-                Verze = 1
-            });
-        }
-
-        protected void SendDeaktivovanoNaradi(string naradiId)
-        {
-            SendEvent(new DeaktivovanoNaradiEvent
-            {
-                NaradiId = NaradiId(naradiId),
-                Verze = 2
-            });
-        }
-
-        protected void SendAktivovanoNaradi(string naradiId)
-        {
-            SendEvent(new AktivovanoNaradiEvent
-            {
-                NaradiId = NaradiId(naradiId),
-                Verze = 3
-            });
-        }
-
-        protected void SendDefinovanDodavatel(string kod, string nazev)
-        {
-            SendEvent(new DefinovanDodavatelEvent
-            {
-                Kod = kod,
-                Nazev = nazev,
-                Deaktivovan = false,
-                Ico = kod,
-                Dic = kod,
-                Adresa = new[] { nazev, "38001 Dacice" }
-            });
-        }
-
-        protected void SendDefinovanoPracoviste(string kod, string nazev, string stredisko)
-        {
-            SendEvent(new DefinovanoPracovisteEvent
-            {
-                Kod = kod,
-                Nazev = nazev,
-                Deaktivovano = false,
-                Stredisko = stredisko
-            });
-        }
-
-        protected void SendDefinovanaVada(string kod, string nazev)
-        {
-            SendEvent(new DefinovanaVadaNaradiEvent
-            {
-                Kod = kod,
-                Nazev = nazev,
-                Deaktivovana = string.IsNullOrEmpty(nazev)
-            });
-        }
-
-        protected void SendZmenaNaSklade(string naradi, int zmena, int novyStav)
-        {
-            SendEvent(new ZmenenStavNaSkladeEvent
-            {
-                NaradiId = NaradiId(naradi),
-                DatumZmeny = CurrentTime,
-                ZdrojZmeny = ZdrojZmenyNaSklade.Manualne,
-                TypZmeny = zmena > 0 ? TypZmenyNaSklade.ZvysitStav : TypZmenyNaSklade.SnizitStav,
-                NovyStav = novyStav,
-                Hodnota = zmena > 0 ? zmena : -zmena,
-                Verze = _verze++
-            });
-        }
-
 
         protected DetailNaradiResponse _response;
-        protected int _verze;
+        protected NaradiTestEventBuilder _build;
+        protected ProjectionTestEventBuilder _master;
 
         protected override void InitializeCore()
         {
             base.InitializeCore();
-            _verze = 3;
-        }
-
-        protected static Guid NaradiId(string naradi)
-        {
-            switch (naradi)
-            {
-                case "A": return new Guid("0000000A-3849-55b1-c23d-18be1932bb11");
-                case "B": return new Guid("0000000B-3849-55b1-c23d-18be1932bb11");
-                case "C": return new Guid("0000000C-3849-55b1-c23d-18be1932bb11");
-                case "D": return new Guid("0000000D-3849-55b1-c23d-18be1932bb11");
-                default: return new Guid("0000" + naradi + "-3849-55b1-c23d-18be1932bb11");
-            }
+            _master = new ProjectionTestEventBuilder(this);
+            _build = _master.Naradi("A");
         }
 
         protected void AssertPocty(DetailNaradiPocty pocty, int vporadku, int vevyrobe, int poskozene, int voprave, int znicene)
@@ -259,10 +177,10 @@ namespace Vydejna.Projections.Tests
             Assert.AreEqual(znicene, pocty.Znicene);
         }
 
-        protected void ZiskatNaradi(string naradi)
+        protected void ZiskatNaradi()
         {
             _response = ReadProjection<DetailNaradiRequest, DetailNaradiResponse>(
-                new DetailNaradiRequest { NaradiId = NaradiId(naradi) });
+                new DetailNaradiRequest { NaradiId = _build.NaradiId });
         }
 
         protected override IEventProjection CreateProjection()
