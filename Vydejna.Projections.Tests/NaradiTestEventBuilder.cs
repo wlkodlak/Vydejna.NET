@@ -313,7 +313,7 @@ namespace Vydejna.Projections.Tests
                         _evnt = new NecislovaneNaradiVydanoDoVyrobyEvent();
                         _evnt.PredchoziUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.NaVydejne, UpresneniZakladu = "VPoradku" };
                         _evnt.NoveUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.VeVyrobe };
-                        Pracoviste("12345330");
+                        Pracoviste("12345220");
                         break;
                     default:
                         throw new NotSupportedException("Rezim " + _rezim + " nepodporovan");

@@ -303,6 +303,44 @@ namespace Vydejna.Projections.Tests
         }
     }
 
+    [TestClass]
+    public class DetailNaradiReadModelTest_UplneVydanoDoVyroby : DetailNaradiReadModelPresunTestBase
+    {
+        protected override void Given()
+        {
+            base.Given();
+            _build.Prijmout().Necislovane(5).Send();
+            _build.Vydat().Necislovane(5).Send();
+        }
+
+        [TestMethod]
+        public void RadekProVydejnuZmizi()
+        {
+            var naradi = NecislovaneNaVydejne(StavNaradi.VPoradku);
+            Assert.IsNull(naradi);
+        }
+    }
+
+    [TestClass]
+    public class DetailNaradiReadModelTest_VydaniNaNezmanePracoviste : DetailNaradiReadModelPresunTestBase
+    {
+        protected override void Given()
+        {
+            base.Given();
+            _build.Prijmout().Necislovane(5).Send();
+            _build.Vydat().Necislovane(3).Pracoviste("00000110").Send();
+        }
+
+        [TestMethod]
+        public void PracovisteMaPraznyNazevAStredisko()
+        {
+            var naradi = NecislovaneVeVyrobe("00000110");
+            Assert.IsNotNull(naradi);
+            Assert.AreEqual("", naradi.VeVyrobe.NazevPracoviste);
+            Assert.AreEqual("", naradi.VeVyrobe.StrediskoPracoviste);
+        }
+    }
+
     /*
      * Vydej do vyroby
      * - upravi se pocty
@@ -335,9 +373,9 @@ namespace Vydejna.Projections.Tests
             _master.Vada("9", "bez vady");
             _master.Dodavatel("D001", "Opravar, s.r.o.");
             _master.Dodavatel("D005", "EngiTool, a.s.");
+            _master.Pracoviste("12345220", "Svarovani", "220");
             _master.Pracoviste("48330330", "Kaleni", "330");
             _master.Pracoviste("84773230", "Brouseni", "230");
-            _master.Pracoviste("12345220", "Svarovani", "220");
         }
 
         protected override void When()
@@ -376,6 +414,8 @@ namespace Vydejna.Projections.Tests
                 if (naradi.ZakladUmisteni != ZakladUmisteni.NaVydejne)
                     continue;
                 Assert.IsNotNull(naradi.NaVydejne);
+                Assert.IsNull(naradi.VeVyrobe);
+                Assert.IsNull(naradi.VOprave);
                 if (naradi.NaVydejne.StavNaradi == stavNaradi || stavNaradi == StavNaradi.Neurcen)
                     return naradi;
             }
@@ -389,6 +429,8 @@ namespace Vydejna.Projections.Tests
                 if (naradi.ZakladUmisteni != ZakladUmisteni.VeVyrobe)
                     continue;
                 Assert.IsNotNull(naradi.VeVyrobe);
+                Assert.IsNull(naradi.NaVydejne);
+                Assert.IsNull(naradi.VOprave);
                 if (pracoviste == null || naradi.VeVyrobe.KodPracoviste == pracoviste)
                     return naradi;
             }
@@ -402,6 +444,8 @@ namespace Vydejna.Projections.Tests
                 if (naradi.ZakladUmisteni != ZakladUmisteni.VOprave)
                     continue;
                 Assert.IsNotNull(naradi.VOprave);
+                Assert.IsNull(naradi.VeVyrobe);
+                Assert.IsNull(naradi.NaVydejne);
                 var souhlasiDodavatel = dodavatel == null || dodavatel == naradi.VOprave.KodDodavatele;
                 var souhlasiObjednavka = objednavka == null || objednavka == naradi.VOprave.Objednavka;
                 if (souhlasiDodavatel && souhlasiObjednavka)

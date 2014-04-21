@@ -100,6 +100,19 @@ namespace Vydejna.Projections.DetailNaradiReadModel
             {
                 foreach (var detail in _parent._cacheDetail.GetAllChanges())
                 {
+                    var cislovaneKeSmazani = detail.IndexCislovane.Where(c => c.Value.ZakladUmisteni == ZakladUmisteni.VeSrotu).Select(c => c.Key).ToList();
+                    foreach (var cisloNaradi in cislovaneKeSmazani)
+                        detail.IndexCislovane.Remove(cisloNaradi);
+                    var stavyKeSmazani = detail.IndexPodleStavu.Where(n => n.Value.Pocet == 0).Select(n => n.Key).ToList();
+                    foreach (var stav in stavyKeSmazani)
+                        detail.IndexPodleStavu.Remove(stav);
+                    var pracovisteKeSmazani = detail.IndexPodlePracoviste.Where(n => n.Value.Pocet == 0).Select(n => n.Key).ToList();
+                    foreach (var stav in pracovisteKeSmazani)
+                        detail.IndexPodlePracoviste.Remove(stav);
+                    var objednavkyKeSmazani = detail.IndexPodleObjednavky.Where(n => n.Value.Pocet == 0).Select(n => n.Key).ToList();
+                    foreach (var stav in objednavkyKeSmazani)
+                        detail.IndexPodleObjednavky.Remove(stav);
+
                     if (detail.Cislovane == null)
                         detail.Cislovane = new List<DetailNaradiCislovane>(detail.IndexCislovane.Count);
                     else
@@ -354,6 +367,11 @@ namespace Vydejna.Projections.DetailNaradiReadModel
                 detail.NazevPracoviste = pracoviste.Nazev;
                 detail.StrediskoPracoviste = pracoviste.Stredisko;
             }
+            else
+            {
+                detail.NazevPracoviste = "";
+                detail.StrediskoPracoviste = "";
+            }
             return detail;
         }
 
@@ -372,6 +390,10 @@ namespace Vydejna.Projections.DetailNaradiReadModel
             if (detail.KodDodavatele != null && dodavatel != null)
             {
                 detail.NazevDodavatele = dodavatel.Nazev;
+            }
+            else
+            {
+                detail.NazevDodavatele = "";
             }
             detail.TerminDodani = terminDodani;
             return detail;
