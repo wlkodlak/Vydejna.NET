@@ -94,6 +94,31 @@ namespace Vydejna.Projections.Tests
     }
 
     [TestClass]
+    public class DetailNaradiReadModelTest_DefiniceZavislostiNepadaji : DetailNaradiReadModelTestBase
+    {
+        [TestMethod]
+        public void DefinovanaVada()
+        {
+            _master.Vada("9", "bez vady");
+            ZiskatNaradi();
+        }
+
+        [TestMethod]
+        public void DefinovanDodavatel()
+        {
+            _master.Dodavatel("D005", "EngiTool, a.s.");
+            ZiskatNaradi();
+        }
+        
+        [TestMethod]
+        public void DefinovanoPracoviste()
+        {
+            _master.Pracoviste("12345220", "Svarovani", "220");
+            ZiskatNaradi();
+        }
+    }
+
+    [TestClass]
     public class DetailNaradiReadModelTest_ZmenyNaSklade : DetailNaradiReadModelPresunTestBase
     {
         protected override void Given()
@@ -149,7 +174,7 @@ namespace Vydejna.Projections.Tests
         [TestMethod]
         public void CislovaneNaradi_3()
         {
-            var cislovane = _response.Cislovane.FirstOrDefault(c => c.CisloNaradi == 3);
+            var cislovane = Cislovane(3);
             Assert.IsNotNull(cislovane);
             Assert.AreEqual(ZakladUmisteni.NaVydejne, cislovane.ZakladUmisteni);
             Assert.IsNotNull(cislovane.NaVydejne);
@@ -163,7 +188,7 @@ namespace Vydejna.Projections.Tests
         [TestMethod]
         public void CislovaneNaradi_8()
         {
-            var cislovane = _response.Cislovane.FirstOrDefault(c => c.CisloNaradi == 8);
+            var cislovane = Cislovane(8);
             Assert.IsNotNull(cislovane);
             Assert.AreEqual(ZakladUmisteni.NaVydejne, cislovane.ZakladUmisteni);
             Assert.IsNotNull(cislovane.NaVydejne);
@@ -177,11 +202,12 @@ namespace Vydejna.Projections.Tests
         [TestMethod]
         public void SeznamNecislovanych()
         {
-            var necislovane = _response.Necislovane.FirstOrDefault();
+            var necislovane = NecislovaneNaVydejne(StavNaradi.Neurcen);
             Assert.AreEqual(ZakladUmisteni.NaVydejne, necislovane.ZakladUmisteni);
             Assert.IsNotNull(necislovane.NaVydejne);
             Assert.IsNull(necislovane.VeVyrobe);
             Assert.IsNull(necislovane.VOprave);
+            Assert.AreEqual(StavNaradi.VPoradku, necislovane.NaVydejne.StavNaradi);
             Assert.AreEqual(7, necislovane.Pocet);
         }
     }
@@ -196,7 +222,8 @@ namespace Vydejna.Projections.Tests
             _build.Prijmout().Cislovane(3).Send();
             _build.Vydat().Necislovane(4).Pracoviste("48330330").Send();
             _build.Prijmout().Cislovane(8).Send();
-            _build.Vydat().Necislovane(2).Pracoviste("48330330").Send();
+            _build.Vydat().Necislovane(1).Pracoviste("48330330").Send();
+            _build.Vydat().Necislovane(1).Pracoviste("84773230").Send();
             _build.Vydat().Cislovane(3).Pracoviste("12345220").Send();
         }
 
@@ -213,6 +240,12 @@ namespace Vydejna.Projections.Tests
         }
 
         [TestMethod]
+        public void PoctyCelkove()
+        {
+            AssertPocty(_response.PoctyCelkem, 5, 7, 0, 0, 0);
+        }
+
+        [TestMethod]
         public void ZbyvajiciNecislovaneNaradiNaVydejne()
         {
             var naradi = NecislovaneNaVydejne(StavNaradi.VPoradku);
@@ -221,11 +254,53 @@ namespace Vydejna.Projections.Tests
         }
 
         [TestMethod]
-        public void VydaneNecislovaneNaradiVeVyrobe()
+        public void VydaneNecislovaneNaradiVeVyrobeA()
         {
             var naradi = NecislovaneVeVyrobe("48330330");
+            Assert.IsNotNull(naradi);
+            Assert.AreEqual(5, naradi.Pocet);
         }
 
+        [TestMethod]
+        public void VydaneNecislovaneNaradiVeVyrobeB()
+        {
+            var naradi = NecislovaneVeVyrobe("84773230");
+            Assert.IsNotNull(naradi);
+            Assert.AreEqual(1, naradi.Pocet);
+        }
+
+        [TestMethod]
+        public void VydaneCislovaneNaradi()
+        {
+            var naradi = Cislovane(3);
+            Assert.AreEqual(ZakladUmisteni.VeVyrobe, naradi.ZakladUmisteni);
+            Assert.IsNotNull(naradi.VeVyrobe);
+            Assert.AreEqual("12345220", naradi.VeVyrobe.KodPracoviste);
+        }
+
+        [TestMethod]
+        public void NevydaneCislovaneZustavaNaVydejne()
+        {
+            var cislovane = _response.Cislovane.FirstOrDefault(c => c.CisloNaradi == 8);
+            Assert.IsNotNull(cislovane);
+            Assert.AreEqual(ZakladUmisteni.NaVydejne, cislovane.ZakladUmisteni);
+            Assert.IsNotNull(cislovane.NaVydejne);
+            Assert.IsNull(cislovane.VeVyrobe);
+            Assert.IsNull(cislovane.VOprave);
+            Assert.AreEqual("", cislovane.NaVydejne.KodVady);
+            Assert.AreEqual("", cislovane.NaVydejne.NazevVady);
+            Assert.AreEqual(StavNaradi.VPoradku, cislovane.NaVydejne.StavNaradi);
+        }
+
+        [TestMethod]
+        public void KopirujiSeDataOPracovisti()
+        {
+            var naradi = NecislovaneVeVyrobe("48330330");
+            Assert.IsNotNull(naradi);
+            Assert.AreEqual("48330330", naradi.VeVyrobe.KodPracoviste);
+            Assert.AreEqual("Kaleni", naradi.VeVyrobe.NazevPracoviste);
+            Assert.AreEqual("330", naradi.VeVyrobe.StrediskoPracoviste);
+        }
     }
 
     /*
@@ -256,6 +331,13 @@ namespace Vydejna.Projections.Tests
         protected override void Given()
         {
             _build.Definovano("4839-3341-0", "55x22", "zvedak");
+            _master.Vada("1", "klepe");
+            _master.Vada("9", "bez vady");
+            _master.Dodavatel("D001", "Opravar, s.r.o.");
+            _master.Dodavatel("D005", "EngiTool, a.s.");
+            _master.Pracoviste("48330330", "Kaleni", "330");
+            _master.Pracoviste("84773230", "Brouseni", "230");
+            _master.Pracoviste("12345220", "Svarovani", "220");
         }
 
         protected override void When()
@@ -294,13 +376,41 @@ namespace Vydejna.Projections.Tests
                 if (naradi.ZakladUmisteni != ZakladUmisteni.NaVydejne)
                     continue;
                 Assert.IsNotNull(naradi.NaVydejne);
-                if (naradi.NaVydejne.StavNaradi == stavNaradi)
+                if (naradi.NaVydejne.StavNaradi == stavNaradi || stavNaradi == StavNaradi.Neurcen)
                     return naradi;
             }
             return null;
         }
 
-        protected DetailNaradiCislovane NajitCislovane(int cisloNaradi)
+        protected DetailNaradiNecislovane NecislovaneVeVyrobe(string pracoviste)
+        {
+            foreach (var naradi in _response.Necislovane)
+            {
+                if (naradi.ZakladUmisteni != ZakladUmisteni.VeVyrobe)
+                    continue;
+                Assert.IsNotNull(naradi.VeVyrobe);
+                if (pracoviste == null || naradi.VeVyrobe.KodPracoviste == pracoviste)
+                    return naradi;
+            }
+            return null;
+        }
+
+        protected DetailNaradiNecislovane NecislovaneVOprave(string dodavatel, string objednavka)
+        {
+            foreach (var naradi in _response.Necislovane)
+            {
+                if (naradi.ZakladUmisteni != ZakladUmisteni.VOprave)
+                    continue;
+                Assert.IsNotNull(naradi.VOprave);
+                var souhlasiDodavatel = dodavatel == null || dodavatel == naradi.VOprave.KodDodavatele;
+                var souhlasiObjednavka = objednavka == null || objednavka == naradi.VOprave.Objednavka;
+                if (souhlasiDodavatel && souhlasiObjednavka)
+                    return naradi;
+            }
+            return null;
+        }
+
+        protected DetailNaradiCislovane Cislovane(int cisloNaradi)
         {
             return _response.Cislovane.Single(n => n.CisloNaradi == cisloNaradi);
         }

@@ -18,7 +18,7 @@ namespace Vydejna.Projections.Tests
             _test = test;
         }
 
-        protected void DefinovanDodavatel(string kod, string nazev)
+        public void Dodavatel(string kod, string nazev)
         {
             _test.SendEvent(new DefinovanDodavatelEvent
             {
@@ -31,7 +31,7 @@ namespace Vydejna.Projections.Tests
             });
         }
 
-        protected void DefinovanoPracoviste(string kod, string nazev, string stredisko)
+        public void Pracoviste(string kod, string nazev, string stredisko)
         {
             _test.SendEvent(new DefinovanoPracovisteEvent
             {
@@ -42,7 +42,7 @@ namespace Vydejna.Projections.Tests
             });
         }
 
-        protected void DefinovanaVada(string kod, string nazev)
+        public void Vada(string kod, string nazev)
         {
             _test.SendEvent(new DefinovanaVadaNaradiEvent
             {
@@ -65,13 +65,13 @@ namespace Vydejna.Projections.Tests
         private int _verzeDefinovaneho;
         private int _verzeNecislovaneho;
         private int _verzeCislovanych;
-        
+
         private int _pocetNaSklade;
         private Dictionary<int, UmisteniNaradiDto> _umisteniCislovanych;
         private Dictionary<string, int> _poctyNecislovanych;
 
         public Guid NaradiId { get { return _naradiId; } }
-        
+
         public NaradiTestEventBuilder(ReadModelTestBase test, string naradi)
         {
             _test = test;
@@ -177,6 +177,11 @@ namespace Vydejna.Projections.Tests
             return new PresunNaradiBuilder(this, "Prijem");
         }
 
+        public PresunNaradiBuilder Vydat()
+        {
+            return new PresunNaradiBuilder(this, "Vydej");
+        }
+
         public class PresunNaradiBuilder
         {
             private NaradiTestEventBuilder _parent;
@@ -217,6 +222,12 @@ namespace Vydejna.Projections.Tests
                         _evnt.NoveUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.NaVydejne, UpresneniZakladu = "VPoradku" };
                         Dodavatel("D005");
                         break;
+                    case "Vydej":
+                        _evnt = new CislovaneNaradiVydanoDoVyrobyEvent();
+                        _evnt.PredchoziUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.NaVydejne, UpresneniZakladu = "VPoradku" };
+                        _evnt.NoveUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.VeVyrobe };
+                        Pracoviste("12345330");
+                        break;
                     default:
                         throw new NotSupportedException("Rezim " + _rezim + " nepodporovan");
                 }
@@ -247,6 +258,18 @@ namespace Vydejna.Projections.Tests
                 return this;
             }
 
+            public PresunCislovanehoBuilder Pracoviste(string pracoviste)
+            {
+                var vydej = _evnt as CislovaneNaradiVydanoDoVyrobyEvent;
+                if (vydej != null)
+                {
+                    vydej.KodPracoviste = pracoviste;
+                    vydej.NoveUmisteni.Pracoviste = pracoviste;
+                }
+
+                return this;
+            }
+
             public void Send()
             {
                 if (_evnt.PredchoziUmisteni == null)
@@ -259,6 +282,11 @@ namespace Vydejna.Projections.Tests
                     case "Prijem":
                         _parent._test.SendEvent((CislovaneNaradiPrijatoNaVydejnuEvent)_evnt);
                         break;
+                    case "Vydej":
+                        _parent._test.SendEvent((CislovaneNaradiVydanoDoVyrobyEvent)_evnt);
+                        break;
+                    default:
+                        throw new NotSupportedException("Nepodporovany typ pro odesilani");
                 }
             }
         }
@@ -280,6 +308,12 @@ namespace Vydejna.Projections.Tests
                         _evnt.PredchoziUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.VeSkladu };
                         _evnt.NoveUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.NaVydejne, UpresneniZakladu = "VPoradku" };
                         Dodavatel("D005");
+                        break;
+                    case "Vydej":
+                        _evnt = new NecislovaneNaradiVydanoDoVyrobyEvent();
+                        _evnt.PredchoziUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.NaVydejne, UpresneniZakladu = "VPoradku" };
+                        _evnt.NoveUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.VeVyrobe };
+                        Pracoviste("12345330");
                         break;
                     default:
                         throw new NotSupportedException("Rezim " + _rezim + " nepodporovan");
@@ -316,6 +350,18 @@ namespace Vydejna.Projections.Tests
                 return this;
             }
 
+            public PresunNecislovanehoBuilder Pracoviste(string pracoviste)
+            {
+                var vydej = _evnt as NecislovaneNaradiVydanoDoVyrobyEvent;
+                if (vydej != null)
+                {
+                    vydej.KodPracoviste = pracoviste;
+                    vydej.NoveUmisteni.Pracoviste = pracoviste;
+                }
+
+                return this;
+            }
+
             public void Send()
             {
                 DoplnitCelkovyPocet();
@@ -324,6 +370,11 @@ namespace Vydejna.Projections.Tests
                     case "Prijem":
                         Send((NecislovaneNaradiPrijatoNaVydejnuEvent)_evnt);
                         break;
+                    case "Vydej":
+                        Send((NecislovaneNaradiVydanoDoVyrobyEvent)_evnt);
+                        break;
+                    default:
+                        throw new NotSupportedException("Rezim " + _rezim + " nepodporovan pro odesilani");
                 }
             }
 
@@ -358,7 +409,7 @@ namespace Vydejna.Projections.Tests
                 _parent._poctyNecislovanych[klic] = _evnt.PocetNaNovem;
             }
 
-            private void Send(NecislovaneNaradiPrijatoNaVydejnuEvent evnt)
+            private void Send<T>(T evnt)
             {
                 _parent._test.SendEvent(evnt);
             }

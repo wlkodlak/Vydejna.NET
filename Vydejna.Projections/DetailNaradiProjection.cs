@@ -251,7 +251,7 @@ namespace Vydejna.Projections.DetailNaradiReadModel
                             ciselnik.IndexVad[vada.Kod] = vada;
                     }
 
-                    if (ciselnik.IndexVad.TryGetValue(nova.Kod, out existujici))
+                    if (!ciselnik.IndexVad.TryGetValue(nova.Kod, out existujici))
                     {
                         zmeneno = true;
                         ciselnik.IndexVad[nova.Kod] = nova;
