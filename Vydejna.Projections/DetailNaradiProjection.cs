@@ -12,6 +12,7 @@ namespace Vydejna.Projections.DetailNaradiReadModel
         , IHandle<CommandExecution<DefinovanoNaradiEvent>>
         , IHandle<CommandExecution<AktivovanoNaradiEvent>>
         , IHandle<CommandExecution<DeaktivovanoNaradiEvent>>
+        , IHandle<CommandExecution<ZmenenStavNaSkladeEvent>>
         , IHandle<CommandExecution<DefinovanDodavatelEvent>>
         , IHandle<CommandExecution<DefinovanaVadaNaradiEvent>>
         , IHandle<CommandExecution<DefinovanoPracovisteEvent>>
@@ -186,6 +187,15 @@ namespace Vydejna.Projections.DetailNaradiReadModel
             });
         }
 
+        public void Handle(CommandExecution<ZmenenStavNaSkladeEvent> message)
+        {
+            var evnt = message.Command;
+            ZpracovatHoleNaradi(evnt.NaradiId, message.OnCompleted, message.OnError, data =>
+            {
+                data.NaSklade = message.Command.NovyStav;
+            });
+        }
+
         public void Handle(CommandExecution<DefinovanDodavatelEvent> message)
         {
             _cacheDodavatele.Get("dodavatele",
@@ -299,11 +309,11 @@ namespace Vydejna.Projections.DetailNaradiReadModel
             if (!UmisteniNaVydejne(umisteni))
                 return null;
             var detail = new DetailNaradiNaVydejne();
-            detail.KodVady = kodVady;
+            detail.KodVady = kodVady ?? "";
             if (vada != null)
-            {
                 detail.NazevVady = vada.Nazev;
-            }
+            if (detail.NazevVady == null)
+                detail.NazevVady = "";
             switch (umisteni.UpresneniZakladu)
             {
                 case "VPoradku":
@@ -629,6 +639,7 @@ namespace Vydejna.Projections.DetailNaradiReadModel
             {
                 var cislovane = new DetailNaradiCislovane();
                 cislovane.CisloNaradi = evnt.CisloNaradi;
+                cislovane.ZakladUmisteni = ZakladUmisteni.NaVydejne;
                 cislovane.NaVydejne = PrevodUmisteniNaVydejne(evnt.NoveUmisteni, null, null);
                 data.Cislovane = null;
                 data.IndexCislovane[evnt.CisloNaradi] = cislovane;
@@ -685,10 +696,10 @@ namespace Vydejna.Projections.DetailNaradiReadModel
                     naradi.NaVydejne = PrevodUmisteniNaVydejne(evnt.NoveUmisteni, null, null);
                     data.IndexPodleStavu[StavNaradi.VPoradku] = naradi;
                     data.Necislovane = null;
-                    data.PoctyCelkem.VPoradku += evnt.Pocet;
-                    data.PoctyNecislovane.VPoradku += evnt.Pocet;
                 }
                 naradi.Pocet += evnt.Pocet;
+                data.PoctyCelkem.VPoradku += evnt.Pocet;
+                data.PoctyNecislovane.VPoradku += evnt.Pocet;
             });
         }
 

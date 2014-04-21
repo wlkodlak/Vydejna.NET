@@ -99,8 +99,8 @@ namespace Vydejna.Projections.Tests
         protected override void Given()
         {
             base.Given();
-            _build.ZmenaNaSklade(4, 4);
-            _build.ZmenaNaSklade(3, 7);
+            _build.ZmenaNaSklade().Zmena(4).Send();
+            _build.ZmenaNaSklade().Zmena(3).Send();
         }
 
         [TestMethod]
@@ -109,6 +109,113 @@ namespace Vydejna.Projections.Tests
             Assert.AreEqual(7, _response.NaSklade);
         }
     }
+
+    [TestClass]
+    public class DetailNaradiReadModelTest_PrijatoNaVydejnu : DetailNaradiReadModelPresunTestBase
+    {
+        protected override void Given()
+        {
+            base.Given();
+            _build.Prijmout().Necislovane(5).Send();
+            _build.Prijmout().Cislovane(3).Send();
+            _build.Prijmout().Cislovane(8).Send();
+            _build.Prijmout().Necislovane(2).Send();
+        }
+
+        [TestMethod]
+        public void PocetCelkem()
+        {
+            AssertPocty(_response.PoctyCelkem, 9, 0, 0, 0, 0);
+        }
+
+        [TestMethod]
+        public void PoctyNecislovane()
+        {
+            AssertPocty(_response.PoctyNecislovane, 7, 0, 0, 0, 0);
+        }
+
+        [TestMethod]
+        public void PoctyCislovane()
+        {
+            AssertPocty(_response.PoctyCislovane, 2, 0, 0, 0, 0);
+        }
+
+        [TestMethod]
+        public void SeznamCislovanychObsahujeDveNaradi()
+        {
+            Assert.AreEqual(2, _response.Cislovane.Count);
+        }
+
+        [TestMethod]
+        public void CislovaneNaradi_3()
+        {
+            var cislovane = _response.Cislovane.FirstOrDefault(c => c.CisloNaradi == 3);
+            Assert.IsNotNull(cislovane);
+            Assert.AreEqual(ZakladUmisteni.NaVydejne, cislovane.ZakladUmisteni);
+            Assert.IsNotNull(cislovane.NaVydejne);
+            Assert.IsNull(cislovane.VeVyrobe);
+            Assert.IsNull(cislovane.VOprave);
+            Assert.AreEqual("", cislovane.NaVydejne.KodVady);
+            Assert.AreEqual("", cislovane.NaVydejne.NazevVady);
+            Assert.AreEqual(StavNaradi.VPoradku, cislovane.NaVydejne.StavNaradi);
+        }
+
+        [TestMethod]
+        public void CislovaneNaradi_8()
+        {
+            var cislovane = _response.Cislovane.FirstOrDefault(c => c.CisloNaradi == 8);
+            Assert.IsNotNull(cislovane);
+            Assert.AreEqual(ZakladUmisteni.NaVydejne, cislovane.ZakladUmisteni);
+            Assert.IsNotNull(cislovane.NaVydejne);
+            Assert.IsNull(cislovane.VeVyrobe);
+            Assert.IsNull(cislovane.VOprave);
+            Assert.AreEqual("", cislovane.NaVydejne.KodVady);
+            Assert.AreEqual("", cislovane.NaVydejne.NazevVady);
+            Assert.AreEqual(StavNaradi.VPoradku, cislovane.NaVydejne.StavNaradi);
+        }
+
+        [TestMethod]
+        public void SeznamNecislovanych()
+        {
+            var necislovane = _response.Necislovane.FirstOrDefault();
+            Assert.AreEqual(ZakladUmisteni.NaVydejne, necislovane.ZakladUmisteni);
+            Assert.IsNotNull(necislovane.NaVydejne);
+            Assert.IsNull(necislovane.VeVyrobe);
+            Assert.IsNull(necislovane.VOprave);
+            Assert.AreEqual(7, necislovane.Pocet);
+        }
+    }
+
+    /*
+     * Prijem necislovaneho naradi na vydejnu
+     * - zvysuji se pocty celkove a necislovane
+     * - do seznamu necislovanych pribude radek s umistenim, celkovym poctem a detailem na vydejne
+     * - pri nulovem poctu na puvodnim umisteni se radek odstrani
+     * Prijem cislovaneho naradi na vydejnu
+     * - zvysuji se pocty celkove a cislovane
+     * - do seznamu cislovanych pribude radek s cislem naradi, umistenim a detailem na vydejne
+     * - pri nulovem poctu na puvodnim umisteni se radek odstrani
+     * Vydej do vyroby
+     * - upravi se pocty
+     * - odstrani se puvodni detail, vytvori se detail ve vyrobe podle pracoviste
+     * - pri nulovem poctu na puvodnim umisteni se radek odstrani
+     * Prijem poskozeneho
+     * - upravi se pocty
+     * - detail bude pro opravu podle objednavky vcetne dodavatele
+     * - pri nulovem poctu na puvodnim umisteni se radek odstrani
+     * Navrat opraveneho naradi na vydejnu
+     * - pocty
+     * - detail na vydejne
+     * - pri nulovem poctu na puvodnim umisteni se radek odstrani
+     * Prijem zniceneho naradi
+     * - pocty
+     * - detail na vydejne
+     * - pri nulovem poctu na puvodnim umisteni se radek odstrani
+     * Odeslani do srotu
+     * - pocty
+     * - cislovane naradi se odstranuje ze seznamu
+     * - pri nulovem poctu na puvodnim umisteni se radek odstrani
+     */
 
     public class DetailNaradiReadModelPresunTestBase : DetailNaradiReadModelTestBase
     {
@@ -125,37 +232,6 @@ namespace Vydejna.Projections.Tests
 
     public class DetailNaradiReadModelTestBase : ReadModelTestBase
     {
-        /*
-         * Prijem necislovaneho naradi na vydejnu
-         * - zvysuji se pocty celkove a necislovane
-         * - do seznamu necislovanych pribude radek s umistenim, celkovym poctem a detailem na vydejne
-         * - pri nulovem poctu na puvodnim umisteni se radek odstrani
-         * Prijem cislovaneho naradi na vydejnu
-         * - zvysuji se pocty celkove a cislovane
-         * - do seznamu cislovanych pribude radek s cislem naradi, umistenim a detailem na vydejne
-         * - pri nulovem poctu na puvodnim umisteni se radek odstrani
-         * Vydej do vyroby
-         * - upravi se pocty
-         * - odstrani se puvodni detail, vytvori se detail ve vyrobe podle pracoviste
-         * - pri nulovem poctu na puvodnim umisteni se radek odstrani
-         * Prijem poskozeneho
-         * - upravi se pocty
-         * - detail bude pro opravu podle objednavky vcetne dodavatele
-         * - pri nulovem poctu na puvodnim umisteni se radek odstrani
-         * Navrat opraveneho naradi na vydejnu
-         * - pocty
-         * - detail na vydejne
-         * - pri nulovem poctu na puvodnim umisteni se radek odstrani
-         * Prijem zniceneho naradi
-         * - pocty
-         * - detail na vydejne
-         * - pri nulovem poctu na puvodnim umisteni se radek odstrani
-         * Odeslani do srotu
-         * - pocty
-         * - cislovane naradi se odstranuje ze seznamu
-         * - pri nulovem poctu na puvodnim umisteni se radek odstrani
-         */
-
         protected DetailNaradiResponse _response;
         protected NaradiTestEventBuilder _build;
         protected ProjectionTestEventBuilder _master;
