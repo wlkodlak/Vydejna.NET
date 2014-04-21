@@ -186,15 +186,49 @@ namespace Vydejna.Projections.Tests
         }
     }
 
+    [TestClass]
+    public class DetailNaradiReadModelTest_NeuplneVydanoDoVyroby : DetailNaradiReadModelPresunTestBase
+    {
+        protected override void Given()
+        {
+            base.Given();
+            _build.Prijmout().Necislovane(10).Send();
+            _build.Prijmout().Cislovane(3).Send();
+            _build.Vydat().Necislovane(4).Pracoviste("48330330").Send();
+            _build.Prijmout().Cislovane(8).Send();
+            _build.Vydat().Necislovane(2).Pracoviste("48330330").Send();
+            _build.Vydat().Cislovane(3).Pracoviste("12345220").Send();
+        }
+
+        [TestMethod]
+        public void PoctyNecislovane()
+        {
+            AssertPocty(_response.PoctyNecislovane, 4, 6, 0, 0, 0);
+        }
+
+        [TestMethod]
+        public void PoctyCislovane()
+        {
+            AssertPocty(_response.PoctyCislovane, 1, 1, 0, 0, 0);
+        }
+
+        [TestMethod]
+        public void ZbyvajiciNecislovaneNaradiNaVydejne()
+        {
+            var naradi = NecislovaneNaVydejne(StavNaradi.VPoradku);
+            Assert.IsNotNull(naradi);
+            Assert.AreEqual(4, naradi.Pocet);
+        }
+
+        [TestMethod]
+        public void VydaneNecislovaneNaradiVeVyrobe()
+        {
+            var naradi = NecislovaneVeVyrobe("48330330");
+        }
+
+    }
+
     /*
-     * Prijem necislovaneho naradi na vydejnu
-     * - zvysuji se pocty celkove a necislovane
-     * - do seznamu necislovanych pribude radek s umistenim, celkovym poctem a detailem na vydejne
-     * - pri nulovem poctu na puvodnim umisteni se radek odstrani
-     * Prijem cislovaneho naradi na vydejnu
-     * - zvysuji se pocty celkove a cislovane
-     * - do seznamu cislovanych pribude radek s cislem naradi, umistenim a detailem na vydejne
-     * - pri nulovem poctu na puvodnim umisteni se radek odstrani
      * Vydej do vyroby
      * - upravi se pocty
      * - odstrani se puvodni detail, vytvori se detail ve vyrobe podle pracoviste
@@ -251,6 +285,24 @@ namespace Vydejna.Projections.Tests
             Assert.AreEqual(poskozene, pocty.Poskozene);
             Assert.AreEqual(voprave, pocty.VOprave);
             Assert.AreEqual(znicene, pocty.Znicene);
+        }
+
+        protected DetailNaradiNecislovane NecislovaneNaVydejne(StavNaradi stavNaradi)
+        {
+            foreach (var naradi in _response.Necislovane)
+            {
+                if (naradi.ZakladUmisteni != ZakladUmisteni.NaVydejne)
+                    continue;
+                Assert.IsNotNull(naradi.NaVydejne);
+                if (naradi.NaVydejne.StavNaradi == stavNaradi)
+                    return naradi;
+            }
+            return null;
+        }
+
+        protected DetailNaradiCislovane NajitCislovane(int cisloNaradi)
+        {
+            return _response.Cislovane.Single(n => n.CisloNaradi == cisloNaradi);
         }
 
         protected void ZiskatNaradi()
