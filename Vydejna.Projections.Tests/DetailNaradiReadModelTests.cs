@@ -436,23 +436,69 @@ namespace Vydejna.Projections.Tests
         }
     }
 
+    [TestClass]
+    public class DetailNaradiReadModelTest_OdeslanoKOprave : DetailNaradiReadModelPresunTestBase
+    {
+        private DateTime _termin;
+
+        protected override void Given()
+        {
+            base.Given();
+            _termin = CurrentTime.Date.AddDays(15);
+            _build.Prijmout().Necislovane(15).Send();
+            _build.Vydat().Necislovane(14).Pracoviste("12345220").Send();
+            _build.Vratit().Necislovane(9).Poskozene().Pracoviste("12345220").Send();
+            _build.Vratit().Necislovane(3).Znicene().Pracoviste("12345220").Send();
+            _build.DatOpravit().Necislovane(7).Objednavka("D005", "184/2014").TerminDodani(_termin).Send();
+            _build.DatOpravit().Necislovane(1).Objednavka("D005", "185/2014").TerminDodani(_termin).Reklamace().Send();
+        }
+
+        [TestMethod]
+        public void CelkemNecislovanych()
+        {
+            AssertPocty(_response.PoctyNecislovane, 1, 2, 1, 8, 3);
+        }
+
+        [TestMethod]
+        public void NaradiNaObjednavceOpravy()
+        {
+            var naradi = NecislovaneVOprave("D005", "184/2014");
+            Assert.IsNotNull(naradi);
+            Assert.AreEqual(7, naradi.Pocet);
+        }
+
+        [TestMethod]
+        public void NaradiNaObjednavceReklamace()
+        {
+            var naradi = NecislovaneVOprave("D005", "185/2014");
+            Assert.IsNotNull(naradi);
+            Assert.AreEqual(1, naradi.Pocet);
+        }
+
+        [TestMethod]
+        public void DataOObjednavceOpravy()
+        {
+            var naradi = NecislovaneVOprave("D005", "184/2014");
+            Assert.IsNotNull(naradi);
+            Assert.AreEqual("EngiTool, a.s.", naradi.VOprave.NazevDodavatele);
+            Assert.AreEqual(_termin, naradi.VOprave.TerminDodani);
+            Assert.AreEqual(TypOpravy.Oprava, naradi.VOprave.TypOpravy);
+        }
+
+        [TestMethod]
+        public void DataOObjednavceReklamace()
+        {
+            var naradi = NecislovaneVOprave("D005", "185/2014");
+            Assert.IsNotNull(naradi);
+            Assert.AreEqual("EngiTool, a.s.", naradi.VOprave.NazevDodavatele);
+            Assert.AreEqual(_termin, naradi.VOprave.TerminDodani);
+            Assert.AreEqual(TypOpravy.Reklamace, naradi.VOprave.TypOpravy);
+        }
+    }
+
     /*
-     * Prijem poskozeneho
-     * - upravi se pocty
-     * - detail bude pro opravu podle objednavky vcetne dodavatele
-     * - pri nulovem poctu na puvodnim umisteni se radek odstrani
-     * Navrat opraveneho naradi na vydejnu
-     * - pocty
-     * - detail na vydejne
-     * - pri nulovem poctu na puvodnim umisteni se radek odstrani
-     * Prijem zniceneho naradi
-     * - pocty
-     * - detail na vydejne
-     * - pri nulovem poctu na puvodnim umisteni se radek odstrani
-     * Odeslani do srotu
-     * - pocty
-     * - cislovane naradi se odstranuje ze seznamu
-     * - pri nulovem poctu na puvodnim umisteni se radek odstrani
+     * Navrat naradi z opravy - opravene, znicene
+     * Odeslani do srotu - naradi zmizi (neni uz sledovano)
      */
 
     public class DetailNaradiReadModelPresunTestBase : DetailNaradiReadModelTestBase

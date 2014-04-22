@@ -387,6 +387,15 @@ namespace Vydejna.Projections.DetailNaradiReadModel
             var detail = new DetailNaradiVOprave();
             detail.Objednavka = umisteni.Objednavka;
             detail.KodDodavatele = umisteni.Dodavatel;
+            switch (umisteni.UpresneniZakladu)
+            {
+                case "Oprava":
+                    detail.TypOpravy = TypOpravy.Oprava;
+                    break;
+                case "Reklamace":
+                    detail.TypOpravy = TypOpravy.Reklamace;
+                    break;
+            }
             if (detail.KodDodavatele != null && dodavatel != null)
             {
                 detail.NazevDodavatele = dodavatel.Nazev;

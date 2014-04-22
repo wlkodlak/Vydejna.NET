@@ -187,6 +187,21 @@ namespace Vydejna.Projections.Tests
             return new PresunNaradiBuilder(this, "Vraceni");
         }
 
+        public PresunNaradiBuilder DatOpravit()
+        {
+            return new PresunNaradiBuilder(this, "Odeslani");
+        }
+
+        public PresunNaradiBuilder Opravit()
+        {
+            return new PresunNaradiBuilder(this, "Opraveni");
+        }
+
+        public PresunNaradiBuilder Srotovat()
+        {
+            return new PresunNaradiBuilder(this, "Srotovani");
+        }
+
         public class PresunNaradiBuilder
         {
             private NaradiTestEventBuilder _parent;
@@ -239,6 +254,24 @@ namespace Vydejna.Projections.Tests
                         _evnt.NoveUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.NaVydejne, UpresneniZakladu = "VPoradku" };
                         Pracoviste("12345220");
                         break;
+                    case "Odeslani":
+                        _evnt = new CislovaneNaradiPredanoKOpraveEvent();
+                        _evnt.PredchoziUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.NaVydejne, UpresneniZakladu = "NutnoOpravit" };
+                        _evnt.NoveUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.VOprave, UpresneniZakladu = "Oprava" };
+                        Objednavka("D005", "123/2014");
+                        break;
+                    case "Opraveni":
+                        _evnt = new CislovaneNaradiPrijatoZOpravyEvent();
+                        _evnt.PredchoziUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.VOprave, UpresneniZakladu = "Oprava" };
+                        _evnt.NoveUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.NaVydejne, UpresneniZakladu = "VPoradku" };
+                        Objednavka("D005", "123/2014");
+                        DodaciList("D123/2014");
+                        break;
+                    case "Srotovani":
+                        _evnt = new CislovaneNaradiPredanoKeSesrotovaniEvent();
+                        _evnt.PredchoziUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.NaVydejne, UpresneniZakladu = "Neopravitelne" };
+                        _evnt.NoveUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.VeSrotu };
+                        break;
                     default:
                         throw new NotSupportedException("Rezim " + _rezim + " nepodporovan");
                 }
@@ -266,6 +299,18 @@ namespace Vydejna.Projections.Tests
                     prijem.KodDodavatele = dodavatel;
                 }
 
+                var odeslani = _evnt as CislovaneNaradiPredanoKOpraveEvent;
+                if (odeslani != null)
+                {
+                    odeslani.KodDodavatele = dodavatel;
+                }
+
+                var opraveni = _evnt as CislovaneNaradiPrijatoZOpravyEvent;
+                if (opraveni != null)
+                {
+                    opraveni.KodDodavatele = dodavatel;
+                }
+
                 return this;
             }
 
@@ -276,6 +321,13 @@ namespace Vydejna.Projections.Tests
                 {
                     vydej.KodPracoviste = pracoviste;
                     vydej.NoveUmisteni.Pracoviste = pracoviste;
+                }
+
+                var vraceni = _evnt as CislovaneNaradiPrijatoZVyrobyEvent;
+                if (vraceni != null)
+                {
+                    vraceni.KodPracoviste = pracoviste;
+                    vraceni.PredchoziUmisteni.Pracoviste = pracoviste;
                 }
 
                 return this;
@@ -304,6 +356,80 @@ namespace Vydejna.Projections.Tests
                     vraceni.StavNaradi = stavNaradi;
                     vraceni.KodVady = vada;
                     vraceni.NoveUmisteni.UpresneniZakladu = stavNaradi.ToString();
+                }
+
+                return this;
+            }
+
+            public PresunCislovanehoBuilder Objednavka(string dodavatel, string objednavka)
+            {
+                var odeslani = _evnt as CislovaneNaradiPredanoKOpraveEvent;
+                if (odeslani != null)
+                {
+                    odeslani.KodDodavatele = dodavatel;
+                    odeslani.Objednavka = objednavka;
+                    odeslani.NoveUmisteni.Dodavatel = dodavatel;
+                    odeslani.NoveUmisteni.Objednavka = objednavka;
+                }
+
+                var opraveni = _evnt as CislovaneNaradiPrijatoZOpravyEvent;
+                if (opraveni != null)
+                {
+                    opraveni.KodDodavatele = dodavatel;
+                    opraveni.Objednavka = objednavka;
+                    opraveni.PredchoziUmisteni.Dodavatel = dodavatel;
+                    opraveni.PredchoziUmisteni.Objednavka = objednavka;
+                }
+
+                return this;
+            }
+
+            public PresunCislovanehoBuilder DodaciList(string dodaciList)
+            {
+                var opraveni = _evnt as CislovaneNaradiPrijatoZOpravyEvent;
+                if (opraveni != null)
+                {
+                    opraveni.DodaciList = dodaciList;
+                }
+
+                return this;
+            }
+
+            public PresunCislovanehoBuilder TerminDodani(DateTime termin)
+            {
+                var odeslani = _evnt as CislovaneNaradiPredanoKOpraveEvent;
+                if (odeslani != null)
+                {
+                    odeslani.TerminDodani = termin;
+                }
+
+                return this;
+            }
+
+            public PresunCislovanehoBuilder Oprava()
+            {
+                return PouzitTypOpravy(TypOpravy.Oprava);
+            }
+
+            public PresunCislovanehoBuilder Reklamace()
+            {
+                return PouzitTypOpravy(TypOpravy.Reklamace);
+            }
+
+            private PresunCislovanehoBuilder PouzitTypOpravy(TypOpravy typOpravy)
+            {
+                var odeslani = _evnt as CislovaneNaradiPredanoKOpraveEvent;
+                if (odeslani != null)
+                {
+                    odeslani.TypOpravy = typOpravy;
+                    odeslani.NoveUmisteni.UpresneniZakladu = typOpravy.ToString();
+                }
+
+                var opraveni = _evnt as CislovaneNaradiPrijatoZOpravyEvent;
+                if (opraveni != null)
+                {
+                    opraveni.TypOpravy = typOpravy;
+                    opraveni.PredchoziUmisteni.UpresneniZakladu = typOpravy.ToString();
                 }
 
                 return this;
@@ -372,6 +498,26 @@ namespace Vydejna.Projections.Tests
                         _evnt.NoveUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.NaVydejne, UpresneniZakladu = "VPoradku" };
                         Pracoviste("12345220");
                         break;
+                    case "Odeslani":
+                        _evnt = new NecislovaneNaradiPredanoKOpraveEvent();
+                        _evnt.PredchoziUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.NaVydejne, UpresneniZakladu = "NutnoOpravit" };
+                        _evnt.NoveUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.VOprave };
+                        Objednavka("D005", "123/2014");
+                        PouzitTypOpravy(TypOpravy.Oprava);
+                        break;
+                    case "Opraveni":
+                        _evnt = new NecislovaneNaradiPrijatoZOpravyEvent();
+                        _evnt.PredchoziUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.VOprave };
+                        _evnt.NoveUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.NaVydejne, UpresneniZakladu = "VPoradku" };
+                        Objednavka("D005", "123/2014");
+                        DodaciList("D123/2014");
+                        PouzitTypOpravy(TypOpravy.Oprava);
+                        break;
+                    case "Srotovani":
+                        _evnt = new NecislovaneNaradiPredanoKeSesrotovaniEvent();
+                        _evnt.PredchoziUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.NaVydejne, UpresneniZakladu = "Neopravitelne" };
+                        _evnt.NoveUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.VeSrotu };
+                        break;
                     default:
                         throw new NotSupportedException("Rezim " + _rezim + " nepodporovan");
                 }
@@ -402,6 +548,18 @@ namespace Vydejna.Projections.Tests
                 if (prijem != null)
                 {
                     prijem.KodDodavatele = dodavatel;
+                }
+
+                var odeslani = _evnt as NecislovaneNaradiPredanoKOpraveEvent;
+                if (odeslani != null)
+                {
+                    odeslani.KodDodavatele = dodavatel;
+                }
+
+                var opraveni = _evnt as NecislovaneNaradiPrijatoZOpravyEvent;
+                if (opraveni != null)
+                {
+                    opraveni.KodDodavatele = dodavatel;
                 }
 
                 return this;
@@ -448,6 +606,80 @@ namespace Vydejna.Projections.Tests
                 {
                     vraceni.StavNaradi = stavNaradi;
                     vraceni.NoveUmisteni.UpresneniZakladu = stavNaradi.ToString();
+                }
+
+                return this;
+            }
+
+            public PresunNecislovanehoBuilder Objednavka(string dodavatel, string objednavka)
+            {
+                var odeslani = _evnt as NecislovaneNaradiPredanoKOpraveEvent;
+                if (odeslani != null)
+                {
+                    odeslani.KodDodavatele = dodavatel;
+                    odeslani.Objednavka = objednavka;
+                    odeslani.NoveUmisteni.Dodavatel = dodavatel;
+                    odeslani.NoveUmisteni.Objednavka = objednavka;
+                }
+
+                var opraveni = _evnt as NecislovaneNaradiPrijatoZOpravyEvent;
+                if (opraveni != null)
+                {
+                    opraveni.KodDodavatele = dodavatel;
+                    opraveni.Objednavka = objednavka;
+                    opraveni.PredchoziUmisteni.Dodavatel = dodavatel;
+                    opraveni.PredchoziUmisteni.Objednavka = objednavka;
+                }
+
+                return this;
+            }
+
+            public PresunNecislovanehoBuilder DodaciList(string dodaciList)
+            {
+                var opraveni = _evnt as NecislovaneNaradiPrijatoZOpravyEvent;
+                if (opraveni != null)
+                {
+                    opraveni.DodaciList = dodaciList;
+                }
+
+                return this;
+            }
+
+            public PresunNecislovanehoBuilder TerminDodani(DateTime termin)
+            {
+                var odeslani = _evnt as NecislovaneNaradiPredanoKOpraveEvent;
+                if (odeslani != null)
+                {
+                    odeslani.TerminDodani = termin;
+                }
+
+                return this;
+            }
+
+            public PresunNecislovanehoBuilder Oprava()
+            {
+                return PouzitTypOpravy(TypOpravy.Oprava);
+            }
+
+            public PresunNecislovanehoBuilder Reklamace()
+            {
+                return PouzitTypOpravy(TypOpravy.Reklamace);
+            }
+
+            private PresunNecislovanehoBuilder PouzitTypOpravy(TypOpravy typOpravy)
+            {
+                var odeslani = _evnt as NecislovaneNaradiPredanoKOpraveEvent;
+                if (odeslani != null)
+                {
+                    odeslani.TypOpravy = typOpravy;
+                    odeslani.NoveUmisteni.UpresneniZakladu = typOpravy.ToString();
+                }
+
+                var opraveni = _evnt as NecislovaneNaradiPrijatoZOpravyEvent;
+                if (opraveni != null)
+                {
+                    opraveni.TypOpravy = typOpravy;
+                    opraveni.PredchoziUmisteni.UpresneniZakladu = typOpravy.ToString();
                 }
 
                 return this;
