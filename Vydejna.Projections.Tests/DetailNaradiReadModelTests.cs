@@ -597,28 +597,79 @@ namespace Vydejna.Projections.Tests
             Assert.AreEqual(StavNaradi.VPoradku, naradi.NaVydejne.StavNaradi);
             Assert.AreEqual("", naradi.NaVydejne.KodVady);
         }
-
-
-        /*
-         * Pocet v poradku - 12
-         * Pocet neopravitelnych - 4
-         * Pocet poskozenych - 3
-         * Celkove pocty - celkem, cislovane, necislovane
-         * Objednavka zmizela - nulovy pocet
-         * Cislovane naradi 4 - v poradku, prazdna vada
-         */
     }
 
     [TestClass]
     public class DetailNaradiReadModelTest_Srotovani : DetailNaradiReadModelPresunTestBase
     {
+        protected override void Given()
+        {
+            base.Given();
+            _build.Prijmout().Necislovane(10).Send();
+            _build.Vydat().Necislovane(8).Send();
+            _build.Vratit().Necislovane(7).Neopravitelne().Send();
+            _build.Srotovat().Necislovane(4).Send();
+            _build.Prijmout().Cislovane(7).Send();
+            _build.Vydat().Cislovane(7).Send();
+            _build.Vratit().Cislovane(7).Neopravitelne("1").Send();
+            _build.Srotovat().Cislovane(7).Send();
+        }
 
+        [TestMethod]
+        public void PocetVPoradku()
+        {
+            var naradi = NecislovaneNaVydejne(StavNaradi.VPoradku);
+            Assert.IsNotNull(naradi);
+            Assert.AreEqual(2, naradi.Pocet);
+        }
+
+        [TestMethod]
+        public void PocetNeopravitelnych()
+        {
+            var naradi = NecislovaneNaVydejne(StavNaradi.Neopravitelne);
+            Assert.IsNotNull(naradi);
+            Assert.AreEqual(3, naradi.Pocet);
+        }
+
+        [TestMethod]
+        public void PocetVeVyrobe()
+        {
+            var naradi = NecislovaneVeVyrobe(null);
+            Assert.IsNotNull(naradi);
+            Assert.AreEqual(1, naradi.Pocet);
+        }
+
+        [TestMethod]
+        public void ZadneJineNecislovaneRadkyNeexistuji()
+        {
+            foreach (var naradi in _response.Necislovane)
+            {
+                if (naradi.ZakladUmisteni == ZakladUmisteni.NaVydejne)
+                {
+                    if (naradi.NaVydejne.StavNaradi == StavNaradi.VPoradku || naradi.NaVydejne.StavNaradi == StavNaradi.Neopravitelne)
+                        continue;
+                }
+                if (naradi.ZakladUmisteni == ZakladUmisteni.VeVyrobe)
+                {
+                    continue;
+                }
+                Assert.Fail("Neocekavany radek: {0}", naradi.ZakladUmisteni);
+            }
+        }
+
+        [TestMethod]
+        public void NecislovaneNaradiZmizi()
+        {
+            var naradi = Cislovane(7);
+            Assert.IsNull(naradi);
+        }
+
+        [TestMethod]
+        public void CelkovyPocet()
+        {
+            AssertPocty(_response.PoctyCelkem, 2, 1, 0, 0, 3);
+        }
     }
-
-    /*
-         * Navrat naradi z opravy - opravene, znicene
-         * Odeslani do srotu - naradi zmizi (neni uz sledovano)
-         */
 
     public class DetailNaradiReadModelPresunTestBase : DetailNaradiReadModelTestBase
     {
@@ -712,7 +763,7 @@ namespace Vydejna.Projections.Tests
 
         protected DetailNaradiCislovane Cislovane(int cisloNaradi)
         {
-            return _response.Cislovane.Single(n => n.CisloNaradi == cisloNaradi);
+            return _response.Cislovane.SingleOrDefault(n => n.CisloNaradi == cisloNaradi);
         }
 
         protected void ZiskatNaradi()

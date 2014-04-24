@@ -827,25 +827,35 @@ namespace Vydejna.Projections.DetailNaradiReadModel
                 var proOdebrani = NajitNecislovane(_nactenyDetail, _predchozi, DateTime.MaxValue, false);
                 var proPridani = NajitNecislovane(_nactenyDetail, _nove, _terminDodani, true);
 
-                if (proPridani.VeVyrobe != null && _nactenePracoviste != null)
+                if (proPridani != null)
                 {
-                    proPridani.VeVyrobe.NazevPracoviste = _nactenePracoviste.Nazev;
-                    proPridani.VeVyrobe.StrediskoPracoviste = _nactenePracoviste.Stredisko;
-                }
-                if (proPridani.VOprave != null && _nactenyDodavatel != null)
-                {
-                    proPridani.VOprave.NazevDodavatele = _nactenyDodavatel.Nazev;
+                    if (proPridani.VeVyrobe != null && _nactenePracoviste != null)
+                    {
+                        proPridani.VeVyrobe.NazevPracoviste = _nactenePracoviste.Nazev;
+                        proPridani.VeVyrobe.StrediskoPracoviste = _nactenePracoviste.Stredisko;
+                    }
+                    if (proPridani.VOprave != null && _nactenyDodavatel != null)
+                    {
+                        proPridani.VOprave.NazevDodavatele = _nactenyDodavatel.Nazev;
+                    }
                 }
 
                 if (proOdebrani != null)
                 {
                     proOdebrani.Pocet -= _pocet;
-                    if (proOdebrani.Pocet == 0 || proPridani.Pocet == 0)
+                    if (proOdebrani.Pocet == 0)
                         _nactenyDetail.Necislovane = null;
                 }
-                proPridani.Pocet += _pocet;
-                if (_terminDodani != default(DateTime) && proPridani.VOprave != null)
-                    proPridani.VOprave.TerminDodani = _terminDodani;
+
+                if (proPridani != null)
+                {
+                    proPridani.Pocet += _pocet;
+                    if (proPridani.Pocet == 0)
+                        _nactenyDetail.Necislovane = null;
+                    if (_terminDodani != default(DateTime) && proPridani.VOprave != null)
+                        proPridani.VOprave.TerminDodani = _terminDodani;
+                }
+
                 UpravitPocty(_nactenyDetail.PoctyCelkem, _predchozi, -_pocet);
                 UpravitPocty(_nactenyDetail.PoctyNecislovane, _predchozi, -_pocet);
                 UpravitPocty(_nactenyDetail.PoctyCelkem, _nove, _pocet);
