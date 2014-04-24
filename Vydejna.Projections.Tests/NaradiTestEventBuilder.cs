@@ -259,6 +259,7 @@ namespace Vydejna.Projections.Tests
                         _evnt.PredchoziUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.NaVydejne, UpresneniZakladu = "NutnoOpravit" };
                         _evnt.NoveUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.VOprave, UpresneniZakladu = "Oprava" };
                         Objednavka("D005", "123/2014");
+                        TerminDodani(_parent._test.CurrentTime.Date.AddDays(15));
                         break;
                     case "Opraveni":
                         _evnt = new CislovaneNaradiPrijatoZOpravyEvent();
@@ -266,6 +267,7 @@ namespace Vydejna.Projections.Tests
                         _evnt.NoveUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.NaVydejne, UpresneniZakladu = "VPoradku" };
                         Objednavka("D005", "123/2014");
                         DodaciList("D123/2014");
+                        Opravene();
                         break;
                     case "Srotovani":
                         _evnt = new CislovaneNaradiPredanoKeSesrotovaniEvent();
@@ -343,12 +345,27 @@ namespace Vydejna.Projections.Tests
                 return VeStavu(StavNaradi.NutnoOpravit, vada);
             }
 
-            public PresunCislovanehoBuilder Znicene(string vada)
+            public PresunCislovanehoBuilder Neopravitelne(string vada)
             {
                 return VeStavu(StavNaradi.Neopravitelne, vada);
             }
 
-            public PresunCislovanehoBuilder VeStavu(StavNaradi stavNaradi, string vada)
+            public PresunCislovanehoBuilder VPoradku()
+            {
+                return VeStavuOpravy(StavNaradi.VPoradku, StavNaradiPoOprave.OpravaNepotrebna);
+            }
+
+            public PresunCislovanehoBuilder Opravene()
+            {
+                return VeStavuOpravy(StavNaradi.VPoradku, StavNaradiPoOprave.Opraveno);
+            }
+
+            public PresunCislovanehoBuilder Neopravitelne()
+            {
+                return VeStavuOpravy(StavNaradi.Neopravitelne, StavNaradiPoOprave.Neopravitelne);
+            }
+
+            private PresunCislovanehoBuilder VeStavu(StavNaradi stavNaradi, string vada)
             {
                 var vraceni = _evnt as CislovaneNaradiPrijatoZVyrobyEvent;
                 if (vraceni != null)
@@ -356,6 +373,19 @@ namespace Vydejna.Projections.Tests
                     vraceni.StavNaradi = stavNaradi;
                     vraceni.KodVady = vada;
                     vraceni.NoveUmisteni.UpresneniZakladu = stavNaradi.ToString();
+                }
+
+                return this;
+            }
+
+            private PresunCislovanehoBuilder VeStavuOpravy(StavNaradi stavNaradi, StavNaradiPoOprave poOprave)
+            {
+                var opraveni = _evnt as CislovaneNaradiPrijatoZOpravyEvent;
+                if (opraveni != null)
+                {
+                    opraveni.StavNaradi = stavNaradi;
+                    opraveni.NoveUmisteni.UpresneniZakladu = stavNaradi.ToString();
+                    opraveni.Opraveno = poOprave;
                 }
 
                 return this;
@@ -503,6 +533,7 @@ namespace Vydejna.Projections.Tests
                         _evnt.PredchoziUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.NaVydejne, UpresneniZakladu = "NutnoOpravit" };
                         _evnt.NoveUmisteni = new UmisteniNaradiDto { ZakladniUmisteni = ZakladUmisteni.VOprave };
                         Objednavka("D005", "123/2014");
+                        TerminDodani(_parent._test.CurrentTime.Date.AddDays(15));
                         PouzitTypOpravy(TypOpravy.Oprava);
                         break;
                     case "Opraveni":
@@ -512,6 +543,7 @@ namespace Vydejna.Projections.Tests
                         Objednavka("D005", "123/2014");
                         DodaciList("D123/2014");
                         PouzitTypOpravy(TypOpravy.Oprava);
+                        Opravene();
                         break;
                     case "Srotovani":
                         _evnt = new NecislovaneNaradiPredanoKeSesrotovaniEvent();
@@ -586,26 +618,39 @@ namespace Vydejna.Projections.Tests
 
             public PresunNecislovanehoBuilder VPoradku()
             {
-                return VeStavu(StavNaradi.VPoradku);
+                return VeStavu(StavNaradi.VPoradku, StavNaradiPoOprave.OpravaNepotrebna);
+            }
+
+            public PresunNecislovanehoBuilder Opravene()
+            {
+                return VeStavu(StavNaradi.VPoradku, StavNaradiPoOprave.Opraveno);
             }
 
             public PresunNecislovanehoBuilder Poskozene()
             {
-                return VeStavu(StavNaradi.NutnoOpravit);
+                return VeStavu(StavNaradi.NutnoOpravit, StavNaradiPoOprave.Neurcen);
             }
 
-            public PresunNecislovanehoBuilder Znicene()
+            public PresunNecislovanehoBuilder Neopravitelne()
             {
-                return VeStavu(StavNaradi.Neopravitelne);
+                return VeStavu(StavNaradi.Neopravitelne, StavNaradiPoOprave.Neopravitelne);
             }
 
-            public PresunNecislovanehoBuilder VeStavu(StavNaradi stavNaradi)
+            private PresunNecislovanehoBuilder VeStavu(StavNaradi stavNaradi, StavNaradiPoOprave poOprave)
             {
                 var vraceni = _evnt as NecislovaneNaradiPrijatoZVyrobyEvent;
                 if (vraceni != null)
                 {
                     vraceni.StavNaradi = stavNaradi;
                     vraceni.NoveUmisteni.UpresneniZakladu = stavNaradi.ToString();
+                }
+
+                var opraveni = _evnt as NecislovaneNaradiPrijatoZOpravyEvent;
+                if (opraveni != null)
+                {
+                    opraveni.StavNaradi = stavNaradi;
+                    opraveni.NoveUmisteni.UpresneniZakladu = stavNaradi.ToString();
+                    opraveni.Opraveno = poOprave;
                 }
 
                 return this;

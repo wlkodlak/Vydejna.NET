@@ -355,7 +355,7 @@ namespace Vydejna.Projections.Tests
             _build.Vratit().Necislovane(2).VPoradku().Pracoviste("12345220").Send();
             _build.Vratit().Necislovane(2).VPoradku().Pracoviste("12345220").Send();
             _build.Vratit().Necislovane(3).Poskozene().Pracoviste("12345220").Send();
-            _build.Vratit().Necislovane(3).Znicene().Pracoviste("12345220").Send();
+            _build.Vratit().Necislovane(3).Neopravitelne().Pracoviste("12345220").Send();
             _build.Vratit().Necislovane(1).VPoradku().Pracoviste("48330330").Send();
             _build.Vratit().Cislovane(3).Poskozene("1").Send();
         }
@@ -448,7 +448,7 @@ namespace Vydejna.Projections.Tests
             _build.Prijmout().Necislovane(15).Send();
             _build.Vydat().Necislovane(14).Pracoviste("12345220").Send();
             _build.Vratit().Necislovane(9).Poskozene().Pracoviste("12345220").Send();
-            _build.Vratit().Necislovane(3).Znicene().Pracoviste("12345220").Send();
+            _build.Vratit().Necislovane(3).Neopravitelne().Pracoviste("12345220").Send();
             _build.DatOpravit().Necislovane(7).Objednavka("D005", "184/2014").TerminDodani(_termin).Send();
             _build.DatOpravit().Necislovane(1).Objednavka("D005", "185/2014").TerminDodani(_termin).Reklamace().Send();
         }
@@ -496,10 +496,129 @@ namespace Vydejna.Projections.Tests
         }
     }
 
+    [TestClass]
+    public class DetailNaradiReadModelTest_OdeslanoKOpraveNaNeexistujicihoDodavatele : DetailNaradiReadModelPresunTestBase
+    {
+        protected override void Given()
+        {
+            base.Given();
+            _build.Prijmout().Necislovane(15).Send();
+            _build.Vydat().Necislovane(14).Pracoviste("12345220").Send();
+            _build.Vratit().Necislovane(9).Poskozene().Pracoviste("12345220").Send();
+            _build.DatOpravit().Necislovane(7).Objednavka("D999", "184/2014").Send();
+        }
+
+        [TestMethod]
+        public void DetailyDodavatelePrazdne()
+        {
+            var naradi = NecislovaneVOprave("D999", "184/2014");
+            Assert.IsNotNull(naradi);
+            Assert.IsNotNull(naradi.VOprave);
+            Assert.AreEqual("", naradi.VOprave.NazevDodavatele);
+        }
+    }
+
+    [TestClass]
+    public class DetailNaradiReadModelTest_NavratZOpravy : DetailNaradiReadModelPresunTestBase
+    {
+        protected override void Given()
+        {
+            base.Given();
+            _build.Prijmout().Necislovane(19).Send();
+            _build.Vydat().Necislovane(16).Send();
+            _build.Vratit().Necislovane(15).Poskozene().Send();
+            _build.Vratit().Necislovane(1).Neopravitelne().Send();
+            _build.DatOpravit().Necislovane(10).Objednavka("D005", "111/2014").DodaciList("D111/2014").Send();
+            _build.Opravit().Necislovane(7).Objednavka("D005", "111/2014").DodaciList("D111/2014").Opravene().Send();
+            _build.Opravit().Necislovane(3).Objednavka("D005", "111/2014").DodaciList("D111/2014").Neopravitelne().Send();
+            _build.DatOpravit().Necislovane(2).Objednavka("D005", "222/2014").Reklamace().Send();
+            _build.Opravit().Necislovane(2).Objednavka("D005", "222/2014").Reklamace().VPoradku().Send();
+            _build.Prijmout().Cislovane(4).Send();
+            _build.Vydat().Cislovane(4).Send();
+            _build.Vratit().Cislovane(4).Poskozene("1").Send();
+            _build.DatOpravit().Cislovane(4).Send();
+            _build.Opravit().Cislovane(4).Opravene().Send();
+        }
+
+        [TestMethod]
+        public void PocetVPoradku()
+        {
+            var naradi = NecislovaneNaVydejne(StavNaradi.VPoradku);
+            Assert.IsNotNull(naradi);
+            Assert.AreEqual(12, naradi.Pocet);
+        }
+
+        [TestMethod]
+        public void PocetNeopravitelnych()
+        {
+            var naradi = NecislovaneNaVydejne(StavNaradi.Neopravitelne);
+            Assert.IsNotNull(naradi);
+            Assert.AreEqual(4, naradi.Pocet);
+        }
+
+        [TestMethod]
+        public void PocetPoskozenych()
+        {
+            var naradi = NecislovaneNaVydejne(StavNaradi.NutnoOpravit);
+            Assert.IsNotNull(naradi);
+            Assert.AreEqual(3, naradi.Pocet);
+        }
+
+        [TestMethod]
+        public void CelkemPocty()
+        {
+            AssertPocty(_response.PoctyCelkem, 13, 0, 3, 0, 4);
+        }
+
+        [TestMethod]
+        public void CelkemNecislovanych()
+        {
+            AssertPocty(_response.PoctyNecislovane, 12, 0, 3, 0, 4);
+        }
+
+        [TestMethod]
+        public void CelkemCislovanych()
+        {
+            AssertPocty(_response.PoctyCislovane, 1, 0, 0, 0, 0);
+        }
+
+        [TestMethod]
+        public void ObjednavkaZmizela()
+        {
+            var naradi = NecislovaneVOprave(null, null);
+            Assert.IsNull(naradi);
+        }
+
+        [TestMethod]
+        public void Cislovane_4()
+        {
+            var naradi = Cislovane(4);
+            Assert.AreEqual(ZakladUmisteni.NaVydejne, naradi.ZakladUmisteni);
+            Assert.AreEqual(StavNaradi.VPoradku, naradi.NaVydejne.StavNaradi);
+            Assert.AreEqual("", naradi.NaVydejne.KodVady);
+        }
+
+
+        /*
+         * Pocet v poradku - 12
+         * Pocet neopravitelnych - 4
+         * Pocet poskozenych - 3
+         * Celkove pocty - celkem, cislovane, necislovane
+         * Objednavka zmizela - nulovy pocet
+         * Cislovane naradi 4 - v poradku, prazdna vada
+         */
+    }
+
+    [TestClass]
+    public class DetailNaradiReadModelTest_Srotovani : DetailNaradiReadModelPresunTestBase
+    {
+
+    }
+
     /*
-     * Navrat naradi z opravy - opravene, znicene
-     * Odeslani do srotu - naradi zmizi (neni uz sledovano)
-     */
+         * Navrat naradi z opravy - opravene, znicene
+         * Odeslani do srotu - naradi zmizi (neni uz sledovano)
+         */
 
     public class DetailNaradiReadModelPresunTestBase : DetailNaradiReadModelTestBase
     {
