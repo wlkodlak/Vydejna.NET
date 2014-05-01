@@ -7,10 +7,13 @@ namespace Vydejna.Contracts
 {
     public class ZiskatSeznamNaradiRequest
     {
+        public ZiskatSeznamNaradiRequest() { }
+
         public ZiskatSeznamNaradiRequest(int stranka)
         {
             this.Stranka = stranka;
         }
+
         public int Stranka { get; set; }
 
         public const int VelikostStranky = 100;
@@ -56,6 +59,8 @@ namespace Vydejna.Contracts
     {
         public string Vykres { get; set; }
         public string Rozmer { get; set; }
+
+        public OvereniUnikatnostiRequest() { }
 
         public OvereniUnikatnostiRequest(string vykres, string rozmer)
         {

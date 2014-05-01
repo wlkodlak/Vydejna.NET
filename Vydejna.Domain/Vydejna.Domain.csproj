@@ -55,6 +55,8 @@
     <Compile Include="CislovaneNaradi\CislovaneNaradiValidation.cs" />
     <Compile Include="DefinovaneNaradi\DefinovaneNaradiAggregate.cs" />
     <Compile Include="DefinovaneNaradi\DefinovaneNaradiRepository.cs" />
+    <Compile Include="DomainRestInterface.cs" />
+    <Compile Include="ExterniCiselniky\ExterniCiselnikyService.cs" />
     <Compile Include="NecislovaneNaradi\MnozinaNecislovanehoNaradi.cs" />
     <Compile Include="NecislovaneNaradi\NecislovaneNaradiAggregate.cs" />
     <Compile Include="NecislovaneNaradi\NecislovaneNaradiRepository.cs" />

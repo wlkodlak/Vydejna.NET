@@ -58,6 +58,7 @@
     <Compile Include="PrehledAktivnihoNaradiProjection.cs" />
     <Compile Include="PrehledCislovanehoNaradiProjection.cs" />
     <Compile Include="PrehledObjednavekProjection.cs" />
+    <Compile Include="ProjectionsRestInterface.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="SeznamDodavateluProjection.cs" />
     <Compile Include="SeznamNaradiProjection.cs" />

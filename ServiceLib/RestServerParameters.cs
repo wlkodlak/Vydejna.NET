@@ -108,4 +108,17 @@ namespace ServiceLib
         public string ActualValue { get; private set; }
         public string Description { get; private set; }
     }
+
+
+    public static class HttpTypedProcessedParameterExtensions
+    {
+        public static IHttpTypedProcessedParameter<Guid> AsGuid(this IHttpProcessedParameter self)
+        {
+            return self.As<Guid>(Guid.Parse);
+        }
+        public static IHttpTypedProcessedParameter<T> AsEnum<T>(this IHttpProcessedParameter self) where T : struct
+        {
+            return self.As<T>(s => (T)Enum.Parse(typeof(T), s));
+        }
+    }
 }
