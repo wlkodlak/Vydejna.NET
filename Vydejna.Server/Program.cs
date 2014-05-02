@@ -31,13 +31,14 @@ namespace Vydejna.Server
         private IList<string> _httpPrefixes;
         private ProcessManagerSimple _processes;
         private IHttpRouteCommonConfigurator _router;
-        private IEventStoreWaitable _eventStore;
+        private EventStorePostgres _eventStore;
         private IQueueExecution _executor;
         private ITime _time;
         private TypeMapper _typeMapper;
         private MetadataManager _metadataManager;
         private EventStreaming _eventStreaming;
         private EventSourcedJsonSerializer _eventSerializer;
+        private List<IDisposable> _disposables;
 
         private void Initialize()
         {
@@ -46,8 +47,8 @@ namespace Vydejna.Server
             _httpPrefixes = new[] { ConfigurationManager.AppSettings.Get("prefix") };
 
             _processes = new ProcessManagerSimple();
-
             _time = new RealTime();
+            _disposables = new List<IDisposable>();
 
             var mainBus = new QueuedBus(new SubscriptionManager(), "MainBus");
             var executor = new QueuedExecutionWorker(mainBus);
@@ -65,10 +66,17 @@ namespace Vydejna.Server
 
             var postgres = new DatabasePostgres(_postgresConnectionString, _executor);
             _eventStore = new EventStorePostgres(postgres, _executor);
+            _eventStore.Initialize();
             var networkBus = new NetworkBusPostgres(_nodeId, _executor, postgres, _time);
+            networkBus.Initialize();
             var documentStore = new DocumentStorePostgres(postgres, _executor, "documents");
+            documentStore.Initialize();
             _metadataManager = new MetadataManager(documentStore.GetFolder("metadata"), new NodeLockManagerNull());
             _eventStreaming = new EventStreaming(_eventStore, _executor, networkBus);
+
+            _disposables.Add(postgres);
+            _disposables.Add(documentStore);
+            _disposables.Add(_eventStore);
 
             _typeMapper = new TypeMapper();
             _typeMapper.Register(new CislovaneNaradiTypeMapping());
@@ -142,6 +150,7 @@ namespace Vydejna.Server
         private void Stop()
         {
             _processes.Stop();
+            _disposables.ForEach(x => x.Dispose());
         }
 
         private void WaitForExit()

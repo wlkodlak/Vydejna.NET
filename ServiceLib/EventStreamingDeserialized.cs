@@ -55,7 +55,8 @@ namespace ServiceLib
         public void Dispose()
         {
             _isDisposed = true;
-            _streamer.Dispose();
+            if (_streamer != null)
+                _streamer.Dispose();
         }
 
         private void OnError(Exception exception)
