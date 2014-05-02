@@ -27,6 +27,16 @@ namespace Vydejna.Domain.CislovaneNaradi
             _validator = new CislovaneNaradiValidation();
         }
 
+        public void Subscribe(ISubscribable bus)
+        {
+            bus.Subscribe<CommandExecution<CislovaneNaradiPrijmoutNaVydejnuCommand>>(this);
+            bus.Subscribe<CommandExecution<CislovaneNaradiVydatDoVyrobyCommand>>(this);
+            bus.Subscribe<CommandExecution<CislovaneNaradiPrijmoutZVyrobyCommand>>(this);
+            bus.Subscribe<CommandExecution<CislovaneNaradiPredatKOpraveCommand>>(this);
+            bus.Subscribe<CommandExecution<CislovaneNaradiPrijmoutZOpravyCommand>>(this);
+            bus.Subscribe<CommandExecution<CislovaneNaradiPredatKeSesrotovaniCommand>>(this);
+        }
+
         public void Handle(CommandExecution<CislovaneNaradiPrijmoutNaVydejnuCommand> message)
         {
             new EventSourcedServiceExecution<CislovaneNaradiAggregate>(_repository, message.Command.NaradiId.ToId(), message.OnCompleted, message.OnError)

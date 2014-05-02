@@ -5,32 +5,33 @@ using Vydejna.Contracts;
 namespace Vydejna.Domain.Procesy
 {
     public class ProcesDefiniceNaradi
-        : IHandle<CommandExecution<ZahajenaDefiniceNaradiEvent>>
+        : ISubscribeToCommandManager
+        , IHandle<CommandExecution<ZahajenaDefiniceNaradiEvent>>
         , IHandle<CommandExecution<ZahajenaAktivaceNaradiEvent>>
         , IHandle<CommandExecution<DefinovanoNaradiEvent>>
     {
-        private IHandle<CommandExecution<DefinovatNaradiCommand>> _definice;
-        private IHandle<CommandExecution<AktivovatNaradiCommand>> _aktivace;
-        private IHandle<CommandExecution<DokoncitDefiniciNaradiInternalCommand>> _dokonceni;
+        private IPublisher _bus;
 
-        public ProcesDefiniceNaradi(
-            IHandle<CommandExecution<DefinovatNaradiCommand>> definice,
-            IHandle<CommandExecution<AktivovatNaradiCommand>> aktivace,
-            IHandle<CommandExecution<DokoncitDefiniciNaradiInternalCommand>> dokonceni)
+        public ProcesDefiniceNaradi(IPublisher bus)
         {
-            this._definice = definice;
-            this._aktivace = aktivace;
-            this._dokonceni = dokonceni;
+            _bus = bus;
         }
 
-        private void Handle<T>(IHandle<CommandExecution<T>> handler, T cmd, Action onCompleted, Action<Exception> onError)
+        public void Subscribe(ICommandSubscriptionManager subscriptions)
         {
-            handler.Handle(new CommandExecution<T>(cmd, onCompleted, onError));
+            subscriptions.Register<ZahajenaDefiniceNaradiEvent>(this);
+            subscriptions.Register<ZahajenaAktivaceNaradiEvent>(this);
+            subscriptions.Register<DefinovanoNaradiEvent>(this);
+        }
+
+        private void Handle<T>(T cmd, Action onCompleted, Action<Exception> onError)
+        {
+            _bus.Publish(new CommandExecution<T>(cmd, onCompleted, onError));
         }
 
         public void Handle(CommandExecution<ZahajenaDefiniceNaradiEvent> evt)
         {
-            Handle(_definice, new DefinovatNaradiCommand
+            Handle(new DefinovatNaradiCommand
             {
                 NaradiId = evt.Command.NaradiId,
                 Vykres = evt.Command.Vykres,
@@ -41,7 +42,7 @@ namespace Vydejna.Domain.Procesy
 
         public void Handle(CommandExecution<ZahajenaAktivaceNaradiEvent> evt)
         {
-            Handle(_aktivace, new AktivovatNaradiCommand
+            Handle(new AktivovatNaradiCommand
             {
                 NaradiId = evt.Command.NaradiId
             }, evt.OnCompleted, evt.OnError);
@@ -49,7 +50,7 @@ namespace Vydejna.Domain.Procesy
 
         public void Handle(CommandExecution<DefinovanoNaradiEvent> evt)
         {
-            Handle(_dokonceni, new DokoncitDefiniciNaradiInternalCommand
+            Handle(new DokoncitDefiniciNaradiInternalCommand
             {
                 NaradiId = evt.Command.NaradiId,
                 Vykres = evt.Command.Vykres,

@@ -8,6 +8,7 @@ namespace Vydejna.Projections.NaradiNaVydejneReadModel
 {
     public class NaradiNaVydejneProjection
         : IEventProjection
+        , ISubscribeToCommandManager
         , IHandle<CommandExecution<ProjectorMessages.Flush>>
         , IHandle<CommandExecution<DefinovanoNaradiEvent>>
         , IHandle<CommandExecution<CislovaneNaradiPrijatoNaVydejnuEvent>>
@@ -32,6 +33,23 @@ namespace Vydejna.Projections.NaradiNaVydejneReadModel
             _repository = repository;
             _cacheNaradi = new MemoryCache<InformaceONaradi>(executor, time);
             _cacheVydejna = new MemoryCache<NaradiNaVydejne>(executor, time);
+        }
+
+        public void Subscribe(ICommandSubscriptionManager mgr)
+        {
+            mgr.Register<ProjectorMessages.Flush>(this);
+            mgr.Register<DefinovanoNaradiEvent>(this);
+            mgr.Register<CislovaneNaradiPrijatoNaVydejnuEvent>(this);
+            mgr.Register<CislovaneNaradiVydanoDoVyrobyEvent>(this);
+            mgr.Register<CislovaneNaradiPrijatoZVyrobyEvent>(this);
+            mgr.Register<CislovaneNaradiPredanoKOpraveEvent>(this);
+            mgr.Register<CislovaneNaradiPrijatoZOpravyEvent>(this);
+            mgr.Register<CislovaneNaradiPredanoKeSesrotovaniEvent>(this);
+            mgr.Register<NecislovaneNaradiPrijatoNaVydejnuEvent>(this);
+            mgr.Register<NecislovaneNaradiVydanoDoVyrobyEvent>(this);
+            mgr.Register<NecislovaneNaradiPrijatoZVyrobyEvent>(this);
+            mgr.Register<NecislovaneNaradiPredanoKOpraveEvent>(this);
+            mgr.Register<NecislovaneNaradiPrijatoZOpravyEvent>(this);
         }
 
         public string GetVersion()
@@ -59,7 +77,7 @@ namespace Vydejna.Projections.NaradiNaVydejneReadModel
         public void Handle(CommandExecution<ProjectorMessages.Flush> message)
         {
             _cacheNaradi.Flush(
-                () => _cacheVydejna.Flush(message.OnCompleted, message.OnError, 
+                () => _cacheVydejna.Flush(message.OnCompleted, message.OnError,
                     save => _repository.UlozitUmistene(save.Version, save.Value, save.Value.PocetCelkem == 0, save.SavedAsVersion, save.SavingFailed)),
                 message.OnError, save => _repository.UlozitDefinici(save.Version, save.Value, save.SavedAsVersion, save.SavingFailed));
         }
@@ -306,6 +324,11 @@ namespace Vydejna.Projections.NaradiNaVydejneReadModel
         {
             _repository = repository;
             _cache = new MemoryCache<ZiskatNaradiNaVydejneResponse>(executor, time);
+        }
+
+        public void Subscribe(ISubscribable bus)
+        {
+            bus.Subscribe<QueryExecution<ZiskatNaradiNaVydejneRequest, ZiskatNaradiNaVydejneResponse>>(this);
         }
 
         public void Handle(QueryExecution<ZiskatNaradiNaVydejneRequest, ZiskatNaradiNaVydejneResponse> message)

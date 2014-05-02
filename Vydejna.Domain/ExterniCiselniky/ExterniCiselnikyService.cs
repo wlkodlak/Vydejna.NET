@@ -17,6 +17,13 @@ namespace Vydejna.Domain.ExterniCiselniky
             _repository = repository;
         }
 
+        public void Subscribe(ISubscribable bus)
+        {
+            bus.Subscribe<CommandExecution<DefinovanDodavatelEvent>>(this);
+            bus.Subscribe<CommandExecution<DefinovanaVadaNaradiEvent>>(this);
+            bus.Subscribe<CommandExecution<DefinovanoPracovisteEvent>>(this);
+        }
+
         public void Handle(CommandExecution<DefinovanDodavatelEvent> msg)
         {
             _repository.UlozitDodavatele(msg.Command, msg.OnCompleted, msg.OnError);
@@ -42,10 +49,12 @@ namespace Vydejna.Domain.ExterniCiselniky
     {
         private IEventStore _store;
         private IEventSourcedSerializer _serializer;
+        private string _prefix;
 
-        public ExterniCiselnikyRepository(IEventStore store, IEventSourcedSerializer serializer)
+        public ExterniCiselnikyRepository(IEventStore store, string prefix, IEventSourcedSerializer serializer)
         {
             _store = store;
+            _prefix = prefix;
             _serializer = serializer;
         }
 
@@ -53,19 +62,19 @@ namespace Vydejna.Domain.ExterniCiselniky
         {
             var storedEvent = new EventStoreEvent();
             _serializer.Serialize(evnt, storedEvent);
-            _store.AddToStream("dodavatele", new[] { storedEvent }, EventStoreVersion.Any, onComplete, () => onError(new InvalidOperationException("Unexpected concurrency exception")), onError);
+            _store.AddToStream(_prefix + "-dodavatele", new[] { storedEvent }, EventStoreVersion.Any, onComplete, () => onError(new InvalidOperationException("Unexpected concurrency exception")), onError);
         }
         public void UlozitVadu(DefinovanaVadaNaradiEvent evnt, Action onComplete, Action<Exception> onError)
         {
             var storedEvent = new EventStoreEvent();
             _serializer.Serialize(evnt, storedEvent);
-            _store.AddToStream("vady", new[] { storedEvent }, EventStoreVersion.Any, onComplete, () => onError(new InvalidOperationException("Unexpected concurrency exception")), onError);
+            _store.AddToStream(_prefix + "-vady", new[] { storedEvent }, EventStoreVersion.Any, onComplete, () => onError(new InvalidOperationException("Unexpected concurrency exception")), onError);
         }
         public void UlozitPracoviste(DefinovanoPracovisteEvent evnt, Action onComplete, Action<Exception> onError)
         {
             var storedEvent = new EventStoreEvent();
             _serializer.Serialize(evnt, storedEvent);
-            _store.AddToStream("pracoviste", new[] { storedEvent }, EventStoreVersion.Any, onComplete, () => onError(new InvalidOperationException("Unexpected concurrency exception")), onError);
+            _store.AddToStream(_prefix + "-pracoviste", new[] { storedEvent }, EventStoreVersion.Any, onComplete, () => onError(new InvalidOperationException("Unexpected concurrency exception")), onError);
         }
     }
 }

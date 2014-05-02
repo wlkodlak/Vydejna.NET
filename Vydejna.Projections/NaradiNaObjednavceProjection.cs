@@ -8,6 +8,7 @@ namespace Vydejna.Projections.NaradiNaObjednavceReadModel
 {
     public class NaradiNaObjednavceProjection
         : IEventProjection
+        , ISubscribeToCommandManager
         , IHandle<CommandExecution<ProjectorMessages.Flush>>
         , IHandle<CommandExecution<DefinovanDodavatelEvent>>
         , IHandle<CommandExecution<DefinovanoNaradiEvent>>
@@ -27,6 +28,17 @@ namespace Vydejna.Projections.NaradiNaObjednavceReadModel
             _cacheObjednavek = new MemoryCache<NaradiNaObjednavceDataObjednavky>(executor, time);
             _cacheNaradi = new MemoryCache<InformaceONaradi>(executor, time);
             _cacheDodavatele = new MemoryCache<NaradiNaObjednavceDataDodavatele>(executor, time);
+        }
+
+        public void Subscribe(ICommandSubscriptionManager mgr)
+        {
+            mgr.Register<ProjectorMessages.Flush>(this);
+            mgr.Register<DefinovanDodavatelEvent>(this);
+            mgr.Register<DefinovanoNaradiEvent>(this);
+            mgr.Register<CislovaneNaradiPredanoKOpraveEvent>(this);
+            mgr.Register<CislovaneNaradiPrijatoZOpravyEvent>(this);
+            mgr.Register<NecislovaneNaradiPredanoKOpraveEvent>(this);
+            mgr.Register<NecislovaneNaradiPrijatoZOpravyEvent>(this);
         }
 
         public string GetVersion()
@@ -429,6 +441,11 @@ namespace Vydejna.Projections.NaradiNaObjednavceReadModel
         {
             _repository = repository;
             _cache = new MemoryCache<ZiskatNaradiNaObjednavceResponse>(executor, time);
+        }
+
+        public void Subscribe(ISubscribable bus)
+        {
+            bus.Subscribe<QueryExecution<ZiskatNaradiNaObjednavceRequest, ZiskatNaradiNaObjednavceResponse>>(this);
         }
 
         public void Handle(QueryExecution<ZiskatNaradiNaObjednavceRequest, ZiskatNaradiNaObjednavceResponse> message)

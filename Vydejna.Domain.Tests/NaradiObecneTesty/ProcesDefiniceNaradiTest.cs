@@ -2,6 +2,7 @@
 using ServiceLib;
 using ServiceLib.Tests.TestUtils;
 using System;
+using System.Collections.Generic;
 using Vydejna.Contracts;
 using Vydejna.Domain.Procesy;
 
@@ -10,44 +11,46 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
     [TestClass]
     public class ProcesDefiniceNaradiTest
     {
-        private MockIHandle<DefinovatNaradiCommand> _mockDefinice;
-        private MockIHandle<AktivovatNaradiCommand> _mockAktivace;
-        private MockIHandle<DokoncitDefiniciNaradiInternalCommand> _mockDokonceni;
+        private MockPublisher _bus;
         private ProcesDefiniceNaradi _proces;
 
         [TestInitialize]
         public void Inicialize()
         {
-            _mockDefinice = new MockIHandle<DefinovatNaradiCommand>();
-            _mockAktivace = new MockIHandle<AktivovatNaradiCommand>();
-            _mockDokonceni = new MockIHandle<DokoncitDefiniciNaradiInternalCommand>();
+            _bus = new MockPublisher();
         }
 
-        private class MockIHandle<T> : IHandle<CommandExecution<T>>
+        private class MockPublisher : IPublisher
         {
-            private Action<T> _action = null;
+            private Dictionary<Type, Action<object>> _handlers = new Dictionary<Type, Action<object>>();
 
-            public void SetHandler(Action<T> action)
+            public void SetHandler<T>(Action<T> action)
             {
-                _action = action;
+                _handlers[typeof(CommandExecution<T>)] = o =>
+                {
+                    var msg = (CommandExecution<T>)o;
+                    action(msg.Command);
+                    msg.OnCompleted();
+                };
             }
 
-            public void Handle(CommandExecution<T> execution)
+            public void Publish<T>(T message)
             {
-                if (_action == null)
-                    throw new AssertFailedException(
-                        string.Format("Unexpected call to IHandle<{0}>", typeof(T).Name));
+                Action<object> handler;
+                if (!_handlers.TryGetValue(typeof(T), out handler))
+                {
+                    throw new AssertFailedException(string.Format("Unexpected call to Publish<{0}>", typeof(T).Name));
+                }
                 else
                 {
-                    _action(execution.Command);
-                    execution.OnCompleted();
+                    handler(message);
                 }
             }
         }
 
         private void VytvoritProces()
         {
-            _proces = new ProcesDefiniceNaradi(_mockDefinice, _mockAktivace, _mockDokonceni);
+            _proces = new ProcesDefiniceNaradi(_bus);
         }
 
         private void Vykonat<T>(T evnt)
@@ -63,7 +66,7 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
         {
             var naradiId = Guid.NewGuid();
             DefinovatNaradiCommand cmd = null;
-            _mockDefinice.SetHandler(c => cmd = c);
+            _bus.SetHandler<DefinovatNaradiCommand>(c => cmd = c);
             VytvoritProces();
             Vykonat(new ZahajenaDefiniceNaradiEvent { NaradiId = naradiId, Vykres = "884-55558", Rozmer = "50x5x3", Druh = "" });
             Assert.IsNotNull(cmd, "Ocekavan DefinovatNaradiCommand");
@@ -78,7 +81,7 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
         {
             var naradiId = Guid.NewGuid();
             AktivovatNaradiCommand cmd = null;
-            _mockAktivace.SetHandler(c => cmd = c);
+            _bus.SetHandler<AktivovatNaradiCommand>(c => cmd = c);
             VytvoritProces();
             Vykonat(new ZahajenaAktivaceNaradiEvent { NaradiId = naradiId });
             Assert.IsNotNull(cmd, "Ocekavan AktivovatNaradiCommand");
@@ -90,7 +93,7 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
         {
             var naradiId = Guid.NewGuid();
             DokoncitDefiniciNaradiInternalCommand cmd = null;
-            _mockDokonceni.SetHandler(c => cmd = c);
+            _bus.SetHandler<DokoncitDefiniciNaradiInternalCommand>(c => cmd = c);
             VytvoritProces();
             Vykonat(new DefinovanoNaradiEvent { NaradiId = naradiId, Vykres = "884-55558", Rozmer = "50x5x3", Druh = "" });
             Assert.IsNotNull(cmd, "Ocekavan DokoncitDefiniciNaradiInternalCommand");

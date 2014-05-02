@@ -8,6 +8,7 @@ namespace Vydejna.Projections.PrehledAktivnihoNaradiReadModel
 {
     public class PrehledAktivnihoNaradiProjection
         : IEventProjection
+        , ISubscribeToCommandManager
         , IHandle<CommandExecution<ProjectorMessages.Flush>>
         , IHandle<CommandExecution<DefinovanoNaradiEvent>>
         , IHandle<CommandExecution<AktivovanoNaradiEvent>>
@@ -36,6 +37,27 @@ namespace Vydejna.Projections.PrehledAktivnihoNaradiReadModel
             _cacheNaradi = new MemoryCache<PrehledAktivnihoNaradiDataNaradi>(executor, time);
         }
 
+        public void Subscribe(ICommandSubscriptionManager mgr)
+        {
+            mgr.Register<ProjectorMessages.Flush>(this);
+            mgr.Register<DefinovanoNaradiEvent>(this);
+            mgr.Register<AktivovanoNaradiEvent>(this);
+            mgr.Register<DeaktivovanoNaradiEvent>(this);
+            mgr.Register<ZmenenStavNaSkladeEvent>(this);
+            mgr.Register<CislovaneNaradiPrijatoNaVydejnuEvent>(this);
+            mgr.Register<CislovaneNaradiVydanoDoVyrobyEvent>(this);
+            mgr.Register<CislovaneNaradiPrijatoZVyrobyEvent>(this);
+            mgr.Register<CislovaneNaradiPredanoKOpraveEvent>(this);
+            mgr.Register<CislovaneNaradiPrijatoZOpravyEvent>(this);
+            mgr.Register<CislovaneNaradiPredanoKeSesrotovaniEvent>(this);
+            mgr.Register<NecislovaneNaradiPrijatoNaVydejnuEvent>(this);
+            mgr.Register<NecislovaneNaradiVydanoDoVyrobyEvent>(this);
+            mgr.Register<NecislovaneNaradiPrijatoZVyrobyEvent>(this);
+            mgr.Register<NecislovaneNaradiPredanoKOpraveEvent>(this);
+            mgr.Register<NecislovaneNaradiPrijatoZOpravyEvent>(this);
+            mgr.Register<NecislovaneNaradiPredanoKeSesrotovaniEvent>(this);
+        }
+
         public string GetVersion()
         {
             return _version;
@@ -59,7 +81,7 @@ namespace Vydejna.Projections.PrehledAktivnihoNaradiReadModel
 
         public void Handle(CommandExecution<ProjectorMessages.Flush> message)
         {
-            _cacheNaradi.Flush(message.OnCompleted, message.OnError, 
+            _cacheNaradi.Flush(message.OnCompleted, message.OnError,
                 save => _repository.UlozitNaradi(save.Version, save.Value, save.Value.Aktivni, save.SavedAsVersion, save.SavingFailed));
         }
 
@@ -338,6 +360,11 @@ namespace Vydejna.Projections.PrehledAktivnihoNaradiReadModel
             _cache = new MemoryCache<PrehledNaradiResponse>(executor, time);
         }
 
+        public void Subscribe(ISubscribable bus)
+        {
+            bus.Subscribe<QueryExecution<PrehledNaradiRequest, PrehledNaradiResponse>>(this);
+        }
+
         public void Handle(QueryExecution<PrehledNaradiRequest, PrehledNaradiResponse> message)
         {
             _cache.Get(
@@ -345,7 +372,7 @@ namespace Vydejna.Projections.PrehledAktivnihoNaradiReadModel
                 (verze, response) => message.OnCompleted(response),
                 ex => message.OnError(ex),
                 load => _repository.NacistSeznamNaradi(
-                    message.Request.Stranka * 100 - 100, 100, 
+                    message.Request.Stranka * 100 - 100, 100,
                     (celkem, seznam) => load.SetLoadedValue(1, VytvoritResponse(message.Request, celkem, seznam)),
                     load.LoadingFailed)
                 );

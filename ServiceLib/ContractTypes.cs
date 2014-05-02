@@ -62,5 +62,10 @@ namespace ServiceLib
                 return type;
             }
         }
+
+        public void Register(IRegisterTypes registrator)
+        {
+            registrator.Register(this);
+        }
     }
 }

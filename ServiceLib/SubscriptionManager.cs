@@ -16,6 +16,10 @@ namespace ServiceLib
         IEnumerable<Type> GetHandledTypes();
         ICommandSubscription FindHandler(Type type);
     }
+    public interface ISubscribeToCommandManager
+    {
+        void Subscribe(ICommandSubscriptionManager mgr);
+    }
 
     public class SubscriptionManager : ISubscriptionManager
     {

@@ -8,6 +8,7 @@ namespace Vydejna.Projections.DetailNaradiReadModel
 {
     public class DetailNaradiProjection
         : IEventProjection
+        , ISubscribeToCommandManager
         , IHandle<CommandExecution<ProjectorMessages.Flush>>
         , IHandle<CommandExecution<DefinovanoNaradiEvent>>
         , IHandle<CommandExecution<AktivovanoNaradiEvent>>
@@ -43,6 +44,30 @@ namespace Vydejna.Projections.DetailNaradiReadModel
             _cacheDodavatele = new MemoryCache<DetailNaradiDataDodavatele>(executor, time);
             _cachePracoviste = new MemoryCache<DefinovanoPracovisteEvent>(executor, time);
             _cacheVady = new MemoryCache<DetailNaradiDataVady>(executor, time);
+        }
+
+        public void Subscribe(ICommandSubscriptionManager mgr)
+        {
+            mgr.Register<ProjectorMessages.Flush>(this);
+            mgr.Register<DefinovanoNaradiEvent>(this);
+            mgr.Register<AktivovanoNaradiEvent>(this);
+            mgr.Register<DeaktivovanoNaradiEvent>(this);
+            mgr.Register<ZmenenStavNaSkladeEvent>(this);
+            mgr.Register<DefinovanDodavatelEvent>(this);
+            mgr.Register<DefinovanaVadaNaradiEvent>(this);
+            mgr.Register<DefinovanoPracovisteEvent>(this);
+            mgr.Register<CislovaneNaradiPrijatoNaVydejnuEvent>(this);
+            mgr.Register<CislovaneNaradiVydanoDoVyrobyEvent>(this);
+            mgr.Register<CislovaneNaradiPrijatoZVyrobyEvent>(this);
+            mgr.Register<CislovaneNaradiPredanoKOpraveEvent>(this);
+            mgr.Register<CislovaneNaradiPrijatoZOpravyEvent>(this);
+            mgr.Register<CislovaneNaradiPredanoKeSesrotovaniEvent>(this);
+            mgr.Register<NecislovaneNaradiPrijatoNaVydejnuEvent>(this);
+            mgr.Register<NecislovaneNaradiVydanoDoVyrobyEvent>(this);
+            mgr.Register<NecislovaneNaradiPrijatoZVyrobyEvent>(this);
+            mgr.Register<NecislovaneNaradiPredanoKOpraveEvent>(this);
+            mgr.Register<NecislovaneNaradiPrijatoZOpravyEvent>(this);
+            mgr.Register<NecislovaneNaradiPredanoKeSesrotovaniEvent>(this);
         }
 
         public static string KlicIndexuOprav(string dodavatel, string objednavka)
@@ -1192,6 +1217,11 @@ namespace Vydejna.Projections.DetailNaradiReadModel
         {
             _repository = repository;
             _cacheDetaily = new MemoryCache<DetailNaradiResponse>(executor, time);
+        }
+
+        public void Subscribe(ISubscribable bus)
+        {
+            bus.Subscribe<QueryExecution<DetailNaradiRequest, DetailNaradiResponse>>(this);
         }
 
         public void Handle(QueryExecution<DetailNaradiRequest, DetailNaradiResponse> message)

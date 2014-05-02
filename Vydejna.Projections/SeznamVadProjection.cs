@@ -8,6 +8,7 @@ namespace Vydejna.Projections.SeznamVadReadModel
 {
     public class SeznamVadProjection
         : IEventProjection
+        , ISubscribeToCommandManager
         , IHandle<CommandExecution<ProjectorMessages.Flush>>
         , IHandle<CommandExecution<DefinovanaVadaNaradiEvent>>
     {
@@ -20,6 +21,12 @@ namespace Vydejna.Projections.SeznamVadReadModel
             _repository = repository;
             _cache = new MemoryCache<SeznamVadData>(executor, time);
             _comparer = new SeznamVadKodComparer();
+        }
+
+        public void Subscribe(ICommandSubscriptionManager mgr)
+        {
+            mgr.Register<ProjectorMessages.Flush>(this);
+            mgr.Register<DefinovanaVadaNaradiEvent>(this);
         }
 
         public string GetVersion()
@@ -70,8 +77,8 @@ namespace Vydejna.Projections.SeznamVadReadModel
 
                     _cache.Insert("vady", verze, seznamVad, dirty: true);
                     message.OnCompleted();
-                }, 
-                message.OnError, 
+                },
+                message.OnError,
                 load => _repository.NacistVady((verze, data) => load.SetLoadedValue(verze, RozsiritData(data)), load.LoadingFailed));
         }
 
@@ -135,6 +142,11 @@ namespace Vydejna.Projections.SeznamVadReadModel
         {
             _repository = repository;
             _cache = new MemoryCache<ZiskatSeznamVadResponse>(executor, time);
+        }
+
+        public void Subscribe(ISubscribable bus)
+        {
+            bus.Subscribe<QueryExecution<ZiskatSeznamVadRequest, ZiskatSeznamVadResponse>>(this);
         }
 
         public void Handle(QueryExecution<ZiskatSeznamVadRequest, ZiskatSeznamVadResponse> message)

@@ -8,6 +8,7 @@ namespace Vydejna.Projections.SeznamPracovistReadModel
 {
     public class SeznamPracovistProjection
         : IEventProjection
+        , ISubscribeToCommandManager
         , IHandle<CommandExecution<ProjectorMessages.Flush>>
         , IHandle<CommandExecution<DefinovanoPracovisteEvent>>
     {
@@ -20,6 +21,12 @@ namespace Vydejna.Projections.SeznamPracovistReadModel
             _repository = repository;
             _comparer = new SeznamPracovistDataPracovisteKodComparer();
             _cachePracovist = new MemoryCache<InformaceOPracovisti>(executor, time);
+        }
+
+        public void Subscribe(ICommandSubscriptionManager mgr)
+        {
+            mgr.Register<ProjectorMessages.Flush>(this);
+            mgr.Register<DefinovanoPracovisteEvent>(this);
         }
 
         public string GetVersion()
@@ -45,7 +52,7 @@ namespace Vydejna.Projections.SeznamPracovistReadModel
 
         public void Handle(CommandExecution<ProjectorMessages.Flush> message)
         {
-            _cachePracovist.Flush(message.OnCompleted, message.OnError, 
+            _cachePracovist.Flush(message.OnCompleted, message.OnError,
                 save => _repository.UlozitPracoviste(save.Version, save.Value, save.Value.Aktivni, save.SavedAsVersion, save.SavingFailed));
         }
 
@@ -139,6 +146,11 @@ namespace Vydejna.Projections.SeznamPracovistReadModel
             _cache = new MemoryCache<ZiskatSeznamPracovistResponse>(executor, time);
         }
 
+        public void Subscribe(ISubscribable bus)
+        {
+            bus.Subscribe<QueryExecution<ZiskatSeznamPracovistRequest, ZiskatSeznamPracovistResponse>>(this);
+        }
+
         public void Handle(QueryExecution<ZiskatSeznamPracovistRequest, ZiskatSeznamPracovistResponse> message)
         {
             _cache.Get(
@@ -154,10 +166,10 @@ namespace Vydejna.Projections.SeznamPracovistReadModel
         {
             return new ZiskatSeznamPracovistResponse
             {
-                 Stranka = request.Stranka,
-                 PocetCelkem = celkem,
-                 PocetStranek = (celkem + 99) / 100,
-                 Seznam = seznam
+                Stranka = request.Stranka,
+                PocetCelkem = celkem,
+                PocetStranek = (celkem + 99) / 100,
+                Seznam = seznam
             };
         }
     }

@@ -21,6 +21,12 @@ namespace Vydejna.Domain.UnikatnostNaradi
             _repoUnikatnost = repoUnikatnost;
         }
 
+        public void Subscribe(ISubscribable bus)
+        {
+            bus.Subscribe<CommandExecution<DefinovatNaradiCommand>>(this);
+            bus.Subscribe<CommandExecution<DokoncitDefiniciNaradiInternalCommand>>(this);
+        }
+
         public void Handle(CommandExecution<DefinovatNaradiCommand> message)
         {
             new UnikatnostHandler<DefinovatNaradiCommand>(

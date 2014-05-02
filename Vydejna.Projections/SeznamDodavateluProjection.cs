@@ -8,6 +8,7 @@ namespace Vydejna.Projections.SeznamDodavateluReadModel
 {
     public class SeznamDodavateluProjection
         : IEventProjection
+        , ISubscribeToCommandManager
         , IHandle<CommandExecution<ProjectorMessages.Flush>>
         , IHandle<CommandExecution<DefinovanDodavatelEvent>>
     {
@@ -20,6 +21,12 @@ namespace Vydejna.Projections.SeznamDodavateluReadModel
             _repository = repository;
             _comparer = new SeznamDodavateluNazevComparer();
             _cache = new MemoryCache<SeznamDodavateluData>(executor, time);
+        }
+
+        public void Subscribe(ICommandSubscriptionManager mgr)
+        {
+            mgr.Register<ProjectorMessages.Flush>(this);
+            mgr.Register<DefinovanDodavatelEvent>(this);
         }
 
         public string GetVersion()
@@ -65,7 +72,7 @@ namespace Vydejna.Projections.SeznamDodavateluReadModel
                     dodavatel.Ico = message.Command.Ico;
                     dodavatel.Dic = message.Command.Dic;
                     dodavatel.Aktivni = !message.Command.Deaktivovan;
-                    
+
                     _cache.Insert("dodavatele", verze, data, dirty: true);
                     message.OnCompleted();
                 },
@@ -149,6 +156,11 @@ namespace Vydejna.Projections.SeznamDodavateluReadModel
         {
             _repository = repository;
             _cache = new MemoryCache<ZiskatSeznamDodavateluResponse>(executor, time);
+        }
+
+        public void Subscribe(ISubscribable bus)
+        {
+            bus.Subscribe<QueryExecution<ZiskatSeznamDodavateluRequest, ZiskatSeznamDodavateluResponse>>(this);
         }
 
         public void Handle(QueryExecution<ZiskatSeznamDodavateluRequest, ZiskatSeznamDodavateluResponse> message)

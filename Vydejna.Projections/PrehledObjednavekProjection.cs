@@ -8,6 +8,7 @@ namespace Vydejna.Projections.PrehledObjednavekReadModel
 {
     public class PrehledObjednavekProjection
         : IEventProjection
+        , ISubscribeToCommandManager
         , IHandle<CommandExecution<DefinovanDodavatelEvent>>
         , IHandle<CommandExecution<ProjectorMessages.Flush>>
         , IHandle<CommandExecution<CislovaneNaradiPredanoKOpraveEvent>>
@@ -26,6 +27,16 @@ namespace Vydejna.Projections.PrehledObjednavekReadModel
             _cacheVerze = new MemoryCache<int>(executor, time);
             _cacheObjednavek = new MemoryCache<PrehledObjednavekDataObjednavky>(executor, time);
             _cacheDodavatelu = new MemoryCache<PrehledObjednavekDataSeznamDodavatelu>(executor, time);
+        }
+
+        public void Subscribe(ICommandSubscriptionManager mgr)
+        {
+            mgr.Register<DefinovanDodavatelEvent>(this);
+            mgr.Register<ProjectorMessages.Flush>(this);
+            mgr.Register<CislovaneNaradiPredanoKOpraveEvent>(this);
+            mgr.Register<CislovaneNaradiPrijatoZOpravyEvent>(this);
+            mgr.Register<NecislovaneNaradiPredanoKOpraveEvent>(this);
+            mgr.Register<NecislovaneNaradiPrijatoZOpravyEvent>(this);
         }
 
         public string GetVersion()
@@ -420,6 +431,11 @@ namespace Vydejna.Projections.PrehledObjednavekReadModel
             _cacheVerze = new MemoryCache<int>(executor, time);
             _cachePodleCisla = new MemoryCache<PrehledObjednavekResponse>(executor, time);
             _cachePodleData = new MemoryCache<PrehledObjednavekResponse>(executor, time);
+        }
+
+        public void Subscribe(ISubscribable bus)
+        {
+            bus.Subscribe<QueryExecution<PrehledObjednavekRequest, PrehledObjednavekResponse>>(this);
         }
 
         public void Handle(QueryExecution<PrehledObjednavekRequest, PrehledObjednavekResponse> message)

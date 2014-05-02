@@ -10,6 +10,7 @@ namespace Vydejna.Projections.IndexObjednavekReadModel
 {
     public class IndexObjednavekProjection
         : IEventProjection
+        , ISubscribeToCommandManager
         , IHandle<CommandExecution<ProjectorMessages.Flush>>
         , IHandle<CommandExecution<CislovaneNaradiPredanoKOpraveEvent>>
         , IHandle<CommandExecution<NecislovaneNaradiPredanoKOpraveEvent>>
@@ -28,6 +29,16 @@ namespace Vydejna.Projections.IndexObjednavekReadModel
             _cacheDodavatelu = new MemoryCache<IndexObjednavekDodavatele>(executor, time);
             _cacheObjednavek = new MemoryCache<IndexObjednavekDataObjednavek>(executor, time);
             _cacheDodacichListu = new MemoryCache<IndexObjednavekDataDodacichListu>(executor, time);
+        }
+
+        public void Subscribe(ICommandSubscriptionManager mgr)
+        {
+            mgr.Register<ProjectorMessages.Flush>(this);
+            mgr.Register<CislovaneNaradiPredanoKOpraveEvent>(this);
+            mgr.Register<NecislovaneNaradiPredanoKOpraveEvent>(this);
+            mgr.Register<CislovaneNaradiPrijatoZOpravyEvent>(this);
+            mgr.Register<NecislovaneNaradiPrijatoZOpravyEvent>(this);
+            mgr.Register<DefinovanDodavatelEvent>(this);
         }
 
         public string GetVersion()
@@ -428,6 +439,12 @@ namespace Vydejna.Projections.IndexObjednavekReadModel
             _repository = repository;
             _cacheObjednavek = new MemoryCache<NajitObjednavkuResponse>(executor, time);
             _cacheDodacichListu = new MemoryCache<NajitDodaciListResponse>(executor, time);
+        }
+
+        public void Subscribe(ISubscribable bus)
+        {
+            bus.Subscribe<QueryExecution<NajitObjednavkuRequest, NajitObjednavkuResponse>>(this);
+            bus.Subscribe<QueryExecution<NajitDodaciListRequest, NajitDodaciListResponse>>(this);
         }
 
         public void Handle(QueryExecution<NajitObjednavkuRequest, NajitObjednavkuResponse> message)

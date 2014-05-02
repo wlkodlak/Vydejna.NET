@@ -10,6 +10,7 @@ namespace Vydejna.Projections.PrehledCislovanehoNaradiReadModel
 {
     public class PrehledCislovanehoNaradiProjection
         : IEventProjection
+        , ISubscribeToCommandManager
         , IHandle<CommandExecution<ProjectorMessages.Flush>>
         , IHandle<CommandExecution<DefinovanoNaradiEvent>>
         , IHandle<CommandExecution<CislovaneNaradiPrijatoNaVydejnuEvent>>
@@ -28,6 +29,18 @@ namespace Vydejna.Projections.PrehledCislovanehoNaradiReadModel
             _repository = repository;
             _cacheCislovane = new MemoryCache<CislovaneNaradiVPrehledu>(executor, time);
             _cacheNaradi = new MemoryCache<InformaceONaradi>(executor, time);
+        }
+
+        public void Subscribe(ICommandSubscriptionManager mgr)
+        {
+            mgr.Register<ProjectorMessages.Flush>(this);
+            mgr.Register<DefinovanoNaradiEvent>(this);
+            mgr.Register<CislovaneNaradiPrijatoNaVydejnuEvent>(this);
+            mgr.Register<CislovaneNaradiVydanoDoVyrobyEvent>(this);
+            mgr.Register<CislovaneNaradiPrijatoZVyrobyEvent>(this);
+            mgr.Register<CislovaneNaradiPredanoKOpraveEvent>(this);
+            mgr.Register<CislovaneNaradiPrijatoZOpravyEvent>(this);
+            mgr.Register<CislovaneNaradiPredanoKeSesrotovaniEvent>(this);
         }
 
         public string GetVersion()
@@ -116,7 +129,7 @@ namespace Vydejna.Projections.PrehledCislovanehoNaradiReadModel
             private decimal _cena;
             private Action _onCompleted;
             private Action<Exception> _onError;
-            
+
             private InformaceONaradi _naradiInfo;
             private string _dokumentCislovane;
             private int _verzeCislovane;
@@ -298,6 +311,11 @@ namespace Vydejna.Projections.PrehledCislovanehoNaradiReadModel
         {
             _repository = repository;
             _cache = new MemoryCache<PrehledCislovanehoNaradiResponse>(executor, time);
+        }
+
+        public void Subscribe(ISubscribable bus)
+        {
+            bus.Subscribe<QueryExecution<PrehledCislovanehoNaradiRequest, PrehledCislovanehoNaradiResponse>>(this);
         }
 
         public void Handle(QueryExecution<PrehledCislovanehoNaradiRequest, PrehledCislovanehoNaradiResponse> message)

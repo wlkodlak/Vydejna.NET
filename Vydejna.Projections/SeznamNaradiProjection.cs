@@ -8,6 +8,7 @@ namespace Vydejna.Projections.SeznamNaradiReadModel
 {
     public class SeznamNaradiProjection
         : IEventProjection
+        , ISubscribeToCommandManager
         , IHandle<CommandExecution<ProjectorMessages.Flush>>
         , IHandle<CommandExecution<DefinovanoNaradiEvent>>
         , IHandle<CommandExecution<AktivovanoNaradiEvent>>
@@ -24,12 +25,12 @@ namespace Vydejna.Projections.SeznamNaradiReadModel
             _cacheTag = new MemoryCache<int>(executor, time);
         }
 
-        public void Subscribe(ICommandSubscriptionManager subscriptions)
+        public void Subscribe(ICommandSubscriptionManager mgr)
         {
-            subscriptions.Register<ProjectorMessages.Flush>(this);
-            subscriptions.Register<DefinovanoNaradiEvent>(this);
-            subscriptions.Register<AktivovanoNaradiEvent>(this);
-            subscriptions.Register<DeaktivovanoNaradiEvent>(this);
+            mgr.Register<ProjectorMessages.Flush>(this);
+            mgr.Register<DefinovanoNaradiEvent>(this);
+            mgr.Register<AktivovanoNaradiEvent>(this);
+            mgr.Register<DeaktivovanoNaradiEvent>(this);
         }
 
         public string GetVersion()
@@ -225,6 +226,12 @@ namespace Vydejna.Projections.SeznamNaradiReadModel
             _repository = repository;
             _cache = new MemoryCache<SeznamNaradiCachedData>(executor, time);
             _comparer = new UnikatnostComparer();
+        }
+
+        public void Subscribe(ISubscribable bus)
+        {
+            bus.Subscribe<QueryExecution<ZiskatSeznamNaradiRequest, ZiskatSeznamNaradiResponse>>(this);
+            bus.Subscribe<QueryExecution<OvereniUnikatnostiRequest, OvereniUnikatnostiResponse>>(this);
         }
 
         public void Handle(QueryExecution<ZiskatSeznamNaradiRequest, ZiskatSeznamNaradiResponse> message)

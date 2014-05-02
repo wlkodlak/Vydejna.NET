@@ -18,6 +18,13 @@ namespace Vydejna.Domain.DefinovaneNaradi
             _repoNaradi = repoNaradi;
         }
 
+        public void Subscribe(ISubscribable bus)
+        {
+            bus.Subscribe<CommandExecution<AktivovatNaradiCommand>>(this);
+            bus.Subscribe<CommandExecution<DeaktivovatNaradiCommand>>(this);
+            bus.Subscribe<CommandExecution<DefinovatNaradiInternalCommand>>(this);
+        }
+
         public void Handle(CommandExecution<AktivovatNaradiCommand> message)
         {
             new NaradiHandler<AktivovatNaradiCommand>(

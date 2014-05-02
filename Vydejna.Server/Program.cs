@@ -1,45 +1,137 @@
-﻿using System;
+﻿using ServiceLib;
+using System;
+using System.Collections.Generic;
 using System.Configuration;
-using ServiceLib;
 using Vydejna.Contracts;
 using Vydejna.Domain;
-using StructureMap;
-using StructureMap.Configuration.DSL;
-using StructureMap.Pipeline;
+using Vydejna.Domain.CislovaneNaradi;
 using Vydejna.Domain.DefinovaneNaradi;
-using Vydejna.Domain.UnikatnostNaradi;
+using Vydejna.Domain.ExterniCiselniky;
 using Vydejna.Domain.Procesy;
+using Vydejna.Domain.UnikatnostNaradi;
+using Vydejna.Projections;
+using Vydejna.Projections.DetailNaradiReadModel;
+using Vydejna.Projections.IndexObjednavekReadModel;
+using Vydejna.Projections.NaradiNaObjednavceReadModel;
+using Vydejna.Projections.NaradiNaPracovistiReadModel;
+using Vydejna.Projections.NaradiNaVydejneReadModel;
+using Vydejna.Projections.PrehledAktivnihoNaradiReadModel;
+using Vydejna.Projections.PrehledCislovanehoNaradiReadModel;
+using Vydejna.Projections.PrehledObjednavekReadModel;
+using Vydejna.Projections.SeznamDodavateluReadModel;
 using Vydejna.Projections.SeznamNaradiReadModel;
+using Vydejna.Projections.SeznamPracovistReadModel;
+using Vydejna.Projections.SeznamVadReadModel;
 
 namespace Vydejna.Server
 {
     public class Program
     {
+        private string _postgresConnectionString, _nodeId;
+        private IList<string> _httpPrefixes;
         private ProcessManagerSimple _processes;
-        private IBus _bus;
         private IHttpRouteCommonConfigurator _router;
+        private IEventStoreWaitable _eventStore;
+        private IQueueExecution _executor;
+        private ITime _time;
+        private TypeMapper _typeMapper;
+        private MetadataManager _metadataManager;
+        private EventStreaming _eventStreaming;
+        private EventSourcedJsonSerializer _eventSerializer;
 
         private void Initialize()
         {
-            ObjectFactory.Initialize(x =>
-            {
-                x.AddRegistry<CoreRegistry>();
-                x.AddRegistry<PostgresStoreRegistry>();
-                x.AddRegistry(new MultiNodePostgresRegistry(Guid.NewGuid().ToString("N")));
-                x.AddRegistry<VydejnaRegistry>();
-            });
-            ObjectFactory.AssertConfigurationIsValid();
-
-            _bus = ObjectFactory.GetInstance<IBus>();
+            _postgresConnectionString = ConfigurationManager.AppSettings.Get("database");
+            _nodeId = ConfigurationManager.AppSettings.Get("node"); ;
+            _httpPrefixes = new[] { ConfigurationManager.AppSettings.Get("prefix") };
 
             _processes = new ProcessManagerSimple();
-            _processes.RegisterBus("MainBus", _bus, ObjectFactory.GetNamedInstance<IProcessWorker>("MainBusProcess"));
-            _processes.RegisterLocal("HttpServer", ObjectFactory.GetNamedInstance<IProcessWorker>("HttpServerProcess"));
-            _processes.RegisterGlobal("ProcesDefiniceNaradi", ObjectFactory.GetNamedInstance<IProcessWorker>("ProcesDefiniceNaradi"), 0, 0);
-            _processes.RegisterGlobal("SeznamNaradiProjection", ObjectFactory.GetNamedInstance<IProcessWorker>("SeznamNaradiProjection"), 0, 0);
 
-            _router = ObjectFactory.GetNamedInstance<IHttpRouteCommonConfigurator>("HttpConfigRoot");
+            _time = new RealTime();
+
+            var mainBus = new QueuedBus(new SubscriptionManager(), "MainBus");
+            var executor = new QueuedExecutionWorker(mainBus);
+            executor.Subscribe(mainBus);
+            _executor = executor;
+            _processes.RegisterBus("MainBus", mainBus, new QueuedBusProcess(mainBus));
+
+            var httpRouter = new HttpRouter();
+            _router = new HttpRouterCommon(httpRouter);
+            _router.WithSerializer(new HttpSerializerJson()).WithSerializer(new HttpSerializerXml()).WithPicker(new HttpSerializerPicker());
+            _processes.RegisterLocal("HttpServer", new HttpServer(_httpPrefixes, new HttpServerDispatcher(httpRouter)));
+            new DomainRestInterface(mainBus).Register(_router);
+            new ProjectionsRestInterface(mainBus).Register(_router);
             _router.Commit();
+
+            var postgres = new DatabasePostgres(_postgresConnectionString, _executor);
+            _eventStore = new EventStorePostgres(postgres, _executor);
+            var networkBus = new NetworkBusPostgres(_nodeId, _executor, postgres, _time);
+            var documentStore = new DocumentStorePostgres(postgres, _executor, "documents");
+            _metadataManager = new MetadataManager(documentStore.GetFolder("metadata"), new NodeLockManagerNull());
+            _eventStreaming = new EventStreaming(_eventStore, _executor, networkBus);
+
+            _typeMapper = new TypeMapper();
+            _typeMapper.Register(new CislovaneNaradiTypeMapping());
+            _typeMapper.Register(new ExterniCiselnikyTypeMapping());
+            _typeMapper.Register(new NaradiNaUmisteniTypeMapping());
+            _typeMapper.Register(new NecislovaneNaradiTypeMapping());
+            _typeMapper.Register(new ObecneNaradiTypeMapping());
+            _typeMapper.Register(new PrehledNaradiTypeMapping());
+            _typeMapper.Register(new SeznamNaradiTypeMapping());
+            _eventSerializer = new EventSourcedJsonSerializer(_typeMapper);
+
+            new DefinovaneNaradiService(new DefinovaneNaradiRepository(_eventStore, "definovane", _eventSerializer)).Subscribe(mainBus);
+            new CislovaneNaradiService(new CislovaneNaradiRepository(_eventStore, "cislovane", _eventSerializer), _time).Subscribe(mainBus);
+            new ExterniCiselnikyService(new ExterniCiselnikyRepository(_eventStore, "externi", _eventSerializer)).Subscribe(mainBus);
+            new UnikatnostNaradiService(new UnikatnostNaradiRepository(_eventStore, "unikatnost", _eventSerializer)).Subscribe(mainBus);
+
+            new DetailNaradiReader(new DetailNaradiRepository(documentStore.GetFolder("detailnaradi")), _executor, _time).Subscribe(mainBus);
+            new IndexObjednavekReader(new IndexObjednavekRepository(documentStore.GetFolder("indexobjednavek")), _executor, _time).Subscribe(mainBus);
+            new NaradiNaObjednavceReader(new NaradiNaObjednavceRepository(documentStore.GetFolder("naradiobjednavky")), _executor, _time).Subscribe(mainBus);
+            new NaradiNaPracovistiReader(new NaradiNaPracovistiRepository(documentStore.GetFolder("naradipracoviste")), _executor, _time).Subscribe(mainBus);
+            new NaradiNaVydejneReader(new NaradiNaVydejneRepository(documentStore.GetFolder("naradyvydejny")), _executor, _time).Subscribe(mainBus);
+            new PrehledAktivnihoNaradiReader(new PrehledAktivnihoNaradiRepository(documentStore.GetFolder("prehlednaradi")), _executor, _time).Subscribe(mainBus);
+            new PrehledCislovanehoNaradiReader(new PrehledCislovanehoNaradiRepository(documentStore.GetFolder("prehledcislovanych")), _executor, _time).Subscribe(mainBus);
+            new PrehledObjednavekReader(new PrehledObjednavekRepository(documentStore.GetFolder("prehledobjednavek")), _executor, _time).Subscribe(mainBus);
+            new SeznamDodavateluReader(new SeznamDodavateluRepository(documentStore.GetFolder("seznamdodavatelu")), _executor, _time).Subscribe(mainBus);
+            new SeznamNaradiReader(new SeznamNaradiRepository(documentStore.GetFolder("seznamnaradi")), _executor, _time).Subscribe(mainBus);
+            new SeznamPracovistReader(new SeznamPracovistRepository(documentStore.GetFolder("seznampracovist")), _executor, _time).Subscribe(mainBus);
+            new SeznamVadReader(new SeznamVadRepository(documentStore.GetFolder("seznamvad")), _executor, _time).Subscribe(mainBus);
+
+            BuildEventProcessor(new ProcesDefiniceNaradi(mainBus), "ProcesDefiniceNaradi");
+
+            BuildProjection(new DetailNaradiProjection(new DetailNaradiRepository(documentStore.GetFolder("detailnaradi")), _executor, _time), "DetailNaradi");
+            BuildProjection(new IndexObjednavekProjection(new IndexObjednavekRepository(documentStore.GetFolder("indexobjednavek")), _executor, _time), "IndexObjednavek");
+            BuildProjection(new NaradiNaObjednavceProjection(new NaradiNaObjednavceRepository(documentStore.GetFolder("naradiobjednavky")), _executor, _time), "NaradiNaObjednavce");
+            BuildProjection(new NaradiNaPracovistiProjection(new NaradiNaPracovistiRepository(documentStore.GetFolder("naradipracoviste")), _executor, _time), "NaradiNaPracovisti");
+            BuildProjection(new NaradiNaVydejneProjection(new NaradiNaVydejneRepository(documentStore.GetFolder("naradyvydejny")), _executor, _time), "NaradiNaVydejne");
+            BuildProjection(new PrehledAktivnihoNaradiProjection(new PrehledAktivnihoNaradiRepository(documentStore.GetFolder("prehlednaradi")), _executor, _time), "PrehledAktivnihoNaradi");
+            BuildProjection(new PrehledCislovanehoNaradiProjection(new PrehledCislovanehoNaradiRepository(documentStore.GetFolder("prehledcislovanych")), _executor, _time), "PrehledCislovanehoNaradi");
+            BuildProjection(new PrehledObjednavekProjection(new PrehledObjednavekRepository(documentStore.GetFolder("prehledobjednavek")), _executor, _time), "PrehledObjednavek");
+            BuildProjection(new SeznamDodavateluProjection(new SeznamDodavateluRepository(documentStore.GetFolder("seznamdodavatelu")), _executor, _time), "SeznamDodavatelu");
+            BuildProjection(new SeznamNaradiProjection(new SeznamNaradiRepository(documentStore.GetFolder("seznamnaradi")), _executor, _time), "SeznamNaradi");
+            BuildProjection(new SeznamPracovistProjection(new SeznamPracovistRepository(documentStore.GetFolder("seznampracovist")), _executor, _time), "SeznamPracovist");
+            BuildProjection(new SeznamVadProjection(new SeznamVadRepository(documentStore.GetFolder("seznamvad")), _executor, _time), "SeznamVad");
+        }
+
+        private void BuildEventProcessor<T>(T processor, string processorName)
+            where T : ISubscribeToCommandManager
+        {
+            var subscriptions = new CommandSubscriptionManager();
+            processor.Subscribe(subscriptions);
+            var process = new EventProcessSimple(_metadataManager.GetConsumer(processorName),
+                new EventStreamingDeserialized(_eventStreaming, _eventSerializer), subscriptions);
+            _processes.RegisterGlobal("ProcesDefiniceNaradi", process, 0, 0);
+        }
+
+        private void BuildProjection<T>(T projection, string projectionName)
+            where T : IEventProjection, ISubscribeToCommandManager
+        {
+            var subscriptions = new CommandSubscriptionManager();
+            projection.Subscribe(subscriptions);
+            var projector = new EventProjectorSimple(projection, _metadataManager.GetConsumer(projectionName),
+                new EventStreamingDeserialized(_eventStreaming, _eventSerializer), subscriptions);
+            _processes.RegisterGlobal(projectionName, projector, 0, 0);
         }
 
         private void Start()
@@ -55,7 +147,6 @@ namespace Vydejna.Server
         private void WaitForExit()
         {
             _processes.WaitForStop();
-            ObjectFactory.Container.Dispose();
         }
 
         public static void Main(string[] args)
@@ -71,168 +162,6 @@ namespace Vydejna.Server
             Console.WriteLine("Waiting for exit...");
             program.WaitForExit();
             Console.WriteLine("Processes stopped.");
-        }
-    }
-
-    public class CoreRegistry : Registry
-    {
-        public CoreRegistry()
-        {
-            For<QueuedBus>().Singleton().Use(() => new QueuedBus(new SubscriptionManager(), "MainBus")).Named("MainBus");
-            Forward<QueuedBus, IBus>();
-            For<IQueueExecution>().Singleton().Use(x =>
-            {
-                var bus = x.GetInstance<IBus>();
-                var worker = new QueuedExecutionWorker(bus);
-                worker.Subscribe(bus);
-                return worker;
-            }).Named("Executor");
-            For<IProcessWorker>().Add<QueuedBusProcess>().Named("MainBusProcess");
-            For<ISubscriptionManager>().AlwaysUnique().Add<SubscriptionManager>();
-            For<ICommandSubscriptionManager>().AlwaysUnique().Add<CommandSubscriptionManager>();
-
-            For<HttpRouter>().Singleton().Use<HttpRouter>().Named("HttpRouter");
-            Forward<HttpRouter, IHttpRouter>();
-            Forward<HttpRouter, IHttpAddRoute>();
-            For<IHttpRouteCommonConfigurator>().Singleton()
-                .Use(x => { 
-                    IHttpRouteCommonConfigurator cfg = new HttpRouterCommon(x.GetInstance<IHttpAddRoute>());
-                    cfg.WithSerializer(new HttpSerializerJson()).WithSerializer(new HttpSerializerXml()).WithPicker(new HttpSerializerPicker());
-                    return cfg;
-                }).Named("HttpConfigRoot");
-            For<IHttpServerDispatcher>().Add<HttpServerDispatcher>().Named("HttpDispatcher");
-            For<IProcessWorker>().Use<HttpServer>()
-                .Ctor<string[]>("prefixes").Is(new[] { ConfigurationManager.AppSettings["prefix"] })
-                .Named("HttpServerProcess");
-
-            For<ITime>().Singleton().Use<RealTime>().Named("TimeService");
-            For<IMetadataManager>().Singleton().Use(x => new MetadataManager(
-                x.GetInstance<IDocumentStore>().GetFolder("Metadata"),
-                x.GetInstance<INodeLockManager>())).Named("MetadataManager");
-            For<IEventStreaming>().Singleton().Use<EventStreaming>().Named("EventStreamingRaw");
-            For<IEventStreamingDeserialized>().AlwaysUnique().Use<EventStreamingDeserialized>();
-        }
-    }
-    public class SingleNodeRegistry : Registry
-    {
-        public SingleNodeRegistry()
-        {
-            For<INodeLockManager>().Singleton().Use<NodeLockManagerNull>().Named("LockManager");
-            For<INetworkBus>().Singleton().Use<NetworkBusInMemory>().Named("NetworkBus");
-            For<INotifyChange>().Singleton().MissingNamedInstanceIs.ConstructedBy(
-                x => new NotifyChangeDirect(x.GetInstance<IQueueExecution>()));
-        }
-    }
-    public class MultiNodePostgresRegistry : Registry
-    {
-        public MultiNodePostgresRegistry(string nodeName)
-        {
-            For<INodeLockManager>().Singleton().Use(x => new NodeLockManagerDocument(
-                x.GetInstance<IDocumentStore>().GetFolder("Locking"),
-                nodeName,
-                x.GetInstance<ITime>(),
-                x.GetInstance<INotifyChange>("NotifyLocking"))).Named("LockManager");
-            For<INetworkBus>().Singleton().Use<NetworkBusPostgres>().Named("NetworkBus")
-                .Ctor<string>("nodeId").Is(nodeName)
-                .OnCreation(n => n.Initialize());
-            For<INotifyChange>().AddInstances(i =>
-                {
-                    i.ConstructedBy(x => new NotifyChangePostgres(x.GetInstance<DatabasePostgres>(), x.GetInstance<IQueueExecution>(), "Locking")).Named("NotifyLocking");
-                    i.ConstructedBy(x => new NotifyChangePostgres(x.GetInstance<DatabasePostgres>(), x.GetInstance<IQueueExecution>(), "SeznamNaradi")).Named("NotifySeznamNaradi");
-                });
-        }
-    }
-    public class MemoryStoreRegistry : Registry
-    {
-        public MemoryStoreRegistry()
-        {
-            For<IEventStoreWaitable>().Singleton().Use<EventStoreInMemory>().Named("EventStore");
-            Forward<IEventStoreWaitable, IEventStore>();
-            For<IDocumentStore>().Singleton().Use<DocumentStoreInMemory>().Named("DocumentStore");
-        }
-    }
-    public class PostgresStoreRegistry : Registry
-    {
-        public PostgresStoreRegistry()
-        {
-            For<DatabasePostgres>().Singleton().Use<DatabasePostgres>().Named("PrimaryPostgresDatabase")
-                .Ctor<string>("connectionString").Is(ConfigurationManager.AppSettings["database"]);
-            For<IEventStoreWaitable>().Singleton().Use<EventStorePostgres>().Named("EventStore").OnCreation(e => e.Initialize());
-            Forward<IEventStoreWaitable, IEventStore>();
-            For<IDocumentStore>().Singleton().Use<DocumentStorePostgres>().Named("DocumentStore")
-                .Ctor<string>("partition").Is("documents")
-                .OnCreation(e => e.Initialize());
-        }
-    }
-    public class VydejnaRegistry : Registry
-    {
-        public VydejnaRegistry()
-        {
-            For<IProcessWorker>().Singleton().Use(x =>
-            {
-                var proces = new EventProcessSimple(
-                    x.GetInstance<IMetadataManager>().GetConsumer("ProcesDefiniceNaradi"),
-                    x.GetInstance<IEventStreamingDeserialized>(),
-                    x.GetInstance<ICommandSubscriptionManager>());
-                var svcDefinovane = x.GetInstance<DefinovaneNaradiService>();
-                var svcUnikatnost = x.GetInstance<UnikatnostNaradiService>();
-                var handler = new ProcesDefiniceNaradi(svcUnikatnost, svcDefinovane, svcUnikatnost);
-                proces.Register<ZahajenaDefiniceNaradiEvent>(handler);
-                proces.Register<ZahajenaAktivaceNaradiEvent>(handler);
-                proces.Register<DefinovanoNaradiEvent>(handler);
-                return proces;
-            }).Named("ProcesDefiniceNaradi");
-
-            For<IProcessWorker>().Singleton().Use(x =>
-                {
-                    var folder = x.GetInstance<IDocumentStore>().GetFolder("SeznamNaradi");
-                    var executor = x.GetInstance<IQueueExecution>();
-                    var time = x.GetInstance<ITime>();
-                    var repository = new SeznamNaradiRepository(folder);
-                    var projekce = new SeznamNaradiProjection(repository, executor, time);
-                    var metadata = x.GetInstance<IMetadataManager>().GetConsumer("SeznamNaradi");
-                    var streaming = x.GetInstance<IEventStreamingDeserialized>();
-                    var rawSubscriptions = new CommandSubscriptionManager();
-                    var subscriptions = new QueuedCommandSubscriptionManager(rawSubscriptions, executor);
-                    projekce.Subscribe(subscriptions);
-                    var proces = new EventProjectorSimple(projekce, metadata, streaming, subscriptions);
-                    return proces;
-                }).Named("SeznamNaradiProjection");
-
-            For<SeznamNaradiReader>().Singleton().Use<SeznamNaradiReader>().Named("ViewServiceSeznamNaradi")
-                .Ctor<IDocumentFolder>("store").Is(x => x.GetInstance<IDocumentStore>().GetFolder("SeznamNaradi"))
-                .Ctor<INotifyChange>("notifier").Is(x => x.GetInstance<INotifyChange>("NotifySeznamNaradi"));
-            Forward<SeznamNaradiReader, IAnswer<ZiskatSeznamNaradiRequest, ZiskatSeznamNaradiResponse>>();
-            Forward<SeznamNaradiReader, IAnswer<OvereniUnikatnostiRequest, OvereniUnikatnostiResponse>>();
-
-            For<DefinovaneNaradiService>().Singleton().Use<DefinovaneNaradiService>().Named("DefinovaneNaradiDomainService");
-            Forward<DefinovaneNaradiService, IHandle<CommandExecution<AktivovatNaradiCommand>>>();
-            Forward<DefinovaneNaradiService, IHandle<CommandExecution<DeaktivovatNaradiCommand>>>();
-            Forward<DefinovaneNaradiService, IHandle<CommandExecution<DefinovatNaradiInternalCommand>>>();
-            For<IDefinovaneNaradiRepository>().Use<DefinovaneNaradiRepository>().Named("RepositoryNaradi")
-                .Ctor<string>("prefix").Is("naradi");
-
-            For<UnikatnostNaradiService>().Singleton().Use<UnikatnostNaradiService>().Named("UnikatnostNaradiDomainService");
-            Forward<UnikatnostNaradiService, IHandle<CommandExecution<DefinovatNaradiCommand>>>();
-            Forward<UnikatnostNaradiService, IHandle<CommandExecution<DokoncitDefiniciNaradiInternalCommand>>>();
-            For<IUnikatnostNaradiRepository>().Use<UnikatnostNaradiRepository>().Named("RepositoryUnikatnost")
-                .Ctor<string>("prefix").Is("unikatnost_naradi");
-
-            For<IEventSourcedSerializer>().Add<EventSourcedJsonSerializer>().Named("EventSourcedSerializerPrimary");
-            For<IRegisterTypes>().AddInstances(b => {
-                b.Type<SeznamNaradiTypeMapping>();
-                b.Type<ExterniCiselnikyTypeMapping>();
-                b.Type<CislovaneNaradiTypeMapping>();
-                b.Type<NecislovaneNaradiTypeMapping>();
-                b.Type<ObecneNaradiTypeMapping>();
-            });
-            For<ITypeMapper>().Use(ctx =>
-            {
-                var mapper = new TypeMapper();
-                foreach (var registrator in ctx.GetAllInstances<IRegisterTypes>())
-                    registrator.Register(mapper);
-                return mapper;
-            }).Named("TypeMapperPrimary");
         }
     }
 }

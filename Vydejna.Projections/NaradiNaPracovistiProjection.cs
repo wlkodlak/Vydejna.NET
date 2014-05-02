@@ -8,6 +8,7 @@ namespace Vydejna.Projections.NaradiNaPracovistiReadModel
 {
     public class NaradiNaPracovistiProjection
         : IEventProjection
+        , ISubscribeToCommandManager
         , IHandle<CommandExecution<ProjectorMessages.Flush>>
         , IHandle<CommandExecution<DefinovanoPracovisteEvent>>
         , IHandle<CommandExecution<CislovaneNaradiVydanoDoVyrobyEvent>>
@@ -25,6 +26,17 @@ namespace Vydejna.Projections.NaradiNaPracovistiReadModel
             _repository = repository;
             _cachePracovist = new MemoryCache<NaradiNaPracovistiDataPracoviste>(executor, time);
             _cacheNaradi = new MemoryCache<InformaceONaradi>(executor, time);
+        }
+
+        public void Subscribe(ICommandSubscriptionManager mgr)
+        {
+            mgr.Register<ProjectorMessages.Flush>(this);
+            mgr.Register<DefinovanoPracovisteEvent>(this);
+            mgr.Register<CislovaneNaradiVydanoDoVyrobyEvent>(this);
+            mgr.Register<CislovaneNaradiPrijatoZVyrobyEvent>(this);
+            mgr.Register<NecislovaneNaradiVydanoDoVyrobyEvent>(this);
+            mgr.Register<NecislovaneNaradiPrijatoZVyrobyEvent>(this);
+            mgr.Register<DefinovanoNaradiEvent>(this);
         }
 
         public string GetVersion()
@@ -133,7 +145,7 @@ namespace Vydejna.Projections.NaradiNaPracovistiReadModel
             private void NactenoNaradi(int verzeNaradi, InformaceONaradi naradiInfo)
             {
                 _naradiInfo = naradiInfo;
-                
+
                 ExecuteInternal();
                 _parent._cachePracovist.Insert(_kodPracoviste, _verzePracoviste, _dataPracoviste, dirty: true);
                 _onComplete();
@@ -356,6 +368,11 @@ namespace Vydejna.Projections.NaradiNaPracovistiReadModel
         {
             _repository = repository;
             _cache = new MemoryCache<ZiskatNaradiNaPracovistiResponse>(executor, time);
+        }
+
+        public void Subscribe(ISubscribable bus)
+        {
+            bus.Subscribe<QueryExecution<ZiskatNaradiNaPracovistiRequest, ZiskatNaradiNaPracovistiResponse>>(this);
         }
 
         public void Handle(QueryExecution<ZiskatNaradiNaPracovistiRequest, ZiskatNaradiNaPracovistiResponse> message)

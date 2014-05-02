@@ -22,6 +22,16 @@ namespace Vydejna.Domain.NecislovaneNaradi
             _validator = new NecislovaneNaradiValidation();
         }
 
+        public void Subscribe(ISubscribable bus)
+        {
+            bus.Subscribe<CommandExecution<NecislovaneNaradiPrijmoutNaVydejnuCommand>>(this);
+            bus.Subscribe<CommandExecution<NecislovaneNaradiVydatDoVyrobyCommand>>(this);
+            bus.Subscribe<CommandExecution<NecislovaneNaradiPrijmoutZVyrobyCommand>>(this);
+            bus.Subscribe<CommandExecution<NecislovaneNaradiPredatKOpraveCommand>>(this);
+            bus.Subscribe<CommandExecution<NecislovaneNaradiPrijmoutZOpravyCommand>>(this);
+            bus.Subscribe<CommandExecution<NecislovaneNaradiPredatKeSesrotovaniCommand>>(this);
+        }
+
         public void Handle(CommandExecution<NecislovaneNaradiPrijmoutNaVydejnuCommand> message)
         {
             new EventSourcedServiceExecution<NecislovaneNaradiAggregate>(_repository, message.Command.NaradiId.ToId(), message.OnCompleted, message.OnError)
