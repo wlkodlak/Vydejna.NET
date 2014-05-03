@@ -184,6 +184,16 @@ namespace ServiceLib.Tests.EventSourced
                 throw new NotSupportedException();
             }
 
+            public object Deserialize(EventStoreSnapshot snapshot)
+            {
+                throw new NotSupportedException();
+            }
+
+            public void Serialize(object snapshot, EventStoreSnapshot stored)
+            {
+                throw new NotSupportedException();
+            }
+            
             public string GetTypeName(Type type)
             {
                 return type.Name;

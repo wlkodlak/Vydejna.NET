@@ -7,6 +7,7 @@ namespace ServiceLib.Tests.EventSourced
     {
         private TypeMapper _mapper;
         private EventSourcedJsonSerializer _serializer;
+    
         [TestInitialize]
         public void Initialize()
         {
@@ -29,11 +30,11 @@ namespace ServiceLib.Tests.EventSourced
         }
 
         [TestMethod]
-        public void SerializationRoundTrip()
+        public void EventSerializationRoundTrip()
         {
             var original = new TestMessage
             {
-                IntValue = 4, 
+                IntValue = 4,
                 StringValue = "Hello",
                 Element = new TestSubMessage
                 {
@@ -41,6 +42,30 @@ namespace ServiceLib.Tests.EventSourced
                 }
             };
             var serialized = new EventStoreEvent();
+            _serializer.Serialize(original, serialized);
+            var copyObject = _serializer.Deserialize(serialized);
+            Assert.IsNotNull(copyObject, "Deserialized");
+            Assert.IsInstanceOfType(copyObject, typeof(TestMessage), "Deserialized");
+            var copy = (TestMessage)copyObject;
+            Assert.AreEqual(4, copy.IntValue, "IntValue");
+            Assert.AreEqual("Hello", copy.StringValue, "StringValue");
+            Assert.IsNotNull(copy.Element, "Element");
+            Assert.AreEqual("World", copy.Element.Value, "Element.Value");
+        }
+
+        [TestMethod]
+        public void SnapshotSerializationRoundTrip()
+        {
+            var original = new TestMessage
+            {
+                IntValue = 4,
+                StringValue = "Hello",
+                Element = new TestSubMessage
+                {
+                    Value = "World"
+                }
+            };
+            var serialized = new EventStoreSnapshot();
             _serializer.Serialize(original, serialized);
             var copyObject = _serializer.Deserialize(serialized);
             Assert.IsNotNull(copyObject, "Deserialized");

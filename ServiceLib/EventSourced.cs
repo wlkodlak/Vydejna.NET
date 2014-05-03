@@ -191,6 +191,8 @@ namespace ServiceLib
         bool HandlesFormat(string format);
         object Deserialize(EventStoreEvent evt);
         void Serialize(object evt, EventStoreEvent stored);
+        object Deserialize(EventStoreSnapshot snapshot);
+        void Serialize(object snapshot, EventStoreSnapshot stored);
         string GetTypeName(Type type);
         Type GetTypeFromName(string typeName);
     }
@@ -375,11 +377,23 @@ namespace ServiceLib
             stored.Body = JsonSerializer.SerializeToString(evt, type);
         }
 
+        public object Deserialize(EventStoreSnapshot snapshot)
+        {
+            return JsonSerializer.DeserializeFromString(snapshot.Body, _mapper.GetType(snapshot.Type));
+        }
+
+        public void Serialize(object snapshot, EventStoreSnapshot stored)
+        {
+            var type = snapshot.GetType();
+            stored.Type = _mapper.GetName(type);
+            stored.Format = "json";
+            stored.Body = JsonSerializer.SerializeToString(snapshot, type);
+        }
+
         public bool HandlesFormat(string format)
         {
             return format == "json";
         }
-
 
         public string GetTypeName(Type type)
         {

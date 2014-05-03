@@ -65,6 +65,16 @@ namespace Vydejna.Tests.EventSourcedTests
                 }
             }
 
+            public object Deserialize(EventStoreSnapshot snapshot)
+            {
+                throw new NotSupportedException();
+            }
+
+            public void Serialize(object snapshot, EventStoreSnapshot stored)
+            {
+                throw new NotSupportedException();
+            }
+            
             public bool HandlesFormat(string format)
             {
                 return format == "text";
