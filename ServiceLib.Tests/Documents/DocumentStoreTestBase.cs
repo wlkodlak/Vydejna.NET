@@ -69,12 +69,41 @@ namespace ServiceLib.Tests.Documents
             VerifyDocument("testing", "document", DocumentStoreVersion.At(2), "first");
         }
 
-        protected void SetupDocument(string folder, string name, string contents)
+        [TestMethod]
+        public void FindingKeysInRange()
+        {
+            SetupDocument("testing", "doc1", "A", new[] { new DocumentIndexing("idxKey", "A") });
+            SetupDocument("testing", "doc2", "B", new[] { new DocumentIndexing("idxKey", "B") });
+            SetupDocument("testing", "doc3", "C", new[] { new DocumentIndexing("idxKey", "C") });
+            SetupDocument("testing", "doc4", "D", new[] { new DocumentIndexing("idxKey", "D") });
+            SetupDocument("testing", "doc5", "E", new[] { new DocumentIndexing("idxKey", new[] { "E", "F" } ) });
+            SetupDocument("testing", "doc6", "G", new[] { new DocumentIndexing("idxKey", "G") });
+            VerifyDocumentKeys("testing", "idxKey", "B", "C", new[] { "doc2", "doc3" });
+            VerifyDocumentKeys("testing", "idxKey", null, "A", new[] { "doc1" });
+            VerifyDocumentKeys("testing", "idxKey", "G", null, new[] { "doc6" });
+            VerifyDocumentKeys("testing", "idxKey", "D", "G", new[] { "doc4", "doc5", "doc6" });
+        }
+
+        [TestMethod]
+        public void FindDocumentsInRange()
+        {
+            SetupDocument("testing", "doc1", "A", new[] { new DocumentIndexing("idxKey", "A") });
+            SetupDocument("testing", "doc2", "B", new[] { new DocumentIndexing("idxKey", "B") });
+            SetupDocument("testing", "doc3", "C", new[] { new DocumentIndexing("idxKey", "C") });
+            SetupDocument("testing", "doc4", "D", new[] { new DocumentIndexing("idxKey", "D") });
+            SetupDocument("testing", "doc5", "E", new[] { new DocumentIndexing("idxKey", "E") });
+            Assert.AreEqual("C, D", string.Join(", ", FindDocuments("testing", "idxKey", null, null, 2, 2).Select(d => d.Contents)), "Using skip + maxCount");
+            Assert.AreEqual("B, C", string.Join(", ", FindDocuments("testing", "idxKey", "B", "C").Select(d => d.Contents)), "Using index range");
+            Assert.AreEqual("E, D", string.Join(", ", FindDocuments("testing", "idxKey", null, null, 0, 2, false).Select(d => d.Contents)), "Descending");
+            Assert.AreEqual(4, FindDocuments("testing", "idxKey", "A", "D", 2, 2).TotalFound, "TotalFound keys A-D: range 2-3");
+        }
+
+        protected void SetupDocument(string folder, string name, string contents, IList<DocumentIndexing> indexes = null)
         {
             bool isSaved = false;
-            Store.GetFolder(folder).SaveDocument(name, contents, DocumentStoreVersion.New, null, 
-                () => { isSaved = true; }, 
-                () => { throw new InvalidOperationException(string.Format("Document {0} already exists", name)); }, 
+            Store.GetFolder(folder).SaveDocument(name, contents, DocumentStoreVersion.New, indexes,
+                () => { isSaved = true; },
+                () => { throw new InvalidOperationException(string.Format("Document {0} already exists", name)); },
                 ex => { throw ex.PreserveStackTrace(); });
             Executor.Process();
             Assert.IsTrue(isSaved, "Document {0} setup", name);
@@ -91,6 +120,28 @@ namespace ServiceLib.Tests.Documents
             if (!expectedVersion.VerifyVersion(version))
                 Assert.AreEqual(expectedVersion, DocumentStoreVersion.At(version), "Unexpected version for {0}", name);
             Assert.AreEqual(expectedContents ?? "", contents, "Contents for {0}", name);
+        }
+
+        protected void VerifyDocumentKeys(string folder, string indexName, string minValue, string maxValue, IList<string> expectedKeys)
+        {
+            bool failed = false;
+            IList<string> foundKeys = null;
+            Store.GetFolder(folder).FindDocumentKeys(indexName, minValue, maxValue, lst => foundKeys = lst, ex => failed = true);
+            Executor.Process();
+            Assert.IsFalse(failed, "FindDocumentKeys({0},{1},{2}) failed", indexName, minValue, maxValue);
+            Assert.IsNotNull(foundKeys, "FindDocumentKeys({0},{1},{2}) null", indexName, minValue, maxValue);
+            Assert.AreEqual(string.Join(", ", expectedKeys), string.Join(", ", foundKeys), "FindDocumentKeys({0},{1},{2}) result", indexName, minValue, maxValue);
+        }
+
+        protected DocumentStoreFoundDocuments FindDocuments(string folder, string indexName, string minValue, string maxValue, int skip = 0, int maxCount = int.MaxValue, bool ascending = true)
+        {
+            bool failed = false;
+            DocumentStoreFoundDocuments foundKeys = null;
+            Store.GetFolder(folder).FindDocuments(indexName, minValue, maxValue, skip, maxCount, ascending, lst => foundKeys = lst, ex => failed = true);
+            Executor.Process();
+            Assert.IsFalse(failed, "FindDocuments failed");
+            Assert.IsNotNull(foundKeys, "FindDocuments null");
+            return foundKeys;
         }
 
         protected void DeleteFolderContents(string folder)

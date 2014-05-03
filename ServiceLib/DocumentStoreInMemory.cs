@@ -180,33 +180,68 @@ namespace ServiceLib
                     onError(new ArgumentOutOfRangeException("indexName", string.Format("Index {0} does not exist in folder {1}", indexName, _folderName)));
                     return;
                 }
-                var foundKeys = new List<string>();
+                var foundKeys = new HashSet<string>();
                 if (string.Equals(minValue, maxValue, StringComparison.Ordinal))
                 {
                     HashSet<string> foundDocs;
                     if (index.ByValue.TryGetValue(minValue, out foundDocs))
                     {
-                        foundKeys.AddRange(foundDocs);
+                        foreach (var doc in foundDocs)
+                            foundKeys.Add(doc);
                     }
                 }
                 else
                 {
                     foreach (var pair in index.ByValue)
                     {
-                        if (string.CompareOrdinal(pair.Key, minValue) < 0)
+                        if (minValue != null && string.CompareOrdinal(pair.Key, minValue) < 0)
                             continue;
-                        if (string.CompareOrdinal(pair.Key, maxValue) > 0)
+                        if (maxValue != null && string.CompareOrdinal(pair.Key, maxValue) > 0)
                             continue;
-                        foundKeys.AddRange(pair.Value);
+                        foreach (var doc in pair.Value)
+                            foundKeys.Add(doc);
                     }
                 }
-                onFoundKeys(foundKeys);
+                onFoundKeys(foundKeys.ToList());
             }
 
 
             public void FindDocuments(string indexName, string minValue, string maxValue, int skip, int maxCount, bool ascending, Action<DocumentStoreFoundDocuments> onFoundDocuments, Action<Exception> onError)
             {
-                throw new NotImplementedException();
+                Index index;
+                var result = new DocumentStoreFoundDocuments();
+                if (_indexes.TryGetValue(indexName, out index))
+                {
+                    var allKeys = new HashSet<string>();
+                    var byValueOrdered = ascending ? index.ByValue.OrderBy(t => t.Key) : index.ByValue.OrderByDescending(t => t.Key);
+                    foreach (var pair in byValueOrdered)
+                    {
+                        if (minValue != null && string.CompareOrdinal(minValue, pair.Key) > 0)
+                            continue;
+                        if (maxValue != null && string.CompareOrdinal(pair.Key, maxValue) > 0)
+                            continue;
+                        foreach (var documentName in pair.Value)
+                        {
+                            if (!allKeys.Add(documentName))
+                                continue;
+                            if (skip > 0)
+                            {
+                                skip--;
+                                continue;
+                            }
+                            if (maxCount == 0)
+                                continue;
+                            maxCount--;
+                            Document document;
+                            if (_documents.TryGetValue(documentName, out document))
+                            {
+                                result.Add(new DocumentStoreFoundDocument(documentName, document.Version, document.Value));
+                            }
+                        }
+                    }
+                    result.TotalFound = allKeys.Count;
+                }
+                _executor.Enqueue(new FindDocumentsCompleted(onFoundDocuments, result));
             }
         }
 

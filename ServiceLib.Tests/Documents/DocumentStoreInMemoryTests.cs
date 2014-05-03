@@ -74,6 +74,11 @@ namespace ServiceLib.Tests.Documents
                 cmd.CommandText = "DELETE FROM " + CurrentPartition;
                 cmd.ExecuteNonQuery();
             }
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "DELETE FROM " + CurrentPartition + "_idx";
+                cmd.ExecuteNonQuery();
+            }
         }
 
         [TestCleanup]

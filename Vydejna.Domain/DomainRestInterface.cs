@@ -43,24 +43,24 @@ namespace Vydejna.Domain
 
         public void Register(IHttpRouteCommonConfigurator config)
         {
-            config.Route("/seznamnaradi/aktivovat").To(ProvestPrikaz<AktivovatNaradiCommand>);
-            config.Route("/seznamnaradi/deaktivovat").To(ProvestPrikaz<DeaktivovatNaradiCommand>);
-            config.Route("/seznamnaradi/definovat").To(ProvestPrikaz<DefinovatNaradiCommand>);
-            config.Route("/cislovane/prijmoutnavydejnu").To(ProvestPrikaz<CislovaneNaradiPrijmoutNaVydejnuCommand>);
-            config.Route("/cislovane/vydatdovyroby").To(ProvestPrikaz<CislovaneNaradiVydatDoVyrobyCommand>);
-            config.Route("/cislovane/prijmoutzvyroby").To(ProvestPrikaz<CislovaneNaradiPrijmoutZVyrobyCommand>);
-            config.Route("/cislovane/predatkoprave").To(ProvestPrikaz<CislovaneNaradiPredatKOpraveCommand>);
-            config.Route("/cislovane/prijmoutzopravy").To(ProvestPrikaz<CislovaneNaradiPrijmoutZOpravyCommand>);
-            config.Route("/cislovane/predatkesesrotovani").To(ProvestPrikaz<CislovaneNaradiPredatKeSesrotovaniCommand>);
-            config.Route("/necislovane/prijmoutnavydejnu").To(ProvestPrikaz<NecislovaneNaradiPrijmoutNaVydejnuCommand>);
-            config.Route("/necislovane/vydatdovyroby").To(ProvestPrikaz<NecislovaneNaradiVydatDoVyrobyCommand>);
-            config.Route("/necislovane/prijmoutzvyroby").To(ProvestPrikaz<NecislovaneNaradiPrijmoutZVyrobyCommand>);
-            config.Route("/necislovane/predatkoprave").To(ProvestPrikaz<NecislovaneNaradiPredatKOpraveCommand>);
-            config.Route("/necislovane/prijmoutzopravy").To(ProvestPrikaz<NecislovaneNaradiPrijmoutZOpravyCommand>);
-            config.Route("/necislovane/predatkesesrotovani").To(ProvestPrikaz<NecislovaneNaradiPredatKeSesrotovaniCommand>);
-            config.Route("/ciselniky/dodavatel").To(ProvestPrikaz<DefinovanDodavatelEvent>);
-            config.Route("/ciselniky/vada").To(ProvestPrikaz<DefinovanaVadaNaradiEvent>);
-            config.Route("/ciselniky/pracoviste").To(ProvestPrikaz<DefinovanoPracovisteEvent>);
+            config.Route("seznamnaradi/aktivovat").To(ProvestPrikaz<AktivovatNaradiCommand>);
+            config.Route("seznamnaradi/deaktivovat").To(ProvestPrikaz<DeaktivovatNaradiCommand>);
+            config.Route("seznamnaradi/definovat").To(ProvestPrikaz<DefinovatNaradiCommand>);
+            config.Route("cislovane/prijmoutnavydejnu").To(ProvestPrikaz<CislovaneNaradiPrijmoutNaVydejnuCommand>);
+            config.Route("cislovane/vydatdovyroby").To(ProvestPrikaz<CislovaneNaradiVydatDoVyrobyCommand>);
+            config.Route("cislovane/prijmoutzvyroby").To(ProvestPrikaz<CislovaneNaradiPrijmoutZVyrobyCommand>);
+            config.Route("cislovane/predatkoprave").To(ProvestPrikaz<CislovaneNaradiPredatKOpraveCommand>);
+            config.Route("cislovane/prijmoutzopravy").To(ProvestPrikaz<CislovaneNaradiPrijmoutZOpravyCommand>);
+            config.Route("cislovane/predatkesesrotovani").To(ProvestPrikaz<CislovaneNaradiPredatKeSesrotovaniCommand>);
+            config.Route("necislovane/prijmoutnavydejnu").To(ProvestPrikaz<NecislovaneNaradiPrijmoutNaVydejnuCommand>);
+            config.Route("necislovane/vydatdovyroby").To(ProvestPrikaz<NecislovaneNaradiVydatDoVyrobyCommand>);
+            config.Route("necislovane/prijmoutzvyroby").To(ProvestPrikaz<NecislovaneNaradiPrijmoutZVyrobyCommand>);
+            config.Route("necislovane/predatkoprave").To(ProvestPrikaz<NecislovaneNaradiPredatKOpraveCommand>);
+            config.Route("necislovane/prijmoutzopravy").To(ProvestPrikaz<NecislovaneNaradiPrijmoutZOpravyCommand>);
+            config.Route("necislovane/predatkesesrotovani").To(ProvestPrikaz<NecislovaneNaradiPredatKeSesrotovaniCommand>);
+            config.Route("ciselniky/dodavatel").To(ProvestPrikaz<DefinovanDodavatelEvent>);
+            config.Route("ciselniky/vada").To(ProvestPrikaz<DefinovanaVadaNaradiEvent>);
+            config.Route("ciselniky/pracoviste").To(ProvestPrikaz<DefinovanoPracovisteEvent>);
             config.Commit();
         }
     }

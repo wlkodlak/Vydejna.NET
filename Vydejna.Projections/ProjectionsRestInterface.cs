@@ -15,25 +15,25 @@ namespace Vydejna.Projections
 
         public void Register(IHttpRouteCommonConfigurator config)
         {
-            config.Route("/seznamnaradi/vsechno").To(SeznamNaradi);
-            config.Route("/seznamnaradi/detail").To(DetailNaradi);
-            config.Route("/seznamnaradi/prehled").To(PrehledNaradi);
-            config.Route("/seznamnaradi/navydejne").To(NaradiNaVydejne);
-            config.Route("/seznamnaradi/overitunikatnost").To(OveritUnikatnost);
+            config.Route("seznamnaradi/vsechno").To(SeznamNaradi);
+            config.Route("seznamnaradi/detail").To(DetailNaradi);
+            config.Route("seznamnaradi/prehled").To(PrehledNaradi);
+            config.Route("seznamnaradi/navydejne").To(NaradiNaVydejne);
+            config.Route("seznamnaradi/overitunikatnost").To(OveritUnikatnost);
 
-            config.Route("/cislovane/prehled").To(PrehledCislovaneho);
+            config.Route("cislovane/prehled").To(PrehledCislovaneho);
 
-            config.Route("/objednavky/najit").To(NajitObjednavku);
-            config.Route("/objednavky/dodacilist").To(NajitDodaciList);
-            config.Route("/objednavky/naradi").To(NaradiNaObjednavce);
-            config.Route("/objednavky/prehled").To(PrehledObjednavek);
+            config.Route("objednavky/najit").To(NajitObjednavku);
+            config.Route("objednavky/dodacilist").To(NajitDodaciList);
+            config.Route("objednavky/naradi").To(NaradiNaObjednavce);
+            config.Route("objednavky/prehled").To(PrehledObjednavek);
 
-            config.Route("/pracoviste/seznam").To(SeznamPracovist);
-            config.Route("/pracoviste/naradi").To(NaradiNaPracovisti);
+            config.Route("pracoviste/seznam").To(SeznamPracovist);
+            config.Route("pracoviste/naradi").To(NaradiNaPracovisti);
 
-            config.Route("/dodavatele/seznam").To(SeznamDodavatelu);
+            config.Route("dodavatele/seznam").To(SeznamDodavatelu);
 
-            config.Route("/vady/seznam").To(SeznamVad);
+            config.Route("vady/seznam").To(SeznamVad);
         }
 
         public void DetailNaradi(IHttpServerStagedContext ctx)
