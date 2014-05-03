@@ -270,6 +270,53 @@ namespace ServiceLib.Tests.EventSourced
                 Assert.IsNotNull(evnt.Body);
         }
 
+        [TestMethod]
+        public void LoadingNonexistentSnapshot()
+        {
+            var oldEvents = new[] { 
+                new EventStoreEvent { Type = "TypeA", Format = "text", Body = "00" },
+                new EventStoreEvent { Type = "TypeA", Format = "text", Body = "01" },
+            };
+            AddToStream("stream-01", oldEvents, EventStoreVersion.Any);
+            Assert.IsNull(LoadSnapshot("stream-01"));
+        }
+
+        [TestMethod]
+        public void SavingSnapshotFillsStreamName()
+        {
+            var snapshot = new EventStoreSnapshot { Type = "SnapshotA", Format = "text", Body = "SN01" };
+            SaveSnapshot("stream-01", snapshot);
+            Assert.AreEqual("stream-01", snapshot.StreamName);
+        }
+
+        [TestMethod]
+        public void LoadingSavedSnapshot()
+        {
+            var originalSnapshot = new EventStoreSnapshot { Type = "SnapshotA", Format = "text", Body = "SN01" };
+            SaveSnapshot("stream-01", originalSnapshot);
+            var loadedSnapshot = LoadSnapshot("stream-01");
+            Assert.IsNotNull(loadedSnapshot, "No snapshot");
+            Assert.AreEqual("stream-01", loadedSnapshot.StreamName, "StreamName");
+            Assert.AreEqual("SnapshotA", loadedSnapshot.Type, "Type");
+            Assert.AreEqual("text", loadedSnapshot.Format, "Format");
+            Assert.AreEqual("SN01", loadedSnapshot.Body, "Body");
+        }
+
+        [TestMethod]
+        public void LoadingOverwrittenSnapshot()
+        {
+            var originalSnapshot = new EventStoreSnapshot { Type = "SnapshotA", Format = "text", Body = "SN01" };
+            SaveSnapshot("stream-01", originalSnapshot);
+            var newSnapshot = new EventStoreSnapshot { Type = "SnapshotB", Format = "text", Body = "SN99" };
+            SaveSnapshot("stream-01", newSnapshot);
+            var loadedSnapshot = LoadSnapshot("stream-01");
+            Assert.IsNotNull(loadedSnapshot, "No snapshot");
+            Assert.AreEqual("stream-01", loadedSnapshot.StreamName, "StreamName");
+            Assert.AreEqual("SnapshotB", loadedSnapshot.Type, "Type");
+            Assert.AreEqual("text", loadedSnapshot.Format, "Format");
+            Assert.AreEqual("SN99", loadedSnapshot.Body, "Body");
+        }
+
         protected IEventStoreStream ReadStream(string name, int minVersion, int maxCount)
         {
             IEventStoreStream eventStream = null;
@@ -299,6 +346,24 @@ namespace ServiceLib.Tests.EventSourced
             var events = GetAllEvents(EventStoreToken.Initial);
             Assert.IsNotNull(events, "GetAllEvents returned null");
             return events.Events.Skip(index).First().Token;
+        }
+
+        protected EventStoreSnapshot LoadSnapshot(string name)
+        {
+            bool loaded = false;
+            EventStoreSnapshot snapshot = null;
+            Store.LoadSnapshot(name, s => { snapshot = s; loaded = true; }, ThrowError);
+            Executor.Process();
+            Assert.IsTrue(loaded, "Snapshot {0} not loaded", name);
+            return snapshot;
+        }
+
+        protected void SaveSnapshot(string name, EventStoreSnapshot snapshot)
+        {
+            string outcome = null;
+            Store.SaveSnapshot(name, snapshot, () => outcome = "saved", ThrowError);
+            Executor.Process();
+            Assert.AreEqual("saved", outcome, "Snapshot save outcome");
         }
 
         private IEventStoreCollection _waitResult;

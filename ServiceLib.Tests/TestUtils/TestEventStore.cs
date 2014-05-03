@@ -11,6 +11,7 @@ namespace ServiceLib.Tests.TestUtils
         private IQueueExecution _executor;
         private object _lock;
         private List<EventStoreEvent> _allEvents;
+        private Dictionary<string, EventStoreSnapshot> _snapshots;
         private List<Waiter> _waiters;
         private List<string> _streamingLog;
 
@@ -21,6 +22,7 @@ namespace ServiceLib.Tests.TestUtils
             _allEvents = new List<EventStoreEvent>();
             _waiters = new List<Waiter>();
             _streamingLog = new List<string>();
+            _snapshots = new Dictionary<string, EventStoreSnapshot>();
         }
 
         public void AddToStream(string stream, IEnumerable<EventStoreEvent> events, EventStoreVersion expectedVersion, Action onComplete, Action onConcurrency, Action<Exception> onError)
@@ -182,7 +184,7 @@ namespace ServiceLib.Tests.TestUtils
                 _onError = onError;
                 _executor = executor;
             }
-            
+
             public void NotifyEvents(IEnumerable<EventStoreEvent> events)
             {
                 if (_isDisposed)
@@ -202,6 +204,20 @@ namespace ServiceLib.Tests.TestUtils
             {
                 _isDisposed = true;
             }
+        }
+
+        public void LoadSnapshot(string stream, Action<EventStoreSnapshot> onComplete, Action<Exception> onError)
+        {
+            EventStoreSnapshot snapshot;
+            _snapshots.TryGetValue(stream, out snapshot);
+            onComplete(snapshot);
+        }
+
+        public void SaveSnapshot(string stream, EventStoreSnapshot snapshot, Action onComplete, Action<Exception> onError)
+        {
+            snapshot.StreamName = stream;
+            _snapshots[stream] = snapshot;
+            onComplete();
         }
     }
 }

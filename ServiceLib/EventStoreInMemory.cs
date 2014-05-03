@@ -11,6 +11,7 @@ namespace ServiceLib
         private UpdateLock _lock;
         private List<EventStoreEvent> _events;
         private Dictionary<string, int> _versions;
+        private Dictionary<string, EventStoreSnapshot> _snapshots;
         private List<Waiter> _waiters;
         private IQueueExecution _executor;
 
@@ -21,6 +22,7 @@ namespace ServiceLib
             _versions = new Dictionary<string, int>();
             _waiters = new List<Waiter>();
             _executor = executor;
+            _snapshots = new Dictionary<string, EventStoreSnapshot>();
         }
 
         private EventStoreToken CreateToken(int eventIndex)
@@ -231,6 +233,20 @@ namespace ServiceLib
             {
                 _parent._executor.Enqueue(new EventStoreGetAllEventsComplete(_onComplete, _readyEvents, _nextToken));
             }
+        }
+
+        public void LoadSnapshot(string stream, Action<EventStoreSnapshot> onComplete, Action<Exception> onError)
+        {
+            EventStoreSnapshot snapshot;
+            _snapshots.TryGetValue(stream, out snapshot);
+            onComplete(snapshot);
+        }
+
+        public void SaveSnapshot(string stream, EventStoreSnapshot snapshot, Action onComplete, Action<Exception> onError)
+        {
+            snapshot.StreamName = stream;
+            _snapshots[stream] = snapshot;
+            onComplete();
         }
     }
 }

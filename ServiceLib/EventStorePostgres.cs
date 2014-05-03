@@ -57,6 +57,15 @@ namespace ServiceLib
                     ")";
                 cmd.ExecuteNonQuery();
             }
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText =
+                    "CREATE TABLE IF NOT EXISTS eventstore_snapshots (" +
+                    "streamname varchar PRIMARY KEY, " +
+                    "format varchar, snapshottype varchar, contents text" +
+                    ")";
+                cmd.ExecuteNonQuery();
+            }
         }
 
         public void AddToStream(string stream, IEnumerable<EventStoreEvent> events, EventStoreVersion expectedVersion, Action onComplete, Action onConcurrency, Action<Exception> onError)
@@ -84,6 +93,16 @@ namespace ServiceLib
             var worker = new GetAllEventsWorker(this, false, token, maxCount, loadBody, onComplete, onError);
             worker.Execute();
             return worker;
+        }
+
+        public void LoadSnapshot(string stream, Action<EventStoreSnapshot> onComplete, Action<Exception> onError)
+        {
+            new LoadSnapshotWorker(this, stream, onComplete, onError).Execute();
+        }
+
+        public void SaveSnapshot(string stream, EventStoreSnapshot snapshot, Action onComplete, Action<Exception> onError)
+        {
+            new SaveSnapshotWorker(this, stream, snapshot, onComplete, onError).Execute();
         }
 
         private static EventStoreToken TokenFromId(long id)
@@ -433,9 +452,9 @@ namespace ServiceLib
                             evnt.Token = TokenFromId(reader.GetInt64(0));
                             evnt.StreamName = reader.GetString(1);
                             evnt.StreamVersion = reader.GetInt32(2);
-                            evnt.Format = reader.GetString(3);
-                            evnt.Type = reader.GetString(4);
-                            evnt.Body = reader.GetString(5);
+                            evnt.Format = reader.IsDBNull(3) ? null : reader.GetString(3);
+                            evnt.Type = reader.IsDBNull(4) ? null : reader.GetString(4);
+                            evnt.Body = reader.IsDBNull(5) ? "" : reader.GetString(5);
                             list.Add(evnt);
                         }
                         return list;
@@ -491,7 +510,7 @@ namespace ServiceLib
                         while (reader.Read())
                         {
                             var id = reader.GetInt64(0);
-                            var body = reader.GetString(1);
+                            var body = reader.IsDBNull(1) ? "" : reader.GetString(1);
                             EventStoreEvent evnt;
                             if (_ids.TryGetValue(id, out evnt))
                                 evnt.Body = body;
@@ -671,6 +690,142 @@ namespace ServiceLib
                         }
                         return list;
                     }
+                }
+            }
+        }
+        private class LoadSnapshotWorker
+        {
+            private EventStorePostgres _parent;
+            private string _stream;
+            private Action<EventStoreSnapshot> _onComplete;
+            private Action<Exception> _onError;
+
+            public LoadSnapshotWorker(EventStorePostgres parent, string stream, Action<EventStoreSnapshot> onComplete, Action<Exception> onError)
+            {
+                _parent = parent;
+                _stream = stream;
+                _onComplete = onComplete;
+                _onError = onError;
+            }
+
+            public void Execute()
+            {
+                _parent._db.Execute(ExecuteDb, _onError);
+            }
+
+            private void ExecuteDb(NpgsqlConnection conn)
+            {
+                EventStoreSnapshot snapshot = null;
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText = "SELECT format, snapshottype, contents FROM eventstore_snapshots WHERE streamname = :streamname";
+                    cmd.Parameters.AddWithValue("streamname", _stream);
+                    using (var reader = cmd.ExecuteReader())
+                    {
+                        if (reader.Read())
+                        {
+                            snapshot = new EventStoreSnapshot();
+                            snapshot.StreamName = _stream;
+                            snapshot.Format = reader.GetString(0);
+                            snapshot.Type = reader.GetString(1);
+                            snapshot.Body = reader.GetString(2);
+                        }
+                    }
+                }
+                _onComplete(snapshot);
+            }
+        }
+        private class SaveSnapshotWorker
+        {
+            private EventStorePostgres _parent;
+            private EventStoreSnapshot _snapshot;
+            private Action _onComplete;
+            private Action<Exception> _onError;
+
+            public SaveSnapshotWorker(EventStorePostgres eventStorePostgres, string stream, EventStoreSnapshot snapshot, Action onComplete, Action<Exception> onError)
+            {
+                _parent = eventStorePostgres;
+                _snapshot = snapshot;
+                _onComplete = onComplete;
+                _onError = onError;
+                _snapshot.StreamName = stream;
+            }
+
+            public void Execute()
+            {
+                _parent._db.Execute(ExecuteDb, _onError);
+            }
+
+            private void ExecuteDb(NpgsqlConnection conn)
+            {
+                using (var tran = conn.BeginTransaction())
+                {
+                    var snapshotExists = FindSnapshot(conn);
+                    if (snapshotExists)
+                    {
+                        UpdateSnapshot(conn);
+                    }
+                    else
+                    {
+                        tran.Save("insertsnapshot");
+                        try
+                        {
+                            TryInsertSnapshot(conn);
+                        }
+                        catch (NpgsqlException ex)
+                        {
+                            if (ex.Code == "23505")
+                            {
+                                tran.Rollback("insertsnapshot");
+                                UpdateSnapshot(conn);
+                            }
+                            else
+                            {
+                                throw;
+                            }
+                        }
+                    }
+                    tran.Commit();
+                }
+                _onComplete();
+            }
+
+            private bool FindSnapshot(NpgsqlConnection conn)
+            {
+                var snapshotExists = false;
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText = "SELECT 1 FROM eventstore_snapshots WHERE streamname = :streamname FOR UPDATE";
+                    cmd.Parameters.Add("streamname", NpgsqlDbType.Varchar).Value = _snapshot.StreamName;
+                    using (var reader = cmd.ExecuteReader())
+                        snapshotExists = reader.Read();
+                }
+                return snapshotExists;
+            }
+
+            private void TryInsertSnapshot(NpgsqlConnection conn)
+            {
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText = "INSERT INTO eventstore_snapshots (streamname, format, snapshottype, contents) VALUES (:streamname, :format, :snapshottype, :contents)";
+                    cmd.Parameters.Add("streamname", NpgsqlDbType.Varchar).Value = _snapshot.StreamName;
+                    cmd.Parameters.Add("format", NpgsqlDbType.Varchar).Value = _snapshot.Format;
+                    cmd.Parameters.Add("snapshottype", NpgsqlDbType.Varchar).Value = _snapshot.Type;
+                    cmd.Parameters.Add("contents", NpgsqlDbType.Varchar).Value = _snapshot.Body;
+                    cmd.ExecuteNonQuery();
+                }
+            }
+
+            private void UpdateSnapshot(NpgsqlConnection conn)
+            {
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText = "UPDATE eventstore_snapshots SET format = :format, snapshottype = :snapshottype, contents = :contents WHERE streamname = :streamname";
+                    cmd.Parameters.Add("streamname", NpgsqlDbType.Varchar).Value = _snapshot.StreamName;
+                    cmd.Parameters.Add("format", NpgsqlDbType.Varchar).Value = _snapshot.Format;
+                    cmd.Parameters.Add("snapshottype", NpgsqlDbType.Varchar).Value = _snapshot.Type;
+                    cmd.Parameters.Add("contents", NpgsqlDbType.Varchar).Value = _snapshot.Body;
+                    cmd.ExecuteNonQuery();
                 }
             }
         }

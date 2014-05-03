@@ -58,9 +58,9 @@ namespace Vydejna.Domain
             config.Route("necislovane/predatkoprave").To(ProvestPrikaz<NecislovaneNaradiPredatKOpraveCommand>);
             config.Route("necislovane/prijmoutzopravy").To(ProvestPrikaz<NecislovaneNaradiPrijmoutZOpravyCommand>);
             config.Route("necislovane/predatkesesrotovani").To(ProvestPrikaz<NecislovaneNaradiPredatKeSesrotovaniCommand>);
-            config.Route("ciselniky/dodavatel").To(ProvestPrikaz<DefinovanDodavatelEvent>);
-            config.Route("ciselniky/vada").To(ProvestPrikaz<DefinovanaVadaNaradiEvent>);
-            config.Route("ciselniky/pracoviste").To(ProvestPrikaz<DefinovanoPracovisteEvent>);
+            config.Route("dodavatele/definovat").To(ProvestPrikaz<DefinovanDodavatelEvent>);
+            config.Route("vady/definovat").To(ProvestPrikaz<DefinovanaVadaNaradiEvent>);
+            config.Route("pracoviste/definovat").To(ProvestPrikaz<DefinovanoPracovisteEvent>);
             config.Commit();
         }
     }

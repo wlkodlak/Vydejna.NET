@@ -52,7 +52,7 @@ namespace ServiceLib.Tests.EventSourced
         {
             using (var cmd = conn.CreateCommand())
             {
-                cmd.CommandText = "DROP TABLE IF EXISTS eventstore_streams; DROP TABLE IF EXISTS eventstore_events;";
+                cmd.CommandText = "DROP TABLE IF EXISTS eventstore_streams; DROP TABLE IF EXISTS eventstore_events; DROP TABLE IF EXISTS eventstore_snapshots;";
                 cmd.ExecuteNonQuery();
             }
         }

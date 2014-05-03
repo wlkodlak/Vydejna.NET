@@ -13,6 +13,8 @@ namespace ServiceLib
         void ReadStream(string stream, int minVersion, int maxCount, bool loadBody, Action<IEventStoreStream> onComplete, Action<Exception> onError);
         void GetAllEvents(EventStoreToken token, int maxCount, bool loadBody, Action<IEventStoreCollection> onComplete, Action<Exception> onError);
         void LoadBodies(IList<EventStoreEvent> events, Action onComplete, Action<Exception> onError);
+        void LoadSnapshot(string stream, Action<EventStoreSnapshot> onComplete, Action<Exception> onError);
+        void SaveSnapshot(string stream, EventStoreSnapshot snapshot, Action onComplete, Action<Exception> onError);
     }
 
     public interface IEventStoreWaitable : IEventStore
@@ -95,6 +97,13 @@ namespace ServiceLib
                 " ", StreamName,
                 "@", StreamVersion.ToString());
         }
+    }
+    public class EventStoreSnapshot
+    {
+        public string StreamName { get; set; }
+        public string Type { get; set; }
+        public string Format { get; set; }
+        public string Body { get; set; }
     }
     public class EventStoreToken : IComparable<EventStoreToken>, IEquatable<EventStoreToken>
     {
