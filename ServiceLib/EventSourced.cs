@@ -204,6 +204,7 @@ namespace ServiceLib
         private IEventStore _store;
         private string _prefix;
         private IEventSourcedSerializer _serializer;
+        private int _snapshotInterval;
 
         protected EventSourcedRepository(IEventStore store, string prefix, IEventSourcedSerializer serializer)
         {
@@ -225,6 +226,22 @@ namespace ServiceLib
                 .ToString();
         }
 
+        protected virtual bool ShouldCreateSnapshot(T aggregate, int currentVersion)
+        {
+            if (_snapshotInterval <= 0)
+                return false;
+            var original = aggregate.OriginalVersion;
+            var newCount = currentVersion - original;
+            var fromLastInterval = original % _snapshotInterval;
+            fromLastInterval += newCount;
+            return fromLastInterval >= _snapshotInterval;
+        }
+        public int SnapshotInterval
+        {
+            get { return _snapshotInterval; }
+            set { _snapshotInterval = value; }
+        }
+
         public void Load(IAggregateId id, Action<T> onLoaded, Action onMissing, Action<Exception> onError)
         {
             new AggregateLoading(this, id, onLoaded, onMissing, onError).Execute();
@@ -241,6 +258,7 @@ namespace ServiceLib
             private Action<T> _onLoaded;
             private Action _onMissing;
             private Action<Exception> _onError;
+            private T _aggregate;
 
             public AggregateLoading(EventSourcedRepository<T> parent, IAggregateId id, Action<T> onLoaded, Action onMissing, Action<Exception> onError)
             {
@@ -252,7 +270,26 @@ namespace ServiceLib
             }
             public void Execute()
             {
-                _parent._store.ReadStream(_streamName, 0, int.MaxValue, true, EventStreamLoaded, _onError);
+                _parent._store.LoadSnapshot(_streamName, SnapshotLoaded, _onError);
+            }
+            private void SnapshotLoaded(EventStoreSnapshot storedSnapshot)
+            {
+                var fromVersion = 0;
+                try
+                {
+                    var snapshot = storedSnapshot == null ? null : _parent._serializer.Deserialize(storedSnapshot);
+                    if (snapshot != null)
+                    {
+                        _aggregate = _parent.CreateAggregate();
+                        fromVersion = 1 + _aggregate.LoadFromSnapshot(snapshot);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _onError(ex);
+                    return;
+                }
+                _parent._store.ReadStream(_streamName, fromVersion, int.MaxValue, true, EventStreamLoaded, _onError);
             }
             private void EventStreamLoaded(IEventStoreStream stream)
             {
@@ -263,10 +300,11 @@ namespace ServiceLib
                     else
                     {
                         var deserialized = stream.Events.Select(_parent._serializer.Deserialize).ToList();
-                        var aggregate = _parent.CreateAggregate();
-                        aggregate.LoadFromEvents(deserialized);
-                        aggregate.CommitChanges(stream.StreamVersion);
-                        _onLoaded(aggregate);
+                        if (_aggregate == null)
+                            _aggregate = _parent.CreateAggregate();
+                        _aggregate.LoadFromEvents(deserialized);
+                        _aggregate.CommitChanges(stream.StreamVersion);
+                        _onLoaded(_aggregate);
                     }
                 }
                 catch (Exception ex)
@@ -284,6 +322,7 @@ namespace ServiceLib
             private Action _onConcurrency;
             private Action<Exception> _onError;
             private int _streamVersionForCommit;
+            private string _streamName;
 
             public AggregateSaving(EventSourcedRepository<T> parent, T aggregate, Action onSaved, Action onConcurrency, Action<Exception> onError)
             {
@@ -316,8 +355,8 @@ namespace ServiceLib
                             _aggregate.OriginalVersion == 0
                             ? EventStoreVersion.New
                             : EventStoreVersion.At(_aggregate.OriginalVersion);
-                        var streamName = _parent.StreamNameForId(_aggregate.Id);
-                        _parent._store.AddToStream(streamName, serialized, expectedVersion, AggregateSaved, _onConcurrency, _onError);
+                        _streamName = _parent.StreamNameForId(_aggregate.Id);
+                        _parent._store.AddToStream(_streamName, serialized, expectedVersion, AggregateSaved, _onConcurrency, _onError);
                     }
                 }
                 catch (Exception ex)
@@ -329,8 +368,26 @@ namespace ServiceLib
             {
                 try
                 {
+                    bool shouldCreateSnapshot = _parent.ShouldCreateSnapshot(_aggregate, _streamVersionForCommit);
                     _aggregate.CommitChanges(_streamVersionForCommit);
-                    _onSaved();
+                    if (shouldCreateSnapshot)
+                    {
+                        var objectSnapshot = _aggregate.CreateSnapshot();
+                        if (objectSnapshot != null)
+                        {
+                            var storedSnapshot = new EventStoreSnapshot();
+                            _parent._serializer.Serialize(objectSnapshot, storedSnapshot);
+                            _parent._store.SaveSnapshot(_streamName, storedSnapshot, _onSaved, _onError);
+                        }
+                        else
+                        {
+                            _onSaved();
+                        }
+                    }
+                    else
+                    {
+                        _onSaved();
+                    }
                 }
                 catch (Exception ex)
                 {

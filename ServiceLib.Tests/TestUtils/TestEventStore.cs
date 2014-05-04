@@ -67,6 +67,15 @@ namespace ServiceLib.Tests.TestUtils
             }
         }
 
+        public void AddSnapshot(string stream, EventStoreSnapshot snapshot)
+        {
+            lock (_lock)
+            {
+                snapshot.StreamName = stream;
+                _snapshots[stream] = snapshot;
+            }
+        }
+
         public void EndLongPoll()
         {
             NotifyWaiters(new EventStoreEvent[0]);
@@ -136,6 +145,12 @@ namespace ServiceLib.Tests.TestUtils
         {
             lock (_lock)
                 return _allEvents.ToList();
+        }
+
+        public IList<EventStoreSnapshot> GetAllSnapshots()
+        {
+            lock (_lock)
+                return _snapshots.Values.ToList();
         }
 
         public IDisposable WaitForEvents(EventStoreToken token, int maxCount, bool loadBody, Action<IEventStoreCollection> onComplete, Action<Exception> onError)
@@ -208,16 +223,22 @@ namespace ServiceLib.Tests.TestUtils
 
         public void LoadSnapshot(string stream, Action<EventStoreSnapshot> onComplete, Action<Exception> onError)
         {
-            EventStoreSnapshot snapshot;
-            _snapshots.TryGetValue(stream, out snapshot);
-            onComplete(snapshot);
+            lock (_lock)
+            {
+                EventStoreSnapshot snapshot;
+                _snapshots.TryGetValue(stream, out snapshot);
+                onComplete(snapshot);
+            }
         }
 
         public void SaveSnapshot(string stream, EventStoreSnapshot snapshot, Action onComplete, Action<Exception> onError)
         {
-            snapshot.StreamName = stream;
-            _snapshots[stream] = snapshot;
-            onComplete();
+            lock (_lock)
+            {
+                snapshot.StreamName = stream;
+                _snapshots[stream] = snapshot;
+                onComplete();
+            }
         }
     }
 }
