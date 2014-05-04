@@ -1,0 +1,16 @@
+﻿ZPRACOVANI TRANSIENTNICH CHYB:
+* EventStreaming ma za ukol zpracovat transientni chyby a nehazet pritom chybu. Po kratke dobe zkusi opet ziskavat nove udalosti.
+* EventProcessSimple a EventProcjectorSimple zpracovavaji transientni chyby vyvolane v handlerech. Po kratke dobe se pokusi provest vadnou operaci znovu (opakovane).
+* DatabasePostgres by mela implementovat Circuit Breaker - pri chybe pripojeni (vadny connection string nebo neodpovidajici server) by se nemely posilat dalsi zadosti o spojeni, dokud nebude jedno z nich opet uspesne otevreno. Chyba prihlasovacich udaju se zkousi znovu az po restartu celeho programu (jinak hrozi zamceni).
+
+INTEGRACE DO IIS:
+* Volani HTTP requestu z IIS (prikazy + query, je zde zahrnuta podpora readeru a command handleru)
+* Zpracovani na pozadi pri hostovani v IIS (nutno vyuzit prostredky IIS hosta pro zabraneni recyklace pri aktivni praci hlavni sbernice)
+
+PARTITIONING V EVENT STORE:
+* moznost prefixu tabulky jako je to pro document store, streamovani z vice storu zatim neni potreba delat (jde jen o koexistenci vice storu v jedne DB - kompletne oddelene)
+
+JMETER PERFORMANCE TESTING:
+* zakladem je CSV soubor, ktery obsahuje:
+  - relativni URL
+  - payload (v jednom radku)

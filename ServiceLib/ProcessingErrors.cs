@@ -36,6 +36,32 @@ namespace ServiceLib
         }
     }
 
+    public class TransientErrorException : Exception
+    {
+        public int Retries { get; private set; }
+        public string Category { get; private set; }
+        public TransientErrorException(string category, Exception cause, int retries = -1)
+            : base(GenerateMessage(category, cause, retries), cause)
+        {
+            Category = category;
+            Retries = retries;
+        }
+        public TransientErrorException(string category, string cause, int retries = -1)
+            : base(GenerateMessage(category, cause, retries))
+        {
+            Category = category;
+            Retries = retries;
+        }
+        private static string GenerateMessage(string category, Exception cause, int retries)
+        {
+            return GenerateMessage(category, cause.Message, retries);
+        }
+        private static string GenerateMessage(string category, string cause, int retries)
+        {
+            return string.Concat("Transient error (category ", category, ", ", retries < 0 ? "unknown" : retries.ToString(), " retries): ", cause);
+        }
+    }
+
     public static class ProcessingErrorsExtensions
     {
         public static void Throw(this Exception exception)

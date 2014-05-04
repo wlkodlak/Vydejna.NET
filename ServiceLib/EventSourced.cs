@@ -226,14 +226,11 @@ namespace ServiceLib
                 .ToString();
         }
 
-        protected virtual bool ShouldCreateSnapshot(T aggregate, int currentVersion)
+        protected virtual bool ShouldCreateSnapshot(T aggregate)
         {
             if (_snapshotInterval <= 0)
                 return false;
-            var original = aggregate.OriginalVersion;
-            var newCount = currentVersion - original;
-            var fromLastInterval = original % _snapshotInterval;
-            fromLastInterval += newCount;
+            var fromLastInterval = aggregate.OriginalVersion % _snapshotInterval + aggregate.GetChanges().Count;
             return fromLastInterval >= _snapshotInterval;
         }
         public int SnapshotInterval
@@ -368,7 +365,7 @@ namespace ServiceLib
             {
                 try
                 {
-                    bool shouldCreateSnapshot = _parent.ShouldCreateSnapshot(_aggregate, _streamVersionForCommit);
+                    bool shouldCreateSnapshot = _parent.ShouldCreateSnapshot(_aggregate);
                     _aggregate.CommitChanges(_streamVersionForCommit);
                     if (shouldCreateSnapshot)
                     {

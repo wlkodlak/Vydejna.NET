@@ -38,8 +38,38 @@ namespace ServiceLib
             using (var conn = new NpgsqlConnection())
             {
                 conn.ConnectionString = _connectionString;
+                OpenConnection(conn);
+                ExecuteHandler(handler, conn);
+            }
+        }
+
+        private static void OpenConnection(NpgsqlConnection conn)
+        {
+            try
+            {
                 conn.Open();
+            }
+            catch (Exception ex)
+            {
+                if (DetectTransient(ex))
+                    throw new TransientErrorException("DBOPEN", ex);
+                else
+                    throw;
+            }
+        }
+
+        private static void ExecuteHandler(Action<NpgsqlConnection> handler, NpgsqlConnection conn)
+        {
+            try
+            {
                 handler(conn);
+            }
+            catch (Exception ex)
+            {
+                if (DetectTransient(ex))
+                    throw new TransientErrorException("DBOPEN", ex);
+                else
+                    throw;
             }
         }
 
@@ -72,6 +102,23 @@ namespace ServiceLib
         private enum ListenerState
         {
             New, BeingAdded, Active, Obsolete, BeingRemoved, Removed
+        }
+
+        private static bool DetectTransient(Exception exception)
+        {
+            NpgsqlException npgsqlException;
+            if (exception is System.IO.IOException)
+                return true;
+            else if ((npgsqlException = exception as NpgsqlException) != null)
+            {
+                switch (npgsqlException.Code)
+                {
+                    default:
+                        return false;
+                }
+            }
+            else
+                return false;
         }
 
         private class Listener : IDisposable
@@ -141,14 +188,25 @@ namespace ServiceLib
             {
                 _busy = _executor.AttachBusyProcess();
                 _conn.ConnectionString = _connectionString;
-                _conn.OpenAsync().ContinueWith(OpenCompleted);
+                Task.Factory.StartNew(OpenTask);
             }
-            private void OpenCompleted(Task task)
+            private void OpenTask()
             {
-                if (task.Exception != null)
-                    _executor.Enqueue(_onError, task.Exception.GetBaseException());
-                else
-                    _executor.Enqueue(new OpenConnectionFinished(_onConnected, _conn));
+                try
+                {
+                    _conn.Open();
+                }
+                catch (Exception ex)
+                {
+                    _conn.Dispose();
+                    _busy.Dispose();
+                    if (DetectTransient(ex))
+                        _onError(new TransientErrorException("DBOPEN", ex));
+                    else
+                        _onError(ex);
+                    return;
+                }
+                _executor.Enqueue(new OpenConnectionFinished(_onConnected, _conn));
                 _busy.Dispose();
             }
         }
@@ -199,8 +257,8 @@ namespace ServiceLib
                     using (var conn = new NpgsqlConnection())
                     {
                         conn.ConnectionString = _connectionString;
-                        conn.Open();
-                        _handler(conn);
+                        OpenConnection(conn);
+                        ExecuteHandler(_handler, conn);
                     }
                 }
                 catch (Exception exception)

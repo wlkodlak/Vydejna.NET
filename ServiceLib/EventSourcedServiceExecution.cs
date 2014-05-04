@@ -78,7 +78,7 @@ namespace ServiceLib
                 _repository.Load(_aggregateId, OnAggregateLoaded, OnAggregateMissing, _onError);
             }
             else
-                _onError(new ServiceExecutionConcurrencyException());
+                _onError(new TransientErrorException("CONCURRENCY", "Could not save aggregate", _tryNumber));
         }
 
         private void OnAggregateLoaded(T aggregate)
@@ -105,14 +105,6 @@ namespace ServiceLib
             {
                 _onError(ex);
             }
-        }
-    }
-
-    public class ServiceExecutionConcurrencyException : Exception
-    {
-        public ServiceExecutionConcurrencyException()
-            : base("Could not execute command because of constant concurrency failures")
-        {
         }
     }
 }
