@@ -263,7 +263,7 @@ namespace ServiceLib
         public void Start()
         {
             SetProcessState(ProcessState.Starting);
-            _waitForLock = _metadata.Lock(OnProjectionLocked);
+            _waitForLock = _metadata.Lock(OnProjectionLocked, ex => { });
         }
 
         public void Pause()

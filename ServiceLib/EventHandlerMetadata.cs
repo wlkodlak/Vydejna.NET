@@ -18,7 +18,7 @@ namespace ServiceLib
         void SetToken(EventStoreToken token, Action onCompleted, Action<Exception> onError);
         void GetVersion(Action<string> onCompleted, Action<Exception> onError);
         void SetVersion(string version, Action onCompleted, Action<Exception> onError);
-        IDisposable Lock(Action onLockObtained);
+        IDisposable Lock(Action onLockObtained, Action<Exception> onError);
         void Unlock();
     }
 
@@ -99,9 +99,9 @@ namespace ServiceLib
                     () => onError(new MetadataInstanceConcurrencyException()), onError);
         }
 
-        public IDisposable Lock(Action onLockObtained)
+        public IDisposable Lock(Action onLockObtained, Action<Exception> onError)
         {
-            return _locking.Lock(_lockName, onLockObtained, () => { }, false);
+            return _locking.Lock(_lockName, onLockObtained, onError, false);
         }
 
         public void Unlock()

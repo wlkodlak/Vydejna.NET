@@ -9,25 +9,22 @@ namespace ServiceLib.Tests.TestUtils
     public class TestNodeLock : INodeLock
     {
         private Action _onLocked;
-        private Action _cannotLock;
+        private Action<Exception> _onError;
         public bool IsWaiting { get; private set; }
         public bool IsLocked { get; private set; }
         
-        public void Lock(Action onLocked, Action cannotLock)
+        public void Lock(Action onLocked, Action<Exception> onError)
         {
             _onLocked = onLocked;
-            _cannotLock = cannotLock;
+            _onError = onError;
             IsWaiting = true;
         }
 
-        public void SendLock(bool obtained = true)
+        public void SendLock()
         {
             IsWaiting = false;
-            IsLocked = obtained;
-            if (obtained)
-                _onLocked();
-            else
-                _cannotLock();
+            IsLocked = true;
+            _onLocked();
         }
 
         public void Unlock()
@@ -40,7 +37,7 @@ namespace ServiceLib.Tests.TestUtils
             if (IsWaiting)
             {
                 IsWaiting = false;
-                _cannotLock();
+                _onError(new OperationCanceledException());
             }
         }
     }

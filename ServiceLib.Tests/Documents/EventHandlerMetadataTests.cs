@@ -74,10 +74,10 @@ namespace ServiceLib.Tests.Documents
             Action lockAction = null;
             var lockWait = new EmptyDisposable();
             _locking
-                .Setup(l => l.Lock("consumer", It.IsAny<Action>(), It.IsAny<Action>(), false))
-                .Callback<string, Action, Action, bool>((doc, succ, fail, nowait) => lockAction = succ)
+                .Setup(l => l.Lock("consumer", It.IsAny<Action>(), It.IsAny<Action<Exception>>(), false))
+                .Callback<string, Action, Action<Exception>, bool>((doc, succ, fail, nowait) => lockAction = succ)
                 .Returns(lockWait);
-            var returnedWait = _inst.Lock(() => obtained = true);
+            var returnedWait = _inst.Lock(() => obtained = true, ex => { });
             Assert.IsNotNull(lockAction, "No success action");
             obtained = false;
             lockAction();

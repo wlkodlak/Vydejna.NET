@@ -139,9 +139,6 @@ namespace ServiceLib
             if (_processState != ProcessState.Faulted)
                 SetProcessState(newState);
         }
-        private void EmptyAction()
-        {
-        }
 
         public ProcessState State
         {
@@ -163,7 +160,7 @@ namespace ServiceLib
         public void Start()
         {
             SetProcessState(ProcessState.Starting);
-            _locking.Lock(OnLockObtained, EmptyAction);
+            _locking.Lock(OnLockObtained, ex => SetProcessState(ProcessState.Faulted));
         }
 
         public void Pause()

@@ -12,7 +12,7 @@ namespace ServiceLib.Tests.Documents
         private NodeLockManagerDocument _mgr;
         private VirtualTime _time;
         private NotifyChangeDirect _notify;
-        
+
         [TestInitialize]
         public void Initialize()
         {
@@ -28,8 +28,8 @@ namespace ServiceLib.Tests.Documents
         public void LockAvailable()
         {
             string lockResult = null;
-            
-            _mgr.Lock("testlock", () => lockResult = "owned", () => lockResult = "blocked", false);
+
+            _mgr.Lock("testlock", () => lockResult = "owned", ex => lockResult = "blocked", false);
             _executor.Process();
 
             Assert.AreEqual("owned", lockResult, "LockResult");
@@ -42,7 +42,7 @@ namespace ServiceLib.Tests.Documents
             _folder.SaveDocument("testlock", "2013-12-22 18:23:02;node2");
             string lockResult = null;
 
-            _mgr.Lock("testlock", () => lockResult = "owned", () => lockResult = "blocked", true);
+            _mgr.Lock("testlock", () => lockResult = "owned", ex => lockResult = "blocked", true);
             _executor.Process();
 
             Assert.AreEqual("blocked", lockResult);
@@ -55,7 +55,7 @@ namespace ServiceLib.Tests.Documents
             _folder.SaveDocument("testlock", "2013-12-22 18:23:02;node2");
             string lockResult = null;
 
-            var stopWait = _mgr.Lock("testlock", () => lockResult = "owned", () => lockResult = "blocked", false);
+            var stopWait = _mgr.Lock("testlock", () => lockResult = "owned", ex => lockResult = "blocked", false);
             _executor.Process();
             Assert.AreEqual(null, lockResult, "Should wait");
 
@@ -70,7 +70,7 @@ namespace ServiceLib.Tests.Documents
         {
             _folder.SaveDocument("testlock", "2013-12-22 18:23:02;node2");
             string lockResult = null;
-            var stopWait = _mgr.Lock("testlock", () => lockResult = "owned", () => lockResult = "blocked", false);
+            var stopWait = _mgr.Lock("testlock", () => lockResult = "owned", ex => lockResult = "blocked", false);
             _executor.Process();
             Assert.AreEqual(null, lockResult, "Should wait");
 
@@ -86,7 +86,7 @@ namespace ServiceLib.Tests.Documents
         public void UnlockAtTheEnd()
         {
             string lockResult = null;
-            var stopWait = _mgr.Lock("testlock", () => lockResult = "owned", () => lockResult = "blocked", false);
+            var stopWait = _mgr.Lock("testlock", () => lockResult = "owned", ex => lockResult = "blocked", false);
             _executor.Process();
 
             _mgr.Unlock("testlock");
@@ -100,7 +100,7 @@ namespace ServiceLib.Tests.Documents
         public void RelockEvery30Seconds()
         {
             string lockResult = null;
-            var stopWait = _mgr.Lock("testlock", () => lockResult = "owned", () => lockResult = "blocked", false);
+            var stopWait = _mgr.Lock("testlock", () => lockResult = "owned", ex => lockResult = "blocked", false);
             _executor.Process();
 
             _time.SetTime(new DateTime(2013, 12, 22, 18, 22, 45));

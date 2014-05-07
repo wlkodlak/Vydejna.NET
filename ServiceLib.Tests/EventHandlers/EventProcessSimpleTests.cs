@@ -14,7 +14,7 @@ namespace ServiceLib.Tests.EventHandlers
         private ICommandSubscriptionManager _subscriptions;
         private EventProcessSimple _process;
         private TestHandler _handler;
-        
+
         [TestInitialize]
         public void Initialize()
         {
@@ -116,7 +116,6 @@ namespace ServiceLib.Tests.EventHandlers
             _executor.Process();
             Assert.AreEqual("13221", _handler.Output, "Output");
             Assert.IsTrue(_streaming.IsReading, "Reading");
-            Assert.IsTrue(_streaming.IsWaiting, "Waiting");
             Assert.AreEqual(new EventStoreToken("5"), _streaming.CurrentToken, "CurrentToken");
             Assert.AreEqual(new EventStoreToken("5"), _metadata.Token, "Metadata token");
         }
@@ -145,7 +144,7 @@ namespace ServiceLib.Tests.EventHandlers
         }
 
         [TestMethod]
-        public void ErrorInHandler()
+        public void FatalErrorInHandler()
         {
             _process.Start();
             _metadata.SendLock();
@@ -157,9 +156,28 @@ namespace ServiceLib.Tests.EventHandlers
             _executor.Process();
             Assert.AreEqual("1321", _handler.Output, "Output");
             Assert.IsTrue(_streaming.IsReading, "Reading");
-            Assert.IsTrue(_streaming.IsWaiting, "Waiting");
             Assert.AreEqual(new EventStoreToken("5"), _streaming.CurrentToken, "CurrentToken");
             Assert.AreEqual(new EventStoreToken("5"), _metadata.Token, "Metadata token");
+            Assert.AreEqual(1, _streaming.DeadLetters.Count, "Dead letters");
+        }
+
+        [TestMethod]
+        public void TransientErrorInHandler()
+        {
+            _handler.ErrorMode = "Transient";
+            _process.Start();
+            _metadata.SendLock();
+            _streaming.AddEvent("1", new TestEvent1());
+            _streaming.AddEvent("2", new TestEvent3());
+            _streaming.AddEvent("3", new TestEvent4());
+            _streaming.AddEvent("4", new TestEvent2());
+            _streaming.AddEvent("5", new TestEvent1());
+            _executor.Process();
+            Assert.AreEqual("134!421", _handler.Output, "Output");
+            Assert.IsTrue(_streaming.IsReading, "Reading");
+            Assert.AreEqual(new EventStoreToken("5"), _streaming.CurrentToken, "CurrentToken");
+            Assert.AreEqual(new EventStoreToken("5"), _metadata.Token, "Metadata token");
+            Assert.AreEqual(0, _streaming.DeadLetters.Count, "Dead letters");
         }
 
         private class TestHandler
@@ -171,6 +189,7 @@ namespace ServiceLib.Tests.EventHandlers
             private StringBuilder _sb = new StringBuilder();
 
             public string Output { get { return _sb.ToString(); } }
+            public string ErrorMode = "Fatal";
 
             public void Handle(CommandExecution<TestEvent1> message)
             {
@@ -192,7 +211,21 @@ namespace ServiceLib.Tests.EventHandlers
 
             public void Handle(CommandExecution<TestEvent4> message)
             {
-                message.OnError(new FormatException("Error in handler"));
+                switch (ErrorMode)
+                {
+                    case "Fatal":
+                        message.OnError(new FormatException("Error in handler"));
+                        break;
+                    case "None":
+                        _sb.Append("4");
+                        message.OnCompleted();
+                        break;
+                    case "Transient":
+                        _sb.Append("4!");
+                        ErrorMode = "None";
+                        message.OnError(new TransientErrorException("TEST", "Test transient error"));
+                        break;
+                }
             }
         }
 

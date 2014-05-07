@@ -11,6 +11,7 @@ namespace ServiceLib.Tests.TestUtils
         public bool FailMode;
         public string ProcessName { get; set; }
         private Action _onLockObtained;
+        private Action<Exception> _onLockError;
 
         public TestMetadataInstance()
         {
@@ -24,6 +25,7 @@ namespace ServiceLib.Tests.TestUtils
             public void Dispose()
             {
                 TestMetadata.WaitsForLock = false;
+                TestMetadata._onLockError(new OperationCanceledException());
             }
         }
 
@@ -75,9 +77,10 @@ namespace ServiceLib.Tests.TestUtils
             }
         }
 
-        public IDisposable Lock(Action onLockObtained)
+        public IDisposable Lock(Action onLockObtained, Action<Exception> onError)
         {
             _onLockObtained = onLockObtained;
+            _onLockError = onError;
             WaitsForLock = true;
             var waiter = new WaitForLock { TestMetadata = this };
             return waiter;

@@ -9,7 +9,7 @@ namespace ServiceLib
 {
     public interface INodeLockManager
     {
-        IDisposable Lock(string lockName, Action onLocked, Action cannotLock, bool nowait);
+        IDisposable Lock(string lockName, Action onLocked, Action<Exception> onError, bool nowait);
         bool IsLocked(string lockName);
         void Unlock(string lockName);
         void Dispose();
@@ -17,7 +17,7 @@ namespace ServiceLib
 
     public interface INodeLock : IDisposable
     {
-        void Lock(Action onLocked, Action cannotLock);
+        void Lock(Action onLocked, Action<Exception> onError);
         void Unlock();
         bool IsLocked { get; }
     }
@@ -46,9 +46,9 @@ namespace ServiceLib
             _lockers = new List<LockExecutor>();
         }
 
-        public IDisposable Lock(string lockName, Action onLocked, Action cannotLock, bool nowait)
+        public IDisposable Lock(string lockName, Action onLocked, Action<Exception> onError, bool nowait)
         {
-            var locker = new LockExecutor(this, lockName, onLocked, cannotLock, nowait);
+            var locker = new LockExecutor(this, lockName, onLocked, onError, nowait);
             lock (_lock)
             {
                 if (_listener == null)
@@ -123,7 +123,7 @@ namespace ServiceLib
                     return;
                 _isBusy = true;
                 _parent._store.SaveDocument(
-                    LockName, _parent.ContentsToWrite(), DocumentStoreVersion.At(DocumentVersion), null, 
+                    LockName, _parent.ContentsToWrite(), DocumentStoreVersion.At(DocumentVersion), null,
                     OnSaved, OnConcurrency, OnError);
             }
 
@@ -140,7 +140,7 @@ namespace ServiceLib
                         IsActive = false;
                         _parent._ownedLocks.Remove(LockName);
                         _parent._store.SaveDocument(
-                            LockName, "", DocumentStoreVersion.At(DocumentVersion), null, 
+                            LockName, "", DocumentStoreVersion.At(DocumentVersion), null,
                             Unlocked, Unlocked, OnError);
                     }
                 }
@@ -175,7 +175,7 @@ namespace ServiceLib
                         return;
                     IsActive = false;
                     _parent._store.SaveDocument(
-                        LockName, "", DocumentStoreVersion.At(DocumentVersion), null, 
+                        LockName, "", DocumentStoreVersion.At(DocumentVersion), null,
                         Unlocked, Unlocked, OnError);
                 }
             }
@@ -191,18 +191,18 @@ namespace ServiceLib
             private NodeLockManagerDocument _parent;
             private string _lockName;
             private Action _onLocked;
-            private Action _cannotLock;
+            private Action<Exception> _onError;
             private bool _nowait;
             private bool _cancel;
             private int _savedVersion;
             private IDisposable _wait;
 
-            public LockExecutor(NodeLockManagerDocument parent, string lockName, Action onLocked, Action cannotLock, bool nowait)
+            public LockExecutor(NodeLockManagerDocument parent, string lockName, Action onLocked, Action<Exception> onError, bool nowait)
             {
                 _parent = parent;
                 _lockName = lockName;
                 _onLocked = onLocked;
-                _cannotLock = cannotLock;
+                _onError = onError;
                 _nowait = nowait;
             }
             public void Execute()
@@ -227,7 +227,7 @@ namespace ServiceLib
                     cancel = _cancel;
                 }
                 if (cancel)
-                    _cannotLock();
+                    _onError(new OperationCanceledException());
                 else if (string.IsNullOrEmpty(existingContents))
                     _parent._store.SaveDocument(_lockName, _parent.ContentsToWrite(), DocumentStoreVersion.At(version), null, OnLockObtained, OnLockBusy, OnError);
                 else if (existingContents == _parent._nodeName)
@@ -264,7 +264,7 @@ namespace ServiceLib
                         _wait = _parent._timeService.Delay(TimerInterval, OnLockChanged);
                 }
                 if (reportCannotLock)
-                    _cannotLock();
+                    _onError(new InvalidOperationException("Lock is already locked"));
             }
             private void OnError(Exception exception)
             {
@@ -273,7 +273,7 @@ namespace ServiceLib
                     if (!_cancel)
                         _cancel = true;
                 }
-                _cannotLock();
+                _onError(exception);
             }
             private void OnLockObtained()
             {
@@ -298,7 +298,7 @@ namespace ServiceLib
                         _wait.Dispose();
                     _wait = null;
                 }
-                _cannotLock();
+                _onError(new OperationCanceledException());
             }
 
             public void Notify()
@@ -351,7 +351,7 @@ namespace ServiceLib
             public void Dispose() { }
         }
 
-        public IDisposable Lock(string lockName, Action onLocked, Action cannotLock, bool nowait)
+        public IDisposable Lock(string lockName, Action onLocked, Action<Exception> onError, bool nowait)
         {
             lock (_ownedLocks)
             {
@@ -393,10 +393,10 @@ namespace ServiceLib
             _lockName = lockName;
         }
 
-        public void Lock(Action onLocked, Action cannotLock)
+        public void Lock(Action onLocked, Action<Exception> onError)
         {
             _onLocked = onLocked;
-            _wait = _manager.Lock(_lockName, OnLocked, cannotLock, false);
+            _wait = _manager.Lock(_lockName, OnLocked, onError, false);
         }
 
         private void OnLocked()

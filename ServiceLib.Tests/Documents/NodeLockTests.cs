@@ -32,7 +32,7 @@ namespace ServiceLib.Tests.Documents
         public void ObtainLock()
         {
             string result = null;
-            _lock.Lock(() => result = "got", () => result = "fail");
+            _lock.Lock(() => result = "got", ex => result = "fail");
             Assert.IsNotNull(_mgr.OnLocked, "OnLocked null");
             _mgr.IsLocked = true;
             _mgr.OnLocked();
@@ -45,7 +45,7 @@ namespace ServiceLib.Tests.Documents
         [TestMethod]
         public void DisposeDoesNothingWhenLocked()
         {
-            _lock.Lock(() => { }, () => { });
+            _lock.Lock(() => { }, ex => { });
             Assert.IsNotNull(_mgr.OnLocked, "OnLocked null");
             _mgr.IsLocked = true;
             _mgr.OnLocked();
@@ -58,7 +58,7 @@ namespace ServiceLib.Tests.Documents
         public void WaitStopsOnDispose()
         {
             string result = null;
-            _lock.Lock(() => result = "got", () => result = "fail");
+            _lock.Lock(() => result = "got", ex => result = "fail");
             Assert.IsNotNull(_mgr.OnLocked, "OnLocked null");
             _lock.Dispose();
             Assert.AreEqual("testlock", _mgr.LockName, "LockName");
@@ -79,19 +79,20 @@ namespace ServiceLib.Tests.Documents
         private class TestLockMgr : INodeLockManager
         {
             public string LockName;
-            public Action OnLocked, CannotLock;
+            public Action OnLocked;
+            public Action<Exception> OnError;
             public bool Nowait;
             public string UnlockCalled;
             public bool IsDisposed;
             public bool IsLocked;
 
-            public IDisposable Lock(string lockName, Action onLocked, Action cannotLock, bool nowait)
+            public IDisposable Lock(string lockName, Action onLocked, Action<Exception> onError, bool nowait)
             {
                 LockName = lockName;
                 OnLocked = onLocked;
-                CannotLock = cannotLock;
+                OnError = onError;
                 Nowait = nowait;
-                return new DelegatedDispose(() => { IsDisposed = true; CannotLock(); });
+                return new DelegatedDispose(() => { IsDisposed = true; OnError(new OperationCanceledException()); });
             }
 
             public void Unlock(string lockName)
