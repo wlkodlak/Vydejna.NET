@@ -9,17 +9,17 @@ namespace ServiceLib
 {
     public interface IEventStore
     {
-        void AddToStream(string stream, IEnumerable<EventStoreEvent> events, EventStoreVersion expectedVersion, Action onComplete, Action onConcurrency, Action<Exception> onError);
-        void ReadStream(string stream, int minVersion, int maxCount, bool loadBody, Action<IEventStoreStream> onComplete, Action<Exception> onError);
-        void GetAllEvents(EventStoreToken token, int maxCount, bool loadBody, Action<IEventStoreCollection> onComplete, Action<Exception> onError);
-        void LoadBodies(IList<EventStoreEvent> events, Action onComplete, Action<Exception> onError);
-        void LoadSnapshot(string stream, Action<EventStoreSnapshot> onComplete, Action<Exception> onError);
-        void SaveSnapshot(string stream, EventStoreSnapshot snapshot, Action onComplete, Action<Exception> onError);
+        Task<bool> AddToStream(string stream, IEnumerable<EventStoreEvent> events, EventStoreVersion expectedVersion);
+        Task<IEventStoreStream> ReadStream(string stream, int minVersion, int maxCount, bool loadBody);
+        Task<IEventStoreCollection> GetAllEvents(EventStoreToken token, int maxCount, bool loadBody);
+        Task LoadBodies(IList<EventStoreEvent> events);
+        Task<EventStoreSnapshot> LoadSnapshot(string stream);
+        Task SaveSnapshot(string stream, EventStoreSnapshot snapshot);
     }
 
     public interface IEventStoreWaitable : IEventStore
     {
-        IDisposable WaitForEvents(EventStoreToken token, int maxCount, bool loadBody, Action<IEventStoreCollection> onComplete, Action<Exception> onError);
+        Task<IEventStoreCollection> WaitForEvents(EventStoreToken token, int maxCount, bool loadBody, CancellationToken cancel);
     }
 
     public class EventStoreVersion

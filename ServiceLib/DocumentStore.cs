@@ -1,16 +1,17 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace ServiceLib
 {
     public interface IDocumentFolder
     {
-        void DeleteAll(Action onComplete, Action<Exception> onError);
-        void GetDocument(string name, Action<int, string> onFound, Action onMissing, Action<Exception> onError);
-        void GetNewerDocument(string name, int knownVersion, Action<int, string> onFoundNewer, Action onNotModified, Action onMissing, Action<Exception> onError);
-        void SaveDocument(string name, string value, DocumentStoreVersion expectedVersion, IList<DocumentIndexing> indexes, Action onSave, Action onConcurrency, Action<Exception> onError);
-        void FindDocumentKeys(string indexName, string minValue, string maxValue, Action<IList<string>> onFoundKeys, Action<Exception> onError);
-        void FindDocuments(string indexName, string minValue, string maxValue, int skip, int maxCount, bool ascending, Action<DocumentStoreFoundDocuments> onFoundDocuments, Action<Exception> onError);
+        Task DeleteAll();
+        Task<DocumentStoreFoundDocument> GetDocument(string name);
+        Task<DocumentStoreFoundDocument> GetNewerDocument(string name, int knownVersion);
+        Task<bool> SaveDocument(string name, string value, DocumentStoreVersion expectedVersion, IList<DocumentIndexing> indexes);
+        Task<IList<string>> FindDocumentKeys(string indexName, string minValue, string maxValue);
+        Task<DocumentStoreFoundDocuments> FindDocuments(string indexName, string minValue, string maxValue, int skip, int maxCount, bool ascending);
     }
     public interface IDocumentStore
     {
@@ -24,12 +25,14 @@ namespace ServiceLib
     {
         public string Name { get; private set; }
         public int Version { get; private set; }
+        public bool HasNewerContent { get; private set; }
         public string Contents { get; private set; }
 
-        public DocumentStoreFoundDocument(string name, int version, string contents)
+        public DocumentStoreFoundDocument(string name, int version, bool hasNewerContent, string contents)
         {
             Name = name;
             Version = version;
+            HasNewerContent = hasNewerContent;
             Contents = contents;
         }
     }
@@ -68,59 +71,6 @@ namespace ServiceLib
                 return _version == actualVersion;
         }
         public bool AllowNew { get { return _version <= 0; } }
-    }
-
-    public class DocumentFound : IQueuedExecutionDispatcher
-    {
-        private Action<int, string> _onFound;
-        private int _version;
-        private string _contents;
-
-        public DocumentFound(Action<int, string> onFound, int version, string contents)
-        {
-            this._onFound = onFound;
-            this._version = version;
-            this._contents = contents;
-        }
-
-        public void Execute()
-        {
-            _onFound(_version, _contents);
-        }
-    }
-
-    public class FindDocumentKeysCompleted : IQueuedExecutionDispatcher
-    {
-        private Action<IList<string>> _onFoundKeys;
-        private List<string> _list;
-
-        public FindDocumentKeysCompleted(Action<IList<string>> onFoundKeys, List<string> list)
-        {
-            _onFoundKeys = onFoundKeys;
-            _list = list;
-        }
-
-        public void Execute()
-        {
-            _onFoundKeys(_list);
-        }
-    }
-
-    public class FindDocumentsCompleted : IQueuedExecutionDispatcher
-    {
-        private Action<DocumentStoreFoundDocuments> _onFoundDocuments;
-        private DocumentStoreFoundDocuments _list;
-
-        public FindDocumentsCompleted(Action<DocumentStoreFoundDocuments> onFoundDocuments, DocumentStoreFoundDocuments list)
-        {
-            _onFoundDocuments = onFoundDocuments;
-            _list = list;
-        }
-
-        public void Execute()
-        {
-            _onFoundDocuments(_list);
-        }
     }
 
     public class DocumentIndexing

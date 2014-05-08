@@ -182,8 +182,8 @@ namespace ServiceLib
     public interface IEventSourcedRepository<T>
         where T : class, IEventSourcedAggregate
     {
-        void Load(IAggregateId id, Action<T> onLoaded, Action onMissing, Action<Exception> onError);
-        void Save(T aggregate, Action onSaved, Action onConcurrency, Action<Exception> onError);
+        Task<T> Load(IAggregateId id);
+        Task<bool> Save(T aggregate);
     }
 
     public interface IEventSourcedSerializer
@@ -239,158 +239,104 @@ namespace ServiceLib
             set { _snapshotInterval = value; }
         }
 
-        public void Load(IAggregateId id, Action<T> onLoaded, Action onMissing, Action<Exception> onError)
+        public Task<T> Load(IAggregateId id)
         {
-            new AggregateLoading(this, id, onLoaded, onMissing, onError).Execute();
-        }
-        public void Save(T aggregate, Action onSaved, Action onConcurrency, Action<Exception> onError)
-        {
-            new AggregateSaving(this, aggregate, onSaved, onConcurrency, onError).Execute();
+            var context = new LoadContext<T>(StreamNameForId(id));
+            return _store.LoadSnapshot(context.StreamName)
+                .ContinueWith<Task<IEventStoreStream>>(Load_ProcessSnapshot, context).Unwrap()
+                .ContinueWith<T>(Load_ProcessEvents, context);
         }
 
-        private class AggregateLoading
+        private class LoadContext<T>
         {
-            private EventSourcedRepository<T> _parent;
-            private string _streamName;
-            private Action<T> _onLoaded;
-            private Action _onMissing;
-            private Action<Exception> _onError;
-            private T _aggregate;
+            public readonly string StreamName;
+            public T Aggregate;
 
-            public AggregateLoading(EventSourcedRepository<T> parent, IAggregateId id, Action<T> onLoaded, Action onMissing, Action<Exception> onError)
+            public LoadContext(string streamName)
             {
-                _parent = parent;
-                _streamName = _parent.StreamNameForId(id);
-                _onLoaded = onLoaded;
-                _onMissing = onMissing;
-                _onError = onError;
-            }
-            public void Execute()
-            {
-                _parent._store.LoadSnapshot(_streamName, SnapshotLoaded, _onError);
-            }
-            private void SnapshotLoaded(EventStoreSnapshot storedSnapshot)
-            {
-                var fromVersion = 0;
-                try
-                {
-                    var snapshot = storedSnapshot == null ? null : _parent._serializer.Deserialize(storedSnapshot);
-                    if (snapshot != null)
-                    {
-                        _aggregate = _parent.CreateAggregate();
-                        fromVersion = 1 + _aggregate.LoadFromSnapshot(snapshot);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _onError(ex);
-                    return;
-                }
-                _parent._store.ReadStream(_streamName, fromVersion, int.MaxValue, true, EventStreamLoaded, _onError);
-            }
-            private void EventStreamLoaded(IEventStoreStream stream)
-            {
-                try
-                {
-                    if (stream.StreamVersion == 0)
-                        _onMissing();
-                    else
-                    {
-                        var deserialized = stream.Events.Select(_parent._serializer.Deserialize).ToList();
-                        if (_aggregate == null)
-                            _aggregate = _parent.CreateAggregate();
-                        _aggregate.LoadFromEvents(deserialized);
-                        _aggregate.CommitChanges(stream.StreamVersion);
-                        _onLoaded(_aggregate);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _onError(ex);
-                }
+                StreamName = streamName;
             }
         }
 
-        private class AggregateSaving
+        private Task<IEventStoreStream> Load_ProcessSnapshot(Task<EventStoreSnapshot> task, object objContext)
         {
-            private EventSourcedRepository<T> _parent;
-            private T _aggregate;
-            private Action _onSaved;
-            private Action _onConcurrency;
-            private Action<Exception> _onError;
-            private int _streamVersionForCommit;
-            private string _streamName;
+            var context = (LoadContext<T>)objContext;
+            var storedSnapshot = task.Result;
+            var fromVersion = 0;
+            var snapshot = storedSnapshot == null ? null : _serializer.Deserialize(storedSnapshot);
+            if (snapshot != null)
+            {
+                context.Aggregate = CreateAggregate();
+                fromVersion = 1 + context.Aggregate.LoadFromSnapshot(snapshot);
+            }
+            return _store.ReadStream(context.StreamName, fromVersion, int.MaxValue, true);
+        }
 
-            public AggregateSaving(EventSourcedRepository<T> parent, T aggregate, Action onSaved, Action onConcurrency, Action<Exception> onError)
+        private T Load_ProcessEvents(Task<IEventStoreStream> task, object objContext)
+        {
+            var context = (LoadContext<T>)objContext;
+            var stream = task.Result;
+            if (stream.StreamVersion == 0)
+                return default(T);
+            else
             {
-                _parent = parent;
-                _aggregate = aggregate;
-                _onSaved = onSaved;
-                _onConcurrency = onConcurrency;
-                _onError = onError;
+                var deserialized = stream.Events.Select(_serializer.Deserialize).ToList();
+                if (context.Aggregate == null)
+                    context.Aggregate = CreateAggregate();
+                context.Aggregate.LoadFromEvents(deserialized);
+                context.Aggregate.CommitChanges(stream.StreamVersion);
+                return context.Aggregate;
             }
-            public void Execute()
+        }
+
+        public Task<bool> Save(T aggregate)
+        {
+            return TaskUtils.FromEnumerable<bool>(SaveInternal(aggregate)).GetTask();
+        }
+
+        private IEnumerable<Task> SaveInternal(T aggregate)
+        {
+            var changes = aggregate.GetChanges();
+            if (changes.Count != 0)
             {
-                try
+                var serialized = new List<EventStoreEvent>(changes.Count);
+                var streamVersionForCommit = aggregate.OriginalVersion;
+                foreach (var evt in changes)
                 {
-                    var changes = _aggregate.GetChanges();
-                    if (changes.Count == 0)
-                        _onSaved();
-                    else
+                    streamVersionForCommit++;
+                    var stored = new EventStoreEvent();
+                    _serializer.Serialize(evt, stored);
+                    stored.StreamVersion = streamVersionForCommit;
+                    serialized.Add(stored);
+                }
+                var expectedVersion =
+                    aggregate.OriginalVersion == 0
+                    ? EventStoreVersion.New
+                    : EventStoreVersion.At(aggregate.OriginalVersion);
+                var streamName = StreamNameForId(aggregate.Id);
+                var taskAddToStream = _store.AddToStream(streamName, serialized, expectedVersion);
+                yield return taskAddToStream;
+                if (!taskAddToStream.Result)
+                {
+                    yield return Task.FromResult(false);
+                    yield break;
+                }
+
+                bool shouldCreateSnapshot = ShouldCreateSnapshot(aggregate);
+                aggregate.CommitChanges(streamVersionForCommit);
+                if (shouldCreateSnapshot)
+                {
+                    var objectSnapshot = aggregate.CreateSnapshot();
+                    if (objectSnapshot != null)
                     {
-                        var serialized = new List<EventStoreEvent>(changes.Count);
-                        _streamVersionForCommit = _aggregate.OriginalVersion;
-                        foreach (var evt in changes)
-                        {
-                            _streamVersionForCommit++;
-                            var stored = new EventStoreEvent();
-                            _parent._serializer.Serialize(evt, stored);
-                            stored.StreamVersion = _streamVersionForCommit;
-                            serialized.Add(stored);
-                        }
-                        var expectedVersion =
-                            _aggregate.OriginalVersion == 0
-                            ? EventStoreVersion.New
-                            : EventStoreVersion.At(_aggregate.OriginalVersion);
-                        _streamName = _parent.StreamNameForId(_aggregate.Id);
-                        _parent._store.AddToStream(_streamName, serialized, expectedVersion, AggregateSaved, _onConcurrency, _onError);
+                        var storedSnapshot = new EventStoreSnapshot();
+                        _serializer.Serialize(objectSnapshot, storedSnapshot);
+                        var taskSaveSnapshot = _store.SaveSnapshot(streamName, storedSnapshot);
+                        yield return taskSaveSnapshot;
                     }
                 }
-                catch (Exception ex)
-                {
-                    _onError(ex);
-                }
             }
-            private void AggregateSaved()
-            {
-                try
-                {
-                    bool shouldCreateSnapshot = _parent.ShouldCreateSnapshot(_aggregate);
-                    _aggregate.CommitChanges(_streamVersionForCommit);
-                    if (shouldCreateSnapshot)
-                    {
-                        var objectSnapshot = _aggregate.CreateSnapshot();
-                        if (objectSnapshot != null)
-                        {
-                            var storedSnapshot = new EventStoreSnapshot();
-                            _parent._serializer.Serialize(objectSnapshot, storedSnapshot);
-                            _parent._store.SaveSnapshot(_streamName, storedSnapshot, _onSaved, _onError);
-                        }
-                        else
-                        {
-                            _onSaved();
-                        }
-                    }
-                    else
-                    {
-                        _onSaved();
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _onError(ex);
-                }
-            }
+            yield return Task.FromResult(true);
         }
     }
 

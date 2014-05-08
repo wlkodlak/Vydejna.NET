@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace ServiceLib
 {
@@ -49,64 +50,80 @@ namespace ServiceLib
                 _executor = executor;
             }
 
-            public void DeleteAll(Action onComplete, Action<Exception> onError)
+            public Task DeleteAll()
             {
                 List<string> documentNames = _documents.Keys.ToList();
                 _documents.Clear();
                 _indexes.Clear();
-                _executor.Enqueue(onComplete);
+                return TaskUtils.CompletedTask();
             }
 
-            public void GetDocument(string name, Action<int, string> onFound, Action onMissing, Action<Exception> onError)
+            public Task<DocumentStoreFoundDocument> GetDocument(string name)
             {
+                var tcs = new TaskCompletionSource<DocumentStoreFoundDocument>();
                 try
                 {
                     if (!_nameRegex.IsMatch(name))
-                        throw new ArgumentOutOfRangeException(name, "Invalid characters in name");
-                    Document document;
-                    if (!_documents.TryGetValue(name, out document))
-                        _executor.Enqueue(onMissing);
-                    else if (document.Version == 0)
-                        _executor.Enqueue(onMissing);
+                    {
+                        tcs.SetException(new ArgumentOutOfRangeException(name, "Invalid characters in name"));
+                    }
                     else
-                        _executor.Enqueue(new DocumentFound(onFound, document.Version, document.Value));
+                    {
+                        Document document;
+                        if (!_documents.TryGetValue(name, out document))
+                            tcs.SetResult(null);
+                        else if (document.Version == 0)
+                            tcs.SetResult(null);
+                        else
+                            tcs.SetResult(new DocumentStoreFoundDocument(name, document.Version, true, document.Value));
+                    }
                 }
                 catch (Exception ex)
                 {
-                    _executor.Enqueue(onError, ex);
+                    tcs.TrySetException(ex);
                 }
+                return tcs.Task;
             }
 
-            public void GetNewerDocument(string name, int knownVersion, Action<int, string> onFoundNewer, Action onNotModified, Action onMissing, Action<Exception> onError)
+            public Task<DocumentStoreFoundDocument> GetNewerDocument(string name, int knownVersion)
             {
+                var tcs = new TaskCompletionSource<DocumentStoreFoundDocument>();
                 try
                 {
                     if (!_nameRegex.IsMatch(name))
-                        throw new ArgumentOutOfRangeException(name, "Invalid characters in name");
-                    Document document;
-                    if (!_documents.TryGetValue(name, out document))
-                        _executor.Enqueue(onMissing);
-                    else if (document.Version == 0)
-                        _executor.Enqueue(onMissing);
-                    else if (document.Version == knownVersion)
-                        _executor.Enqueue(onNotModified);
+                    {
+                        tcs.SetException(new ArgumentOutOfRangeException(name, "Invalid characters in name"));
+                    }
                     else
-                        _executor.Enqueue(new DocumentFound(onFoundNewer, document.Version, document.Value));
+                    {
+                        Document document;
+                        if (!_documents.TryGetValue(name, out document))
+                            tcs.SetResult(null);
+                        else if (document.Version == 0)
+                            tcs.SetResult(null);
+                        else if (document.Version == knownVersion)
+                            tcs.SetResult(new DocumentStoreFoundDocument(name, document.Version, false, null));
+                        else
+                            tcs.SetResult(new DocumentStoreFoundDocument(name, document.Version, true, document.Value));
+                    }
                 }
                 catch (Exception ex)
                 {
-                    _executor.Enqueue(onError, ex);
+                    tcs.TrySetException(ex);
                 }
+                return tcs.Task;
             }
 
-            public void SaveDocument(string name, string value, DocumentStoreVersion expectedVersion, IList<DocumentIndexing> indexes, Action onSave, Action onConcurrency, Action<Exception> onError)
+            public Task<bool> SaveDocument(string name, string value, DocumentStoreVersion expectedVersion, IList<DocumentIndexing> indexes)
             {
                 bool wasSaved = false;
                 int newVersion = 0;
                 try
                 {
                     if (!_nameRegex.IsMatch(name))
-                        throw new ArgumentOutOfRangeException(name, "Invalid characters in name");
+                    {
+                        return TaskUtils.FromError<bool>(new ArgumentOutOfRangeException(name, "Invalid characters in name"));
+                    }
                     var newDocument = new Document(0, null);
                     var existingDocument = _documents.GetOrAdd(name, newDocument);
                     lock (existingDocument.Lock)
@@ -161,24 +178,20 @@ namespace ServiceLib
                             }
                         }
                     }
-                    if (wasSaved)
-                        _executor.Enqueue(onSave);
-                    else
-                        _executor.Enqueue(onConcurrency);
+                    return Task.FromResult(wasSaved);
                 }
                 catch (Exception ex)
                 {
-                    _executor.Enqueue(onError, ex);
+                    return TaskUtils.FromError<bool>(ex);
                 }
             }
 
-            public void FindDocumentKeys(string indexName, string minValue, string maxValue, Action<IList<string>> onFoundKeys, Action<Exception> onError)
+            public Task<IList<string>> FindDocumentKeys(string indexName, string minValue, string maxValue)
             {
                 Index index;
                 if (!_indexes.TryGetValue(indexName, out index))
                 {
-                    onError(new ArgumentOutOfRangeException("indexName", string.Format("Index {0} does not exist in folder {1}", indexName, _folderName)));
-                    return;
+                    return TaskUtils.FromError<IList<string>>(new ArgumentOutOfRangeException("indexName", string.Format("Index {0} does not exist in folder {1}", indexName, _folderName)));
                 }
                 var foundKeys = new HashSet<string>();
                 if (string.Equals(minValue, maxValue, StringComparison.Ordinal))
@@ -202,46 +215,52 @@ namespace ServiceLib
                             foundKeys.Add(doc);
                     }
                 }
-                onFoundKeys(foundKeys.ToList());
+                return Task.FromResult<IList<string>>(foundKeys.ToList());
             }
 
-
-            public void FindDocuments(string indexName, string minValue, string maxValue, int skip, int maxCount, bool ascending, Action<DocumentStoreFoundDocuments> onFoundDocuments, Action<Exception> onError)
+            public Task<DocumentStoreFoundDocuments> FindDocuments(string indexName, string minValue, string maxValue, int skip, int maxCount, bool ascending)
             {
-                Index index;
-                var result = new DocumentStoreFoundDocuments();
-                if (_indexes.TryGetValue(indexName, out index))
+                try
                 {
-                    var allKeys = new HashSet<string>();
-                    var byValueOrdered = ascending ? index.ByValue.OrderBy(t => t.Key) : index.ByValue.OrderByDescending(t => t.Key);
-                    foreach (var pair in byValueOrdered)
+                    Index index;
+                    var result = new DocumentStoreFoundDocuments();
+                    if (_indexes.TryGetValue(indexName, out index))
                     {
-                        if (minValue != null && string.CompareOrdinal(minValue, pair.Key) > 0)
-                            continue;
-                        if (maxValue != null && string.CompareOrdinal(pair.Key, maxValue) > 0)
-                            continue;
-                        foreach (var documentName in pair.Value)
+                        var allKeys = new HashSet<string>();
+                        var byValueOrdered = ascending ? index.ByValue.OrderBy(t => t.Key) : index.ByValue.OrderByDescending(t => t.Key);
+                        foreach (var pair in byValueOrdered)
                         {
-                            if (!allKeys.Add(documentName))
+                            if (minValue != null && string.CompareOrdinal(minValue, pair.Key) > 0)
                                 continue;
-                            if (skip > 0)
+                            if (maxValue != null && string.CompareOrdinal(pair.Key, maxValue) > 0)
+                                continue;
+                            foreach (var documentName in pair.Value)
                             {
-                                skip--;
-                                continue;
-                            }
-                            if (maxCount == 0)
-                                continue;
-                            maxCount--;
-                            Document document;
-                            if (_documents.TryGetValue(documentName, out document))
-                            {
-                                result.Add(new DocumentStoreFoundDocument(documentName, document.Version, document.Value));
+                                if (!allKeys.Add(documentName))
+                                    continue;
+                                if (skip > 0)
+                                {
+                                    skip--;
+                                    continue;
+                                }
+                                if (maxCount == 0)
+                                    continue;
+                                maxCount--;
+                                Document document;
+                                if (_documents.TryGetValue(documentName, out document))
+                                {
+                                    result.Add(new DocumentStoreFoundDocument(documentName, document.Version, true, document.Value));
+                                }
                             }
                         }
+                        result.TotalFound = allKeys.Count;
                     }
-                    result.TotalFound = allKeys.Count;
+                    return Task.FromResult(result);
                 }
-                _executor.Enqueue(new FindDocumentsCompleted(onFoundDocuments, result));
+                catch (Exception ex)
+                {
+                    return TaskUtils.FromError<DocumentStoreFoundDocuments>(ex);
+                }
             }
         }
 

@@ -6,40 +6,57 @@ using System.Threading.Tasks;
 using Npgsql;
 using System.Threading;
 using System.Data;
+using System.IO;
 
 namespace ServiceLib
 {
     public class DatabasePostgres : IDisposable
     {
         private string _connectionString;
-        private IQueueExecution _executor;
         private NotificationWatcher _notifications;
         private int _listenerKey;
 
-        public DatabasePostgres(string connectionString, IQueueExecution executor)
+        public DatabasePostgres(string connectionString)
         {
             _connectionString = connectionString;
-            _executor = executor;
             _notifications = new NotificationWatcher(this);
+            _notifications.Start();
         }
 
-        public void OpenConnection(Action<NpgsqlConnection> onConnected, Action<Exception> onError)
+        public Task Execute(Action<NpgsqlConnection, object> handler, object context)
         {
-            new OpenConnectionWorker(_connectionString, _executor, onConnected, onError).Execute();
+            return Task.Factory.StartNew(ExecuteWorkerVoid, Tuple.Create(handler, context));
         }
 
-        public void Execute(Action<NpgsqlConnection> handler, Action<Exception> onError)
+        public Task<T> Query<T>(Func<NpgsqlConnection, object, T> handler, object context)
         {
-            new ExecuteWorker(_connectionString, _executor, handler, onError).Execute();
+            return Task.Factory.StartNew<T>(ExecuteWorkerFunc<T>, Tuple.Create(handler, context));
         }
 
         public void ExecuteSync(Action<NpgsqlConnection> handler)
         {
+            ExecuteWorkerVoid(new Tuple<Action<NpgsqlConnection, object>, object>((c, o) => handler(c), null));
+        }
+
+        private void ExecuteWorkerVoid(object param)
+        {
+            var parameters = (Tuple<Action<NpgsqlConnection, object>, object>)param;
             using (var conn = new NpgsqlConnection())
             {
                 conn.ConnectionString = _connectionString;
                 OpenConnection(conn);
-                ExecuteHandler(handler, conn);
+                ExecuteHandler(parameters.Item1, conn, parameters.Item2);
+            }
+        }
+
+        private T ExecuteWorkerFunc<T>(object param)
+        {
+            var parameters = (Tuple<Func<NpgsqlConnection, object, T>, object>)param;
+            using (var conn = new NpgsqlConnection())
+            {
+                conn.ConnectionString = _connectionString;
+                OpenConnection(conn);
+                return ExecuteHandler(parameters.Item1, conn, parameters.Item2);
             }
         }
 
@@ -58,11 +75,26 @@ namespace ServiceLib
             }
         }
 
-        private static void ExecuteHandler(Action<NpgsqlConnection> handler, NpgsqlConnection conn)
+        private static void ExecuteHandler(Action<NpgsqlConnection, object> handler, NpgsqlConnection conn, object context)
         {
             try
             {
-                handler(conn);
+                handler(conn, context);
+            }
+            catch (Exception ex)
+            {
+                if (DetectTransient(ex))
+                    throw new TransientErrorException("DBOPEN", ex);
+                else
+                    throw;
+            }
+        }
+
+        private static T ExecuteHandler<T>(Func<NpgsqlConnection, object, T> handler, NpgsqlConnection conn, object context)
+        {
+            try
+            {
+                return handler(conn, context);
             }
             catch (Exception ex)
             {
@@ -78,30 +110,23 @@ namespace ServiceLib
             conn.Close();
         }
 
-        public IDisposable Listen(string listenName, Action onNotify)
+        public void Listen(string listenName, Action<string> onNotify, CancellationToken cancel)
         {
-            var listener = new Listener(_notifications, Interlocked.Increment(ref _listenerKey), listenName, onNotify);
-            _notifications.OpenListener();
+            if (cancel.IsCancellationRequested)
+                return;
+            var listener = new Listener(_notifications, Interlocked.Increment(ref _listenerKey), listenName, onNotify, cancel);
             _notifications.AddListener(listener);
-            return listener;
+            listener.RegisterCancelling();
         }
 
-        public IDisposable Listen(string listenName, Action<string> onNotify)
+        public void Notify(string name, string payload)
         {
-            var listener = new Listener(_notifications, Interlocked.Increment(ref _listenerKey), listenName, onNotify);
-            _notifications.OpenListener();
-            _notifications.AddListener(listener);
-            return listener;
+            _notifications.Notify(name, payload);
         }
 
         public void Dispose()
         {
-            _notifications.Dispose();
-        }
-
-        private enum ListenerState
-        {
-            New, BeingAdded, Active, Obsolete, BeingRemoved, Removed
+            _notifications.Stop();
         }
 
         private static bool DetectTransient(Exception exception)
@@ -121,42 +146,53 @@ namespace ServiceLib
                 return false;
         }
 
-        private class Listener : IDisposable
+        private class Listener
         {
             private readonly NotificationWatcher _notifications;
-            private readonly Action _onNotify;
             public readonly string Name;
             public readonly int Key;
-            public ListenerState State;
-            private Action<string> _onNotifyExt;
+            private Action<string> _onNotify;
+            private CancellationToken _cancel;
+            private TaskFactory _taskFactory;
 
-            public Listener(NotificationWatcher notifications, int key, string listenName, Action onNotify)
+            public Listener(NotificationWatcher notifications, int key, string listenName, Action<string> onNotify, CancellationToken cancel)
             {
                 _notifications = notifications;
                 _onNotify = onNotify;
-                Key = key;
-                Name = listenName;
-            }
-
-            public Listener(NotificationWatcher notifications, int key, string listenName, Action<string> onNotify)
-            {
-                _notifications = notifications;
-                _onNotifyExt = onNotify;
+                _cancel = cancel;
+                _taskFactory = Task.Factory;
                 Key = key;
                 Name = listenName;
             }
 
             public void Notify(string payload)
             {
-                if (_onNotify != null)
-                    _onNotify();
-                else
-                    _onNotifyExt(payload);
+                if (!_cancel.IsCancellationRequested)
+                {
+                    _taskFactory.StartNew(OnNotify, payload);
+                }
             }
 
-            public void Dispose()
+            private void OnNotify(object payload)
+            {
+                try
+                {
+                    _onNotify(payload as string);
+                }
+                catch
+                {
+                }
+            }
+
+            private void Unregister()
             {
                 _notifications.RemoveListener(this);
+            }
+
+            public void RegisterCancelling()
+            {
+                if (_cancel.CanBeCanceled)
+                    _cancel.Register(Unregister);
             }
         }
 
@@ -166,219 +202,73 @@ namespace ServiceLib
             public string Payload;
         }
 
-        private class OpenConnectionWorker
+        private struct ListeningChange
         {
-            private readonly string _connectionString;
-            private readonly IQueueExecution _executor;
-            private readonly Action<NpgsqlConnection> _onConnected;
-            private readonly Action<Exception> _onError;
-            private readonly NpgsqlConnection _conn;
-            private IDisposable _busy;
-
-            public OpenConnectionWorker(string connectionString, IQueueExecution executor, Action<NpgsqlConnection> onConnected, Action<Exception> onError)
-            {
-                _connectionString = connectionString;
-                _executor = executor;
-                _onConnected = onConnected;
-                _onError = onError;
-                _conn = new NpgsqlConnection();
-            }
-
-            public void Execute()
-            {
-                _busy = _executor.AttachBusyProcess();
-                _conn.ConnectionString = _connectionString;
-                Task.Factory.StartNew(OpenTask);
-            }
-            private void OpenTask()
-            {
-                try
-                {
-                    _conn.Open();
-                }
-                catch (Exception ex)
-                {
-                    _conn.Dispose();
-                    _busy.Dispose();
-                    if (DetectTransient(ex))
-                        _onError(new TransientErrorException("DBOPEN", ex));
-                    else
-                        _onError(ex);
-                    return;
-                }
-                _executor.Enqueue(new OpenConnectionFinished(_onConnected, _conn));
-                _busy.Dispose();
-            }
+            public bool Add;
+            public string Name;
         }
 
-        private class OpenConnectionFinished : IQueuedExecutionDispatcher
-        {
-            private Action<NpgsqlConnection> _onConnected;
-            private NpgsqlConnection _conn;
-
-            public OpenConnectionFinished(Action<NpgsqlConnection> onConnected, NpgsqlConnection conn)
-            {
-                this._onConnected = onConnected;
-                this._conn = conn;
-            }
-
-            public void Execute()
-            {
-                _onConnected(_conn);
-            }
-        }
-
-        private class ExecuteWorker
-        {
-            private readonly string _connectionString;
-            private readonly IQueueExecution _executor;
-            private readonly Action<NpgsqlConnection> _handler;
-            private readonly Action<Exception> _onError;
-            private IDisposable _busy;
-
-            public ExecuteWorker(string connectionString, IQueueExecution executor, Action<NpgsqlConnection> handler, Action<Exception> onError)
-            {
-                _connectionString = connectionString;
-                _executor = executor;
-                _handler = handler;
-                _onError = onError;
-            }
-
-            public void Execute()
-            {
-                _busy = _executor.AttachBusyProcess();
-                Task.Factory.StartNew(TaskFunc);
-            }
-
-            private void TaskFunc()
-            {
-                try
-                {
-                    using (var conn = new NpgsqlConnection())
-                    {
-                        conn.ConnectionString = _connectionString;
-                        OpenConnection(conn);
-                        ExecuteHandler(_handler, conn);
-                    }
-                }
-                catch (Exception exception)
-                {
-                    _onError(exception);
-                }
-                finally
-                {
-                    _busy.Dispose();
-                }
-            }
-        }
-
-        private class NotificationDispatcher : IQueuedExecutionDispatcher
-        {
-            private Action<string> _onNotify;
-            private string _payload;
-            public NotificationDispatcher(Action<string> onNotify, string payload)
-            {
-                _onNotify = onNotify;
-                _payload = payload;
-            }
-            public void Execute()
-            {
-                _onNotify(_payload);
-            }
-        }
-
-        private class NotificationWatcher : IDisposable
+        private class NotificationWatcher
         {
             private DatabasePostgres _parent;
             private object _lock;
-            private Dictionary<int, Listener> _listeners;
+            private List<Listener> _listeners;
             private List<Notification> _notifications;
-            private NpgsqlConnection _connection;
-            private bool _isBusy, _isDisposed;
-            private ConnectionState _state;
+            private List<ListeningChange> _changes;
+            private string _connectionString;
+            private CancellationTokenSource _cancel;
+            private Task _task;
 
             public NotificationWatcher(DatabasePostgres parent)
             {
                 _parent = parent;
                 _lock = new object();
-                _listeners = new Dictionary<int, Listener>();
+                _listeners = new List<Listener>();
                 _notifications = new List<Notification>();
-                _connection = new NpgsqlConnection();
-                _connection.Notification += OnNotified;
+                _changes = new List<ListeningChange>();
                 var connString = new NpgsqlConnectionStringBuilder(parent._connectionString);
                 connString.SyncNotification = true;
-                _connection.ConnectionString = connString.ToString();
-                _state = ConnectionState.Closed;
+                _connectionString = connString.ToString();
+                _cancel = new CancellationTokenSource();
             }
 
             private void OnNotified(object sender, NpgsqlNotificationEventArgs e)
             {
                 lock (_lock)
                 {
-                    foreach (var listener in _listeners.Values)
+                    foreach (var listener in _listeners)
                     {
-                        var dispatcher = new NotificationDispatcher(listener.Notify, e.AdditionalInformation);
                         if (listener.Name == e.Condition)
-                            _parent._executor.Enqueue(dispatcher);
+                            listener.Notify(e.AdditionalInformation);
                     }
                 }
-            }
-
-            public void OpenListener()
-            {
-                lock (_lock)
-                {
-                    _state = _connection.State;
-                    if (_isBusy || _isDisposed)
-                        return;
-                    if (_connection.State != ConnectionState.Broken && _connection.State != ConnectionState.Closed)
-                        return;
-                    _isBusy = true;
-                    Task.Factory.StartNew(OpenListenerWorker);
-                }
-            }
-            private void OpenListenerWorker()
-            {
-                try
-                {
-                    if (_state == ConnectionState.Broken)
-                        _connection.Close();
-                    _connection.Open();
-                }
-                catch (Exception exception)
-                {
-                    OnError(exception);
-                    return;
-                }
-                RefreshNotifications();
             }
 
             public void AddListener(Listener listener)
             {
                 lock (_lock)
                 {
-                    _listeners.Add(listener.Key, listener);
-                    listener.State = ListenerState.New;
-                    if (_isBusy)
-                        return;
-                    _isBusy = true;
+                    var add = !_listeners.Any(l => l.Name == listener.Name);
+                    _listeners.Add(listener);
+                    if (add)
+                    {
+                        _changes.Add(new ListeningChange { Add = true, Name = listener.Name });
+                        Monitor.Pulse(_lock);
+                    }
                 }
-                RefreshNotifications();
             }
 
             public void RemoveListener(Listener listener)
             {
                 lock (_lock)
                 {
-                    if (_state == ConnectionState.Broken || _state == ConnectionState.Closed)
-                        listener.State = ListenerState.Removed;
-                    else
-                        listener.State = ListenerState.Obsolete;
-                    if (_isBusy)
-                        return;
-                    _isBusy = true;
+                    _listeners.Remove(listener);
+                    if (!_listeners.Any(l => l.Name == listener.Name))
+                    {
+                        _changes.Add(new ListeningChange { Add = true, Name = listener.Name });
+                        Monitor.Pulse(_lock);
+                    }
                 }
-                RefreshNotifications();
             }
 
             public void Notify(string name, string payload)
@@ -386,116 +276,144 @@ namespace ServiceLib
                 lock (_lock)
                 {
                     _notifications.Add(new Notification { Name = name, Payload = payload });
-                    if (_isBusy)
-                        return;
-                    _isBusy = true;
+                    Monitor.Pulse(_lock);
                 }
-                RefreshNotifications();
             }
 
-            private void RefreshNotifications()
+            public void Start()
             {
-                while (true)
+                _task = Task.Factory.StartNew(NotificationCore, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            }
+
+            public void Stop()
+            {
+                _cancel.Cancel();
+                lock (_lock)
+                    Monitor.Pulse(_lock);
+                _task.Wait(1000);
+                _cancel.Dispose();
+            }
+
+            private void NotificationCore()
+            {
+                try
                 {
-                    var anythingToProcess = false;
-                    var commands = new StringBuilder();
-                    var parameters = new List<string>();
-                    lock (_lock)
+                    var cancel = _cancel.Token;
+                    var attemptNumber = 0;
+                    while (!cancel.IsCancellationRequested)
                     {
-                        if (!_isDisposed)
+                        attemptNumber++;
+                        using (var conn = new NpgsqlConnection(_connectionString))
                         {
-                            foreach (var listener in _listeners)
+                            if (OpenConnection(conn, cancel, attemptNumber))
+                                attemptNumber = 0;
+                            else
+                                continue;
+                            try
                             {
-                                if (listener.Value.State == ListenerState.New)
+                                InitialListen(conn);
+                                while (!cancel.IsCancellationRequested)
                                 {
-                                    commands.Append("LISTEN ").Append(listener.Value.Name).Append("; ");
-                                    listener.Value.State = ListenerState.BeingAdded;
-                                    anythingToProcess = true;
+                                    SendChanges(conn, cancel);
                                 }
-                                else if (listener.Value.State == ListenerState.Obsolete)
-                                {
-                                    commands.Append("UNLISTEN ").Append(listener.Value.Name).Append("; ");
-                                    listener.Value.State = ListenerState.BeingRemoved;
-                                    anythingToProcess = true;
-                                }
-                                else if (listener.Value.State == ListenerState.BeingAdded)
-                                {
-                                    listener.Value.State = ListenerState.Active;
-                                    var dispatcher = new NotificationDispatcher(listener.Value.Notify, string.Empty);
-                                    _parent._executor.Enqueue(dispatcher);
-                                }
-                                else if (listener.Value.State == ListenerState.BeingRemoved)
-                                    listener.Value.State = ListenerState.Removed;
                             }
-                            foreach (var notification in _notifications)
+                            catch (NpgsqlException ex)
                             {
-                                commands.Append("NOTIFY ").Append(notification.Name).Append(", :p");
-                                commands.Append(parameters.Count);
-                                commands.Append(";");
-                                parameters.Add(notification.Payload);
+                                if (ex.Message.Contains("Connection is broken."))
+                                    continue;
+                                throw;
                             }
-                            _notifications.Clear();
-                        }
-                        if (!anythingToProcess)
-                        {
-                            _isBusy = false;
-                            Monitor.PulseAll(_lock);
-                            return;
                         }
                     }
-                    try
+                }
+                catch
+                {
+                }
+            }
+
+            private bool OpenConnection(NpgsqlConnection conn, CancellationToken cancel, int attemptNumber)
+            {
+                var attemptStart = DateTime.UtcNow;
+                try
+                {
+                    conn.Open();
+                    return true;
+                }
+                catch (IOException)
+                {
+                    var attemptLength = (int)(DateTime.UtcNow - attemptStart).TotalMilliseconds;
+                    var timeout = Math.Max(0, (attemptNumber == 0 ? 0 : 20000) - attemptLength);
+                    if (timeout > 0)
+                        cancel.WaitHandle.WaitOne(timeout);
+                    return false;
+                }
+            }
+
+            private void InitialListen(NpgsqlConnection conn)
+            {
+                var commands = new StringBuilder();
+                lock (_lock)
+                {
+                    _changes.Clear();
+                    foreach (var listener in _listeners)
                     {
-                        using (var cmd = _connection.CreateCommand())
+                        commands.Append("LISTEN ").Append(listener.Name).Append("; ");
+                    }
+                }
+                if (commands.Length > 0)
+                {
+                    using (var cmd = conn.CreateCommand())
+                    {
+                        cmd.CommandText = commands.ToString();
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+            }
+
+            private void SendChanges(NpgsqlConnection conn, CancellationToken cancel)
+            {
+                var commands = new StringBuilder();
+                List<Notification> notifications;
+                lock (_lock)
+                {
+                    foreach (var change in _changes)
+                    {
+                        commands.Append(change.Add ? "LISTEN " : "UNLISTEN ").Append(change.Name).Append("; ");
+                    }
+                    _changes.Clear();
+                    
+                    notifications = _notifications.ToList();
+                    _notifications.Clear();
+
+                    if (commands.Length == 0 && notifications.Count == 0)
+                    {
+                        Monitor.Wait(_lock, 5000);
+                    }
+                }
+                if (commands.Length > 0)
+                {
+                    using (var cmd = conn.CreateCommand())
+                    {
+                        cmd.CommandText = commands.ToString();
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+                if (notifications.Count > 0)
+                {
+                    using (var cmd = conn.CreateCommand())
+                    {
+                        cmd.CommandText = "SELECT pg_notify(:name, :payload)";
+                        var paramName = cmd.Parameters.Add("name", NpgsqlTypes.NpgsqlDbType.Text);
+                        var paramPayload = cmd.Parameters.Add("payload", NpgsqlTypes.NpgsqlDbType.Text);
+                        foreach (var notification in notifications)
                         {
-                            cmd.CommandText = commands.ToString();
-                            for (int i = 0; i < parameters.Count; i++)
-                                cmd.Parameters.AddWithValue("p" + i.ToString(), parameters[i]);
+                            paramName.Value = notification.Name;
+                            paramPayload.Value = notification.Payload;
                             cmd.ExecuteNonQuery();
                         }
                     }
-                    catch (Exception exception)
-                    {
-                        OnError(exception);
-                        return;
-                    }
                 }
             }
-
-            private void OnError(Exception exception)
-            {
-                lock (_lock)
-                {
-                    _state = _connection.State;
-                    var broken = _connection.State == ConnectionState.Closed || _connection.State == ConnectionState.Broken;
-                    foreach (var listener in _listeners.Values)
-                    {
-                        if (listener.State == ListenerState.BeingAdded || listener.State == ListenerState.Active)
-                            listener.State = ListenerState.New;
-                        else if (listener.State == ListenerState.BeingRemoved || listener.State == ListenerState.Obsolete)
-                            listener.State = broken ? ListenerState.Removed : ListenerState.Obsolete;
-                    }
-                    _isBusy = false;
-                    Monitor.PulseAll(_lock);
-                }
-            }
-
-            public void Dispose()
-            {
-                lock (_lock)
-                {
-                    _isDisposed = true;
-                    while (_isBusy)
-                        Monitor.Wait(_lock);
-                    _state = ConnectionState.Closed;
-                }
-                _connection.Close();
-            }
-        }
-
-        public void Notify(string name, string payload)
-        {
-            _notifications.OpenListener();
-            _notifications.Notify(name, payload);
         }
     }
 }

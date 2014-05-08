@@ -99,8 +99,8 @@
     <Compile Include="RestClient.cs" />
     <Compile Include="RestServerParameters.cs" />
     <Compile Include="SubscriptionManager.cs" />
+    <Compile Include="TaskUtils.cs" />
     <Compile Include="Time.cs" />
-    <Compile Include="UpdateLock.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

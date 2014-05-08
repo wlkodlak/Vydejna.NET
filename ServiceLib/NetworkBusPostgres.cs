@@ -279,7 +279,7 @@ namespace ServiceLib
                 Parent._database.Execute(TryRetrieve, ErrorRetrieve);
             }
 
-            private void OnNotify()
+            private void OnNotify(string payload)
             {
                 lock (this)
                 {

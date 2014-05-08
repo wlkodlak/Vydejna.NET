@@ -13,15 +13,11 @@ namespace ServiceLib
     public class EventStorePostgres : IEventStoreWaitable, IDisposable
     {
         private DatabasePostgres _db;
-        private IQueueExecution _executor;
-        private ListeningManager _changes;
         private static EventStoreEvent[] EmptyList = new EventStoreEvent[0];
 
-        public EventStorePostgres(DatabasePostgres db, IQueueExecution executor)
+        public EventStorePostgres(DatabasePostgres db)
         {
             _db = db;
-            _executor = executor;
-            _changes = new ListeningManager(this);
         }
 
         public void Initialize()
@@ -31,7 +27,6 @@ namespace ServiceLib
 
         public void Dispose()
         {
-            _changes.Dispose();
         }
 
         private void InitializeDatabase(NpgsqlConnection conn)
@@ -68,41 +63,384 @@ namespace ServiceLib
             }
         }
 
-        public void AddToStream(string stream, IEnumerable<EventStoreEvent> events, EventStoreVersion expectedVersion, Action onComplete, Action onConcurrency, Action<Exception> onError)
+        public Task<bool> AddToStream(string stream, IEnumerable<EventStoreEvent> events, EventStoreVersion expectedVersion)
         {
-            new AddToStreamWorker(this, stream, events, expectedVersion, onComplete, onConcurrency, onError).Execute();
+            return _db.Query(AddToStreamWorker, new AddToStreamParameters(stream, events, expectedVersion));
         }
 
-        public void ReadStream(string stream, int minVersion, int maxCount, bool loadBody, Action<IEventStoreStream> onComplete, Action<Exception> onError)
+        private class AddToStreamParameters
         {
-            new ReadStreamWorker(this, stream, minVersion, maxCount, loadBody, onComplete, onError).Execute();
+            public readonly string Stream;
+            public readonly IEnumerable<EventStoreEvent> Events;
+            public readonly EventStoreVersion ExpectedVersion;
+
+            public AddToStreamParameters(string stream, IEnumerable<EventStoreEvent> events, EventStoreVersion expectedVersion)
+            {
+                Stream = stream;
+                Events = events;
+                ExpectedVersion = expectedVersion;
+            }
         }
 
-        public void LoadBodies(IList<EventStoreEvent> events, Action onComplete, Action<Exception> onError)
+        private bool AddToStreamWorker(NpgsqlConnection conn, object objContext)
         {
-            new LoadBodiesWorker(this, events, onComplete, onError).Execute();
+            var context = (AddToStreamParameters)objContext;
+            using (var tran = conn.BeginTransaction())
+            {
+                var rawVersion = GetStreamVersion(conn, context.Stream);
+                var realVersion = rawVersion == -1 ? 0 : rawVersion;
+                if (!context.ExpectedVersion.VerifyVersion(realVersion))
+                    return false;
+                if (rawVersion == -1)
+                {
+                    if (CreateStream(conn, tran, context.Stream))
+                    {
+                        rawVersion = GetStreamVersion(conn, context.Stream);
+                        realVersion = rawVersion == -1 ? 0 : rawVersion;
+                        if (!context.ExpectedVersion.VerifyVersion(realVersion))
+                            return false;
+                    }
+                }
+                var events = context.Events.ToList();
+                InsertNewEvents(conn, context.Stream, realVersion, events);
+                UpdateStreamVersion(conn, context.Stream, realVersion + events.Count);
+                NotifyChanges(conn);
+                tran.Commit();
+                return true;
+            }
         }
 
-        public void GetAllEvents(EventStoreToken token, int maxCount, bool loadBody, Action<IEventStoreCollection> onComplete, Action<Exception> onError)
+        private static int GetStreamVersion(NpgsqlConnection conn, string stream)
         {
-            new GetAllEventsWorker(this, true, token, maxCount, loadBody, onComplete, onError).Execute();
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "SELECT version FROM eventstore_streams WHERE streamname = :streamname FOR UPDATE";
+                cmd.Parameters.AddWithValue("streamname", stream);
+                using (var reader = cmd.ExecuteReader())
+                {
+                    if (reader.Read())
+                        return reader.GetInt32(0);
+                    else
+                        return -1;
+                }
+            }
         }
 
-        public IDisposable WaitForEvents(EventStoreToken token, int maxCount, bool loadBody, Action<IEventStoreCollection> onComplete, Action<Exception> onError)
+        private static bool CreateStream(NpgsqlConnection conn, NpgsqlTransaction tran, string stream)
         {
-            var worker = new GetAllEventsWorker(this, false, token, maxCount, loadBody, onComplete, onError);
-            worker.Execute();
-            return worker;
+            tran.Save("createstream");
+            try
+            {
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText = "INSERT INTO eventstore_streams (streamname, version) VALUES (:streamname, 0)";
+                    cmd.Parameters.AddWithValue("streamname", stream);
+                    cmd.ExecuteNonQuery();
+                    return false;
+                }
+            }
+            catch (NpgsqlException ex)
+            {
+                if (ex.Code == "23505")
+                {
+                    tran.Rollback("createstream");
+                    return true;
+                }
+                else
+                    throw;
+            }
         }
 
-        public void LoadSnapshot(string stream, Action<EventStoreSnapshot> onComplete, Action<Exception> onError)
+        private static void InsertNewEvents(NpgsqlConnection conn, string stream, int initialVersion, IEnumerable<EventStoreEvent> events)
         {
-            new LoadSnapshotWorker(this, stream, onComplete, onError).Execute();
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText =
+                    "INSERT INTO eventstore_events (streamname, version, format, eventtype, contents) " +
+                    "VALUES (:streamname, :version, :format, :eventtype, :contents) RETURNING id";
+                var paramStream = cmd.Parameters.Add("streamname", NpgsqlDbType.Varchar);
+                var paramVersion = cmd.Parameters.Add("version", NpgsqlDbType.Integer);
+                var paramFormat = cmd.Parameters.Add("format", NpgsqlDbType.Varchar);
+                var paramType = cmd.Parameters.Add("eventtype", NpgsqlDbType.Varchar);
+                var paramBody = cmd.Parameters.Add("contents", NpgsqlDbType.Text);
+                foreach (var evnt in events)
+                {
+                    evnt.StreamName = stream;
+                    evnt.StreamVersion = ++initialVersion;
+                    paramStream.Value = evnt.StreamName;
+                    paramVersion.Value = evnt.StreamVersion;
+                    paramFormat.Value = evnt.Format;
+                    paramType.Value = evnt.Type;
+                    paramBody.Value = evnt.Body;
+                    var id = (long)cmd.ExecuteScalar();
+                    evnt.Token = TokenFromId(id);
+                }
+            }
         }
 
-        public void SaveSnapshot(string stream, EventStoreSnapshot snapshot, Action onComplete, Action<Exception> onError)
+        private static void UpdateStreamVersion(NpgsqlConnection conn, string stream, int version)
         {
-            new SaveSnapshotWorker(this, stream, snapshot, onComplete, onError).Execute();
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "UPDATE eventstore_streams SET version = :version WHERE streamname = :streamname";
+                cmd.Parameters.AddWithValue("streamname", stream);
+                cmd.Parameters.AddWithValue("version", version);
+                cmd.ExecuteNonQuery();
+            }
+        }
+
+        private static void NotifyChanges(NpgsqlConnection conn)
+        {
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "NOTIFY eventstore";
+                cmd.ExecuteNonQuery();
+            }
+        }
+
+        public Task<IEventStoreStream> ReadStream(string stream, int minVersion, int maxCount, bool loadBody)
+        {
+            return _db.Query(ReadStreamWorker, new ReadStreamParameters(stream, minVersion, maxCount, loadBody));
+        }
+
+        private class ReadStreamParameters
+        {
+            public readonly string Stream;
+            public readonly int MinVersion;
+            public readonly int MaxVersion;
+            public readonly int MaxCount;
+            public readonly bool LoadBody;
+
+            public ReadStreamParameters(string stream, int minVersion, int maxCount, bool loadBody)
+            {
+                Stream = stream;
+                MinVersion = Math.Max(1, minVersion);
+                MaxCount = Math.Max(0, maxCount);
+                LoadBody = loadBody;
+                MaxVersion = MinVersion - 1 + MaxCount;
+                if (MaxVersion < MinVersion)
+                    MaxVersion = int.MaxValue;
+            }
+        }
+
+        private IEventStoreStream ReadStreamWorker(NpgsqlConnection conn, object objContext)
+        {
+            var context = (ReadStreamParameters)objContext;
+            var version = GetStreamVersion(conn, context.Stream);
+            if (version < context.MinVersion)
+            {
+                return new EventStoreStream(EmptyList, version, version);
+            }
+            else if (context.MaxCount <= 0)
+            {
+                return new EventStoreStream(EmptyList, version, context.MinVersion);
+            }
+            else
+            {
+                var events = LoadEvents(conn, context.Stream, context.MinVersion, Math.Min(version, context.MaxVersion));
+                return new EventStoreStream(events, version, context.MinVersion);
+            }
+        }
+
+        private static List<EventStoreEvent> LoadEvents(NpgsqlConnection conn, string stream, int minVersion, int maxVersion)
+        {
+            var expectedCount = maxVersion - minVersion + 1;
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText =
+                    "SELECT id, streamname, version, format, eventtype, contents FROM eventstore_events " +
+                    "WHERE streamname = :streamname AND version >= :minversion AND version <= :maxversion " +
+                    "ORDER BY version";
+                cmd.Parameters.AddWithValue("streamname", stream);
+                cmd.Parameters.AddWithValue("minversion", minVersion);
+                cmd.Parameters.AddWithValue("maxversion", maxVersion);
+                using (var reader = cmd.ExecuteReader())
+                {
+                    var list = new List<EventStoreEvent>(expectedCount);
+                    while (reader.Read())
+                    {
+                        var evnt = new EventStoreEvent();
+                        evnt.Token = TokenFromId(reader.GetInt64(0));
+                        evnt.StreamName = reader.GetString(1);
+                        evnt.StreamVersion = reader.GetInt32(2);
+                        evnt.Format = reader.IsDBNull(3) ? null : reader.GetString(3);
+                        evnt.Type = reader.IsDBNull(4) ? null : reader.GetString(4);
+                        evnt.Body = reader.IsDBNull(5) ? "" : reader.GetString(5);
+                        list.Add(evnt);
+                    }
+                    return list;
+                }
+            }
+        }
+
+        public Task LoadBodies(IList<EventStoreEvent> events)
+        {
+            var ids = new Dictionary<long, EventStoreEvent>(events.Count);
+            for (int i = 0; i < events.Count; i++)
+            {
+                var evnt = events[i];
+                if (evnt.Body != null)
+                    continue;
+                else
+                {
+                    var id = IdFromToken(evnt.Token);
+                    ids[id] = evnt;
+                }
+            }
+            if (ids == null || ids.Count == 0)
+                return TaskUtils.CompletedTask();
+            else
+                return _db.Execute(LoadBodiesWorker, ids);
+        }
+
+        private void LoadBodiesWorker(NpgsqlConnection conn, object objContext)
+        {
+            var ids = (Dictionary<long, EventStoreEvent>)objContext;
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "SELECT id, contents FROM eventstore_events WHERE id = ANY (:id)";
+                var paramId = cmd.Parameters.Add("id", NpgsqlDbType.Bigint | NpgsqlDbType.Array);
+                paramId.Value = ids;
+                using (var reader = cmd.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        var id = reader.GetInt64(0);
+                        var body = reader.IsDBNull(1) ? "" : reader.GetString(1);
+                        EventStoreEvent evnt;
+                        if (ids.TryGetValue(id, out evnt))
+                            evnt.Body = body;
+                    }
+                }
+            }
+        }
+
+        public Task<EventStoreSnapshot> LoadSnapshot(string stream)
+        {
+            return _db.Query<EventStoreSnapshot>(LoadSnapshotWorker, stream);
+        }
+
+        private EventStoreSnapshot LoadSnapshotWorker(NpgsqlConnection conn, object objContext)
+        {
+            var stream = (string)objContext;
+            EventStoreSnapshot snapshot = null;
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "SELECT format, snapshottype, contents FROM eventstore_snapshots WHERE streamname = :streamname";
+                cmd.Parameters.AddWithValue("streamname", stream);
+                using (var reader = cmd.ExecuteReader())
+                {
+                    if (reader.Read())
+                    {
+                        snapshot = new EventStoreSnapshot();
+                        snapshot.StreamName = stream;
+                        snapshot.Format = reader.GetString(0);
+                        snapshot.Type = reader.GetString(1);
+                        snapshot.Body = reader.GetString(2);
+                    }
+                }
+            }
+            return snapshot;
+        }
+
+        public Task SaveSnapshot(string stream, EventStoreSnapshot snapshot)
+        {
+            return _db.Execute(SaveSnapshotWorker, new SaveSnapshotParameters(stream, snapshot));
+        }
+
+        private class SaveSnapshotParameters
+        {
+            public readonly string Stream;
+            public readonly EventStoreSnapshot Snapshot;
+
+            public SaveSnapshotParameters(string stream, EventStoreSnapshot snapshot)
+            {
+                Stream = stream;
+                Snapshot = snapshot;
+            }
+        }
+
+        private void SaveSnapshotWorker(NpgsqlConnection conn, object objContext)
+        {
+            var context = (SaveSnapshotParameters)objContext;
+            context.Snapshot.StreamName = context.Stream;
+
+            using (var tran = conn.BeginTransaction())
+            {
+                var snapshotExists = FindSnapshot(conn, context.Snapshot);
+                if (snapshotExists)
+                {
+                    UpdateSnapshot(conn, context.Snapshot);
+                }
+                else
+                {
+                    tran.Save("insertsnapshot");
+                    try
+                    {
+                        TryInsertSnapshot(conn, context.Snapshot);
+                    }
+                    catch (NpgsqlException ex)
+                    {
+                        if (ex.Code == "23505")
+                        {
+                            tran.Rollback("insertsnapshot");
+                            UpdateSnapshot(conn, context.Snapshot);
+                        }
+                        else
+                        {
+                            throw;
+                        }
+                    }
+                }
+                tran.Commit();
+            }
+        }
+
+        private static bool FindSnapshot(NpgsqlConnection conn, EventStoreSnapshot snapshot)
+        {
+            var snapshotExists = false;
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "SELECT 1 FROM eventstore_snapshots WHERE streamname = :streamname FOR UPDATE";
+                cmd.Parameters.Add("streamname", NpgsqlDbType.Varchar).Value = snapshot.StreamName;
+                using (var reader = cmd.ExecuteReader())
+                    snapshotExists = reader.Read();
+            }
+            return snapshotExists;
+        }
+
+        private static void TryInsertSnapshot(NpgsqlConnection conn, EventStoreSnapshot snapshot)
+        {
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "INSERT INTO eventstore_snapshots (streamname, format, snapshottype, contents) VALUES (:streamname, :format, :snapshottype, :contents)";
+                cmd.Parameters.Add("streamname", NpgsqlDbType.Varchar).Value = snapshot.StreamName;
+                cmd.Parameters.Add("format", NpgsqlDbType.Varchar).Value = snapshot.Format;
+                cmd.Parameters.Add("snapshottype", NpgsqlDbType.Varchar).Value = snapshot.Type;
+                cmd.Parameters.Add("contents", NpgsqlDbType.Varchar).Value = snapshot.Body;
+                cmd.ExecuteNonQuery();
+            }
+        }
+
+        private static void UpdateSnapshot(NpgsqlConnection conn, EventStoreSnapshot snapshot)
+        {
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "UPDATE eventstore_snapshots SET format = :format, snapshottype = :snapshottype, contents = :contents WHERE streamname = :streamname";
+                cmd.Parameters.Add("streamname", NpgsqlDbType.Varchar).Value = snapshot.StreamName;
+                cmd.Parameters.Add("format", NpgsqlDbType.Varchar).Value = snapshot.Format;
+                cmd.Parameters.Add("snapshottype", NpgsqlDbType.Varchar).Value = snapshot.Type;
+                cmd.Parameters.Add("contents", NpgsqlDbType.Varchar).Value = snapshot.Body;
+                cmd.ExecuteNonQuery();
+            }
+        }
+
+        public Task<IEventStoreCollection> GetAllEvents(EventStoreToken token, int maxCount, bool loadBody)
+        {
+        }
+
+        public Task<IEventStoreCollection> WaitForEvents(EventStoreToken token, int maxCount, bool loadBody, CancellationToken cancel)
+        {
         }
 
         private static EventStoreToken TokenFromId(long id)
@@ -121,405 +459,7 @@ namespace ServiceLib
             else
                 return long.Parse(token.ToString());
         }
-
-        private class Listener : IDisposable, IQueuedExecutionDispatcher
-        {
-            private ListeningManager _parent;
-            public int Key;
-            public Action Handler;
-
-            public Listener(ListeningManager parent, int key, Action handler)
-            {
-                _parent = parent;
-                Key = key;
-                Handler = handler;
-            }
-
-            public void Execute()
-            {
-                Handler();
-            }
-
-            public void Dispose()
-            {
-                _parent.Unregister(Key);
-            }
-        }
-
-        private class ListeningManager
-        {
-            private EventStorePostgres _parent;
-            private IDisposable _listening;
-            private int _listenerKey;
-            private Dictionary<int, Listener> _listeners;
-            private bool _disposed;
-
-            public ListeningManager(EventStorePostgres parent)
-            {
-                _parent = parent;
-                _listeners = new Dictionary<int, Listener>();
-            }
-
-            public IDisposable Register(Action handler)
-            {
-                lock (this)
-                {
-                    if (_listening == null && !_disposed)
-                        _listening = _parent._db.Listen("eventstore", OnNotified);
-                    var listener = new Listener(this, Interlocked.Increment(ref _listenerKey), handler);
-                    _listeners[listener.Key] = listener;
-                    return listener;
-                }
-            }
-
-            public void Unregister(int key)
-            {
-                lock (this)
-                {
-                    _listeners.Remove(key);
-                }
-            }
-
-            private void OnNotified()
-            {
-                lock (this)
-                {
-                    foreach (var listener in _listeners.Values)
-                        _parent._executor.Enqueue(listener);
-                }
-            }
-
-            public void Dispose()
-            {
-                lock (this)
-                {
-                    _disposed = true;
-                    if (_listening != null)
-                        _listening.Dispose();
-                }
-            }
-        }
-
-        private class AddToStreamWorker
-        {
-            private EventStorePostgres _parent;
-            private string _stream;
-            private List<EventStoreEvent> _events;
-            private EventStoreVersion _expectedVersion;
-            private Action _onComplete;
-            private Action _onConcurrency;
-            private Action<Exception> _onError;
-            private int _realVersion;
-
-            public AddToStreamWorker(EventStorePostgres parent, string stream, IEnumerable<EventStoreEvent> events, EventStoreVersion expectedVersion, Action onComplete, Action onConcurrency, Action<Exception> onError)
-            {
-                _parent = parent;
-                _stream = stream;
-                _events = events.ToList();
-                _expectedVersion = expectedVersion;
-                _onComplete = onComplete;
-                _onConcurrency = onConcurrency;
-                _onError = onError;
-            }
-
-            public void Execute()
-            {
-                _parent._db.Execute(DbExecute, _onError);
-            }
-            private void DbExecute(NpgsqlConnection conn)
-            {
-                using (var tran = conn.BeginTransaction())
-                {
-                    var rawVersion = GetStreamVersion(conn);
-                    _realVersion = rawVersion == -1 ? 0 : rawVersion;
-                    if (!_expectedVersion.VerifyVersion(_realVersion))
-                    {
-                        _parent._executor.Enqueue(_onConcurrency);
-                        return;
-                    }
-                    if (rawVersion == -1)
-                    {
-                        if (CreateStream(conn, tran))
-                        {
-                            rawVersion = GetStreamVersion(conn);
-                            _realVersion = rawVersion == -1 ? 0 : rawVersion;
-                            if (!_expectedVersion.VerifyVersion(_realVersion))
-                            {
-                                _parent._executor.Enqueue(_onConcurrency);
-                                return;
-                            }
-                        }
-                    }
-                    InsertNewEvents(conn);
-                    UpdateStreamVersion(conn);
-                    NotifyChanges(conn);
-                    tran.Commit();
-                    _parent._executor.Enqueue(_onComplete);
-                }
-            }
-
-            private bool GetVersionAndVerify(NpgsqlConnection conn)
-            {
-                var rawVersion = GetStreamVersion(conn);
-                _realVersion = rawVersion == -1 ? 0 : rawVersion;
-                if (!_expectedVersion.VerifyVersion(_realVersion))
-                {
-                    _parent._executor.Enqueue(_onConcurrency);
-                    return false;
-                }
-                else
-                    return true;
-            }
-
-            private int GetStreamVersion(NpgsqlConnection conn)
-            {
-                using (var cmd = conn.CreateCommand())
-                {
-                    cmd.CommandText = "SELECT version FROM eventstore_streams WHERE streamname = :streamname FOR UPDATE";
-                    cmd.Parameters.AddWithValue("streamname", _stream);
-                    using (var reader = cmd.ExecuteReader())
-                    {
-                        if (reader.Read())
-                            return reader.GetInt32(0);
-                        else
-                            return -1;
-                    }
-                }
-            }
-
-            private bool CreateStream(NpgsqlConnection conn, NpgsqlTransaction tran)
-            {
-                tran.Save("createstream");
-                try
-                {
-                    using (var cmd = conn.CreateCommand())
-                    {
-                        cmd.CommandText = "INSERT INTO eventstore_streams (streamname, version) VALUES (:streamname, 0)";
-                        cmd.Parameters.AddWithValue("streamname", _stream);
-                        cmd.ExecuteNonQuery();
-                        return false;
-                    }
-                }
-                catch (NpgsqlException ex)
-                {
-                    if (ex.Code == "23505")
-                    {
-                        tran.Rollback("createstream");
-                        return true;
-                    }
-                    else
-                        throw;
-                }
-            }
-
-            private void InsertNewEvents(NpgsqlConnection conn)
-            {
-                using (var cmd = conn.CreateCommand())
-                {
-                    cmd.CommandText =
-                        "INSERT INTO eventstore_events (streamname, version, format, eventtype, contents) " +
-                        "VALUES (:streamname, :version, :format, :eventtype, :contents) RETURNING id";
-                    var paramStream = cmd.Parameters.Add("streamname", NpgsqlDbType.Varchar);
-                    var paramVersion = cmd.Parameters.Add("version", NpgsqlDbType.Integer);
-                    var paramFormat = cmd.Parameters.Add("format", NpgsqlDbType.Varchar);
-                    var paramType = cmd.Parameters.Add("eventtype", NpgsqlDbType.Varchar);
-                    var paramBody = cmd.Parameters.Add("contents", NpgsqlDbType.Text);
-                    foreach (var evnt in _events)
-                    {
-                        evnt.StreamName = _stream;
-                        evnt.StreamVersion = ++_realVersion;
-                        paramStream.Value = evnt.StreamName;
-                        paramVersion.Value = evnt.StreamVersion;
-                        paramFormat.Value = evnt.Format;
-                        paramType.Value = evnt.Type;
-                        paramBody.Value = evnt.Body;
-                        var id = (long)cmd.ExecuteScalar();
-                        evnt.Token = TokenFromId(id);
-                    }
-                }
-            }
-
-            private void UpdateStreamVersion(NpgsqlConnection conn)
-            {
-                using (var cmd = conn.CreateCommand())
-                {
-                    cmd.CommandText = "UPDATE eventstore_streams SET version = :version WHERE streamname = :streamname";
-                    cmd.Parameters.AddWithValue("streamname", _stream);
-                    cmd.Parameters.AddWithValue("version", _realVersion);
-                    cmd.ExecuteNonQuery();
-                }
-            }
-
-            private void NotifyChanges(NpgsqlConnection conn)
-            {
-                using (var cmd = conn.CreateCommand())
-                {
-                    cmd.CommandText = "NOTIFY eventstore";
-                    cmd.ExecuteNonQuery();
-                }
-            }
-        }
-        private class ReadStreamWorker
-        {
-            private EventStorePostgres _parent;
-            private string _stream;
-            private int _minVersion;
-            private int _maxVersion;
-            private int _maxCount;
-            private bool _loadBody;
-            private Action<IEventStoreStream> _onComplete;
-            private Action<Exception> _onError;
-            private static EventStoreEvent[] EmptyList = new EventStoreEvent[0];
-
-            public ReadStreamWorker(EventStorePostgres parent, string stream, int minVersion, int maxCount, bool loadBody, Action<IEventStoreStream> onComplete, Action<Exception> onError)
-            {
-                this._parent = parent;
-                this._stream = stream;
-                this._minVersion = Math.Max(1, minVersion);
-                this._maxCount = Math.Max(0, maxCount);
-                this._maxVersion = GetMaxVersion(_minVersion, _maxCount);
-                this._loadBody = loadBody;
-                this._onComplete = onComplete;
-                this._onError = onError;
-            }
-
-            private static int GetMaxVersion(int minVersion, int maxCount)
-            {
-                var maxVersion = minVersion - 1 + maxCount;
-                return maxVersion >= minVersion ? maxVersion : int.MaxValue;
-            }
-
-            public void Execute()
-            {
-                _parent._db.Execute(DbExecute, _onError);
-            }
-            private void DbExecute(NpgsqlConnection conn)
-            {
-                var version = GetStreamVersion(conn);
-                if (version < _minVersion)
-                {
-                    var result = new EventStoreStream(EmptyList, version, version);
-                    _parent._executor.Enqueue(new EventStoreReadStreamComplete(_onComplete, result));
-
-                }
-                else if (_maxCount <= 0)
-                {
-                    var result = new EventStoreStream(EmptyList, version, _minVersion);
-                    _parent._executor.Enqueue(new EventStoreReadStreamComplete(_onComplete, result));
-                }
-                else
-                {
-                    var events = LoadEvents(conn, _minVersion, Math.Min(version, _maxVersion));
-                    var result = new EventStoreStream(events, version, _minVersion);
-                    _parent._executor.Enqueue(new EventStoreReadStreamComplete(_onComplete, result));
-                }
-            }
-
-            private int GetStreamVersion(NpgsqlConnection conn)
-            {
-                using (var cmd = conn.CreateCommand())
-                {
-                    cmd.CommandText = "SELECT version FROM eventstore_streams WHERE streamname = :streamname";
-                    cmd.Parameters.AddWithValue("streamname", _stream);
-                    using (var reader = cmd.ExecuteReader())
-                    {
-                        if (!reader.Read())
-                            return 0;
-                        else
-                            return reader.GetInt32(0);
-                    }
-                }
-            }
-
-            private List<EventStoreEvent> LoadEvents(NpgsqlConnection conn, int minVersion, int maxVersion)
-            {
-                var expectedCount = maxVersion - minVersion + 1;
-                using (var cmd = conn.CreateCommand())
-                {
-                    cmd.CommandText =
-                        "SELECT id, streamname, version, format, eventtype, contents FROM eventstore_events " +
-                        "WHERE streamname = :streamname AND version >= :minversion AND version <= :maxversion " +
-                        "ORDER BY version";
-                    cmd.Parameters.AddWithValue("streamname", _stream);
-                    cmd.Parameters.AddWithValue("minversion", minVersion);
-                    cmd.Parameters.AddWithValue("maxversion", maxVersion);
-                    using (var reader = cmd.ExecuteReader())
-                    {
-                        var list = new List<EventStoreEvent>(expectedCount);
-                        while (reader.Read())
-                        {
-                            var evnt = new EventStoreEvent();
-                            evnt.Token = TokenFromId(reader.GetInt64(0));
-                            evnt.StreamName = reader.GetString(1);
-                            evnt.StreamVersion = reader.GetInt32(2);
-                            evnt.Format = reader.IsDBNull(3) ? null : reader.GetString(3);
-                            evnt.Type = reader.IsDBNull(4) ? null : reader.GetString(4);
-                            evnt.Body = reader.IsDBNull(5) ? "" : reader.GetString(5);
-                            list.Add(evnt);
-                        }
-                        return list;
-                    }
-                }
-            }
-        }
-        private class LoadBodiesWorker
-        {
-            private EventStorePostgres _parent;
-            private IList<EventStoreEvent> _events;
-            private Action _onComplete;
-            private Action<Exception> _onError;
-            private Dictionary<long, EventStoreEvent> _ids;
-
-            public LoadBodiesWorker(EventStorePostgres parent, IList<EventStoreEvent> events, Action onComplete, Action<Exception> onError)
-            {
-                this._parent = parent;
-                this._events = events;
-                this._onComplete = onComplete;
-                this._onError = onError;
-            }
-
-            public void Execute()
-            {
-                for (int i = 0; i < _events.Count; i++)
-                {
-                    var evnt = _events[i];
-                    if (evnt.Body != null)
-                        continue;
-                    else
-                    {
-                        _ids = _ids ?? new Dictionary<long, EventStoreEvent>(_events.Count);
-                        var id = IdFromToken(evnt.Token);
-                        _ids[id] = evnt;
-                    }
-                }
-                if (_ids == null || _ids.Count == 0)
-                    _parent._executor.Enqueue(_onComplete);
-                else
-                    _parent._db.Execute(DbExecute, _onError);
-            }
-
-            private void DbExecute(NpgsqlConnection conn)
-            {
-                using (var cmd = conn.CreateCommand())
-                {
-                    cmd.CommandText = "SELECT id, contents FROM eventstore_events WHERE id = ANY (:id)";
-                    var paramId = cmd.Parameters.Add("id", NpgsqlDbType.Bigint | NpgsqlDbType.Array);
-                    paramId.Value = _ids;
-                    using (var reader = cmd.ExecuteReader())
-                    {
-                        while (reader.Read())
-                        {
-                            var id = reader.GetInt64(0);
-                            var body = reader.IsDBNull(1) ? "" : reader.GetString(1);
-                            EventStoreEvent evnt;
-                            if (_ids.TryGetValue(id, out evnt))
-                                evnt.Body = body;
-                        }
-                    }
-                    _parent._executor.Enqueue(_onComplete);
-                }
-            }
-        }
+#if false
         private class GetAllEventsWorker : IDisposable
         {
             public long StartingId;
@@ -693,141 +633,6 @@ namespace ServiceLib
                 }
             }
         }
-        private class LoadSnapshotWorker
-        {
-            private EventStorePostgres _parent;
-            private string _stream;
-            private Action<EventStoreSnapshot> _onComplete;
-            private Action<Exception> _onError;
-
-            public LoadSnapshotWorker(EventStorePostgres parent, string stream, Action<EventStoreSnapshot> onComplete, Action<Exception> onError)
-            {
-                _parent = parent;
-                _stream = stream;
-                _onComplete = onComplete;
-                _onError = onError;
-            }
-
-            public void Execute()
-            {
-                _parent._db.Execute(ExecuteDb, _onError);
-            }
-
-            private void ExecuteDb(NpgsqlConnection conn)
-            {
-                EventStoreSnapshot snapshot = null;
-                using (var cmd = conn.CreateCommand())
-                {
-                    cmd.CommandText = "SELECT format, snapshottype, contents FROM eventstore_snapshots WHERE streamname = :streamname";
-                    cmd.Parameters.AddWithValue("streamname", _stream);
-                    using (var reader = cmd.ExecuteReader())
-                    {
-                        if (reader.Read())
-                        {
-                            snapshot = new EventStoreSnapshot();
-                            snapshot.StreamName = _stream;
-                            snapshot.Format = reader.GetString(0);
-                            snapshot.Type = reader.GetString(1);
-                            snapshot.Body = reader.GetString(2);
-                        }
-                    }
-                }
-                _onComplete(snapshot);
-            }
-        }
-        private class SaveSnapshotWorker
-        {
-            private EventStorePostgres _parent;
-            private EventStoreSnapshot _snapshot;
-            private Action _onComplete;
-            private Action<Exception> _onError;
-
-            public SaveSnapshotWorker(EventStorePostgres eventStorePostgres, string stream, EventStoreSnapshot snapshot, Action onComplete, Action<Exception> onError)
-            {
-                _parent = eventStorePostgres;
-                _snapshot = snapshot;
-                _onComplete = onComplete;
-                _onError = onError;
-                _snapshot.StreamName = stream;
-            }
-
-            public void Execute()
-            {
-                _parent._db.Execute(ExecuteDb, _onError);
-            }
-
-            private void ExecuteDb(NpgsqlConnection conn)
-            {
-                using (var tran = conn.BeginTransaction())
-                {
-                    var snapshotExists = FindSnapshot(conn);
-                    if (snapshotExists)
-                    {
-                        UpdateSnapshot(conn);
-                    }
-                    else
-                    {
-                        tran.Save("insertsnapshot");
-                        try
-                        {
-                            TryInsertSnapshot(conn);
-                        }
-                        catch (NpgsqlException ex)
-                        {
-                            if (ex.Code == "23505")
-                            {
-                                tran.Rollback("insertsnapshot");
-                                UpdateSnapshot(conn);
-                            }
-                            else
-                            {
-                                throw;
-                            }
-                        }
-                    }
-                    tran.Commit();
-                }
-                _onComplete();
-            }
-
-            private bool FindSnapshot(NpgsqlConnection conn)
-            {
-                var snapshotExists = false;
-                using (var cmd = conn.CreateCommand())
-                {
-                    cmd.CommandText = "SELECT 1 FROM eventstore_snapshots WHERE streamname = :streamname FOR UPDATE";
-                    cmd.Parameters.Add("streamname", NpgsqlDbType.Varchar).Value = _snapshot.StreamName;
-                    using (var reader = cmd.ExecuteReader())
-                        snapshotExists = reader.Read();
-                }
-                return snapshotExists;
-            }
-
-            private void TryInsertSnapshot(NpgsqlConnection conn)
-            {
-                using (var cmd = conn.CreateCommand())
-                {
-                    cmd.CommandText = "INSERT INTO eventstore_snapshots (streamname, format, snapshottype, contents) VALUES (:streamname, :format, :snapshottype, :contents)";
-                    cmd.Parameters.Add("streamname", NpgsqlDbType.Varchar).Value = _snapshot.StreamName;
-                    cmd.Parameters.Add("format", NpgsqlDbType.Varchar).Value = _snapshot.Format;
-                    cmd.Parameters.Add("snapshottype", NpgsqlDbType.Varchar).Value = _snapshot.Type;
-                    cmd.Parameters.Add("contents", NpgsqlDbType.Varchar).Value = _snapshot.Body;
-                    cmd.ExecuteNonQuery();
-                }
-            }
-
-            private void UpdateSnapshot(NpgsqlConnection conn)
-            {
-                using (var cmd = conn.CreateCommand())
-                {
-                    cmd.CommandText = "UPDATE eventstore_snapshots SET format = :format, snapshottype = :snapshottype, contents = :contents WHERE streamname = :streamname";
-                    cmd.Parameters.Add("streamname", NpgsqlDbType.Varchar).Value = _snapshot.StreamName;
-                    cmd.Parameters.Add("format", NpgsqlDbType.Varchar).Value = _snapshot.Format;
-                    cmd.Parameters.Add("snapshottype", NpgsqlDbType.Varchar).Value = _snapshot.Type;
-                    cmd.Parameters.Add("contents", NpgsqlDbType.Varchar).Value = _snapshot.Body;
-                    cmd.ExecuteNonQuery();
-                }
-            }
-        }
+#endif
     }
 }

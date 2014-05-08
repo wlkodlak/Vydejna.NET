@@ -4,12 +4,13 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Globalization;
+using System.Threading;
 
 namespace ServiceLib
 {
     public interface INodeLockManager
     {
-        IDisposable Lock(string lockName, Action onLocked, Action<Exception> onError, bool nowait);
+        Task Lock(string lockName, CancellationToken cancel, bool nowait);
         bool IsLocked(string lockName);
         void Unlock(string lockName);
         void Dispose();

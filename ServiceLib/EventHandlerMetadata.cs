@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace ServiceLib
@@ -14,11 +15,11 @@ namespace ServiceLib
     public interface IMetadataInstance
     {
         string ProcessName { get; }
-        void GetToken(Action<EventStoreToken> onCompleted, Action<Exception> onError);
-        void SetToken(EventStoreToken token, Action onCompleted, Action<Exception> onError);
-        void GetVersion(Action<string> onCompleted, Action<Exception> onError);
-        void SetVersion(string version, Action onCompleted, Action<Exception> onError);
-        IDisposable Lock(Action onLockObtained, Action<Exception> onError);
+        Task<EventStoreToken> GetToken();
+        Task SetToken(EventStoreToken token);
+        Task<string> GetVersion();
+        Task SetVersion(string version);
+        Task Lock(CancellationToken cancel);
         void Unlock();
     }
 
@@ -65,43 +66,67 @@ namespace ServiceLib
             get { return _lockName; }
         }
 
-        public void GetToken(Action<EventStoreToken> onCompleted, Action<Exception> onError)
+        public Task<EventStoreToken> GetToken()
         {
-            _store.GetDocument(_tokenDoc, 
-                (v, c) => { _tokenVer = v; onCompleted(new EventStoreToken(c)); },
-                () => { _tokenVer = 0; onCompleted(EventStoreToken.Initial); }, 
-                onError);
+            return _store.GetDocument(_tokenDoc).ContinueWith(task =>
+            {
+                var doc = task.Result;
+                if (doc == null)
+                {
+                    _tokenVer = 0;
+                    return EventStoreToken.Initial;
+                }
+                else
+                {
+                    _tokenVer = doc.Version;
+                    return new EventStoreToken(doc.Contents);
+                }
+            });
         }
 
-        public void SetToken(EventStoreToken token, Action onCompleted, Action<Exception> onError)
+        public Task SetToken(EventStoreToken token)
         {
-            _store.SaveDocument(_tokenDoc, token.ToString(), DocumentStoreVersion.At(_tokenVer), null, onCompleted, 
-                () => onError(new MetadataInstanceConcurrencyException()), onError);
+            return _store.SaveDocument(_tokenDoc, token.ToString(), DocumentStoreVersion.At(_tokenVer), null).ContinueWith(task =>
+            {
+                if (!task.Result)
+                    throw new MetadataInstanceConcurrencyException();
+            });
         }
 
-        public void GetVersion(Action<string> onCompleted, Action<Exception> onError)
+        public Task<string> GetVersion()
         {
             if (string.IsNullOrEmpty(_versionDoc))
-                onCompleted(null);
-            else
-                _store.GetDocument(_versionDoc,
-                    (v, c) => { _versionVer = v; onCompleted(c); },
-                    () => { _versionVer = 0; onCompleted(null); }, 
-                    onError);
+                return Task.FromResult<string>(null);
+            return _store.GetDocument(_versionDoc).ContinueWith(task =>
+            {
+                var doc = task.Result;
+                if (doc == null)
+                {
+                    _versionVer = 0;
+                    return null;
+                }
+                else
+                {
+                    _versionVer = doc.Version;
+                    return doc.Contents;
+                }
+            });
         }
 
-        public void SetVersion(string version, Action onCompleted, Action<Exception> onError)
+        public Task SetVersion(string version)
         {
             if (string.IsNullOrEmpty(_versionDoc))
-                onCompleted();
-            else
-                _store.SaveDocument(_versionDoc, version, DocumentStoreVersion.At(_versionVer), null, onCompleted, 
-                    () => onError(new MetadataInstanceConcurrencyException()), onError);
+                return Task.FromResult<object>(null);
+            return _store.SaveDocument(_versionDoc, version, DocumentStoreVersion.At(_versionVer), null).ContinueWith(task =>
+            {
+                if (!task.Result)
+                    throw new MetadataInstanceConcurrencyException();
+            });
         }
 
-        public IDisposable Lock(Action onLockObtained, Action<Exception> onError)
+        public Task Lock(CancellationToken cancel)
         {
-            return _locking.Lock(_lockName, onLockObtained, onError, false);
+            return _locking.Lock(_lockName, cancel, false);
         }
 
         public void Unlock()

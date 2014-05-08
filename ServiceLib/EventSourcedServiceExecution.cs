@@ -11,19 +11,15 @@ namespace ServiceLib
     {
         private IEventSourcedRepository<T> _repository;
         private IAggregateId _aggregateId;
-        private Action _onComplete;
-        private Action<Exception> _onError;
         private Action<T> _existingAction;
         private Func<T> _newAction;
         private int _tryNumber = 0;
         private Func<ValidationErrorException> _validation;
 
-        public EventSourcedServiceExecution(IEventSourcedRepository<T> repository, IAggregateId aggregateId, Action onComplete, Action<Exception> onError)
+        public EventSourcedServiceExecution(IEventSourcedRepository<T> repository, IAggregateId aggregateId)
         {
             _repository = repository;
             _aggregateId = aggregateId;
-            _onComplete = onComplete;
-            _onError = onError;
             _tryNumber = 0;
         }
 
@@ -61,49 +57,41 @@ namespace ServiceLib
             return this;
         }
 
-        public void Execute()
+        public Task Execute()
+        {
+            return TaskUtils.FromEnumerable<object>(ExecuteInternal()).GetTask();
+        }
+
+        public IEnumerable<Task> ExecuteInternal()
         {
             if (_validation != null)
             {
                 var validationResult = _validation();
                 if (validationResult != null)
                 {
-                    _onError(validationResult);
-                    return;
+                    yield return TaskUtils.FromError<object>(validationResult);
+                    yield break;
                 }
-            }
-            if (_tryNumber <= 3)
-            {
-                _tryNumber++;
-                _repository.Load(_aggregateId, OnAggregateLoaded, OnAggregateMissing, _onError);
-            }
-            else
-                _onError(new TransientErrorException("CONCURRENCY", "Could not save aggregate", _tryNumber));
-        }
+                for (_tryNumber = 0; _tryNumber <= 3; _tryNumber++)
+                {
+                    var loadTask = _repository.Load(_aggregateId);
+                    yield return loadTask;
 
-        private void OnAggregateLoaded(T aggregate)
-        {
-            try
-            {
-                _existingAction(aggregate);
-                _repository.Save(aggregate, _onComplete, Execute, _onError);
-            }
-            catch (Exception ex)
-            {
-                _onError(ex);
-            }
-        }
+                    var aggregate = loadTask.Result;
+                    if (aggregate == null)
+                        _newAction();
+                    else
+                        _existingAction(aggregate);
+                    var saveTask = _repository.Save(aggregate);
+                    yield return saveTask;
 
-        private void OnAggregateMissing()
-        {
-            try
-            {
-                var aggregate = _newAction();
-                _repository.Save(aggregate, _onComplete, Execute, _onError);
-            }
-            catch (Exception ex)
-            {
-                _onError(ex);
+                    if (saveTask.Result)
+                    {
+                        yield return TaskUtils.CompletedTask();
+                        yield break;
+                    }
+                }
+                yield return TaskUtils.FromError<object>(new TransientErrorException("CONCURRENCY", "Could not save aggregate", _tryNumber));
             }
         }
     }
