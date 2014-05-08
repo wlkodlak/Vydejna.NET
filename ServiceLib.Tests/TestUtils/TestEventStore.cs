@@ -89,6 +89,14 @@ namespace ServiceLib.Tests.TestUtils
             waiters.ForEach(w => w.SendError(exception));
         }
 
+        public void SendTransientFailure()
+        {
+            var waiters = _waiters.ToList();
+            _waiters.Clear();
+            var exception = new TransientErrorException("DBOPEN", "Simulated transient failure");
+            waiters.ForEach(w => w.SendError(exception));
+        }
+
         private void NotifyWaiters(IList<EventStoreEvent> newEvents)
         {
             var waiters = _waiters.ToList();
