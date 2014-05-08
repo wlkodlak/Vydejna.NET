@@ -95,10 +95,6 @@
     <Compile Include="ProcessManager.cs" />
     <Compile Include="ProcessManagerSimple.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="PureProjectionDispatcher.cs" />
-    <Compile Include="PureProjectionProcess.cs" />
-    <Compile Include="PureProjectionReader.cs" />
-    <Compile Include="PureProjectionStateCache.cs" />
     <Compile Include="QueuedExecution.cs" />
     <Compile Include="RestClient.cs" />
     <Compile Include="RestServerParameters.cs" />

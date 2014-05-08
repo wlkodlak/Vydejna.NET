@@ -144,8 +144,27 @@ namespace ServiceLib.Tests.EventHandlers
         }
 
         [TestMethod]
+        public void NormalErrorInHandler()
+        {
+            _process.Start();
+            _metadata.SendLock();
+            _streaming.AddEvent("1", new TestEvent1());
+            _streaming.AddEvent("2", new TestEvent3());
+            _streaming.AddEvent("3", new TestEvent4());
+            _streaming.AddEvent("4", new TestEvent2());
+            _streaming.AddEvent("5", new TestEvent1());
+            _executor.Process();
+            Assert.AreEqual("1321", _handler.Output, "Output");
+            Assert.IsTrue(_streaming.IsReading, "Reading");
+            Assert.AreEqual(new EventStoreToken("5"), _streaming.CurrentToken, "CurrentToken");
+            Assert.AreEqual(new EventStoreToken("5"), _metadata.Token, "Metadata token");
+            Assert.AreEqual(1, _streaming.DeadLetters.Count, "Dead letters");
+        }
+
+        [TestMethod]
         public void FatalErrorInHandler()
         {
+            _handler.ErrorMode = "Fatal";
             _process.Start();
             _metadata.SendLock();
             _streaming.AddEvent("1", new TestEvent1());
@@ -189,7 +208,7 @@ namespace ServiceLib.Tests.EventHandlers
             private StringBuilder _sb = new StringBuilder();
 
             public string Output { get { return _sb.ToString(); } }
-            public string ErrorMode = "Fatal";
+            public string ErrorMode = "Error";
 
             public void Handle(CommandExecution<TestEvent1> message)
             {
@@ -213,9 +232,11 @@ namespace ServiceLib.Tests.EventHandlers
             {
                 switch (ErrorMode)
                 {
-                    case "Fatal":
+                    case "Error":
                         message.OnError(new FormatException("Error in handler"));
                         break;
+                    case "Fatal":
+                        throw new FormatException("Error in handler");
                     case "None":
                         _sb.Append("4");
                         message.OnCompleted();
