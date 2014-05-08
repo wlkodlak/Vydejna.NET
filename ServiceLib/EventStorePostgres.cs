@@ -437,6 +437,30 @@ namespace ServiceLib
 
         public Task<IEventStoreCollection> GetAllEvents(EventStoreToken token, int maxCount, bool loadBody)
         {
+            return _db.Query(GetAllEventsWorker, new GetAllEventsContext(token, maxCount, loadBody, true));
+        }
+
+        private class GetAllEventsContext
+        {
+            public readonly EventStoreToken Token;
+            public readonly int MaxCount;
+            public readonly bool LoadBody;
+            public readonly bool Nowait;
+
+            public GetAllEventsContext(EventStoreToken token, int maxCount, bool loadBody, bool nowait)
+            {
+                Token = token;
+                MaxCount = maxCount;
+                LoadBody = loadBody;
+                Nowait = nowait;
+            }
+
+        }
+
+        private IEventStoreCollection GetAllEventsWorker(NpgsqlConnection conn, object objContext)
+        {
+            var context = (GetAllEventsContext)objContext;
+
         }
 
         public Task<IEventStoreCollection> WaitForEvents(EventStoreToken token, int maxCount, bool loadBody, CancellationToken cancel)
