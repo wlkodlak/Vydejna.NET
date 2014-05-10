@@ -53,7 +53,7 @@ namespace ServiceLib
             _payload = data;
         }
 
-        public void Execute(Action<RestClientResult> onComplete, Action<Exception> onError)
+        public Task<RestClientResult> Execute()
         {
             var request = new HttpClientRequest();
             request.Url = _url.CompleteUrl(_parameters);
@@ -65,28 +65,18 @@ namespace ServiceLib
                     request.Headers.Add(new HttpClientHeader(header.Name, header.Value));
             }
             PreExecute(request);
-            _onComplete = onComplete;
-            _onError = onError;
-            _client.Execute(request, OnComplete, onError);
+            return _client.Execute(request).ContinueWith<RestClientResult>(ProcessHttpResponse);
         }
 
-        private void OnComplete(HttpClientResponse response)
+        private RestClientResult ProcessHttpResponse(Task<HttpClientResponse> response)
         {
-            try
-            {
-                var jsonResult = CreateResult(response);
-                _onComplete(jsonResult);
-            }
-            catch (Exception ex)
-            {
-                _onError(ex);
-            }
+            return CreateResult(response.Result);
         }
 
         public abstract RestClient SetPayload<T>(T data);
         protected abstract RestClientResult CreateResult(HttpClientResponse response);
         protected virtual void PreExecute(HttpClientRequest request) { }
-        
+
         private string DetectMethod()
         {
             if (!string.IsNullOrEmpty(_method))
@@ -167,9 +157,9 @@ namespace ServiceLib
         public override bool Equals(object obj)
         {
             var oth = obj as RequestParameter;
-            return oth != null 
-                && Type == oth.Type 
-                && string.Equals(Name, oth.Name, StringComparison.Ordinal) 
+            return oth != null
+                && Type == oth.Type
+                && string.Equals(Name, oth.Name, StringComparison.Ordinal)
                 && string.Equals(Value, oth.Value, StringComparison.Ordinal);
         }
     }

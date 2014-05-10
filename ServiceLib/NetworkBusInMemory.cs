@@ -12,47 +12,55 @@ namespace ServiceLib
     {
         private int _collectingIsSetup;
         private ConcurrentDictionary<MessageDestination, DestinationContents> _destinations;
-        private IQueueExecution _executor;
         private ITime _timeService;
         private int _collectInterval, _collectTimeout;
-        private IDisposable _emptyDisposable;
+        private CancellationTokenSource _cancel;
 
-        public NetworkBusInMemory(IQueueExecution executor, ITime timeService)
+        public NetworkBusInMemory(ITime timeService)
         {
-            _executor = executor;
             _timeService = timeService;
             _destinations = new ConcurrentDictionary<MessageDestination, DestinationContents>();
             _collectInterval = 60;
             _collectTimeout = 600;
-            _emptyDisposable = new EmptyDisposable();
+            _cancel = new CancellationTokenSource();
         }
 
         private void StartCollecting()
         {
-            if (Interlocked.CompareExchange(ref _collectingIsSetup, 1, 0) == 0)
-                _timeService.Delay(1000 * _collectInterval, DoCollect);
+            if (Interlocked.Exchange(ref _collectingIsSetup, 1) == 0)
+            {
+                _timeService.Delay(1000 * _collectInterval, _cancel.Token)
+                    .ContinueWith(DoCollect, _cancel.Token);
+            }
         }
 
-        private void DoCollect()
+        private void DoCollect(Task task)
         {
-            DateTime removedDateTime;
-            Message removedMessage;
-            var limit = _timeService.GetUtcTime().AddSeconds(-_collectTimeout);
-            foreach (var destination in _destinations.Values)
+            if (task.Exception != null)
             {
-                var old = destination.DeliveredOn.Where(p => p.Value <= limit).Select(p => p.Key).ToList();
-                foreach (var oldKey in old)
+                DateTime removedDateTime;
+                Message removedMessage;
+                var limit = _timeService.GetUtcTime().AddSeconds(-_collectTimeout);
+                foreach (var destination in _destinations.Values)
                 {
-                    destination.DeliveredOn.TryRemove(oldKey, out removedDateTime);
-                    if (destination.InProgress.TryRemove(oldKey, out removedMessage))
-                        destination.Incoming.Enqueue(removedMessage);
+                    var old = destination.DeliveredOn.Where(p => p.Value <= limit).Select(p => p.Key).ToList();
+                    foreach (var oldKey in old)
+                    {
+                        destination.DeliveredOn.TryRemove(oldKey, out removedDateTime);
+                        if (destination.InProgress.TryRemove(oldKey, out removedMessage))
+                            destination.Incoming.Enqueue(removedMessage);
+                    }
                 }
+                _timeService.Delay(1000 * _collectInterval, _cancel.Token)
+                    .ContinueWith(DoCollect, _cancel.Token);
             }
-            _timeService.Delay(1000 * _collectInterval, DoCollect);
         }
 
         public void Dispose()
         {
+            Interlocked.Exchange(ref _collectingIsSetup, 1);
+            _cancel.Cancel();
+            _cancel.Dispose();
         }
 
         private class DestinationContents
@@ -64,6 +72,7 @@ namespace ServiceLib
             public ConcurrentDictionary<string, DateTime> DeliveredOn;
             public ConcurrentDictionary<string, bool> Subscriptions;
             public ConcurrentBag<Waiter> Waiters;
+
             public DestinationContents(NetworkBusInMemory parent, MessageDestination destination)
             {
                 Parent = parent;
@@ -76,50 +85,80 @@ namespace ServiceLib
             }
         }
 
-        private class Waiter : IDisposable
+        private class Waiter
         {
-            public readonly DestinationContents Contents;
-            public readonly Action<Message> OnReceived;
-            public readonly Action NothingNew;
-            public readonly Action<Exception> OnError;
-            public bool Disposed, Used;
+            public DestinationContents Contents;
+            public CancellationToken Cancel;
+            public TaskCompletionSource<Message> Task;
+            public CancellationTokenRegistration CancelRegistration;
 
-            public Waiter(DestinationContents contents, Action<Message> onReceived, Action nothingNew, Action<Exception> onError)
+            public Waiter(DestinationContents contents, CancellationToken cancel)
             {
                 Contents = contents;
-                OnReceived = onReceived;
-                NothingNew = nothingNew;
-                OnError = onError;
-            }
-
-            public void Dispose()
-            {
-                lock (this)
-                {
-                    Disposed = true;
-                    if (!Used)
-                        Contents.Parent._executor.Enqueue(NothingNew);
-                }
-            }
-
-            public bool TryToUse()
-            {
-                lock (this)
-                {
-                    if (Used || Disposed)
-                        return false;
-                    Used = true;
-                    return true;
-                }
+                Cancel = cancel;
+                Task = new TaskCompletionSource<Message>();
             }
         }
 
-        private class EmptyDisposable : IDisposable
+        private void Notify(DestinationContents contents)
         {
-            public void Dispose() { }
+            var toBeCancelled = new List<TaskCompletionSource<Message>>();
+            var toBeReceived = new List<Tuple<TaskCompletionSource<Message>, Message>>();
+            var needsAnotherTry = true;
+            while (needsAnotherTry)
+            {
+                needsAnotherTry = false;
+                lock (contents)
+                {
+                    if (contents.Waiters.IsEmpty || contents.Incoming.IsEmpty)
+                        return;
+                    Waiter waiter;
+                    Message message = null;
+
+                    while (contents.Waiters.TryTake(out waiter))
+                    {
+                        if (waiter.Cancel.IsCancellationRequested)
+                        {
+                            toBeCancelled.Add(waiter.Task);
+                        }
+                        else if (!contents.Incoming.TryDequeue(out message))
+                        {
+                            contents.Waiters.Add(waiter);
+                            break;
+                        }
+                        else
+                        {
+                            toBeReceived.Add(Tuple.Create(waiter.Task, message));
+                        }
+                    }
+                }
+                foreach (var waiter in toBeCancelled)
+                {
+                    waiter.TrySetCanceled();
+                }
+                foreach (var pair in toBeReceived)
+                {
+                    if (!pair.Item1.TrySetResult(pair.Item2))
+                    {
+                        contents.Incoming.Enqueue(pair.Item2);
+                        needsAnotherTry = true;
+                    }
+                }
+                if (needsAnotherTry)
+                {
+                    toBeCancelled.Clear();
+                    toBeReceived.Clear();
+                }
+            }
         }
 
-        public void Send(MessageDestination destination, Message message, Action onComplete, Action<Exception> onError)
+        private void WaiterCancelled(object param)
+        {
+            var waiter = param as Waiter;
+            waiter.Task.TrySetCanceled();
+        }
+
+        public Task Send(MessageDestination destination, Message message)
         {
             message.Destination = destination;
             message.MessageId = Guid.NewGuid().ToString("N");
@@ -131,61 +170,29 @@ namespace ServiceLib
             else if (destination == MessageDestination.Subscribers)
             {
                 foreach (var target in _destinations.Values)
+                {
                     if (target.Subscriptions.GetOrAdd(message.Type, false))
-                        Enqueue(target, message);
+                    {
+                        target.Incoming.Enqueue(message);
+                        Notify(target);
+                    }
+                }
             }
             else
             {
                 DestinationContents contents;
                 if (!_destinations.TryGetValue(destination, out contents))
                     contents = _destinations.GetOrAdd(destination, new DestinationContents(this, destination));
-                Enqueue(contents, message);
+                contents.Incoming.Enqueue(message);
+                Notify(contents);
             }
-            _executor.Enqueue(onComplete);
+            return TaskUtils.CompletedTask();
         }
 
-        private void Enqueue(DestinationContents contents, Message message)
+        public Task<Message> Receive(MessageDestination destination, bool nowait, CancellationToken cancel)
         {
-            Waiter waiter;
-            bool wasEnqueued = false;
-            while (!wasEnqueued)
-            {
-                if (contents.Waiters.TryTake(out waiter))
-                {
-                    if (waiter.TryToUse())
-                    {
-                        wasEnqueued = true;
-                        contents.InProgress[message.MessageId] = message;
-                        contents.DeliveredOn[message.MessageId] = _timeService.GetUtcTime();
-                        _executor.Enqueue(new NetworkBusReceiveFinished(waiter.OnReceived, message));
-                    }
-                }
-                else
-                {
-                    lock (contents)
-                    {
-                        if (contents.Waiters.TryTake(out waiter))
-                        {
-                            if (waiter.TryToUse())
-                            {
-                                wasEnqueued = true;
-                                contents.InProgress[message.MessageId] = message;
-                                contents.DeliveredOn[message.MessageId] = _timeService.GetUtcTime();
-                                _executor.Enqueue(new NetworkBusReceiveFinished(waiter.OnReceived, message));
-                            }
-                        }
-                        else
-                        {
-                            wasEnqueued = true;
-                            contents.Incoming.Enqueue(message);
-                        }
-                    }
-                }
-            }
-        }
-
-        public IDisposable Receive(MessageDestination destination, bool nowait, Action<Message> onReceived, Action nothingNew, Action<Exception> onError)
-        {
+            if (cancel.IsCancellationRequested)
+                return TaskUtils.CancelledTask<Message>();
             StartCollecting();
             DestinationContents contents;
             Message message;
@@ -195,45 +202,35 @@ namespace ServiceLib
             {
                 contents.InProgress[message.MessageId] = message;
                 contents.DeliveredOn[message.MessageId] = _timeService.GetUtcTime();
-                _executor.Enqueue(new NetworkBusReceiveFinished(onReceived, message));
-                return _emptyDisposable;
+                return Task.FromResult(message);
             }
             else if (nowait)
             {
-                _executor.Enqueue(nothingNew);
-                return _emptyDisposable;
+                return Task.FromResult<Message>(null);
             }
             else
             {
-                lock (contents)
+                var waiter = new Waiter(contents, cancel);
+                if (cancel.CanBeCanceled)
                 {
-                    if (contents.Incoming.TryDequeue(out message))
-                    {
-                        contents.InProgress[message.MessageId] = message;
-                        contents.DeliveredOn[message.MessageId] = _timeService.GetUtcTime();
-                        _executor.Enqueue(new NetworkBusReceiveFinished(onReceived, message));
-                        return _emptyDisposable;
-                    }
-                    else
-                    {
-                        var waiter = new Waiter(contents, onReceived, nothingNew, onError);
-                        contents.Waiters.Add(waiter);
-                        return waiter;
-                    }
+                    waiter.CancelRegistration = cancel.Register(WaiterCancelled, waiter);
                 }
+                contents.Waiters.Add(new Waiter(contents, cancel));
+                Notify(contents);
+                return waiter.Task.Task;
             }
         }
 
-        public void Subscribe(string type, MessageDestination destination, bool unsubscribe, Action onComplete, Action<Exception> onError)
+        public Task Subscribe(string type, MessageDestination destination, bool unsubscribe)
         {
             DestinationContents contents;
             if (!_destinations.TryGetValue(destination, out contents))
                 contents = _destinations.GetOrAdd(destination, new DestinationContents(this, destination));
             contents.Subscriptions[type] = !unsubscribe;
-            _executor.Enqueue(onComplete);
+            return TaskUtils.CompletedTask();
         }
 
-        public void MarkProcessed(Message message, MessageDestination newDestination, Action onComplete, Action<Exception> onError)
+        public Task MarkProcessed(Message message, MessageDestination newDestination)
         {
             DestinationContents contents;
             if (!_destinations.TryGetValue(message.Destination, out contents))
@@ -246,17 +243,17 @@ namespace ServiceLib
                     contents = _destinations.GetOrAdd(newDestination, new DestinationContents(this, newDestination));
                 contents.Incoming.Enqueue(removed);
             }
-            _executor.Enqueue(onComplete);
+            return TaskUtils.CompletedTask();
         }
 
-        public void DeleteAll(MessageDestination destination, Action onComplete, Action<Exception> onError)
+        public Task DeleteAll(MessageDestination destination)
         {
             DestinationContents contents;
             if (!_destinations.TryGetValue(destination, out contents))
                 contents = _destinations.GetOrAdd(destination, new DestinationContents(this, destination));
             contents.InProgress = new ConcurrentDictionary<string, Message>();
             contents.Incoming = new ConcurrentQueue<Message>();
-            _executor.Enqueue(onComplete);
+            return TaskUtils.CompletedTask();
         }
 
         public List<Message> GetContents(MessageDestination destination)

@@ -59,7 +59,7 @@ namespace ServiceLib
 
         public Task Execute()
         {
-            return TaskUtils.FromEnumerable<object>(ExecuteInternal()).GetTask();
+            return TaskUtils.FromEnumerable(ExecuteInternal()).GetTask();
         }
 
         public IEnumerable<Task> ExecuteInternal()

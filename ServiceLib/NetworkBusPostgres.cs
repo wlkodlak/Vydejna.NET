@@ -5,81 +5,44 @@ using System.Collections.Concurrent;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Threading;
 
 namespace ServiceLib
 {
     public class NetworkBusPostgres : INetworkBus
     {
         private string _nodeId;
-        private IQueueExecution _executor;
         private DatabasePostgres _database;
         private ITime _timeService;
-        private ConcurrentDictionary<MessageDestination, DestinationCache> _receiving;
         public int _deliveryTimeout;
         private string _tableMessages = "bus_messages";
         private string _tableSubscriptions = "bus_subscriptions";
         private string _notificationName = "bus";
+        private int _canStartListening;
+        private CancellationTokenSource _cancelListening;
+        private List<ReceiveWaiter> _waiters;
 
-        public NetworkBusPostgres(string nodeId, IQueueExecution executor, DatabasePostgres database, ITime timeService)
+        public NetworkBusPostgres(string nodeId, DatabasePostgres database, ITime timeService)
         {
             _nodeId = nodeId;
-            _executor = executor;
             _database = database;
             _timeService = timeService;
-            _receiving = new ConcurrentDictionary<MessageDestination, DestinationCache>();
             _deliveryTimeout = 600;
+            _canStartListening = 1;
+            _cancelListening = new CancellationTokenSource();
+            _waiters = new List<ReceiveWaiter>();
+        }
+
+        public void Dispose()
+        {
+            _canStartListening = 0;
+            _cancelListening.Cancel();
+            _cancelListening.Dispose();
         }
 
         public void Initialize()
         {
             _database.ExecuteSync(InitializeDatabase);
-        }
-
-        public void Send(MessageDestination destination, Message message, Action onComplete, Action<Exception> onError)
-        {
-            if (destination == MessageDestination.Processed)
-                _executor.Enqueue(onComplete);
-            else
-            {
-                message.Destination = destination;
-                message.CreatedOn = DateTime.UtcNow;
-                message.MessageId = Guid.NewGuid().ToString("N");
-                message.Source = _nodeId;
-                var worker = new SendWorker(this, destination, message, onComplete, onError);
-                _database.Execute(worker.DoWork, onError);
-            }
-        }
-
-        public IDisposable Receive(MessageDestination destination, bool nowait, Action<Message> onReceived, Action nothingNew, Action<Exception> onError)
-        {
-            DestinationCache cache;
-            if (!_receiving.TryGetValue(destination, out cache))
-                cache = _receiving.GetOrAdd(destination, new DestinationCache(this, destination));
-            var worker = new ReceiveWorker(cache, nowait, onReceived, nothingNew, onError);
-            cache.Receive(worker);
-            return worker;
-        }
-
-        public void Subscribe(string type, MessageDestination destination, bool unsubscribe, Action onComplete, Action<Exception> onError)
-        {
-            var worker = new SubscribeWorker(this, type, destination, unsubscribe, onComplete, onError);
-            _database.Execute(worker.DoWork, onError);
-        }
-
-        public void MarkProcessed(Message message, MessageDestination newDestination, Action onComplete, Action<Exception> onError)
-        {
-            var worker = new MarkProcessedWorker(this, message, newDestination, onComplete, onError);
-            _database.Execute(worker.DoWork, onError);
-        }
-
-        public void DeleteAll(MessageDestination destination, Action onComplete, Action<Exception> onError)
-        {
-            var worker = new DeleteAllWorker(this, destination, onComplete, onError);
-            _database.Execute(worker.DoWork, onError);
-        }
-
-        public void Dispose()
-        {
         }
 
         private void InitializeDatabase(NpgsqlConnection conn)
@@ -151,444 +114,366 @@ namespace ServiceLib
             }
         }
 
-        private class SendWorker
+        public Task Send(MessageDestination destination, Message message)
         {
-            private NetworkBusPostgres _parent;
-            private IQueueExecution _executor;
-            private MessageDestination _destination;
-            private Message _message;
-            private Action _onComplete;
-            private Action<Exception> _onError;
-
-            public SendWorker(NetworkBusPostgres parent, MessageDestination destination, Message message, Action onComplete, Action<Exception> onError)
+            if (destination == MessageDestination.Processed)
+                return TaskUtils.CompletedTask();
+            else
             {
-                _parent = parent;
-                _executor = parent._executor;
-                _destination = destination;
-                _message = message;
-                _onComplete = onComplete;
-                _onError = onError;
+                message.Destination = destination;
+                message.CreatedOn = DateTime.UtcNow;
+                message.MessageId = Guid.NewGuid().ToString("N");
+                message.Source = _nodeId;
+                return _database.Execute(SendWorker, new SendParameters(destination, message));
             }
+        }
 
-            public void DoWork(NpgsqlConnection conn)
+        private class SendParameters
+        {
+            public readonly MessageDestination Destination;
+            public readonly Message Message;
+
+            public SendParameters(MessageDestination destination, Message message)
             {
-                if (_destination == MessageDestination.Subscribers)
-                {
-                    var destinations = FindDestinations(conn, _message.Type);
-                    if (destinations.Count == 0)
-                        return;
-                    foreach (var destination in destinations)
-                        InsertMessage(conn, Guid.NewGuid().ToString("N"), destination);
-                    Notify(conn);
-                    _executor.Enqueue(_onComplete);
-                }
-                else
-                {
-                    InsertMessage(conn, _message.MessageId, _destination);
-                    Notify(conn);
-                    _executor.Enqueue(_onComplete);
-                }
+                Destination = destination;
+                Message = message;
             }
+        }
 
-            private List<MessageDestination> FindDestinations(NpgsqlConnection conn, string type)
+        private void SendWorker(NpgsqlConnection conn, object objContext)
+        {
+            var context = (SendParameters)objContext;
+            if (context.Destination == MessageDestination.Subscribers)
             {
-                var list = new List<MessageDestination>();
-                using (var cmd = conn.CreateCommand())
-                {
-                    cmd.CommandText = "SELECT destination, node FROM " + _parent._tableSubscriptions + " WHERE type = :type";
-                    cmd.Parameters.AddWithValue("type", type);
-                    using (var reader = cmd.ExecuteReader())
-                    {
-                        while (reader.Read())
-                            list.Add(MessageDestination.For(reader.GetString(0), reader.GetString(1)));
-                    }
-                }
-                return list;
+                var destinations = FindDestinations(conn, context.Message.Type);
+                if (destinations.Count == 0)
+                    return;
+                foreach (var destination in destinations)
+                    InsertMessage(conn, Guid.NewGuid().ToString("N"), destination, context.Message);
+                SendNotification(conn);
             }
-
-            private void InsertMessage(NpgsqlConnection conn, string messageId, MessageDestination destination)
+            else
             {
-                using (var cmd = conn.CreateCommand())
+                InsertMessage(conn, context.Message.MessageId, context.Destination, context.Message);
+                SendNotification(conn);
+            }
+        }
+
+        private List<MessageDestination> FindDestinations(NpgsqlConnection conn, string type)
+        {
+            var list = new List<MessageDestination>();
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "SELECT destination, node FROM " + _tableSubscriptions + " WHERE type = :type";
+                cmd.Parameters.AddWithValue("type", type);
+                using (var reader = cmd.ExecuteReader())
                 {
-                    cmd.CommandText =
-                        "INSERT INTO " + _parent._tableMessages + " (messageid, corellationid, createdon, source, node, destination, type, format, body) " +
-                        "VALUES (:messageid, :corellationid, 'now'::timestamp, :source, :node, :destination, :type, :format, :body)";
-                    cmd.Parameters.AddWithValue("messageid", messageId);
-                    cmd.Parameters.AddWithValue("corellationid", _message.CorellationId);
-                    cmd.Parameters.AddWithValue("source", _message.Source);
-                    cmd.Parameters.AddWithValue("node", destination.NodeId);
-                    cmd.Parameters.AddWithValue("destination", destination.ProcessName);
-                    cmd.Parameters.AddWithValue("type", _message.Type);
-                    cmd.Parameters.AddWithValue("format", _message.Format);
-                    cmd.Parameters.AddWithValue("body", _message.Body);
-                    cmd.ExecuteNonQuery();
+                    while (reader.Read())
+                        list.Add(MessageDestination.For(reader.GetString(0), reader.GetString(1)));
                 }
             }
+            return list;
+        }
 
-            private void Notify(NpgsqlConnection conn)
+        private void InsertMessage(NpgsqlConnection conn, string messageId, MessageDestination destination, Message message)
+        {
+            using (var cmd = conn.CreateCommand())
             {
-                using (var cmd = conn.CreateCommand())
+                cmd.CommandText =
+                    "INSERT INTO " + _tableMessages + " (messageid, corellationid, createdon, source, node, destination, type, format, body) " +
+                    "VALUES (:messageid, :corellationid, 'now'::timestamp, :source, :node, :destination, :type, :format, :body)";
+                cmd.Parameters.AddWithValue("messageid", messageId);
+                cmd.Parameters.AddWithValue("corellationid", message.CorellationId);
+                cmd.Parameters.AddWithValue("source", message.Source);
+                cmd.Parameters.AddWithValue("node", destination.NodeId);
+                cmd.Parameters.AddWithValue("destination", destination.ProcessName);
+                cmd.Parameters.AddWithValue("type", message.Type);
+                cmd.Parameters.AddWithValue("format", message.Format);
+                cmd.Parameters.AddWithValue("body", message.Body);
+                cmd.ExecuteNonQuery();
+            }
+        }
+
+        private void SendNotification(NpgsqlConnection conn)
+        {
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "NOTIFY " + _notificationName;
+                cmd.ExecuteNonQuery();
+            }
+        }
+
+        public Task<Message> Receive(MessageDestination destination, bool nowait, CancellationToken cancel)
+        {
+            if (cancel.IsCancellationRequested)
+                return TaskUtils.CancelledTask<Message>();
+            if (Interlocked.Exchange(ref _canStartListening, 0) == 1)
+            {
+                _timeService.Delay(5000, _cancelListening.Token).ContinueWith(Receive_Timer);
+                _database.Listen(_notificationName, Receive_Notification, _cancelListening.Token);
+            }
+            return TaskUtils.FromEnumerable<Message>(ReceiveInternal(new ReceiveWaiter(destination, nowait, cancel))).GetTask();
+        }
+
+        private class ReceiveWaiter
+        {
+            public MessageDestination Destination;
+            public bool Nowait;
+            public CancellationToken Cancel;
+            public TaskCompletionSource<Message> Task;
+            public AutoResetEventAsync Event;
+            public CancellationTokenRegistration CancelRegistration;
+
+            public ReceiveWaiter(MessageDestination destination, bool nowait, CancellationToken cancel)
+            {
+                Destination = destination;
+                Nowait = nowait;
+                Cancel = cancel;
+                if (!Nowait)
                 {
-                    cmd.CommandText = "NOTIFY " + _parent._notificationName;
-                    cmd.ExecuteNonQuery();
+                    Task = new TaskCompletionSource<Message>();
+                    Event = new AutoResetEventAsync();
                 }
             }
         }
 
-        private class DestinationCache
+        private void Receive_Timer(Task task)
         {
-            private Queue<Message> _cachedMessages;
-            private bool _isLoading;
-            private List<ReceiveWorker> _waiters;
-            public NetworkBusPostgres Parent;
-            private MessageDestination _destination;
-            private bool _isListening;
-            private bool _isNotified;
-
-            public DestinationCache(NetworkBusPostgres parent, MessageDestination destination)
+            if (task.Exception == null)
             {
-                _cachedMessages = new Queue<Message>();
-                _waiters = new List<ReceiveWorker>();
-                Parent = parent;
-                _destination = destination;
+                List<ReceiveWaiter> waiters;
+                lock (_waiters)
+                    waiters = _waiters.ToList();
+                foreach (var waiter in waiters)
+                    waiter.Event.Set();
+                _timeService.Delay(5000, _cancelListening.Token).ContinueWith(Receive_Timer);
+            }
+        }
+
+        private void Receive_Notification(string payload)
+        {
+            List<ReceiveWaiter> waiters;
+            lock (_waiters)
+                waiters = _waiters.ToList();
+            foreach (var waiter in waiters)
+                waiter.Event.Set();
+        }
+
+        private void Receive_Cancelled(object param)
+        {
+            var waiter = (ReceiveWaiter)param;
+            waiter.Event.Set();
+        }
+
+        private IEnumerable<Task> ReceiveInternal(ReceiveWaiter waiter)
+        {
+            var taskGetMessage = _database.Query(Receive_GetMessage, waiter.Destination);
+            yield return taskGetMessage;
+            if (taskGetMessage.Exception != null || taskGetMessage.IsCanceled || taskGetMessage.Result != null || waiter.Nowait)
+                yield break;
+            if (waiter.Cancel.CanBeCanceled)
+            {
+                waiter.CancelRegistration = waiter.Cancel.Register(Receive_Cancelled, waiter);
             }
 
-            public void Receive(ReceiveWorker worker)
+            lock (_waiters)
+                _waiters.Add(waiter);
+            while (true)
             {
-                bool startListening = false;
-                lock (this)
+                var taskWait = waiter.Event.Wait();
+                yield return taskWait;
+
+                if (waiter.Cancel.IsCancellationRequested)
                 {
-                    if (_cachedMessages.Count > 0)
-                    {
-                        var message = _cachedMessages.Dequeue();
-                        Parent._executor.Enqueue(new NetworkBusReceiveFinished(worker.OnReceived, message));
-                        return;
-                    }
-                    if (!_isListening)
-                    {
-                        _isListening = true;
-                        startListening = true;
-                    }
-                    _waiters.Add(worker);
-                    if (_isLoading)
-                        return;
-                    _isLoading = true;
+                    lock (_waiters)
+                        _waiters.Remove(waiter);
+                    yield return TaskUtils.CancelledTask<Message>();
+                    yield break;
                 }
-                if (startListening)
-                    Parent._database.Listen(Parent._notificationName, OnNotify);
-                Parent._database.Execute(TryRetrieve, ErrorRetrieve);
-            }
 
-            private void OnNotify(string payload)
-            {
-                lock (this)
-                {
-                    _isNotified = true;
-                    if (_isLoading)
-                        return;
-                    _isLoading = true;
-                    _isNotified = false;
-                }
-                Parent._database.Execute(TryRetrieve, ErrorRetrieve);
-            }
+                taskGetMessage = _database.Query(Receive_GetMessage, waiter.Destination);
+                yield return taskGetMessage;
 
-            private void TryRetrieve(NpgsqlConnection conn)
-            {
-                List<Message> newMessages;
-                bool needsNewLoad = true;
-                while (needsNewLoad)
+                if (taskGetMessage.Exception != null || taskGetMessage.IsCanceled || taskGetMessage.Result != null)
                 {
-                    needsNewLoad = false;
-                    using (var tran = conn.BeginTransaction())
-                    {
-                        newMessages = LoadMessages(conn);
-                        MarkMessagesAsProcessing(conn, newMessages);
-                        tran.Commit();
-                    }
-                    lock (this)
-                    {
-                        foreach (var message in newMessages)
-                            _cachedMessages.Enqueue(message);
-                        for (int i = 0; i < _waiters.Count; i++)
-                        {
-                            var waiter = _waiters[i];
-                            if (_cachedMessages.Count > 0)
-                            {
-                                var message = _cachedMessages.Dequeue();
-                                _waiters[i] = null;
-                                if (waiter.TryToUse())
-                                    Parent._executor.Enqueue(new NetworkBusReceiveFinished(waiter.OnReceived, message));
-                            }
-                            else if (waiter.Nowait)
-                            {
-                                _waiters[i] = null;
-                                Parent._executor.Enqueue(waiter.NothingNew);
-                            }
-                        }
-                        RemoveEmptyWaiters();
-                        if (_isNotified)
-                        {
-                            needsNewLoad = true;
-                            _isNotified = false;
-                        }
-                        else
-                            _isLoading = false;
-                    }
+                    waiter.CancelRegistration.Dispose();
+                    lock (_waiters)
+                        _waiters.Remove(waiter);
+                    yield break;
                 }
             }
+        }
 
-            private void RemoveEmptyWaiters()
+        private Message Receive_GetMessage(NpgsqlConnection conn, object objContext)
+        {
+            var destination = (MessageDestination)objContext;
+            using (var tran = conn.BeginTransaction())
             {
-                _waiters.RemoveAll(w => w == null);
-            }
-
-            private List<Message> LoadMessages(NpgsqlConnection conn)
-            {
+                Message message;
                 using (var cmd = conn.CreateCommand())
                 {
-                    var processingLimit = Parent._timeService.GetUtcTime().AddSeconds(-Parent._deliveryTimeout);
                     cmd.CommandText =
-                        "SELECT messageid, corellationid, createdon, source, type, format, body, original " +
-                        "FROM " + Parent._tableMessages + " WHERE node = :node AND destination = :destination " +
-                        "AND (processing IS NULL OR processing <= :processing) ORDER BY id LIMIT 20 FOR UPDATE";
-                    cmd.Parameters.AddWithValue("node", _destination.NodeId);
-                    cmd.Parameters.AddWithValue("destination", _destination.ProcessName);
-                    cmd.Parameters.AddWithValue("processing", processingLimit);
+                        "SELECT messageid, corellationid, createdon, source, type, format, body FROM " + _tableMessages +
+                        " WHERE node = :node AND destination = :destination AND (processing IS NULL OR processing <= :since) " +
+                        "ORDER BY id LIMIT 1 FOR UPDATE";
+                    cmd.Parameters.AddWithValue("node", destination.NodeId);
+                    cmd.Parameters.AddWithValue("destination", destination.ProcessName);
+                    cmd.Parameters.AddWithValue("since", DateTime.UtcNow.AddSeconds(-_deliveryTimeout));
                     using (var reader = cmd.ExecuteReader())
                     {
-                        var list = new List<Message>();
-                        while (reader.Read())
+                        if (!reader.Read())
+                            return null;
+                        else
                         {
-                            var message = new Message();
+                            message = new Message();
+                            message.Destination = destination;
                             message.MessageId = reader.GetString(0);
-                            message.CorellationId = reader.IsDBNull(1) ? null : reader.GetString(1);
+                            message.CorellationId = reader.GetString(1);
                             message.CreatedOn = reader.GetDateTime(2);
-                            message.Source = reader.IsDBNull(3) ? null : reader.GetString(3);
-                            message.Destination = _destination;
+                            message.Source = reader.GetString(3);
                             message.Type = reader.GetString(4);
                             message.Format = reader.GetString(5);
                             message.Body = reader.GetString(6);
-                            list.Add(message);
                         }
-                        return list;
                     }
                 }
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText = "UPDATE " + _tableMessages + " SET processing = :now WHERE messageid = :messageid";
+                    cmd.Parameters.AddWithValue("now", DateTime.UtcNow);
+                    cmd.Parameters.AddWithValue("messageid", message.MessageId);
+                    cmd.ExecuteReader();
+                }
+                tran.Commit();
+                return message;
             }
+        }
 
-            private void MarkMessagesAsProcessing(NpgsqlConnection conn, List<Message> newMessages)
+        public Task Subscribe(string type, MessageDestination destination, bool unsubscribe)
+        {
+            return _database.Execute(SubscribeWorker, new SubscribeParameters(type, destination, unsubscribe));
+        }
+
+        private class SubscribeParameters
+        {
+            public readonly string Type;
+            public readonly MessageDestination Destination;
+            public readonly bool Unsubscribe;
+
+            public SubscribeParameters(string type, MessageDestination destination, bool unsubscribe)
+            {
+                Type = type;
+                Destination = destination;
+                Unsubscribe = unsubscribe;
+            }
+        }
+
+        public void SubscribeWorker(NpgsqlConnection conn, object objContext)
+        {
+            var context = (SubscribeParameters)objContext;
+            if (context.Unsubscribe)
             {
                 using (var cmd = conn.CreateCommand())
                 {
-                    cmd.CommandText = "UPDATE " + Parent._tableMessages + " SET processing = :processing WHERE messageid = :messageid";
-                    cmd.Parameters.AddWithValue("processing", Parent._timeService.GetUtcTime());
-                    var paramMessageId = cmd.Parameters.Add("messageid", NpgsqlTypes.NpgsqlDbType.Varchar);
-                    foreach (var message in newMessages)
-                    {
-                        paramMessageId.Value = message.MessageId;
-                        cmd.ExecuteNonQuery();
-                    }
-                }
-            }
-
-            private void ErrorRetrieve(Exception exception)
-            {
-                lock (this)
-                {
-                    _isLoading = false;
-                    foreach (var waiter in _waiters)
-                        Parent._executor.Enqueue(waiter.OnError, exception);
-                    _waiters.Clear();
-                }
-            }
-        }
-
-        private class ReceiveWorker : IDisposable
-        {
-            public readonly DestinationCache Parent;
-            public readonly bool Nowait;
-            public readonly Action<Message> OnReceived;
-            public readonly Action NothingNew;
-            public readonly Action<Exception> OnError;
-            public bool Used, Disposed;
-
-            public ReceiveWorker(DestinationCache parent, bool nowait, Action<Message> onReceived, Action nothingNew, Action<Exception> onError)
-            {
-                Parent = parent;
-                Nowait = nowait;
-                OnReceived = onReceived;
-                NothingNew = nothingNew;
-                OnError = onError;
-            }
-
-            public void Dispose()
-            {
-                lock (Parent)
-                {
-                    Disposed = true;
-                    if (!Used)
-                        Parent.Parent._executor.Enqueue(NothingNew);
-                }
-            }
-
-            public bool TryToUse()
-            {
-                if (Disposed || Used)
-                    return false;
-                else
-                {
-                    Used = true;
-                    return true;
-                }
-            }
-        }
-
-        private class SubscribeWorker
-        {
-            private IQueueExecution _executor;
-            private string _tableSubscriptions;
-            private string _type;
-            private MessageDestination _destination;
-            private bool _unsubscribe;
-            private Action _onComplete;
-            private Action<Exception> _onError;
-
-            public SubscribeWorker(NetworkBusPostgres parent, string type, MessageDestination destination, bool unsubscribe, Action onComplete, Action<Exception> onError)
-            {
-                _executor = parent._executor;
-                _tableSubscriptions = parent._tableSubscriptions;
-                _type = type;
-                _destination = destination;
-                _unsubscribe = unsubscribe;
-                _onComplete = onComplete;
-                _onError = onError;
-            }
-
-            public void DoWork(NpgsqlConnection conn)
-            {
-                if (_unsubscribe)
-                {
-                    using (var cmd = conn.CreateCommand())
-                    {
-                        cmd.CommandText = "DELETE FROM " + _tableSubscriptions + " WHERE type = :type AND node = :node AND destination = :destination";
-                        cmd.Parameters.AddWithValue("type", _type);
-                        cmd.Parameters.AddWithValue("node", _destination.NodeId);
-                        cmd.Parameters.AddWithValue("destination", _destination.ProcessName);
-                        cmd.ExecuteNonQuery();
-                    }
-                    _executor.Enqueue(_onComplete);
-                }
-                else
-                {
-                    try
-                    {
-                        using (var cmd = conn.CreateCommand())
-                        {
-                            cmd.CommandText = "INSERT INTO " + _tableSubscriptions + " (type, node, destination) VALUES (:type, :node, :destination)";
-                            cmd.Parameters.AddWithValue("type", _type);
-                            cmd.Parameters.AddWithValue("node", _destination.NodeId);
-                            cmd.Parameters.AddWithValue("destination", _destination.ProcessName);
-                            cmd.ExecuteNonQuery();
-                        }
-                        _executor.Enqueue(_onComplete);
-                    }
-                    catch (NpgsqlException dbex)
-                    {
-                        if (dbex.Code == "23505")
-                            _executor.Enqueue(_onComplete);
-                        else
-                            throw;
-                    }
-                }
-            }
-        }
-
-        private class MarkProcessedWorker
-        {
-            private IQueueExecution _executor;
-            private string _tableMessages;
-            private Message _message;
-            private MessageDestination _newDestination;
-            private Action _onComplete;
-            private Action<Exception> _onError;
-
-            public MarkProcessedWorker(NetworkBusPostgres parent, Message message, MessageDestination newDestination, Action onComplete, Action<Exception> onError)
-            {
-                _executor = parent._executor;
-                _tableMessages = parent._tableMessages;
-                _message = message;
-                _newDestination = newDestination;
-                _onComplete = onComplete;
-                _onError = onError;
-            }
-
-            public void DoWork(NpgsqlConnection conn)
-            {
-                if (_newDestination == MessageDestination.Processed)
-                {
-                    using (var cmd = conn.CreateCommand())
-                    {
-                        cmd.CommandText = "DELETE FROM " + _tableMessages + " WHERE messageid = :messageid";
-                        cmd.Parameters.AddWithValue("messageid", _message.MessageId);
-                        cmd.ExecuteNonQuery();
-                    }
-                }
-                else if (_newDestination == MessageDestination.DeadLetters)
-                {
-                    using (var cmd = conn.CreateCommand())
-                    {
-                        cmd.CommandText =
-                            "UPDATE " + _tableMessages + " SET original = destination, node = '__SPECIAL__', " +
-                            "destination = 'deadletters', processing = NULL WHERE messageid = :messageid";
-                        cmd.Parameters.AddWithValue("messageid", _message.MessageId);
-                        cmd.Parameters.AddWithValue("node", _newDestination.NodeId);
-                        cmd.Parameters.AddWithValue("destination", _newDestination.ProcessName);
-                        cmd.ExecuteNonQuery();
-                    }
-                }
-                else
-                {
-                    using (var cmd = conn.CreateCommand())
-                    {
-                        cmd.CommandText = "UPDATE " + _tableMessages + " SET node = :node, destination = :destination, processing = NULL WHERE messageid = :messageid";
-                        cmd.Parameters.AddWithValue("messageid", _message.MessageId);
-                        cmd.Parameters.AddWithValue("node", _newDestination.NodeId);
-                        cmd.Parameters.AddWithValue("destination", _newDestination.ProcessName);
-                        cmd.ExecuteNonQuery();
-                    }
-                }
-                _executor.Enqueue(_onComplete);
-            }
-        }
-
-        private class DeleteAllWorker
-        {
-            private string _tableMessages;
-            private IQueueExecution _executor;
-            private MessageDestination _destination;
-            private Action _onComplete;
-            private Action<Exception> _onError;
-
-            public DeleteAllWorker(NetworkBusPostgres parent, MessageDestination destination, Action onComplete, Action<Exception> onError)
-            {
-                _executor = parent._executor;
-                _tableMessages = parent._tableMessages;
-                _destination = destination;
-                _onComplete = onComplete;
-                _onError = onError;
-            }
-
-            public void DoWork(NpgsqlConnection conn)
-            {
-                using (var cmd = conn.CreateCommand())
-                {
-                    cmd.CommandText = "DELETE FROM " + _tableMessages + " WHERE node = :node AND destination = :destination";
-                    cmd.Parameters.AddWithValue("node", _destination.NodeId);
-                    cmd.Parameters.AddWithValue("destination", _destination.ProcessName);
+                    cmd.CommandText = "DELETE FROM " + _tableSubscriptions + " WHERE type = :type AND node = :node AND destination = :destination";
+                    cmd.Parameters.AddWithValue("type", context.Type);
+                    cmd.Parameters.AddWithValue("node", context.Destination.NodeId);
+                    cmd.Parameters.AddWithValue("destination", context.Destination.ProcessName);
                     cmd.ExecuteNonQuery();
                 }
-                _executor.Enqueue(_onComplete);
+            }
+            else
+            {
+                try
+                {
+                    using (var cmd = conn.CreateCommand())
+                    {
+                        cmd.CommandText = "INSERT INTO " + _tableSubscriptions + " (type, node, destination) VALUES (:type, :node, :destination)";
+                        cmd.Parameters.AddWithValue("type", context.Type);
+                        cmd.Parameters.AddWithValue("node", context.Destination.NodeId);
+                        cmd.Parameters.AddWithValue("destination", context.Destination.ProcessName);
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+                catch (NpgsqlException dbex)
+                {
+                    if (dbex.Code != "23505")
+                        throw;
+                }
             }
         }
 
+
+        public Task MarkProcessed(Message message, MessageDestination newDestination)
+        {
+            return _database.Execute(MarkProcessedWorker, new MarkProcessedParameters(message, newDestination));
+        }
+
+        private class MarkProcessedParameters
+        {
+            public readonly Message Message;
+            public readonly MessageDestination NewDestination;
+
+            public MarkProcessedParameters(Message message, MessageDestination newDestination)
+            {
+                Message = message;
+                NewDestination = newDestination;
+            }
+        }
+
+        private void MarkProcessedWorker(NpgsqlConnection conn, object objContext)
+        {
+            var context = (MarkProcessedParameters)objContext;
+            if (context.NewDestination == MessageDestination.Processed)
+            {
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText = "DELETE FROM " + _tableMessages + " WHERE messageid = :messageid";
+                    cmd.Parameters.AddWithValue("messageid", context.Message.MessageId);
+                    cmd.ExecuteNonQuery();
+                }
+            }
+            else if (context.NewDestination == MessageDestination.DeadLetters)
+            {
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText =
+                        "UPDATE " + _tableMessages + " SET original = destination, node = '__SPECIAL__', " +
+                        "destination = 'deadletters', processing = NULL WHERE messageid = :messageid";
+                    cmd.Parameters.AddWithValue("messageid", context.Message.MessageId);
+                    cmd.Parameters.AddWithValue("node", context.NewDestination.NodeId);
+                    cmd.Parameters.AddWithValue("destination", context.NewDestination.ProcessName);
+                    cmd.ExecuteNonQuery();
+                }
+            }
+            else
+            {
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText = "UPDATE " + _tableMessages + " SET node = :node, destination = :destination, processing = NULL WHERE messageid = :messageid";
+                    cmd.Parameters.AddWithValue("messageid", context.Message.MessageId);
+                    cmd.Parameters.AddWithValue("node", context.NewDestination.NodeId);
+                    cmd.Parameters.AddWithValue("destination", context.NewDestination.ProcessName);
+                    cmd.ExecuteNonQuery();
+                }
+            }
+        }
+
+        public Task DeleteAll(MessageDestination destination)
+        {
+            return _database.Execute(DeleteAllWorker, destination);
+        }
+
+        private void DeleteAllWorker(NpgsqlConnection conn, object objContext)
+        {
+            var destination = (MessageDestination)objContext;
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "DELETE FROM " + _tableMessages + " WHERE node = :node AND destination = :destination";
+                cmd.Parameters.AddWithValue("node", destination.NodeId);
+                cmd.Parameters.AddWithValue("destination", destination.ProcessName);
+                cmd.ExecuteNonQuery();
+            }
+        }
     }
 }

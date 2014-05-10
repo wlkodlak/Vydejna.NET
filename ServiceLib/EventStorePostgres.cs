@@ -7,17 +7,40 @@ using Npgsql;
 using NpgsqlTypes;
 using System.Data;
 using System.Threading;
+using System.Collections.Concurrent;
 
 namespace ServiceLib
 {
     public class EventStorePostgres : IEventStoreWaitable, IDisposable
     {
         private DatabasePostgres _db;
+        private ITime _time;
         private static EventStoreEvent[] EmptyList = new EventStoreEvent[0];
+        private int _waiterId;
+        private ConcurrentDictionary<int, WaitForEventsContext> _waiters;
+        private AutoResetEventAsync _notified;
+        private bool _disposed;
+        private int _canStartNotifications;
+        private CancellationTokenSource _cancelListening;
+        private Task _notificationTask;
 
-        public EventStorePostgres(DatabasePostgres db)
+        public EventStorePostgres(DatabasePostgres db, ITime time)
         {
             _db = db;
+            _time = time;
+            _waiters = new ConcurrentDictionary<int, WaitForEventsContext>();
+            _notified = new AutoResetEventAsync();
+            _canStartNotifications = 1;
+            _cancelListening = new CancellationTokenSource();
+        }
+
+        private void StartNotifications()
+        {
+            if (Interlocked.Exchange(ref _canStartNotifications, 0) == 1)
+            {
+                _db.Listen("eventstore", s => _notified.Set(), _cancelListening.Token);
+                _notificationTask = TaskUtils.FromEnumerable(WaitForEvents_CoreInternal()).Catch<Exception>(ex => true).GetTask();
+            }
         }
 
         public void Initialize()
@@ -27,6 +50,13 @@ namespace ServiceLib
 
         public void Dispose()
         {
+            _cancelListening.Cancel();
+            _canStartNotifications = 0;
+            _disposed = true;
+            _notified.Set();
+            if (_notificationTask != null)
+                _notificationTask.Wait(1000);
+            _cancelListening.Dispose();
         }
 
         private void InitializeDatabase(NpgsqlConnection conn)
@@ -437,34 +467,233 @@ namespace ServiceLib
 
         public Task<IEventStoreCollection> GetAllEvents(EventStoreToken token, int maxCount, bool loadBody)
         {
-            return _db.Query(GetAllEventsWorker, new GetAllEventsContext(token, maxCount, loadBody, true));
+            return _db.Query(GetAllEventsWorker, new WaitForEventsContext(IdFromToken(token), maxCount, CancellationToken.None, true))
+                .ContinueWith<IEventStoreCollection>(GetAllEventsConvert);
         }
 
-        private class GetAllEventsContext
+        private GetAllEventsResponse GetAllEventsWorker(NpgsqlConnection conn, object objContext)
         {
-            public readonly EventStoreToken Token;
-            public readonly int MaxCount;
-            public readonly bool LoadBody;
-            public readonly bool Nowait;
+            var context = (WaitForEventsContext)objContext;
+            var eventId = GetLastEventId(conn);
+            if (context.EventId == -1)
+                return new GetAllEventsResponse(null, eventId);
+            var count = (int)Math.Min(context.MaxCount, eventId - context.EventId);
+            if (count == 0)
+                return new GetAllEventsResponse(null, Math.Min(context.EventId, eventId));
+            var events = GetEvents(conn, context.EventId, count);
+            if (events.Count == 0)
+                return new GetAllEventsResponse(null, Math.Min(context.EventId, eventId));
+            else
+                return new GetAllEventsResponse(events, events[events.Count - 1].Token);
+        }
 
-            public GetAllEventsContext(EventStoreToken token, int maxCount, bool loadBody, bool nowait)
+        private IEventStoreCollection GetAllEventsConvert(Task<GetAllEventsResponse> task)
+        {
+            return task.Result.BuildFinal();
+        }
+
+        private class WaitForEventsContext
+        {
+            public int WaiterId;
+            public long EventId;
+            public int MaxCount;
+            public CancellationToken Cancel;
+            public TaskCompletionSource<IEventStoreCollection> Task;
+            public CancellationTokenRegistration CancelRegistration;
+            public bool Nowait;
+
+            public WaitForEventsContext(long eventId, int maxCount, CancellationToken cancel, bool nowait)
             {
-                Token = token;
+                EventId = eventId;
                 MaxCount = maxCount;
-                LoadBody = loadBody;
-                Nowait = nowait;
+                Cancel = cancel;
+                Nowait = nowait || EventId != -1 && MaxCount > 0;
+                if (Nowait)
+                {
+                    Task = new TaskCompletionSource<IEventStoreCollection>();
+                }
             }
-
         }
 
-        private IEventStoreCollection GetAllEventsWorker(NpgsqlConnection conn, object objContext)
+        private class GetAllEventsEvent : EventStoreEvent
         {
-            var context = (GetAllEventsContext)objContext;
+            public long EventId { get; set; }
+        }
 
+        private class GetAllEventsResponse
+        {
+            private static IList<EventStoreEvent> NoEvents = new EventStoreEvent[0];
+            public readonly IList<GetAllEventsEvent> Events;
+            public readonly long EventId;
+            public readonly EventStoreToken Token;
+
+            public GetAllEventsResponse(IList<GetAllEventsEvent> events, long eventId)
+            {
+                Events = events;
+                EventId = eventId;
+            }
+            public GetAllEventsResponse(IList<GetAllEventsEvent> events, EventStoreToken token)
+            {
+                Events = events;
+                Token = token;
+            }
+            public EventStoreCollection BuildFinal()
+            {
+                var events = Events != null ? Events.Cast<EventStoreEvent>().ToList() : NoEvents;
+                return new EventStoreCollection(events, Token ?? TokenFromId(EventId));
+            }
         }
 
         public Task<IEventStoreCollection> WaitForEvents(EventStoreToken token, int maxCount, bool loadBody, CancellationToken cancel)
         {
+            StartNotifications();
+            var waiter = new WaitForEventsContext(IdFromToken(token), maxCount, cancel, false);
+            _db.Query(GetAllEventsWorker, waiter).ContinueWith(WaitForEvents_ImmediateFinished, waiter);
+            return waiter.Task.Task;
+        }
+
+        private void WaitForEvents_ImmediateFinished(Task<GetAllEventsResponse> taskImmediate, object objContext)
+        {
+            var waiter = (WaitForEventsContext)objContext;
+            if (taskImmediate.Exception != null)
+            {
+                waiter.Task.TrySetException(taskImmediate.Exception.InnerExceptions);
+            }
+            else if (taskImmediate.Result.Events.Count > 0 || waiter.Nowait)
+            {
+                waiter.Task.TrySetResult(taskImmediate.Result.BuildFinal());
+            }
+            else
+            {
+                if (waiter.Cancel.CanBeCanceled)
+                {
+                    waiter.CancelRegistration = waiter.Cancel.Register(WaitForEvents_RemoveWaiter, waiter);
+                }
+                while (true)
+                {
+                    waiter.WaiterId = Interlocked.Increment(ref _waiterId);
+                    if (_waiters.TryAdd(waiter.WaiterId, waiter))
+                    {
+                        if (waiter.Cancel.IsCancellationRequested)
+                            WaitForEvents_RemoveWaiter(waiter);
+                        else
+                            _notified.Set();
+                    }
+                }
+            }
+        }
+
+        private void WaitForEvents_RemoveWaiter(object param)
+        {
+            WaitForEventsContext waiter = (WaitForEventsContext)param;
+            WaitForEventsContext removedWaiter;
+            _waiters.TryRemove(waiter.WaiterId, out removedWaiter);
+            waiter.Task.TrySetCanceled();
+        }
+
+        private void WaitForEvents_Timer(Task task)
+        {
+            if (task.Exception == null && !task.IsCanceled)
+            {
+                _notified.Set();
+                _time.Delay(5000, _cancelListening.Token).ContinueWith(WaitForEvents_Timer);
+            }
+        }
+
+        private IEnumerable<Task> WaitForEvents_CoreInternal()
+        {
+            var lastKnownEventId = 0L;
+            _time.Delay(5000, _cancelListening.Token).ContinueWith(WaitForEvents_Timer);
+            while (!_disposed)
+            {
+                var taskWait = _notified.Wait();
+                yield return taskWait;
+                taskWait.Wait();
+                var minEventId = long.MaxValue;
+                var maxCount = 0;
+                foreach (var waiter in _waiters.Values)
+                {
+                    if (minEventId > waiter.EventId)
+                        minEventId = waiter.EventId;
+                    if (maxCount < waiter.MaxCount)
+                        maxCount = waiter.MaxCount;
+                }
+                if (maxCount == 0)
+                    continue;
+                var taskQuery = _db.Query(GetAllEventsWorker, new WaitForEventsContext(Math.Max(lastKnownEventId, minEventId), maxCount, CancellationToken.None, true));
+                yield return taskQuery;
+                try
+                {
+                    taskQuery.Wait();
+                }
+                catch
+                {
+                    continue;
+                }
+                var results = taskQuery.Result;
+                if (results.Events.Count == 0)
+                    continue;
+                foreach (var waiter in _waiters.Values)
+                {
+                    WaitForEventsContext removedWaiter;
+                    var eventsForWaiter = results.Events.Where(e => e.EventId > waiter.EventId).Take(waiter.MaxCount).Cast<EventStoreEvent>().ToList();
+                    if (eventsForWaiter.Count == 0)
+                        continue;
+                    if (_waiters.TryRemove(waiter.WaiterId, out removedWaiter))
+                    {
+                        var result = new EventStoreCollection(eventsForWaiter, eventsForWaiter[eventsForWaiter.Count - 1].Token);
+                        waiter.Task.TrySetResult(result);
+                        waiter.CancelRegistration.Dispose();
+                    }
+                }
+            }
+            foreach (var waiter in _waiters.Values)
+            {
+                waiter.CancelRegistration.Dispose();
+                waiter.Task.TrySetCanceled();
+            }
+        }
+
+        private static long GetLastEventId(NpgsqlConnection conn)
+        {
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "SELECT id FROM eventstore_events ORDER BY id DESC LIMIT 1";
+                using (var reader = cmd.ExecuteReader())
+                {
+                    if (reader.Read())
+                        return reader.GetInt64(0);
+                    else
+                        return 0;
+                }
+            }
+        }
+
+        private static List<GetAllEventsEvent> GetEvents(NpgsqlConnection conn, long startingId, int maxCount)
+        {
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = string.Concat(
+                    "SELECT id, streamname, version, format, eventtype, contents FROM eventstore_events WHERE id > ",
+                    startingId.ToString(), " ORDER BY id LIMIT ", maxCount.ToString());
+                using (var reader = cmd.ExecuteReader())
+                {
+                    var list = new List<GetAllEventsEvent>(maxCount);
+                    while (reader.Read())
+                    {
+                        var evnt = new GetAllEventsEvent();
+                        evnt.EventId = reader.GetInt64(0);
+                        evnt.Token = TokenFromId(evnt.EventId);
+                        evnt.StreamName = reader.GetString(1);
+                        evnt.StreamVersion = reader.GetInt32(2);
+                        evnt.Format = reader.GetString(3);
+                        evnt.Type = reader.GetString(4);
+                        evnt.Body = reader.GetString(5);
+                        list.Add(evnt);
+                    }
+                    return list;
+                }
+            }
         }
 
         private static EventStoreToken TokenFromId(long id)
@@ -483,180 +712,5 @@ namespace ServiceLib
             else
                 return long.Parse(token.ToString());
         }
-#if false
-        private class GetAllEventsWorker : IDisposable
-        {
-            public long StartingId;
-            public EventStoreToken PublicToken;
-            public int MaxCount;
-            public bool LoadBody;
-            public Action<IEventStoreCollection> OnComplete;
-            public Action<Exception> OnError;
-            public bool Nowait;
-            private EventStorePostgres _parent;
-            private IDisposable _listening;
-            private bool _busy;
-            private bool _notified;
-
-            public GetAllEventsWorker(EventStorePostgres parent, bool nowait, EventStoreToken token, int maxCount, bool loadBody, Action<IEventStoreCollection> onComplete, Action<Exception> onError)
-            {
-                this._parent = parent;
-                this.PublicToken = token;
-                this.MaxCount = Math.Max(0, Math.Min(1000, maxCount));
-                this.LoadBody = loadBody;
-                this.OnComplete = onComplete;
-                this.OnError = onError;
-                this.Nowait = nowait;
-                this.StartingId = IdFromToken(token);
-            }
-
-            public void Execute()
-            {
-                _parent._db.Execute(ExecuteDb, OnError);
-            }
-
-            private void ExecuteDb(NpgsqlConnection conn)
-            {
-                if (MaxCount == 0)
-                {
-                    var version = GetLastId(conn);
-                    _parent._executor.Enqueue(new EventStoreGetAllEventsComplete(
-                        OnComplete, EmptyList, TokenFromId(version)));
-                }
-                else if (StartingId == -1)
-                {
-                    StartingId = GetLastId(conn);
-                    if (Nowait)
-                    {
-                        _parent._executor.Enqueue(new EventStoreGetAllEventsComplete(
-                            OnComplete, EmptyList, TokenFromId(StartingId)));
-                    }
-                    else
-                        _listening = _parent._changes.Register(OnNotified);
-                }
-                else
-                {
-                    var events = GetEvents(conn);
-                    if (events.Count > 0)
-                    {
-                        _parent._executor.Enqueue(new EventStoreGetAllEventsComplete(
-                            OnComplete, events, events.Last().Token));
-                    }
-                    else if (Nowait)
-                    {
-                        var version = GetLastId(conn);
-                        if (version == StartingId)
-                        {
-                            _parent._executor.Enqueue(new EventStoreGetAllEventsComplete(
-                                OnComplete, EmptyList, TokenFromId(version)));
-                        }
-                        else
-                        {
-                            events = GetEvents(conn);
-                            if (events.Count > 0)
-                            {
-                                _parent._executor.Enqueue(new EventStoreGetAllEventsComplete(
-                                    OnComplete, events, events.Last().Token));
-                            }
-                            else
-                            {
-                                _parent._executor.Enqueue(new EventStoreGetAllEventsComplete(
-                                    OnComplete, EmptyList, TokenFromId(version)));
-                            }
-                        }
-                    }
-                    else
-                        _listening = _parent._changes.Register(OnNotified);
-                }
-            }
-
-            private void OnNotified()
-            {
-                lock (this)
-                {
-                    _notified = true;
-                    if (_busy)
-                        return;
-                    _busy = true;
-                    _notified = false;
-                }
-                _parent._db.Execute(OnNotifiedDb, OnError);
-            }
-
-            private void OnNotifiedDb(NpgsqlConnection conn)
-            {
-                bool repeat = true;
-                while (repeat)
-                {
-                    repeat = false;
-                    var events = GetEvents(conn);
-                    if (events.Count > 0)
-                    {
-                        _listening.Dispose();
-                        _parent._executor.Enqueue(new EventStoreGetAllEventsComplete(
-                            OnComplete, events, events.Last().Token));
-                        return;
-                    }
-                    else
-                    {
-                        lock (this)
-                        {
-                            if (_notified)
-                                repeat = true;
-                            else
-                                _busy = false;
-                        }
-                    }
-                }
-            }
-
-            public void Dispose()
-            {
-                if (_listening != null)
-                    _listening.Dispose();
-            }
-
-            private long GetLastId(NpgsqlConnection conn)
-            {
-                using (var cmd = conn.CreateCommand())
-                {
-                    cmd.CommandText = "SELECT id FROM eventstore_events ORDER BY id DESC LIMIT 1";
-                    using (var reader = cmd.ExecuteReader())
-                    {
-                        if (reader.Read())
-                            return reader.GetInt64(0);
-                        else
-                            return 0;
-                    }
-                }
-            }
-
-            private List<EventStoreEvent> GetEvents(NpgsqlConnection conn)
-            {
-                using (var cmd = conn.CreateCommand())
-                {
-                    cmd.CommandText = string.Concat(
-                        "SELECT id, streamname, version, format, eventtype, contents FROM eventstore_events WHERE id > ",
-                        StartingId.ToString(), " ORDER BY id LIMIT ", MaxCount.ToString());
-                    using (var reader = cmd.ExecuteReader())
-                    {
-                        var list = new List<EventStoreEvent>(MaxCount);
-                        while (reader.Read())
-                        {
-                            var evnt = new EventStoreEvent();
-                            evnt.Token = TokenFromId(reader.GetInt64(0));
-                            evnt.StreamName = reader.GetString(1);
-                            evnt.StreamVersion = reader.GetInt32(2);
-                            evnt.Format = reader.GetString(3);
-                            evnt.Type = reader.GetString(4);
-                            evnt.Body = reader.GetString(5);
-                            list.Add(evnt);
-                        }
-                        return list;
-                    }
-                }
-            }
-        }
-#endif
     }
 }

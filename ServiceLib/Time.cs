@@ -10,7 +10,7 @@ namespace ServiceLib
     public interface ITime
     {
         DateTime GetUtcTime();
-        IDisposable Delay(int milliseconds, Action onTimer);
+        Task Delay(int milliseconds, CancellationToken cancel);
     }
 
     public class RealTime : ITime
@@ -20,42 +20,9 @@ namespace ServiceLib
             return DateTime.UtcNow;
         }
 
-        public IDisposable Delay(int milliseconds, Action onTimer)
+        public Task Delay(int milliseconds, CancellationToken cancel)
         {
-            return new DelayHandler(milliseconds, onTimer);
-        }
-
-        private class DelayHandler : IDisposable
-        {
-            private Action _onTimer;
-            private Timer _timer;
-
-            public DelayHandler(int milliseconds, Action onTimer)
-            {
-                _onTimer = onTimer;
-                _timer = new Timer(Callback, null, milliseconds, Timeout.Infinite);
-            }
-
-            private void Callback(object state)
-            {
-                try
-                {
-                    _onTimer();
-                }
-                catch
-                {
-                }
-                finally
-                {
-                    _timer.Dispose();
-                }
-            }
-
-            public void Dispose()
-            {
-                _timer.Dispose();
-            }
-
+            return Task.Delay(milliseconds, cancel);
         }
     }
 }
