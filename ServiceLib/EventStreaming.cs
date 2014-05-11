@@ -63,6 +63,14 @@ namespace ServiceLib
             return msg;
         }
 
+        private Task<IEventStoreCollection> GetEvents(EventStoreToken token, bool nowait, CancellationToken cancel)
+        {
+            if (nowait)
+                return _store.GetAllEvents(token, _batchSize, false);
+            else
+                return _store.WaitForEvents(token, _batchSize, false, cancel);
+        }
+
         private class EventsStream : IEventStreamer
         {
             private object _lock;
@@ -74,10 +82,10 @@ namespace ServiceLib
             private EventStoreEvent _currentEvent;
             private Message _prefetchedMessage;
             private Queue<EventStoreEvent> _prefetchedEvents;
-            private Task<Message> _taskLoadMessage;
-            private Task<List<EventStoreEvent>> _taskLoadEvents;
+            private bool _isWaitingForMessages, _isWaitingForEvents;
             private CancellationTokenSource _cancel;
             private MessageDestination _inputMessagingQueue;
+            private AutoResetEventAsync _waitForSignal;
 
             public EventsStream(EventStreaming parent, EventStoreToken token, string processName)
             {
@@ -88,21 +96,21 @@ namespace ServiceLib
                 _cancel = new CancellationTokenSource();
                 _prefetchedEvents = new Queue<EventStoreEvent>();
                 _inputMessagingQueue = MessageDestination.For(processName, "__ANY__");
+                _waitForSignal = new AutoResetEventAsync();
             }
 
             public Task<EventStoreEvent> GetNextEvent(bool withoutWaiting)
             {
+                lock (_lock)
+                {
+                    if (_disposed)
+                        return TaskUtils.FromError<EventStoreEvent>(new ObjectDisposedException(_processName ?? "EventStreamer"));
+                }
                 return TaskUtils.FromEnumerable<EventStoreEvent>(GetNextEventInternal(withoutWaiting)).GetTask();
             }
 
-            private IEnumerable<Task> GetNextEventInternal(bool withoutWaiting)
+            private IEnumerable<Task> GetNextEventInternal(bool nowait)
             {
-                if (_disposed)
-                {
-                    var exception = new ObjectDisposedException(_processName ?? "EventStreamer");
-                    yield return TaskUtils.FromError<EventStoreEvent>(exception);
-                    yield break;
-                }
                 if (_currentMessage != null)
                 {
                     var taskMarkProcessed = _parent._messaging.MarkProcessed(_currentMessage, MessageDestination.Processed);
@@ -110,27 +118,103 @@ namespace ServiceLib
                     yield return taskMarkProcessed;
                     taskMarkProcessed.Wait();
                 }
-                if (_prefetchedMessage != null)
+                EventStoreEvent readyEvent = null;
+                while (readyEvent == null)
                 {
-                    _currentMessage = _prefetchedMessage;
-                    _prefetchedMessage = null;
-                    var evnt = EventFromMessage(_currentMessage);
-                    yield return TaskUtils.FromResult(evnt);
-                    yield break;
+                    bool startWaitingForEvents = false;
+                    bool startWaitingForMessages = false;
+                    bool nowaitGetEvents = false;
+                    bool nowaitGetMessage = false;
+                    lock (_lock)
+                    {
+                        if (_prefetchedMessage != null)
+                        {
+                            _currentMessage = _prefetchedMessage;
+                            _prefetchedMessage = null;
+                            readyEvent = EventFromMessage(_currentMessage);
+                        }
+                        else if (_prefetchedEvents.Count > 0)
+                        {
+                            readyEvent = _currentEvent = _prefetchedEvents.Dequeue();
+                        }
+                        else if (nowait)
+                        {
+                            nowaitGetEvents = !_isWaitingForEvents;
+                            nowaitGetMessage = !_isWaitingForMessages;
+                        }
+                        else
+                        {
+                            startWaitingForEvents = !_isWaitingForEvents;
+                            startWaitingForMessages = !_isWaitingForMessages;
+                            _isWaitingForMessages = _isWaitingForEvents = true;
+                        }
+                    }
+                    if (nowaitGetMessage && readyEvent == null)
+                    {
+                        var taskReceive = _parent._messaging.Receive(_inputMessagingQueue, true, _cancel.Token);
+                        yield return taskReceive;
+                        _currentMessage = taskReceive.Result;
+                        if (_currentMessage != null)
+                        {
+                            readyEvent = EventFromMessage(_currentMessage);
+                        }
+                    }
+                    if (nowaitGetEvents && readyEvent == null)
+                    {
+                        var taskGetEvents = _parent.GetEvents(_token, true, _cancel.Token);
+                        yield return taskGetEvents;
+                        var loadedEvents = taskGetEvents.Result;
+                        foreach (var evnt in loadedEvents.Events)
+                            _prefetchedEvents.Enqueue(evnt);
+                        _token = loadedEvents.NextToken;
+                        if (loadedEvents.Events.Count != 0)
+                        {
+                            readyEvent = _currentEvent = _prefetchedEvents.Dequeue();
+                        }
+                    }
+                    if (startWaitingForMessages)
+                    {
+                        _parent._messaging.Receive(_inputMessagingQueue, false, _cancel.Token).ContinueWith(GetNextEvent_FromMessaging);
+                    }
+                    if (startWaitingForEvents)
+                    {
+                        _parent.GetEvents(_token, false, _cancel.Token).ContinueWith(GetNextEvent_FromEventStore);
+                    }
+                    if (nowait)
+                    {
+                        break;
+                    }
+                    else
+                    {
+                        var taskWait = _waitForSignal.Wait();
+                        yield return taskWait;
+                    }
                 }
-                if (_prefetchedEvents.Count > 0)
-                {
-                    _currentEvent = _prefetchedEvents.Dequeue();
-                    yield return TaskUtils.FromResult(_currentEvent);
-                    yield break;
-                }
-                if (_taskLoadMessage == null)
-                {
-                    _taskLoadMessage = _parent._messaging.Receive(_inputMessagingQueue, false, _cancel.Token);
-                    _taskLoadMessage.ContinueWith(GetNextEvent_FromMessaging);
-                }
+                yield return TaskUtils.FromResult(readyEvent);
             }
 
+            private void GetNextEvent_FromMessaging(Task<Message> taskReceive)
+            {
+                lock (_lock)
+                {
+                    _isWaitingForMessages = false;
+                    _prefetchedMessage = taskReceive.Result;
+                }
+                _waitForSignal.Set();
+            }
+
+            private void GetNextEvent_FromEventStore(Task<IEventStoreCollection> taskReceive)
+            {
+                lock (_lock)
+                {
+                    _isWaitingForEvents = false;
+                    var loadedEvents = taskReceive.Result;
+                    foreach (var evnt in loadedEvents.Events)
+                        _prefetchedEvents.Enqueue(evnt);
+                    _token = loadedEvents.NextToken;
+                }
+                _waitForSignal.Set();
+            }
 
             public Task MarkAsDeadLetter()
             {
@@ -170,9 +254,10 @@ namespace ServiceLib
                     if (_disposed)
                         return;
                     _disposed = true;
-                    _cancel.Cancel();
-                    _cancel.Dispose();
                 }
+                _cancel.Cancel();
+                _cancel.Dispose();
+                _waitForSignal.Set();
             }
         }
     }
