@@ -19,7 +19,7 @@ namespace ServiceLib
     }
     public interface IHttpProcessor
     {
-        void StartProcessing(IHttpServerStagedContext context);
+        Task Process(IHttpServerStagedContext context);
     }
 
     public interface IHttpRouteCommonConfigurator : IHttpRouteConfigCommitable
@@ -47,36 +47,36 @@ namespace ServiceLib
     }
     public static class HttpRouteCommonConfiguratorRouteExtensions
     {
-        public static void To(this IHttpRouteCommonConfiguratorRoute self, Action<IHttpServerRawContext> handler)
+        public static void To(this IHttpRouteCommonConfiguratorRoute self, Func<IHttpServerRawContext, Task> handler)
         {
             self.To(new DelegatedHttpRouteHandler(handler));
         }
-        public static void To(this IHttpRouteCommonConfiguratorRoute self, Action<IHttpServerStagedContext> processor)
+        public static void To(this IHttpRouteCommonConfiguratorRoute self, Func<IHttpServerStagedContext, Task> processor)
         {
             self.To(new DelegatedHttpProcessor(processor));
         }
         private class DelegatedHttpRouteHandler : IHttpRouteHandler
         {
-            Action<IHttpServerRawContext> _handler;
-            public DelegatedHttpRouteHandler(Action<IHttpServerRawContext> handler)
+            Func<IHttpServerRawContext, Task> _handler;
+            public DelegatedHttpRouteHandler(Func<IHttpServerRawContext, Task> handler)
             {
                 _handler = handler;
             }
-            public void Handle(IHttpServerRawContext context)
+            public Task Handle(IHttpServerRawContext context)
             {
-                _handler(context);
+                return _handler(context);
             }
         }
         private class DelegatedHttpProcessor : IHttpProcessor
         {
-            Action<IHttpServerStagedContext> _handler;
-            public DelegatedHttpProcessor(Action<IHttpServerStagedContext> handler)
+            Func<IHttpServerStagedContext, Task> _handler;
+            public DelegatedHttpProcessor(Func<IHttpServerStagedContext, Task> handler)
             {
                 _handler = handler;
             }
-            public void StartProcessing(IHttpServerStagedContext context)
+            public Task Process(IHttpServerStagedContext context)
             {
-                _handler(context);
+                return _handler(context);
             }
         }
     }

@@ -57,33 +57,5 @@ namespace ServiceLib
         {
             return _parameters.Get(RequestParameterType.Path, name);
         }
-        public void Close()
-        {
-            try
-            {
-                _rawContext.StatusCode = StatusCode;
-                _rawContext.OutputHeaders.Clear();
-                foreach (var header in OutputHeaders)
-                    _rawContext.OutputHeaders.Add(header.Key, header.Value);
-                if (!string.IsNullOrEmpty(OutputString))
-                {
-                    _writer = new StreamWriter(_rawContext.OutputStream);
-                    _writer.WriteAsync(OutputString).ContinueWith(WriteOutputComplete);
-                }
-                else
-                    _rawContext.Close();
-            }
-            catch
-            {
-                _rawContext.StatusCode = 500;
-                _rawContext.Close();
-            }
-        }
-        private void WriteOutputComplete(Task task)
-        {
-            var error = task.Exception;
-            _writer.Close();
-            _rawContext.Close();
-        }
     }
 }

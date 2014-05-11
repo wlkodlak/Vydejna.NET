@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Xml;
 using System.Xml.Linq;
@@ -54,25 +55,30 @@ namespace ServiceLib
         private RoutePath _paths;
         private List<RouteConfiguration> _routes;
         private RoutePathComparer _pathComparer;
-        private UpdateLock _lock;
+        private ReaderWriterLockSlim _lock;
 
         public HttpRouter()
         {
             _routes = new List<RouteConfiguration>();
             _paths = new RoutePath(null, true);
             _pathComparer = new RoutePathComparer();
-            _lock = new UpdateLock();
+            _lock = new ReaderWriterLockSlim();
         }
 
         public HttpUsedRoute FindRoute(string url)
         {
-            using (_lock.Read())
+            _lock.EnterReadLock();
+            try
             {
                 if (_routes.Count == 0)
                     return null;
                 var urlParts = ParametrizedUrl.UrlForMatching(url);
                 var candidates = FindCandidates(urlParts);
                 return FindRouteFromCandidates(urlParts, candidates);
+            }
+            finally
+            {
+                _lock.ExitReadLock();
             }
         }
 
@@ -105,10 +111,10 @@ namespace ServiceLib
 
         public void AddRoute(string pattern, IHttpRouteHandler handler, IEnumerable<string> overridePrefix = null)
         {
-            using (_lock.Update())
+            _lock.EnterWriteLock();
+            try
             {
                 var route = new RouteConfiguration { Handler = handler, Url = new ParametrizedUrl(pattern) };
-                _lock.Write();
                 _routes.Add(route);
                 AddPrefix(route.Url.Prefix, route);
                 if (overridePrefix != null)
@@ -119,6 +125,10 @@ namespace ServiceLib
                         AddPrefix(overridenPath.Prefix, route);
                     }
                 }
+            }
+            finally
+            {
+                _lock.ExitWriteLock();
             }
         }
 
@@ -155,7 +165,7 @@ namespace ServiceLib
 
     public interface IHttpRouteHandler
     {
-        void Handle(IHttpServerRawContext context);
+        Task Handle(IHttpServerRawContext context);
     }
 
     public class HttpUsedRoute

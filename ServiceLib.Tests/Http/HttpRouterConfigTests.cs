@@ -90,7 +90,7 @@ namespace ServiceLib.Tests.Http
         {
             public string Name;
             public TestProcessor(string name) { Name = name; }
-            public void StartProcessing(IHttpServerStagedContext context)
+            public void Process(IHttpServerStagedContext context)
             {
             }
         }

@@ -19,7 +19,6 @@ namespace ServiceLib
         IList<RequestParameter> RouteParameters { get; }
         IHttpServerRawHeaders InputHeaders { get; }
         IHttpServerRawHeaders OutputHeaders { get; }
-        void Close();
     }
     public interface IHttpServerRawHeaders : IEnumerable<KeyValuePair<string, string>>
     {
@@ -43,7 +42,6 @@ namespace ServiceLib
         IHttpProcessedParameter Parameter(string name);
         IHttpProcessedParameter PostData(string name);
         IHttpProcessedParameter Route(string name);
-        void Close();
     }
     public interface IHttpServerStagedHeaders : IHttpServerRawHeaders
     {

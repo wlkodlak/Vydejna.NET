@@ -15,7 +15,7 @@ namespace ServiceLib
             _router = router;
         }
 
-        public void DispatchRequest(IHttpServerRawContext context)
+        public Task DispatchRequest(IHttpServerRawContext context)
         {
             try
             {
@@ -24,16 +24,16 @@ namespace ServiceLib
                 {
                     _log.DebugFormat("Raw HTTP request {0}: 404 Not found", context.Url);
                     context.StatusCode = 404;
-                    context.Close();
+                    return TaskUtils.CompletedTask();
                 }
                 else
-                    route.Handler.Handle(context);
+                    return route.Handler.Handle(context);
             }
             catch (Exception ex)
             {
                 _log.WarnFormat("Request {0} threw exception: {1}", context.Url, ex.ToString());
                 context.StatusCode = 500;
-                context.Close();
+                return TaskUtils.CompletedTask();
             }
         }
     }

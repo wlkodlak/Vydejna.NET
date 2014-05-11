@@ -82,7 +82,7 @@ namespace ServiceLib.Tests.Http
                 return _context;
             }
 
-            public void StartProcessing(IHttpServerStagedContext context)
+            public void Process(IHttpServerStagedContext context)
             {
                 _context = context;
                 _mre.Set();

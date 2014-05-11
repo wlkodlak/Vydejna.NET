@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using System.Threading.Tasks;
 
 namespace ServiceLib
@@ -12,77 +13,63 @@ namespace ServiceLib
 
         public HttpRouteStagedHandler(ISerializerPicker picker, IList<IHttpSerializer> serializers, IHttpProcessor processor)
         {
-            this._picker = picker;
-            this._serializers = serializers;
-            this._processor = processor;
+            _picker = picker;
+            _serializers = serializers;
+            _processor = processor;
         }
 
-        public void Handle(IHttpServerRawContext context)
+        public Task Handle(IHttpServerRawContext context)
         {
-            new Worker(this, context).StartExecuting();
+            return TaskUtils.FromEnumerable(HandleInternal(context)).GetTask();
         }
 
-        private class Worker
+        private IEnumerable<Task> HandleInternal(IHttpServerRawContext raw)
         {
-            private HttpRouteStagedHandler _parent;
-            private IHttpServerRawContext _rawContext;
-            private HttpServerStagedContext _staged;
-            private StreamReader _inputReader;
+            var staged = new HttpServerStagedContext(raw);
+            staged.LoadParameters();
+            
+            if (raw.InputStream != null)
+            {
+                var memoryStream = new MemoryStream();
+                var encoding = Encoding.UTF8;
+                var bufferCurrent = new byte[4096];
+                while (true)
+                {
+                    var taskRead = Task.Factory.FromAsync<int>(raw.InputStream.BeginRead(bufferCurrent, 0, 4096, null, null), raw.InputStream.EndRead);
+                    yield return taskRead;
+                    var bytesRead = taskRead.Result;
+                    if (bytesRead == 0)
+                        break;
+                    memoryStream.Write(bufferCurrent, 0, bytesRead);
+                }
+                raw.InputStream.Dispose();
+                memoryStream.Dispose();
+                staged.InputString = encoding.GetString(memoryStream.ToArray());
+            }
+            else
+            {
+                staged.InputString = string.Empty;
+            }
+            
+            staged.InputSerializer = _picker.PickDeserializer(staged, _serializers, null);
+            staged.OutputSerializer = _picker.PickSerializer(staged, _serializers, null);
+            var taskProcess = _processor.Process(staged);
+            yield return taskProcess;
 
-            public Worker(HttpRouteStagedHandler parent, IHttpServerRawContext context)
-            {
-                _parent = parent;
-                _rawContext = context;
-                _staged = new HttpServerStagedContext(_rawContext);
-            }
-            public void StartExecuting()
-            {
-                try
-                {
-                    _staged.LoadParameters();
-                    if (_rawContext.InputStream != null)
-                    {
-                        _inputReader = new StreamReader(_rawContext.InputStream);
-                        _inputReader.ReadToEndAsync().ContinueWith(OnInputReadCompleted);
-                    }
-                    else
-                    {
-                        _staged.InputString = string.Empty;
-                        CallProcessor();
-                    }
-                }
-                catch
-                {
-                    _rawContext.StatusCode = 500;
-                    _rawContext.Close();
-                }
-            }
-            private void OnInputReadCompleted(Task<string> inputStringTask)
-            {
-                try
-                {
-                    try
-                    {
-                        _staged.InputString = inputStringTask.Result;
-                    }
-                    finally
-                    {
-                        _inputReader.Dispose();
-                    }
-                    CallProcessor();
-                }
-                catch
-                {
-                    _rawContext.StatusCode = 500;
-                    _rawContext.Close();
-                }
+            raw.StatusCode = staged.StatusCode;
+            raw.OutputHeaders.Clear();
+            foreach (var header in staged.OutputHeaders)
+                raw.OutputHeaders.Add(header.Key, header.Value);
 
-            }
-            private void CallProcessor()
+            if (!string.IsNullOrEmpty(staged.OutputString))
             {
-                _staged.InputSerializer = _parent._picker.PickDeserializer(_staged, _parent._serializers, null);
-                _staged.OutputSerializer = _parent._picker.PickSerializer(_staged, _parent._serializers, null);
-                _parent._processor.StartProcessing(_staged);
+                var encoding = Encoding.UTF8;
+                var buffer = encoding.GetBytes(staged.OutputString);
+                var taskWrite = Task.Factory.FromAsync(raw.OutputStream.BeginWrite(buffer, 0, buffer.Length, null, null), raw.OutputStream.EndWrite);
+                yield return taskWrite;
+                if (taskWrite.Exception != null)
+                    taskWrite.Exception.Handle(ex => true);
+                raw.OutputStream.Dispose();
             }
         }
     }

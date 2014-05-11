@@ -12,7 +12,7 @@ namespace ServiceLib
 {
     public interface IHttpServerDispatcher
     {
-        void DispatchRequest(IHttpServerRawContext context);
+        Task DispatchRequest(IHttpServerRawContext context);
     }
 
     public class HttpServer : IProcessWorker
@@ -79,11 +79,29 @@ namespace ServiceLib
             {
                 while (_processState == ProcessState.Running)
                 {
-                    new RequestHandler(this, _listener.GetContext()).Run();
+                    TaskUtils.FromEnumerable(ProcessRequestInternal(_listener.GetContext())).Catch<Exception>(ex => true).GetTask();
                 }
             }
             catch (HttpListenerException)
             {
+            }
+        }
+
+        private IEnumerable<Task> ProcessRequestInternal(HttpListenerContext context)
+        {
+            var stopwatch = new Stopwatch();
+            stopwatch.Start();
+            try
+            {
+                var rawContext = new HttpServerListenerContext(context, null);
+                var taskDispatch = _dispatcher.DispatchRequest(rawContext);
+                yield return taskDispatch;
+            }
+            finally
+            {
+                context.Response.Close();
+                stopwatch.Stop();
+                Debug.WriteLine(string.Format("Request took {0} ms", stopwatch.ElapsedMilliseconds));
             }
         }
 
@@ -179,12 +197,6 @@ namespace ServiceLib
         public IList<RequestParameter> RouteParameters { get { return _routeParameters; } }
         public IHttpServerRawHeaders InputHeaders { get; private set; }
         public IHttpServerRawHeaders OutputHeaders { get; private set; }
-        
-        public void Close()
-        {
-            _response.Close(); 
-            _onCompleted();
-        }
     }
 
     public class HttpServerListenerRequestHeaders : IHttpServerRawHeaders
