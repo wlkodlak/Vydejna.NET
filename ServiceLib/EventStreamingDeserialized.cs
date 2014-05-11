@@ -1,14 +1,38 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace ServiceLib
 {
     public interface IEventStreamingDeserialized : IDisposable
     {
-        void Setup(EventStoreToken firstToken, IList<Type> types, string processName);
-        void GetNextEvent(Action<EventStoreToken, object> onEventRead, Action onEventNotAvailable, Action<Exception, EventStoreEvent> onError, bool nowait);
-        void MarkAsDeadLetter(Action onComplete, Action<Exception> onError);
+        void Setup(EventStoreToken firstToken, IEnumerable<Type> types, string processName);
+        Task<EventStreamingDeserializedEvent> GetNextEvent(bool nowait);
+        Task MarkAsDeadLetter();
+    }
+
+    public class EventStreamingDeserializedEvent
+    {
+        public readonly EventStoreToken Token;
+        public readonly object Event;
+        public readonly EventStoreEvent Raw;
+        public readonly Exception DeserializationException;
+
+        public EventStreamingDeserializedEvent(EventStoreEvent raw, object deserialized)
+        {
+            Raw = raw;
+            Event = deserialized;
+            Token = raw.Token;
+        }
+
+        public EventStreamingDeserializedEvent(EventStoreEvent raw, Exception error)
+        {
+            Raw = raw;
+            DeserializationException = error;
+            Token = raw.Token;
+        }
     }
 
     public class EventStreamingDeserialized : IEventStreamingDeserialized
@@ -21,6 +45,7 @@ namespace ServiceLib
         private Action _onEventNotAvailable;
         private Action<Exception, EventStoreEvent> _onError;
         private bool _nowait, _isDisposed;
+        private string _processName;
 
         public EventStreamingDeserialized(IEventStreaming streaming, IEventSourcedSerializer serializer)
         {
@@ -28,28 +53,54 @@ namespace ServiceLib
             _serializer = serializer;
         }
 
-        public void Setup(EventStoreToken firstToken, IList<Type> types, string processName)
+        public void Setup(EventStoreToken firstToken, IEnumerable<Type> types, string processName)
         {
             _typeFilter = new HashSet<string>(types.Select(_serializer.GetTypeName));
             _streamer = _streaming.GetStreamer(firstToken, processName);
+            _processName = processName;
             _isDisposed = false;
         }
 
-        public void GetNextEvent(Action<EventStoreToken, object> onEventRead, Action onEventNotAvailable, Action<Exception, EventStoreEvent> onError, bool nowait)
+        public Task<EventStreamingDeserializedEvent> GetNextEvent(bool nowait)
         {
-            _onEventRead = onEventRead;
-            _onEventNotAvailable = onEventNotAvailable;
-            _onError = onError;
-            _nowait = nowait;
             if (_isDisposed)
-                _onError(new ObjectDisposedException("Streamer is disposed"), null);
+                return TaskUtils.FromError<EventStreamingDeserializedEvent>(new ObjectDisposedException(_processName ?? "EventStreamingDeserialized"));
             else
-                _streamer.GetNextEvent(RawEventReceived, OnError, _nowait);
+            {
+                _nowait = nowait;
+                return GetNextEvent();
+            }
         }
 
-        public void MarkAsDeadLetter(Action onComplete, Action<Exception> onError)
+        private Task<EventStreamingDeserializedEvent> GetNextEvent()
         {
-            _streamer.MarkAsDeadLetter(onComplete, onError);
+            return _streamer.GetNextEvent(_nowait).ContinueWith<Task<EventStreamingDeserializedEvent>>(ProcessEvent).Unwrap();
+        }
+
+        private Task<EventStreamingDeserializedEvent> ProcessEvent(Task<EventStoreEvent> taskGetEvent)
+        {
+            var rawEvent = taskGetEvent.Result;
+            if (rawEvent == null)
+                return TaskUtils.FromResult<EventStreamingDeserializedEvent>(null);
+            else if (!_typeFilter.Contains(rawEvent.Type))
+                return GetNextEvent();
+            else
+            {
+                try
+                {
+                    var deserialized = _serializer.Deserialize(rawEvent);
+                    return TaskUtils.FromResult(new EventStreamingDeserializedEvent(rawEvent, deserialized));
+                }
+                catch (Exception ex)
+                {
+                    return TaskUtils.FromResult(new EventStreamingDeserializedEvent(rawEvent, ex));
+                }
+            }
+        }
+
+        public Task MarkAsDeadLetter()
+        {
+            return _streamer.MarkAsDeadLetter();
         }
 
         public void Dispose()
@@ -57,36 +108,6 @@ namespace ServiceLib
             _isDisposed = true;
             if (_streamer != null)
                 _streamer.Dispose();
-        }
-
-        private void OnError(Exception exception)
-        {
-            _onError(exception, null);
-        }
-
-        private void RawEventReceived(EventStoreEvent rawEvent)
-        {
-            if (rawEvent == null)
-                _onEventNotAvailable();
-            else
-            {
-                if (_typeFilter.Contains(rawEvent.Type))
-                {
-                    object deserialized;
-                    try
-                    {
-                        deserialized = _serializer.Deserialize(rawEvent);
-                    }
-                    catch (Exception exception)
-                    {
-                        _onError(exception, rawEvent);
-                        return;
-                    }
-                    _onEventRead(rawEvent.Token, deserialized);
-                }
-                else
-                    _streamer.GetNextEvent(RawEventReceived, OnError, _nowait);
-            }
         }
     }
 

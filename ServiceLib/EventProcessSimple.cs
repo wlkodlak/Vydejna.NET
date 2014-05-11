@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace ServiceLib
 {
@@ -11,15 +12,11 @@ namespace ServiceLib
         private readonly IMetadataInstance _metadata;
         private readonly IEventStreamingDeserialized _streaming;
         private readonly ICommandSubscriptionManager _subscriptions;
+        private readonly object _lock;
+        private CancellationTokenSource _cancelPause, _cancelStop;
         private int _flushAfter;
         private ProcessState _processState;
         private Action<ProcessState> _onProcessStateChanged;
-        private int _fsmState;
-        private EventStoreToken _token, _lastToken, _tokenToSave;
-        private int _flushCounter, _handlerRetriesLeft;
-        private object _handledEvent;
-        private ICommandSubscription _handler;
-        private IDisposable _lockWait;
 
         public EventProcessSimple(IMetadataInstance metadata, IEventStreamingDeserialized streaming, ICommandSubscriptionManager subscriptions)
         {
@@ -28,17 +25,30 @@ namespace ServiceLib
             _subscriptions = subscriptions;
             _flushAfter = 20;
             _processState = ProcessState.Uninitialized;
-            _fsmState = 0;
+            _lock = new object();
+            _cancelPause = new CancellationTokenSource();
+            _cancelStop = new CancellationTokenSource();
         }
 
-        public IHandleRegistration<CommandExecution<T>> Register<T>(IHandle<CommandExecution<T>> handler)
+        public EventProcessSimple Register<T>(IProcess<T> handler)
         {
-            return _subscriptions.Register(handler);
+            _subscriptions.Register(handler);
+            return this;
+        }
+
+        public EventProcessSimple WithTokenFlushing(int flushAfter)
+        {
+            _flushAfter = flushAfter > 1 ? flushAfter : 1;
+            return this;
         }
 
         public ProcessState State
         {
-            get { return _processState; }
+            get
+            {
+                lock (_lock)
+                    return _processState;
+            }
         }
 
         public void Init(Action<ProcessState> onStateChanged)
@@ -49,15 +59,51 @@ namespace ServiceLib
 
         public void Start()
         {
-            _fsmState = 10;
             SetProcessState(ProcessState.Starting);
-            ContinueFsm();
+            TaskUtils.FromEnumerable(ProcessCore()).Catch<Exception>(ex => true).GetTask()
+                .ContinueWith(t =>
+                {
+                    if (t.Exception == null || t.IsCanceled)
+                        SetProcessState(ProcessState.Inactive);
+                    else
+                        SetProcessState(ProcessState.Faulted);
+                });
+        }
+
+        public void Pause()
+        {
+            _cancelPause.Cancel();
+            SetProcessState(ProcessState.Pausing);
+        }
+
+        public void Stop()
+        {
+            _cancelPause.Cancel();
+            _cancelStop.Cancel();
+            SetProcessState(ProcessState.Stopping);
+        }
+
+        public void Dispose()
+        {
+            _cancelPause.Cancel();
+            _cancelStop.Cancel();
+            _cancelPause.Dispose();
+            _cancelStop.Dispose();
+            SetProcessState(ProcessState.Inactive);
         }
 
         private void SetProcessState(ProcessState newState)
         {
-            _processState = newState;
-            var handler = _onProcessStateChanged;
+            Action<ProcessState> handler;
+            lock (_lock)
+            {
+                if (_processState == newState)
+                    return;
+                if (_processState == ProcessState.Inactive && (newState == ProcessState.Pausing || newState == ProcessState.Stopping))
+                    return;
+                _processState = newState;
+                handler = _onProcessStateChanged;
+            }
             try
             {
                 if (handler != null)
@@ -68,216 +114,68 @@ namespace ServiceLib
             }
         }
 
-        public void Pause()
+        private IEnumerable<Task> ProcessCore()
         {
-            SetProcessState(ProcessState.Pausing);
-            if (_lockWait != null)
-                _lockWait.Dispose();
-            if (_streaming != null)
-                _streaming.Dispose();
-        }
-
-        public void Stop()
-        {
-            SetProcessState(ProcessState.Stopping);
-            if (_lockWait != null)
-                _lockWait.Dispose();
-            if (_streaming != null)
-                _streaming.Dispose();
-        }
-
-        private void ContinueFsm()
-        {
+            yield return TaskUtils.Retry(() => _metadata.Lock(_cancelPause.Token));
             try
             {
-                switch (_fsmState)
+                var taskGetToken = TaskUtils.Retry(() => _metadata.GetToken(), _cancelPause.Token);
+                yield return taskGetToken;
+                var token = taskGetToken.Result;
+                SetProcessState(ProcessState.Running);
+                _streaming.Setup(token, _subscriptions.GetHandledTypes(), _metadata.ProcessName);
+
+                var firstIteration = true;
+                var lastToken = (EventStoreToken)null;
+
+                while (!_cancelPause.IsCancellationRequested)
                 {
-                    case 10:
-                        if (_processState == ProcessState.Pausing || _processState == ProcessState.Stopping)
-                            goto case 210;
-                        else
+                    var nowait = firstIteration || lastToken != null;
+                    var taskNextEvent = TaskUtils.Retry(() => _streaming.GetNextEvent(nowait), _cancelPause.Token);
+                    yield return taskNextEvent;
+                    var nextEvent = taskNextEvent.Result;
+                    var tokenToSave = (EventStoreToken)null;
+                    if (nextEvent == null)
+                    {
+                        tokenToSave = lastToken;
+                    }
+                    else if (nextEvent.Event != null)
+                    {
+                        lastToken = nextEvent.Token;
+                        var handler = _subscriptions.FindHandler(nextEvent.Event.GetType());
+                        var taskHandler = TaskUtils.Retry(() => handler.Handle(nextEvent.Event), _cancelStop.Token, 3);
+                        yield return taskHandler;
+                        tokenToSave = lastToken;
+                        if (taskHandler.Exception != null && !taskHandler.IsCanceled)
                         {
-                            _lockWait = _metadata.Lock(
-                                () => { _fsmState = 20; _lockWait = null; ContinueFsm(); },
-                                ex => { _fsmState = ex is TransientErrorException ? 10 : 210; _lockWait = null; ContinueFsm(); }
-                                );
-                            return;
-                        }
-
-                    case 20:
-                        if (_processState == ProcessState.Pausing || _processState == ProcessState.Stopping)
-                            goto case 200;
-                        else
-                        {
-                            _metadata.GetToken(
-                                t => { _fsmState = 30; _token = t; ContinueFsm(); },
-                                ex => { _fsmState = ex is TransientErrorException ? 20 : 200; ContinueFsm(); }
-                                );
-                            return;
-                        }
-
-                    case 30:
-                        _flushCounter = _flushAfter;
-                        _lastToken = null;
-                        _streaming.Setup(_token, _subscriptions.GetHandledTypes().ToArray(), _metadata.ProcessName);
-                        SetProcessState(ProcessState.Running);
-                        goto case 40;
-
-                    case 40:
-                        _tokenToSave = null;
-                        goto case 41;
-
-                    case 41:
-                        if (_processState == ProcessState.Pausing || _processState == ProcessState.Stopping)
-                            goto case 200;
-                        else
-                        {
-                            _streaming.GetNextEvent(
-                                (tk, evt) => { _fsmState = 50; _token = tk; _handledEvent = evt; ContinueFsm(); },
-                                () => { _fsmState = 50; _token = null; _handledEvent = null; ContinueFsm(); },
-                                (ex, evt) => { _fsmState = ex is TransientErrorException ? 41 : 200; ContinueFsm(); },
-                                _lastToken != null);
-                            return;
-                        }
-
-                    case 50:
-                        if (_handledEvent != null && _processState == ProcessState.Running)
-                        {
-                            _lastToken = _token;
-                            _handlerRetriesLeft = 3;
-                            _handler = _subscriptions.FindHandler(_handledEvent.GetType());
-                            if (_handler != null)
+                            while (true)
                             {
-                                goto case 52;
-                            }
-                            else
-                            {
-                                if (_flushCounter > 0)
-                                    _flushCounter--;
-                                else
-                                    _tokenToSave = _token;
-                                goto case 92;
+                                _cancelStop.Token.ThrowIfCancellationRequested();
+                                var taskDead = _streaming.MarkAsDeadLetter();
+                                yield return taskDead;
+                                if (taskDead.Exception == null)
+                                    break;
                             }
                         }
-                        else if (_lastToken != null)
+                    }
+
+                    if (tokenToSave != null)
+                    {
+                        while (!_cancelStop.IsCancellationRequested)
                         {
-                            _tokenToSave = _lastToken;
-                            _lastToken = null;
-                            goto case 92;
+                            var taskSaveToken = _metadata.SetToken(tokenToSave);
+                            yield return taskSaveToken;
+                            if (taskSaveToken.Exception == null)
+                                break;
                         }
-                        else
-                        {
-                            goto case 92;
-                        }
+                    }
 
-
-                    case 52:
-                        if (_handlerRetriesLeft > 0)
-                            goto case 60;
-                        else
-                            goto case 70;
-
-                    case 60:
-                        if (_processState == ProcessState.Pausing || _processState == ProcessState.Stopping)
-                            goto case 200;
-                        else
-                        {
-                            try
-                            {
-                                _handler.Handle(_handledEvent,
-                                    () => { _fsmState = 70; ContinueFsm(); },
-                                    ex =>
-                                    {
-                                        _handlerRetriesLeft = (ex is TransientErrorException) ? _handlerRetriesLeft - 1 : 0;
-                                        _fsmState = 52;
-                                        ContinueFsm();
-                                    });
-                                return;
-                            }
-                            catch (TransientErrorException)
-                            {
-                                _handlerRetriesLeft--;
-                                goto case 52;
-                            }
-                            catch
-                            {
-                                _handlerRetriesLeft = 0;
-                                goto case 52;
-                            }
-                        }
-
-                    case 70:
-                        if (_handlerRetriesLeft == 0)
-                            goto case 71;
-                        else
-                            goto case 80;
-
-                    case 71:
-                        if (_processState == ProcessState.Pausing || _processState == ProcessState.Stopping)
-                            goto case 200;
-                        else
-                        {
-                            _streaming.MarkAsDeadLetter(
-                                () => { _fsmState = 80; ContinueFsm(); },
-                                ex => { _fsmState = 71; ContinueFsm(); }
-                                );
-                            return;
-                        }
-
-                    case 80:
-                        _tokenToSave = _token;
-                        goto case 92;
-
-                    case 92:
-                        if (_tokenToSave != null)
-                            goto case 100;
-                        else
-                            goto case 40;
-
-                    case 100:
-                        if (_processState == ProcessState.Pausing || _processState == ProcessState.Stopping)
-                            goto case 200;
-                        else
-                        {
-                            _flushCounter = _flushAfter;
-                            _metadata.SetToken(_tokenToSave,
-                                () => { _fsmState = 40; ContinueFsm(); },
-                                ex => { _fsmState = 100; ContinueFsm(); });
-                            return;
-                        }
-
-                    case 200:
-                        _streaming.Dispose();
-                        _metadata.Unlock();
-                        goto case 210;
-
-                    case 210:
-                        SetProcessState(ProcessState.Inactive);
-                        return;
                 }
             }
-            catch
+            finally
             {
-                if (_fsmState >= 20 && _fsmState <= 200)
-                {
-                    try { _streaming.Dispose(); }
-                    catch { }
-                    try { _metadata.Unlock(); }
-                    catch { }
-                }
-                SetProcessState(ProcessState.Inactive);
+                _metadata.Unlock();
             }
-        }
-
-        public void Dispose()
-        {
-            SetProcessState(ProcessState.Inactive);
-        }
-
-        public EventProcessSimple WithTokenFlushing(int flushAfter)
-        {
-            _flushAfter = flushAfter > 1 ? flushAfter : 1;
-            return this;
         }
     }
 }

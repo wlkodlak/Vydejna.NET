@@ -9,11 +9,11 @@ namespace ServiceLib
 {
     public interface IEventProjector
     {
-        IHandleRegistration<CommandExecution<T>> Register<T>(IHandle<CommandExecution<T>> handler);
+        void Register<T>(IProcess<T> handler);
     }
     public interface IEventProjection
-        : IHandle<CommandExecution<ProjectorMessages.Reset>>
-        , IHandle<CommandExecution<ProjectorMessages.UpgradeFrom>>
+        : IProcess<ProjectorMessages.Reset>
+        , IProcess<ProjectorMessages.UpgradeFrom>
     {
         string GetVersion();
         EventProjectionUpgradeMode UpgradeMode(string storedVersion);
