@@ -8,15 +8,30 @@ using System.Threading.Tasks;
 
 namespace ServiceLib
 {
+    public delegate Task<MemoryCacheItem<T>> MemoryCacheLoadDelegate<T>(IMemoryCacheLoad<T> load);
+    public delegate Task<int> MemoryCacheSaveDelegate<T>(IMemoryCacheSave<T> save);
+
     public interface IMemoryCache<T>
     {
-        void Get(string key, Action<int, T> onLoaded, Action<Exception> onError, Action<IMemoryCacheLoad<T>> onLoading);
+        Task<MemoryCacheItem<T>> Get(string key, MemoryCacheLoadDelegate<T> onLoading);
         void Insert(string key, int version, T value, int validity = -1, int expiration = -1, bool dirty = false);
         void Evict(string key);
         void Invalidate(string key);
         void Clear();
-        void Flush(Action onCompleted, Action<Exception> onError, Action<IMemoryCacheSave<T>> saveAction);
+        Task Flush(MemoryCacheSaveDelegate<T> saveAction);
         List<T> GetAllChanges();
+    }
+
+    public class MemoryCacheItem<T>
+    {
+        public readonly int Version;
+        public readonly T Value;
+
+        public MemoryCacheItem(int version, T value)
+        {
+            Version = version;
+            Value = value;
+        }
     }
 
     public interface IMemoryCacheLoad<T>
@@ -25,10 +40,6 @@ namespace ServiceLib
         int OldVersion { get; }
         T OldValue { get; }
         bool OldValueAvailable { get; }
-        void SetLoadedValue(int version, T value);
-        void ValueIsStillValid();
-        void LoadingFailed(Exception exception);
-        IMemoryCacheLoad<T> Expires(int validityMs, int expirationMs);
     }
 
     public interface IMemoryCacheSave<T>
@@ -36,33 +47,11 @@ namespace ServiceLib
         string Key { get; }
         int Version { get; }
         T Value { get; }
-        void SavedAsVersion(int version);
-        void SavingFailed(Exception exception);
-    }
-
-    public class MemoryCacheLoaded<T> : IQueuedExecutionDispatcher
-    {
-        private readonly Action<int, T> _handler;
-        private readonly int _version;
-        private readonly T _value;
-
-        public MemoryCacheLoaded(Action<int, T> handler, int version, T value)
-        {
-            _handler = handler;
-            _version = version;
-            _value = value;
-        }
-
-        public void Execute()
-        {
-            _handler(_version, _value);
-        }
     }
 
     public class MemoryCache<T> : IMemoryCache<T>
     {
         private readonly ConcurrentDictionary<string, MemoryCacheItem> _contents;
-        private readonly IQueueExecution _executor;
         private readonly ITime _timeService;
 
         private int _accessIncrement, _agingShift, _roundLimit;
@@ -71,10 +60,9 @@ namespace ServiceLib
         private int _evicting;
         private int _maxCacheSize, _cleanedCacheSize, _minScore, _minCacheSize;
 
-        public MemoryCache(IQueueExecution executor, ITime timeService)
+        public MemoryCache(ITime timeService)
         {
             _contents = new ConcurrentDictionary<string, MemoryCacheItem>();
-            _executor = executor;
             _timeService = timeService;
             _evicting = 0;
             _lastEvictTime = GetTime();
@@ -109,22 +97,22 @@ namespace ServiceLib
             return this;
         }
 
-        public void Get(string key, Action<int, T> onLoaded, Action<Exception> onError, Action<IMemoryCacheLoad<T>> onLoading)
+        public Task<MemoryCacheItem<T>> Get(string key, MemoryCacheLoadDelegate<T> onLoading)
         {
             MemoryCacheItem item;
             if (!_contents.TryGetValue(key, out item))
                 item = _contents.GetOrAdd(key, new MemoryCacheItem(this, key));
             bool startLoading = false;
-            IQueuedExecutionDispatcher immediateLoaded = null;
             var currentTime = GetTime();
+            Task<MemoryCacheItem<T>> resultTask;
             lock (item)
             {
                 item.NotifyUsage();
                 if (item.ShouldReturnImmediately(onLoading == null, currentTime))
-                    immediateLoaded = new MemoryCacheLoaded<T>(onLoaded, item.OldVersion, item.OldValue);
+                    resultTask = TaskUtils.FromResult(new MemoryCacheItem<T>(item.OldVersion, item.OldValue));
                 else
                 {
-                    item.AddWaiter(onLoaded, onError);
+                    resultTask = item.AddLoadingWaiter();
                     startLoading = item.StartLoading();
                 }
             }
@@ -132,10 +120,11 @@ namespace ServiceLib
                 EvictionInternal(currentTime, _cleanedCacheSize);
             else if (_nextEvictTime <= currentTime)
                 EvictionInternal(currentTime, _maxCacheSize);
-            if (immediateLoaded != null)
-                _executor.Enqueue(immediateLoaded);
             if (startLoading)
-                onLoading(item);
+            {
+                onLoading(item).ContinueWith(item.LoadingFinished);
+            }
+            return resultTask;
         }
 
         public void Insert(string key, int version, T value, int validity = -1, int expiration = -1, bool dirty = false)
@@ -198,13 +187,6 @@ namespace ServiceLib
             }
         }
 
-        private struct Waiter
-        {
-            public Action<int, T> OnLoaded;
-            public Action<Exception> OnError;
-            public Action OnSaved;
-        }
-
         private class MemoryCacheItem : IMemoryCacheLoad<T>, IMemoryCacheSave<T>
         {
             private readonly MemoryCache<T> _parent;
@@ -215,16 +197,16 @@ namespace ServiceLib
             private long _loadingValidity, _loadingExpiration;
             private T _value;
             private int _roundScore, _totalScore;
-            private List<Waiter> _waiters;
+            private List<TaskCompletionSource<MemoryCacheItem<T>>> _loadingWaiters;
 
             public MemoryCacheItem(MemoryCache<T> parent, string key)
             {
                 _parent = parent;
                 _key = key;
-                _waiters = new List<Waiter>();
                 _loadingExpiration = _parent._defaultExpiration;
                 _loadingValidity = _parent._defaultValidity;
                 _version = -1;
+                _loadingWaiters = new List<TaskCompletionSource<MemoryCacheItem<T>>>();
             }
 
             public int Score { get { return _totalScore; } }
@@ -233,56 +215,90 @@ namespace ServiceLib
             public T OldValue { get { return _value; } }
             public bool OldValueAvailable { get { return _version != -1; } }
             public bool Dirty { get { return _dirty; } }
+            public int Version { get { return _version; } }
+            public T Value { get { return _value; } }
 
-            public void SetLoadedValue(int version, T value)
+            public void LoadingFinished(Task<MemoryCacheItem<T>> taskLoading)
             {
-                lock (this)
+                IList<TaskCompletionSource<MemoryCacheItem<T>>> waiters;
+                if (taskLoading.Exception != null)
                 {
-                    _ioInProgress = false;
-                    var currentTime = _parent.GetTime();
-                    _expiresOn = currentTime + _loadingExpiration;
-                    _validUntil = currentTime + _loadingValidity;
-                    _version = version;
-                    _value = value;
-                    _hasValue = true;
-                    foreach (var waiter in _waiters)
-                        if (waiter.OnLoaded != null)
-                            _parent._executor.Enqueue(new MemoryCacheLoaded<T>(waiter.OnLoaded, _version, _value));
-                    _waiters.Clear();
+                    lock (this)
+                    {
+                        _ioInProgress = false;
+                        waiters = _loadingWaiters.ToList();
+                        _loadingWaiters.Clear();
+                    }
+                    foreach (var waiter in waiters)
+                        waiter.TrySetException(taskLoading.Exception.InnerExceptions);
+                }
+                else
+                {
+                    MemoryCacheItem<T> result;
+                    lock (this)
+                    {
+                        _ioInProgress = false;
+                        var currentTime = _parent.GetTime();
+                        _expiresOn = currentTime + _loadingExpiration;
+                        _validUntil = currentTime + _loadingValidity;
+                        waiters = _loadingWaiters.ToList();
+                        _loadingWaiters.Clear();
+                        if (taskLoading.Result != null)
+                        {
+                            result = taskLoading.Result;
+                            _hasValue = true;
+                            _version = result.Version;
+                            _value = result.Value;
+                        }
+                        else if (_hasValue)
+                        {
+                            result = new MemoryCacheItem<T>(_version, _value);
+                        }
+                        else
+                        {
+                            result = new MemoryCacheItem<T>(0, default(T));
+                        }
+                    }
+                    foreach (var waiter in waiters)
+                        waiter.TrySetResult(result);
                 }
             }
 
-            public void ValueIsStillValid()
+            public void SavingFinished(Task<int> taskSave)
             {
-                lock (this)
+                IList<TaskCompletionSource<MemoryCacheItem<T>>> waiters;
+                if (taskSave.Exception != null)
                 {
-                    _ioInProgress = false;
-                    var currentTime = _parent.GetTime();
-                    _expiresOn = currentTime + _loadingExpiration;
-                    _validUntil = currentTime + _loadingValidity;
-                    foreach (var waiter in _waiters)
-                        if (waiter.OnLoaded != null)
-                            _parent._executor.Enqueue(new MemoryCacheLoaded<T>(waiter.OnLoaded, _version, _value));
-                    _waiters.Clear();
+                    lock (this)
+                    {
+                        lock (this)
+                        {
+                            _ioInProgress = false;
+                            waiters = _loadingWaiters.ToList();
+                            _loadingWaiters.Clear();
+                        }
+                        foreach (var waiter in waiters)
+                            waiter.TrySetException(taskSave.Exception.InnerExceptions);
+                    }
                 }
-            }
-
-            public void LoadingFailed(Exception exception)
-            {
-                lock (this)
+                else
                 {
-                    _ioInProgress = false;
-                    foreach (var waiter in _waiters)
-                        _parent._executor.Enqueue(waiter.OnError, exception);
-                    _waiters.Clear();
+                    MemoryCacheItem<T> result;
+                    lock (this)
+                    {
+                        _ioInProgress = false;
+                        _dirty = false;
+                        var currentTime = _parent.GetTime();
+                        _expiresOn = currentTime + _loadingExpiration;
+                        _validUntil = currentTime + _loadingValidity;
+                        waiters = _loadingWaiters.ToList();
+                        _loadingWaiters.Clear();
+                        _version = taskSave.Result;
+                        result = new MemoryCacheItem<T>(_version, _value);
+                    }
+                    foreach (var waiter in waiters)
+                        waiter.TrySetResult(result);
                 }
-            }
-
-            public IMemoryCacheLoad<T> Expires(int validity, int expiration)
-            {
-                _loadingExpiration = expiration == -1 ? _parent._defaultExpiration : expiration * 10000L;
-                _loadingValidity = validity == -1 ? _parent._defaultValidity : validity * 10000L;
-                return this;
             }
 
             public void NotifyUsage()
@@ -308,13 +324,11 @@ namespace ServiceLib
                     return nowait;
             }
 
-            public void AddWaiter(Action<int, T> onLoaded, Action<Exception> onError)
+            public Task<MemoryCacheItem<T>> AddLoadingWaiter()
             {
-                _waiters.Add(new Waiter { OnLoaded = onLoaded, OnError = onError });
-            }
-            public void AddWaiter(Action onSaved, Action<Exception> onError)
-            {
-                _waiters.Add(new Waiter { OnSaved = onSaved, OnError = onError });
+                var waiter = new TaskCompletionSource<MemoryCacheItem<T>>();
+                _loadingWaiters.Add(waiter);
+                return waiter.Task;
             }
 
             public bool StartLoading()
@@ -362,46 +376,16 @@ namespace ServiceLib
             {
                 if (_ioInProgress)
                     return;
-                Expires(validity, expiration);
+                _loadingExpiration = expiration == -1 ? _parent._defaultExpiration : expiration * 10000L;
+                _loadingValidity = validity == -1 ? _parent._defaultValidity : validity * 10000L;
                 if (dirty)
                     _dirty = true;
-                SetLoadedValue(version, value);
-            }
-
-            public int Version
-            {
-                get { return _version; }
-            }
-
-            public T Value
-            {
-                get { return _value; }
-            }
-
-            public void SavedAsVersion(int version)
-            {
-                lock (this)
-                {
-                    _ioInProgress = false;
-                    _dirty = false;
-                    _version = version;
-                    var currentTime = _parent.GetTime();
-                    _expiresOn = currentTime + _loadingExpiration;
-                    _validUntil = currentTime + _loadingValidity;
-                    foreach (var waiter in _waiters)
-                    {
-                        if (waiter.OnSaved != null)
-                            _parent._executor.Enqueue(waiter.OnSaved);
-                        if (waiter.OnLoaded != null)
-                            _parent._executor.Enqueue(new MemoryCacheLoaded<T>(waiter.OnLoaded, _version, _value));
-                    }
-                    _waiters.Clear();
-                }
-            }
-
-            public void SavingFailed(Exception exception)
-            {
-                LoadingFailed(exception);
+                var currentTime = _parent.GetTime();
+                _expiresOn = currentTime + _loadingExpiration;
+                _validUntil = currentTime + _loadingValidity;
+                _hasValue = true;
+                _version = version;
+                _value = value;
             }
         }
 
@@ -415,22 +399,28 @@ namespace ServiceLib
             _contents.Clear();
         }
 
-        public void Flush(Action onCompleted, Action<Exception> onError, Action<IMemoryCacheSave<T>> saveAction)
+        public Task Flush(MemoryCacheSaveDelegate<T> saveAction)
         {
+            return TaskUtils.FromEnumerable(FlushInternal(saveAction)).GetTask();
+        }
+
+        private IEnumerable<Task> FlushInternal(MemoryCacheSaveDelegate<T> saveAction)
+        {
+            var pendingSaves = new List<MemoryCacheItem>();
             foreach (var data in _contents.Values)
             {
                 lock (data)
                 {
-                    if (!data.StartSaving())
-                        continue;
-                    data.AddWaiter(
-                        () => Flush(onCompleted, onError, saveAction),
-                        onError);
+                    if (data.StartSaving())
+                        pendingSaves.Add(data);
                 }
-                saveAction(data);
-                return;
             }
-            onCompleted();
+            foreach (var data in pendingSaves)
+            {
+                var taskSave = saveAction(data);
+                yield return taskSave;
+                data.SavingFinished(taskSave);
+            }
         }
 
         public List<T> GetAllChanges()

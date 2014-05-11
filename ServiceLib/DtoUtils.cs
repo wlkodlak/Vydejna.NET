@@ -16,7 +16,7 @@ namespace ServiceLib
                 int hash = 48972847;
                 foreach (var property in type.GetProperties())
                 {
-                    var value = property.GetValue(obj);
+                    var value = property.GetValue(obj, null);
                     hash *= 30481;
                     if (value != null)
                         hash += value.GetHashCode();
@@ -37,8 +37,8 @@ namespace ServiceLib
             {
                 foreach (var property in typeof(T).GetProperties())
                 {
-                    var valA = property.GetValue(a);
-                    var valB = property.GetValue(b);
+                    var valA = property.GetValue(a, null);
+                    var valB = property.GetValue(b, null);
                     if (!object.Equals(valA, valB))
                         return false;
                 }
@@ -55,7 +55,7 @@ namespace ServiceLib
             bool first = true;
             foreach (var property in typeof(T).GetProperties())
             {
-                var value = property.GetValue(obj);
+                var value = property.GetValue(obj, null);
                 if (first)
                     first = false;
                 else

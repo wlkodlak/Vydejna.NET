@@ -467,7 +467,7 @@ namespace ServiceLib
 
         public Task<IEventStoreCollection> GetAllEvents(EventStoreToken token, int maxCount, bool loadBody)
         {
-            return _db.Query(GetAllEventsWorker, new WaitForEventsContext(IdFromToken(token), maxCount, CancellationToken.None, true))
+            return _db.Query(GetAllEventsWorker, new WaitForEventsContext(null, IdFromToken(token), maxCount, CancellationToken.None, true))
                 .ContinueWith<IEventStoreCollection>(GetAllEventsConvert);
         }
 
@@ -494,6 +494,7 @@ namespace ServiceLib
 
         private class WaitForEventsContext
         {
+            public EventStorePostgres Parent;
             public int WaiterId;
             public long EventId;
             public int MaxCount;
@@ -502,16 +503,22 @@ namespace ServiceLib
             public CancellationTokenRegistration CancelRegistration;
             public bool Nowait;
 
-            public WaitForEventsContext(long eventId, int maxCount, CancellationToken cancel, bool nowait)
+            public WaitForEventsContext(EventStorePostgres parent, long eventId, int maxCount, CancellationToken cancel, bool nowait)
             {
+                Parent = parent;
                 EventId = eventId;
                 MaxCount = maxCount;
                 Cancel = cancel;
                 Nowait = nowait || EventId != -1 && MaxCount > 0;
-                if (Nowait)
+                if (!nowait)
                 {
                     Task = new TaskCompletionSource<IEventStoreCollection>();
                 }
+            }
+
+            public void ImmediateFinished(Task<GetAllEventsResponse> task)
+            {
+                Parent.WaitForEvents_ImmediateFinished(task, this);
             }
         }
 
@@ -547,8 +554,8 @@ namespace ServiceLib
         public Task<IEventStoreCollection> WaitForEvents(EventStoreToken token, int maxCount, bool loadBody, CancellationToken cancel)
         {
             StartNotifications();
-            var waiter = new WaitForEventsContext(IdFromToken(token), maxCount, cancel, false);
-            _db.Query(GetAllEventsWorker, waiter).ContinueWith(WaitForEvents_ImmediateFinished, waiter);
+            var waiter = new WaitForEventsContext(this, IdFromToken(token), maxCount, cancel, false);
+            _db.Query(GetAllEventsWorker, waiter).ContinueWith(waiter.ImmediateFinished);
             return waiter.Task.Task;
         }
 
@@ -620,7 +627,7 @@ namespace ServiceLib
                 }
                 if (maxCount == 0)
                     continue;
-                var taskQuery = _db.Query(GetAllEventsWorker, new WaitForEventsContext(Math.Max(lastKnownEventId, minEventId), maxCount, CancellationToken.None, true));
+                var taskQuery = _db.Query(GetAllEventsWorker, new WaitForEventsContext(null, Math.Max(lastKnownEventId, minEventId), maxCount, CancellationToken.None, true));
                 yield return taskQuery;
                 try
                 {

@@ -71,7 +71,7 @@ namespace ServiceLib
                 }
                 if (wasCompleted)
                     NotifyWaiters();
-                return Task.FromResult(wasCompleted);
+                return TaskUtils.FromResult(wasCompleted);
             }
             catch (Exception ex)
             {
@@ -96,7 +96,7 @@ namespace ServiceLib
                 {
                     _lock.ExitReadLock();
                 }
-                return Task.FromResult<IEventStoreStream>(result);
+                return TaskUtils.FromResult<IEventStoreStream>(result);
             }
             catch (Exception ex)
             {
@@ -293,7 +293,7 @@ namespace ServiceLib
         {
             EventStoreSnapshot snapshot;
             _snapshots.TryGetValue(stream, out snapshot);
-            return Task.FromResult(snapshot);
+            return TaskUtils.FromResult(snapshot);
         }
 
         public Task SaveSnapshot(string stream, EventStoreSnapshot snapshot)

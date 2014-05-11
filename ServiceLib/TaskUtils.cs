@@ -10,7 +10,14 @@ namespace ServiceLib
     {
         public static Task CompletedTask()
         {
-            return Task.FromResult<object>(null);
+            return TaskUtils.FromResult<object>(null);
+        }
+
+        public static Task<T> FromResult<T>(T result)
+        {
+            var tcs = new TaskCompletionSource<T>();
+            tcs.SetResult(result);
+            return tcs.Task;
         }
 
         public static Task<T> FromError<T>(Exception exception)

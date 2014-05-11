@@ -241,52 +241,39 @@ namespace ServiceLib
 
         public Task<T> Load(IAggregateId id)
         {
-            var context = new LoadContext<T>(StreamNameForId(id));
-            return _store.LoadSnapshot(context.StreamName)
-                .ContinueWith<Task<IEventStoreStream>>(Load_ProcessSnapshot, context).Unwrap()
-                .ContinueWith<T>(Load_ProcessEvents, context);
+            return TaskUtils.FromEnumerable<T>(LoadInternal(id)).GetTask();
         }
 
-        private class LoadContext<T>
+        private IEnumerable<Task> LoadInternal(IAggregateId id)
         {
-            public readonly string StreamName;
-            public T Aggregate;
+            var streamName = StreamNameForId(id);
+            var taskLoadSnapshot = _store.LoadSnapshot(streamName);
+            yield return taskLoadSnapshot;
 
-            public LoadContext(string streamName)
-            {
-                StreamName = streamName;
-            }
-        }
-
-        private Task<IEventStoreStream> Load_ProcessSnapshot(Task<EventStoreSnapshot> task, object objContext)
-        {
-            var context = (LoadContext<T>)objContext;
-            var storedSnapshot = task.Result;
+            var storedSnapshot = taskLoadSnapshot.Result;
             var fromVersion = 0;
             var snapshot = storedSnapshot == null ? null : _serializer.Deserialize(storedSnapshot);
+            T aggregate = null;
+
             if (snapshot != null)
             {
-                context.Aggregate = CreateAggregate();
-                fromVersion = 1 + context.Aggregate.LoadFromSnapshot(snapshot);
+                aggregate = CreateAggregate();
+                fromVersion = 1 + aggregate.LoadFromSnapshot(snapshot);
             }
-            return _store.ReadStream(context.StreamName, fromVersion, int.MaxValue, true);
-        }
+            var taskReadStream = _store.ReadStream(streamName, fromVersion, int.MaxValue, true);
+            yield return taskReadStream;
 
-        private T Load_ProcessEvents(Task<IEventStoreStream> task, object objContext)
-        {
-            var context = (LoadContext<T>)objContext;
-            var stream = task.Result;
-            if (stream.StreamVersion == 0)
-                return default(T);
-            else
+            var stream = taskReadStream.Result;
+            if (stream.StreamVersion != 0)
             {
                 var deserialized = stream.Events.Select(_serializer.Deserialize).ToList();
-                if (context.Aggregate == null)
-                    context.Aggregate = CreateAggregate();
-                context.Aggregate.LoadFromEvents(deserialized);
-                context.Aggregate.CommitChanges(stream.StreamVersion);
-                return context.Aggregate;
+                if (aggregate == null)
+                    aggregate = CreateAggregate();
+                aggregate.LoadFromEvents(deserialized);
+                aggregate.CommitChanges(stream.StreamVersion);
             }
+
+            yield return TaskUtils.FromResult(aggregate);
         }
 
         public Task<bool> Save(T aggregate)
@@ -318,7 +305,7 @@ namespace ServiceLib
                 yield return taskAddToStream;
                 if (!taskAddToStream.Result)
                 {
-                    yield return Task.FromResult(false);
+                    yield return TaskUtils.FromResult(false);
                     yield break;
                 }
 
@@ -336,7 +323,7 @@ namespace ServiceLib
                     }
                 }
             }
-            yield return Task.FromResult(true);
+            yield return TaskUtils.FromResult(true);
         }
     }
 

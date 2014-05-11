@@ -40,14 +40,12 @@ namespace ServiceLib
         private class DocumentFolder : IDocumentFolder
         {
             private string _folderName;
-            private IQueueExecution _executor;
             private ConcurrentDictionary<string, Document> _documents = new ConcurrentDictionary<string, Document>();
             private ConcurrentDictionary<string, Index> _indexes = new ConcurrentDictionary<string, Index>();
 
-            public DocumentFolder(string folderName, IQueueExecution executor)
+            public DocumentFolder(string folderName)
             {
                 _folderName = folderName;
-                _executor = executor;
             }
 
             public Task DeleteAll()
@@ -178,7 +176,7 @@ namespace ServiceLib
                             }
                         }
                     }
-                    return Task.FromResult(wasSaved);
+                    return TaskUtils.FromResult(wasSaved);
                 }
                 catch (Exception ex)
                 {
@@ -215,7 +213,7 @@ namespace ServiceLib
                             foundKeys.Add(doc);
                     }
                 }
-                return Task.FromResult<IList<string>>(foundKeys.ToList());
+                return TaskUtils.FromResult<IList<string>>(foundKeys.ToList());
             }
 
             public Task<DocumentStoreFoundDocuments> FindDocuments(string indexName, string minValue, string maxValue, int skip, int maxCount, bool ascending)
@@ -255,7 +253,7 @@ namespace ServiceLib
                         }
                         result.TotalFound = allKeys.Count;
                     }
-                    return Task.FromResult(result);
+                    return TaskUtils.FromResult(result);
                 }
                 catch (Exception ex)
                 {
@@ -264,13 +262,11 @@ namespace ServiceLib
             }
         }
 
-        private IQueueExecution _executor;
         private ConcurrentDictionary<string, DocumentFolder> _folders = new ConcurrentDictionary<string, DocumentFolder>();
         private static readonly Regex _nameRegex = new Regex(@"^[a-zA-Z0-9_\-]+$", RegexOptions.Compiled);
 
-        public DocumentStoreInMemory(IQueueExecution executor)
+        public DocumentStoreInMemory()
         {
-            _executor = executor;
             _folders = new ConcurrentDictionary<string, DocumentFolder>();
         }
 
@@ -283,7 +279,7 @@ namespace ServiceLib
             {
                 if (_folders.TryGetValue(name, out folder))
                     return folder;
-                else if (_folders.TryAdd(name, (folder = new DocumentFolder(name, _executor))))
+                else if (_folders.TryAdd(name, (folder = new DocumentFolder(name))))
                     return folder;
             }
         }

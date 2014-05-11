@@ -96,7 +96,7 @@ namespace ServiceLib
         public Task<string> GetVersion()
         {
             if (string.IsNullOrEmpty(_versionDoc))
-                return Task.FromResult<string>(null);
+                return TaskUtils.FromResult<string>(null);
             return _store.GetDocument(_versionDoc).ContinueWith(task =>
             {
                 var doc = task.Result;
@@ -116,7 +116,7 @@ namespace ServiceLib
         public Task SetVersion(string version)
         {
             if (string.IsNullOrEmpty(_versionDoc))
-                return Task.FromResult<object>(null);
+                return TaskUtils.FromResult<object>(null);
             return _store.SaveDocument(_versionDoc, version, DocumentStoreVersion.At(_versionVer), null).ContinueWith(task =>
             {
                 if (!task.Result)

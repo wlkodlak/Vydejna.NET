@@ -1,18 +1,20 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace ServiceLib
 {
     public interface ISubscriptionManager
     {
-        IHandleRegistration<T> Register<T>(IHandle<T> handler);
+        void Register<T>(IHandle<T> handler);
         IEnumerable<Type> GetHandledTypes();
         ICollection<ISubscription> FindHandlers(Type type);
     }
     public interface ICommandSubscriptionManager
     {
-        IHandleRegistration<CommandExecution<T>> Register<T>(IHandle<CommandExecution<T>> handler);
+        void Register<T>(IProcess<T> handler);
         IEnumerable<Type> GetHandledTypes();
         ICommandSubscription FindHandler(Type type);
     }
@@ -23,74 +25,53 @@ namespace ServiceLib
 
     public class SubscriptionManager : ISubscriptionManager
     {
-        private UpdateLock _lock;
+        private ReaderWriterLockSlim _lock;
         private Dictionary<Type, ICollection<ISubscription>> _handlers;
         private ICollection<ISubscription> _empty;
 
-        private class Subscription<T> : ISubscription<T>
+        private class Subscription<T> : ISubscription
         {
-            private SubscriptionManager _parent;
             private IHandle<T> _handler;
-            private bool _enabled;
-            public readonly Type Type;
 
-            public Subscription(SubscriptionManager parent, IHandle<T> handler)
+            public Subscription(IHandle<T> handler)
             {
-                _parent = parent;
                 _handler = handler;
-                _enabled = true;
-                Type = typeof(T);
             }
 
             public void Handle(object message)
             {
-                if (_enabled)
-                    _handler.Handle((T)message);
-            }
-
-            public void Dispose()
-            {
-                _parent.ChangeRegistration(Type, this, false);
-            }
-
-            public void ReplaceWith(IHandle<T> handler)
-            {
-                _handler = handler;
+                _handler.Handle((T)message);
             }
         }
 
         public SubscriptionManager()
         {
-            _lock = new UpdateLock();
+            _lock = new ReaderWriterLockSlim();
             _handlers = new Dictionary<Type, ICollection<ISubscription>>();
             _empty = new ISubscription[0];
         }
 
-        public IHandleRegistration<T> Register<T>(IHandle<T> handler)
+        public void Register<T>(IHandle<T> handler)
         {
-            var subscription = new Subscription<T>(this, handler);
-            ChangeRegistration(subscription.Type, subscription, true);
-            return subscription;
-        }
-
-        private void ChangeRegistration(Type type, ISubscription subscription, bool add)
-        {
-            using (_lock.Update())
+            _lock.EnterWriteLock();
+            try
             {
+                var type = typeof(T);
                 var list = FindHandlers(type);
                 var copy = list.ToList();
-                if (add)
-                    copy.Add(subscription);
-                else
-                    copy.Remove(subscription);
-                _lock.Write();
+                copy.Add(new Subscription<T>(handler));
                 _handlers[type] = copy;
+            }
+            finally
+            {
+                _lock.ExitWriteLock();
             }
         }
 
         public ICollection<ISubscription> FindHandlers(Type type)
         {
-            using (_lock.Read())
+            _lock.EnterReadLock();
+            try
             {
                 ICollection<ISubscription> found;
                 if (_handlers.TryGetValue(type, out found))
@@ -98,101 +79,94 @@ namespace ServiceLib
                 else
                     return _empty;
             }
+            finally
+            {
+                _lock.ExitReadLock();
+            }
         }
 
         public IEnumerable<Type> GetHandledTypes()
         {
-            using (_lock.Read())
+            _lock.EnterReadLock();
+            try
+            {
                 return _handlers.Keys.ToList();
+            }
+            finally
+            {
+                _lock.ExitReadLock();
+            }
         }
     }
 
     public class CommandSubscriptionManager : ICommandSubscriptionManager
     {
-        private UpdateLock _lock;
+        private ReaderWriterLockSlim _lock;
         private Dictionary<Type, ICommandSubscription> _handlers;
 
-        private class Subscription<T> : ICommandSubscription<T>
+        private class Subscription<T> : ICommandSubscription
         {
-            private CommandSubscriptionManager _parent;
-            private IHandle<CommandExecution<T>> _handler;
-            private bool _enabled;
-            public readonly Type Type;
+            private IProcess<T> _handler;
 
-            public Subscription(CommandSubscriptionManager parent, IHandle<CommandExecution<T>> handler)
-            {
-                _parent = parent;
-                _handler = handler;
-                _enabled = true;
-                Type = typeof(T);
-            }
-
-            public void Handle(object command, Action onComplete, Action<Exception> onError)
-            {
-                if (_enabled)
-                    _handler.Handle(new CommandExecution<T>((T)command, onComplete, onError));
-                else
-                    onComplete();
-            }
-
-            public void Dispose()
-            {
-                _enabled = false;
-                _parent.ChangeRegistration(Type, this, false);
-            }
-
-            public void ReplaceWith(IHandle<CommandExecution<T>> handler)
+            public Subscription(IProcess<T> handler)
             {
                 _handler = handler;
+            }
+
+            public Task Handle(object command)
+            {
+                return _handler.Handle((T)command);
             }
         }
 
         public CommandSubscriptionManager()
         {
-            _lock = new UpdateLock();
+            _lock = new ReaderWriterLockSlim();
             _handlers = new Dictionary<Type, ICommandSubscription>();
         }
 
-        public IHandleRegistration<CommandExecution<T>> Register<T>(IHandle<CommandExecution<T>> handler)
+        public void Register<T>(IProcess<T> handler)
         {
-            var subscription = new Subscription<T>(this, handler);
-            ChangeRegistration(subscription.Type, subscription, true);
-            return subscription;
-        }
-
-        private void ChangeRegistration(Type type, ICommandSubscription subscription, bool add)
-        {
-            using (_lock.Lock())
+            _lock.EnterWriteLock();
+            try
             {
-                if (add)
-                {
-                    if (_handlers.ContainsKey(type))
-                        throw new InvalidOperationException(string.Format("Type {0} is already registered", type.Name));
-                    _handlers.Add(type, subscription);
-                }
-                else
-                {
-                    ICommandSubscription found;
-                    if (_handlers.TryGetValue(type, out found) && found == subscription)
-                        _handlers.Remove(type);
-                }
+                var type = typeof(T);
+                if (_handlers.ContainsKey(type))
+                    throw new InvalidOperationException(string.Format("Type {0} is already registered", type.Name));
+                _handlers.Add(type, new Subscription<T>(handler));
+            }
+            finally
+            {
+                _lock.ExitWriteLock();
             }
         }
 
         public ICommandSubscription FindHandler(Type type)
         {
-            using (_lock.Read())
+            _lock.EnterReadLock();
+            try
             {
                 ICommandSubscription found;
                 _handlers.TryGetValue(type, out found);
                 return found;
             }
+            finally
+            {
+                _lock.ExitReadLock();
+            }
         }
 
         public IEnumerable<Type> GetHandledTypes()
         {
-            using (_lock.Read())
+            _lock.EnterReadLock();
+            try
+            {
                 return _handlers.Keys.ToList();
+            }
+            finally
+            {
+                _lock.ExitReadLock();
+            }
         }
     }
 }
