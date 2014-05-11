@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace ServiceLib
 {
@@ -10,21 +11,19 @@ namespace ServiceLib
     }
     public interface IEventStreamer : IDisposable
     {
-        void GetNextEvent(Action<EventStoreEvent> onComplete, Action<Exception> onError, bool withoutWaiting);
-        void MarkAsDeadLetter(Action onComplete, Action<Exception> onError);
+        Task<EventStoreEvent> GetNextEvent(bool withoutWaiting);
+        Task MarkAsDeadLetter();
     }
 
     public class EventStreaming : IEventStreaming
     {
         private IEventStoreWaitable _store;
-        private IQueueExecution _executor;
         private int _batchSize = 20;
         private INetworkBus _messaging;
 
-        public EventStreaming(IEventStoreWaitable store, IQueueExecution executor, INetworkBus messaging)
+        public EventStreaming(IEventStoreWaitable store, INetworkBus messaging)
         {
             _store = store;
-            _executor = executor;
             _messaging = messaging;
         }
 
@@ -39,278 +38,140 @@ namespace ServiceLib
             return new EventsStream(this, token, processName);
         }
 
-        private class GetNextEventCompleted : IQueuedExecutionDispatcher
+        private static EventStoreEvent EventFromMessage(Message msg)
         {
-            private Action<EventStoreEvent> _onComplete;
-            private EventStoreEvent _completedEvent;
-
-            public GetNextEventCompleted(Action<EventStoreEvent> onComplete, EventStoreEvent completedEvent)
+            var evnt = new EventStoreEvent();
+            evnt.Format = msg.Format;
+            evnt.Type = msg.Type;
+            var endLine = msg.Body.IndexOf("\r\n");
+            if (endLine == -1)
+                return null;
+            else
             {
-                _onComplete = onComplete;
-                _completedEvent = completedEvent;
+                evnt.Token = new EventStoreToken(msg.Body.Substring(0, endLine));
+                evnt.Body = msg.Body.Substring(endLine + 2);
             }
+            return evnt;
+        }
 
-            public void Execute()
-            {
-                _onComplete(_completedEvent);
-            }
+        private static Message MessageFromEvent(EventStoreEvent evnt)
+        {
+            var msg = new Message();
+            msg.Format = evnt.Format;
+            msg.Type = evnt.Type;
+            msg.Body = string.Concat(evnt.Token.ToString(), "\r\n", evnt.Body);
+            return msg;
         }
 
         private class EventsStream : IEventStreamer
         {
             private object _lock;
-            private IEventStoreWaitable _store;
-            private IQueueExecution _executor;
-            private INetworkBus _messaging;
-            private Action<EventStoreEvent> _onComplete;
-            private Action<Exception> _onError;
-            private bool _nowait;
-            private Queue<EventStoreEvent> _outputQueue;
+            private EventStreaming _parent;
             private EventStoreToken _token;
-            private int _batchSize;
-            private MessageDestination _inputQueue;
-            private Message _processedMessage;
-            private EventStoreEvent _processedEvent;
-            private bool _waitsForMessage, _waitsForEventsStore, _getNextEventActive;
-            private IDisposable _cancellableEventStoreWait, _cancellableMessagingWait;
+            private string _processName;
+            private bool _disposed;
+            private Message _currentMessage;
+            private EventStoreEvent _currentEvent;
+            private Message _prefetchedMessage;
+            private Queue<EventStoreEvent> _prefetchedEvents;
+            private Task<Message> _taskLoadMessage;
+            private Task<List<EventStoreEvent>> _taskLoadEvents;
+            private CancellationTokenSource _cancel;
+            private MessageDestination _inputMessagingQueue;
 
             public EventsStream(EventStreaming parent, EventStoreToken token, string processName)
             {
                 _lock = new object();
+                _parent = parent;
                 _token = token;
-                _inputQueue = MessageDestination.For(processName, "__ANY__");
-                _store = parent._store;
-                _executor = parent._executor;
-                _batchSize = parent._batchSize;
-                _messaging = parent._messaging;
-                _outputQueue = new Queue<EventStoreEvent>();
+                _processName = processName;
+                _cancel = new CancellationTokenSource();
+                _prefetchedEvents = new Queue<EventStoreEvent>();
+                _inputMessagingQueue = MessageDestination.For(processName, "__ANY__");
             }
 
-            public void GetNextEvent(Action<EventStoreEvent> onComplete, Action<Exception> onError, bool withoutWaiting)
+            public Task<EventStoreEvent> GetNextEvent(bool withoutWaiting)
             {
-                lock (_lock)
+                return TaskUtils.FromEnumerable<EventStoreEvent>(GetNextEventInternal(withoutWaiting)).GetTask();
+            }
+
+            private IEnumerable<Task> GetNextEventInternal(bool withoutWaiting)
+            {
+                if (_disposed)
                 {
-                    _getNextEventActive = true;
-                    _onComplete = onComplete;
-                    _onError = onError;
-                    _nowait = withoutWaiting;
-                    if (_processedMessage != null)
-                        _messaging.MarkProcessed(_processedMessage, MessageDestination.Processed, OnMessageMarkedAsProcessed, OnMessagingError);
-                    else
-                        GetOrLoadNextEvent();
+                    var exception = new ObjectDisposedException(_processName ?? "EventStreamer");
+                    yield return TaskUtils.FromError<EventStoreEvent>(exception);
+                    yield break;
+                }
+                if (_currentMessage != null)
+                {
+                    var taskMarkProcessed = _parent._messaging.MarkProcessed(_currentMessage, MessageDestination.Processed);
+                    _currentMessage = null;
+                    yield return taskMarkProcessed;
+                    taskMarkProcessed.Wait();
+                }
+                if (_prefetchedMessage != null)
+                {
+                    _currentMessage = _prefetchedMessage;
+                    _prefetchedMessage = null;
+                    var evnt = EventFromMessage(_currentMessage);
+                    yield return TaskUtils.FromResult(evnt);
+                    yield break;
+                }
+                if (_prefetchedEvents.Count > 0)
+                {
+                    _currentEvent = _prefetchedEvents.Dequeue();
+                    yield return TaskUtils.FromResult(_currentEvent);
+                    yield break;
+                }
+                if (_taskLoadMessage == null)
+                {
+                    _taskLoadMessage = _parent._messaging.Receive(_inputMessagingQueue, false, _cancel.Token);
+                    _taskLoadMessage.ContinueWith(GetNextEvent_FromMessaging);
                 }
             }
 
-            private void OnMessageMarkedAsProcessed()
+
+            public Task MarkAsDeadLetter()
             {
+                Message message;
+                bool exists;
                 lock (_lock)
                 {
-                    _processedMessage = null;
-                    GetOrLoadNextEvent();
-                }
-            }
-
-            private void GetOrLoadNextEvent()
-            {
-                if (_outputQueue.Count == 0)
-                    LoadNextEvents();
-                else if (_getNextEventActive)
-                {
-                    _getNextEventActive = false;
-                    _processedEvent = _outputQueue.Dequeue();
-                    _executor.Enqueue(new GetNextEventCompleted(_onComplete, _processedEvent));
-                }
-            }
-
-            private void LoadNextEvents()
-            {
-                lock (_lock)
-                {
-                    if (!_getNextEventActive)
-                        return;
-                    if (!_waitsForMessage)
+                    if (_currentMessage != null)
                     {
-                        _waitsForMessage = true;
-                        _cancellableMessagingWait = _messaging.Receive(_inputQueue, _nowait, OnMessageReceived, OnMessagesEmpty, OnMessagingError);
+                        message = _currentMessage;
+                        _currentMessage = null;
+                        exists = true;
                     }
-                    if (!_waitsForEventsStore)
+                    else if (_currentEvent != null)
                     {
-                        _waitsForEventsStore = true;
-                        if (_nowait)
-                            _store.GetAllEvents(_token, _batchSize, true, OnEventsLoaded, OnEventStoreError);
-                        else
-                            _cancellableEventStoreWait = _store.WaitForEvents(_token, _batchSize, true, OnEventsLoaded, OnEventStoreError);
-                    }
-                }
-            }
-
-            private void OnMessageReceived(Message msg)
-            {
-                lock (_lock)
-                {
-                    _waitsForMessage = false;
-                    _cancellableMessagingWait = null;
-                    _processedMessage = msg;
-                    EventStoreEvent evnt = EventFromMessage(msg);
-                    if (evnt == null)
-                        _messaging.MarkProcessed(msg, MessageDestination.DeadLetters, OnMessageMarkedAsProcessed, OnMessagingError);
-                    else if (_getNextEventActive)
-                    {
-                        _getNextEventActive = false;
-                        _executor.Enqueue(new GetNextEventCompleted(_onComplete, evnt));
+                        message = MessageFromEvent(_currentEvent);
+                        _currentEvent = null;
+                        exists = false;
                     }
                     else
-                    {
-                        _outputQueue.Enqueue(evnt);
-                    }
+                        return TaskUtils.FromError<object>(new InvalidOperationException("EventStreamer: there is no event unfinished event"));
                 }
-            }
-
-            private EventStoreEvent EventFromMessage(Message msg)
-            {
-                var evnt = new EventStoreEvent();
-                evnt.Format = msg.Format;
-                evnt.Type = msg.Type;
-                var endLine = msg.Body.IndexOf("\r\n");
-                if (endLine == -1)
-                    return null;
+                if (exists)
+                {
+                    return _parent._messaging.MarkProcessed(message, MessageDestination.DeadLetters);
+                }
                 else
                 {
-                    evnt.Token = new EventStoreToken(msg.Body.Substring(0, endLine));
-                    evnt.Body = msg.Body.Substring(endLine + 2);
+                    return _parent._messaging.Send(MessageDestination.DeadLetters, message);
                 }
-                return evnt;
-            }
-
-            private Message MessageFromEvent(EventStoreEvent evnt)
-            {
-                var msg = new Message();
-                msg.Format = evnt.Format;
-                msg.Type = evnt.Type;
-                msg.Body = string.Concat(evnt.Token.ToString(), "\r\n", evnt.Body);
-                return msg;
-            }
-
-            private void OnEventsLoaded(IEventStoreCollection events)
-            {
-                lock (_lock)
-                {
-                    _cancellableEventStoreWait = null;
-                    _waitsForEventsStore = false;
-                    _token = events.NextToken;
-                    EventStoreEvent firstEvent = null;
-                    foreach (var evnt in events.Events)
-                    {
-                        if (firstEvent == null && _getNextEventActive)
-                            firstEvent = evnt;
-                        else
-                            _outputQueue.Enqueue(evnt);
-                    }
-                    if (firstEvent != null)
-                    {
-                        if (_getNextEventActive)
-                        {
-                            _getNextEventActive = false;
-                            _processedEvent = firstEvent;
-                            _executor.Enqueue(new GetNextEventCompleted(_onComplete, firstEvent));
-                        }
-                    }
-                    else if (_getNextEventActive)
-                    {
-                        if (_nowait)
-                            OnNothingReceivedNowait();
-                        else
-                            LoadNextEvents();
-                    }
-                }
-            }
-
-            private void OnMessagesEmpty()
-            {
-                lock (_lock)
-                {
-                    _waitsForMessage = false;
-                    if (!_getNextEventActive)
-                        return;
-                    if (_nowait)
-                        OnNothingReceivedNowait();
-                    else
-                        LoadNextEvents();
-                }
-            }
-
-            private void OnNothingReceivedNowait()
-            {
-                if (_waitsForMessage || _waitsForEventsStore)
-                    return;
-                _getNextEventActive = false;
-                _processedEvent = null;
-                _executor.Enqueue(new GetNextEventCompleted(_onComplete, null));
-            }
-
-            private void OnMessagingError(Exception exception)
-            {
-                lock (_lock)
-                {
-                    _waitsForMessage = false;
-                    if (_getNextEventActive)
-                    {
-                        _getNextEventActive = false;
-                        _executor.Enqueue(_onError, exception);
-                    }
-                }
-            }
-
-            private void OnEventStoreError(Exception exception)
-            {
-                lock (_lock)
-                {
-                    _waitsForEventsStore = false;
-                    if (_getNextEventActive)
-                    {
-                        _getNextEventActive = false;
-                        _executor.Enqueue(_onError, exception);
-                    }
-                }
-            }
-
-            public void MarkAsDeadLetter(Action onComplete, Action<Exception> onError)
-            {
-                if (_processedMessage != null)
-                {
-                    var message = _processedMessage;
-                    _processedMessage = null;
-                    _messaging.MarkProcessed(_processedMessage, MessageDestination.DeadLetters, onComplete, onError);
-                }
-                else if (_processedEvent != null)
-                {
-                    var message = MessageFromEvent(_processedEvent);
-                    _messaging.Send(MessageDestination.DeadLetters, message, onComplete, onError);
-                }
-                else
-                    onComplete();
             }
 
             public void Dispose()
             {
                 lock (_lock)
                 {
-                    if (_getNextEventActive)
-                    {
-                        _getNextEventActive = false;
-                        if (_cancellableMessagingWait != null)
-                            _cancellableMessagingWait.Dispose();
-                        if (_cancellableEventStoreWait != null)
-                            _cancellableEventStoreWait.Dispose();
-                        _executor.Enqueue(new GetNextEventCompleted(_onComplete, null));
-                    }
-                    else
-                    {
-                        if (_cancellableMessagingWait != null)
-                            _cancellableMessagingWait.Dispose();
-                        if (_cancellableEventStoreWait != null)
-                            _cancellableEventStoreWait.Dispose();
-                    }
+                    if (_disposed)
+                        return;
+                    _disposed = true;
+                    _cancel.Cancel();
+                    _cancel.Dispose();
                 }
             }
         }

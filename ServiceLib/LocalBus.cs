@@ -16,23 +16,18 @@ namespace ServiceLib
 
     public interface ISubscribable
     {
-        IHandleRegistration<T> Subscribe<T>(IHandle<T> handler);
+        void Subscribe<T>(IHandle<T> handler);
     }
 
-    public interface IAttachBusyProcess
-    {
-        IDisposable AttachBusyProcess();
-    }
-
-    public interface IBus : IPublisher, ISubscribable, IAttachBusyProcess
+    public interface IBus : IPublisher, ISubscribable
     {
     }
 
     public static class BusExtensions
     {
-        public static IHandleRegistration<T> Subscribe<T>(this ISubscribable self, Action<T> handler)
+        public static void Subscribe<T>(this ISubscribable self, Action<T> handler)
         {
-            return self.Subscribe<T>(new DelegatedSyncHandler<T>(handler));
+            self.Subscribe<T>(new DelegatedSyncHandler<T>(handler));
         }
 
         private class DelegatedSyncHandler<T> : IHandle<T>
@@ -63,15 +58,12 @@ namespace ServiceLib
         private string _name;
         private ISubscriptionManager _subscriptions;
         private log4net.ILog _log;
-        private ConcurrentDictionary<int, AttachedProcess> _attached;
-        private int _attachedKey;
 
         public AbstractBus(ISubscriptionManager subscribtions, string name)
         {
             _name = name ?? "Bus";
             _subscriptions = subscribtions;
             _log = log4net.LogManager.GetLogger(name);
-            _attached = new ConcurrentDictionary<int, AttachedProcess>();
         }
 
         public void Publish<T>(T message)
@@ -80,9 +72,9 @@ namespace ServiceLib
             PublishCore(messagesToQueue);
         }
 
-        public IHandleRegistration<T> Subscribe<T>(IHandle<T> handler)
+        public void Subscribe<T>(IHandle<T> handler)
         {
-            return _subscriptions.Register(handler);
+            _subscriptions.Register(handler);
         }
 
         protected abstract void PublishCore(ICollection<QueuedMessage> messages);
@@ -119,42 +111,6 @@ namespace ServiceLib
                     _onError(this, exception);
                 }
             }
-        }
-
-        protected class AttachedProcess : IDisposable
-        {
-            private AbstractBus _parent;
-            private int _key;
-
-            public AttachedProcess(AbstractBus parent, int key)
-            {
-                _parent = parent;
-                _key = key;
-            }
-
-            public void Dispose()
-            {
-                AttachedProcess process;
-                _parent._attached.TryRemove(_key, out process);
-                _parent.AttachedProcessesGone();
-            }
-        }
-
-        public IDisposable AttachBusyProcess()
-        {
-            var key = Interlocked.Increment(ref _attachedKey);
-            var attached = new AttachedProcess(this, key);
-            _attached.AddOrUpdate(key, attached, (k, o) => attached);
-            return attached;
-        }
-
-        protected int AttachedProcessesCount()
-        {
-            return _attached.Count;
-        }
-
-        protected virtual void AttachedProcessesGone()
-        {
         }
     }
 
@@ -193,8 +149,6 @@ namespace ServiceLib
                 {
                     if (_queue.Count != 0)
                         message = _queue.Dequeue();
-                    else if (AttachedProcessesCount() == 0)
-                        return false;
                     else
                         Monitor.Wait(_lock);
                 }
