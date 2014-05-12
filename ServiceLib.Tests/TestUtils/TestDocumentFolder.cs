@@ -11,7 +11,6 @@ namespace ServiceLib.Tests.TestUtils
     {
         private object _lock;
         private Dictionary<string, Document> _data;
-        private IQueueExecution _executor;
         private List<string> _log;
         private Dictionary<string, Index> _indexes;
 
@@ -29,23 +28,22 @@ namespace ServiceLib.Tests.TestUtils
         {
         }
 
-        public TestDocumentFolder(IQueueExecution executor)
+        public TestDocumentFolder()
         {
-            _executor = executor;
             _lock = new object();
             _data = new Dictionary<string, Document>();
             _log = new List<string>();
             _indexes = new Dictionary<string, Index>();
         }
 
-        public void DeleteAll(Action onComplete, Action<Exception> onError)
+        public Task DeleteAll()
         {
             lock (_lock)
             {
                 _data.Clear();
                 _indexes.Clear();
                 AddToLog("Clear", null, 0);
-                _executor.Enqueue(onComplete);
+                return TaskUtils.CompletedTask();
             }
         }
 
@@ -73,7 +71,7 @@ namespace ServiceLib.Tests.TestUtils
             return _log;
         }
 
-        public void GetDocument(string name, Action<int, string> onFound, Action onMissing, Action<Exception> onError)
+        public Task<DocumentStoreFoundDocument> GetDocument(string name)
         {
             lock (_lock)
             {
@@ -81,17 +79,17 @@ namespace ServiceLib.Tests.TestUtils
                 if (_data.TryGetValue(name, out document))
                 {
                     AddToLog("Get", name, document.Version);
-                    _executor.Enqueue(new DocumentFound(onFound, document.Version, document.Contents));
+                    return TaskUtils.FromResult(new DocumentStoreFoundDocument(name, document.Version, true, document.Contents));
                 }
                 else
                 {
                     AddToLog("Get", name, 0);
-                    _executor.Enqueue(onMissing);
+                    return TaskUtils.FromResult(new DocumentStoreFoundDocument(name, 0, true, ""));
                 }
             }
         }
 
-        public void GetNewerDocument(string name, int knownVersion, Action<int, string> onFoundNewer, Action onNotModified, Action onMissing, Action<Exception> onError)
+        public Task<DocumentStoreFoundDocument> GetNewerDocument(string name, int knownVersion)
         {
             lock (_lock)
             {
@@ -100,14 +98,14 @@ namespace ServiceLib.Tests.TestUtils
                 {
                     AddToLog("Get", name, document.Version);
                     if (document.Version == knownVersion)
-                        _executor.Enqueue(onNotModified);
+                        return TaskUtils.FromResult(new DocumentStoreFoundDocument(name, document.Version, false, null));
                     else
-                        _executor.Enqueue(new DocumentFound(onFoundNewer, document.Version, document.Contents));
+                        return TaskUtils.FromResult(new DocumentStoreFoundDocument(name, document.Version, true, document.Contents));
                 }
                 else
                 {
                     AddToLog("Get", name, 0);
-                    _executor.Enqueue(onMissing);
+                    return TaskUtils.FromResult(new DocumentStoreFoundDocument(name, 0, true, ""));
                 }
             }
         }
@@ -136,7 +134,7 @@ namespace ServiceLib.Tests.TestUtils
             }
         }
 
-        public void SaveDocument(string name, string value, DocumentStoreVersion expectedVersion, IList<DocumentIndexing> indexes, Action onSave, Action onConcurrency, Action<Exception> onError)
+        public Task<bool> SaveDocument(string name, string value, DocumentStoreVersion expectedVersion, IList<DocumentIndexing> indexes)
         {
             lock (_lock)
             {
@@ -146,7 +144,7 @@ namespace ServiceLib.Tests.TestUtils
                     if (!expectedVersion.VerifyVersion(document.Version))
                     {
                         AddToLog("Conflict", name, document.Version);
-                        _executor.Enqueue(onConcurrency);
+                        return TaskUtils.FromResult(false);
                     }
                     else
                     {
@@ -154,7 +152,7 @@ namespace ServiceLib.Tests.TestUtils
                         document.Contents = value;
                         AddToLog("Save", name, document.Version);
                         SaveIndexes(name, indexes);
-                        _executor.Enqueue(onSave);
+                        return TaskUtils.FromResult(true);
                     }
                 }
                 else
@@ -162,7 +160,7 @@ namespace ServiceLib.Tests.TestUtils
                     if (!expectedVersion.VerifyVersion(0))
                     {
                         AddToLog("Conflict", name, 0);
-                        _executor.Enqueue(onConcurrency);
+                        return TaskUtils.FromResult(false);
                     }
                     else
                     {
@@ -171,7 +169,7 @@ namespace ServiceLib.Tests.TestUtils
                         document.Contents = value;
                         AddToLog("Save", name, 1);
                         SaveIndexes(name, indexes);
-                        _executor.Enqueue(onSave);
+                        return TaskUtils.FromResult(true);
                     }
                 }
             }
@@ -205,7 +203,7 @@ namespace ServiceLib.Tests.TestUtils
             }
         }
 
-        public void FindDocumentKeys(string indexName, string minValue, string maxValue, Action<IList<string>> onFoundKeys, Action<Exception> onError)
+        public Task<IList<string>> FindDocumentKeys(string indexName, string minValue, string maxValue)
         {
             List<string> result;
             Index index;
@@ -220,9 +218,10 @@ namespace ServiceLib.Tests.TestUtils
             }
             else
                 result = new List<string>();
-            _executor.Enqueue(new FindDocumentKeysCompleted(onFoundKeys, result));
+            return TaskUtils.FromResult<IList<string>>(result);
         }
-        public void FindDocuments(string indexName, string minValue, string maxValue, int skip, int maxCount, bool ascending, Action<DocumentStoreFoundDocuments> onFoundDocuments, Action<Exception> onError)
+
+        public Task<DocumentStoreFoundDocuments> FindDocuments(string indexName, string minValue, string maxValue, int skip, int maxCount, bool ascending)
         {
             Index index;
             var result = new DocumentStoreFoundDocuments();
@@ -248,12 +247,12 @@ namespace ServiceLib.Tests.TestUtils
                     Document document;
                     if (_data.TryGetValue(pair.Item2, out document))
                     {
-                        result.Add(new DocumentStoreFoundDocument(pair.Item1, document.Version, document.Contents));
+                        result.Add(new DocumentStoreFoundDocument(pair.Item1, document.Version, true, document.Contents));
                     }
                 }
                 result.TotalFound = allKeys.Count;
             }
-            _executor.Enqueue(new FindDocumentsCompleted(onFoundDocuments, result));
+            return TaskUtils.FromResult(result);
         }
     }
 }

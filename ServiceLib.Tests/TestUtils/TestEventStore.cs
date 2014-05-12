@@ -2,22 +2,21 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace ServiceLib.Tests.TestUtils
 {
     public class TestEventStore : IEventStoreWaitable
     {
-        private IQueueExecution _executor;
         private object _lock;
         private List<EventStoreEvent> _allEvents;
         private Dictionary<string, EventStoreSnapshot> _snapshots;
         private List<Waiter> _waiters;
         private List<string> _streamingLog;
 
-        public TestEventStore(IQueueExecution executor)
+        public TestEventStore()
         {
-            _executor = executor;
             _lock = new object();
             _allEvents = new List<EventStoreEvent>();
             _waiters = new List<Waiter>();
@@ -25,13 +24,13 @@ namespace ServiceLib.Tests.TestUtils
             _snapshots = new Dictionary<string, EventStoreSnapshot>();
         }
 
-        public void AddToStream(string stream, IEnumerable<EventStoreEvent> events, EventStoreVersion expectedVersion, Action onComplete, Action onConcurrency, Action<Exception> onError)
+        public Task<bool> AddToStream(string stream, IEnumerable<EventStoreEvent> events, EventStoreVersion expectedVersion)
         {
             lock (_lock)
             {
                 var version = _allEvents.Where(e => e.StreamName == stream).Count();
                 if (!expectedVersion.VerifyVersion(version))
-                    _executor.Enqueue(onConcurrency);
+                    return TaskUtils.FromResult(false);
                 else
                 {
                     var newEvents = events.ToList();
@@ -43,8 +42,8 @@ namespace ServiceLib.Tests.TestUtils
                         evnt.Token = new EventStoreToken((_allEvents.Count + 1).ToString());
                         _allEvents.Add(evnt);
                     }
-                    _executor.Enqueue(onComplete);
                     NotifyWaiters(newEvents);
+                    return TaskUtils.FromResult(true);
                 }
             }
         }
@@ -104,14 +103,14 @@ namespace ServiceLib.Tests.TestUtils
             waiters.ForEach(w => w.NotifyEvents(newEvents));
         }
 
-        public void ReadStream(string stream, int minVersion, int maxCount, bool loadBody, Action<IEventStoreStream> onComplete, Action<Exception> onError)
+        public Task<IEventStoreStream> ReadStream(string stream, int minVersion, int maxCount, bool loadBody)
         {
             lock (_lock)
             {
                 var streamEvents = _allEvents.Where(e => e.StreamName == stream).ToList();
                 var version = streamEvents.Count;
                 var selectedEvents = streamEvents.Where(e => e.StreamVersion >= minVersion).Take(maxCount).ToList();
-                _executor.Enqueue(new EventStoreReadStreamComplete(onComplete, new EventStoreStream(selectedEvents, version, 0)));
+                return TaskUtils.FromResult<IEventStoreStream>(new EventStoreStream(selectedEvents, version, 0));
             }
         }
 
@@ -121,16 +120,16 @@ namespace ServiceLib.Tests.TestUtils
                 return _allEvents.Where(e => e.StreamName == stream).ToList();
         }
 
-        public void LoadBodies(IList<EventStoreEvent> events, Action onComplete, Action<Exception> onError)
+        public Task LoadBodies(IList<EventStoreEvent> events)
         {
             _streamingLog.AddRange(events.Select(e => "Body " + e.Token.ToString()));
-            _executor.Enqueue(onComplete);
+            return TaskUtils.CompletedTask();
         }
 
         public IList<string> GetStreamingLog() { return _streamingLog; }
         public void ClearStreamingLog() { _streamingLog.Clear(); }
 
-        public void GetAllEvents(EventStoreToken token, int maxCount, bool loadBody, Action<IEventStoreCollection> onComplete, Action<Exception> onError)
+        public Task<IEventStoreCollection> GetAllEvents(EventStoreToken token, int maxCount, bool loadBody)
         {
             lock (_lock)
             {
@@ -145,7 +144,7 @@ namespace ServiceLib.Tests.TestUtils
                     nextToken = token;
                 else
                     nextToken = currentToken;
-                _executor.Enqueue(new EventStoreGetAllEventsComplete(onComplete, events, nextToken));
+                return TaskUtils.FromResult<IEventStoreCollection>(new EventStoreCollection(events, nextToken));
             }
         }
 
@@ -161,7 +160,7 @@ namespace ServiceLib.Tests.TestUtils
                 return _snapshots.Values.ToList();
         }
 
-        public IDisposable WaitForEvents(EventStoreToken token, int maxCount, bool loadBody, Action<IEventStoreCollection> onComplete, Action<Exception> onError)
+        public Task<IEventStoreCollection> WaitForEvents(EventStoreToken token, int maxCount, bool loadBody, CancellationToken cancel)
         {
             lock (_lock)
             {
@@ -176,37 +175,36 @@ namespace ServiceLib.Tests.TestUtils
                 else if (maxCount == 0)
                     nextToken = token.IsCurrent ? currentToken : token;
                 else
-                    waiter = new Waiter(maxCount, token, onComplete, onError, _executor);
+                    waiter = new Waiter(maxCount, token, cancel);
                 if (waiter == null)
-                {
-                    _executor.Enqueue(new EventStoreGetAllEventsComplete(onComplete, events, nextToken));
-                    return null;
-                }
+                    return TaskUtils.FromResult<IEventStoreCollection>(new EventStoreCollection(events, nextToken));
                 else
                 {
                     _waiters.Add(waiter);
-                    return waiter;
+                    return waiter.Task;
                 }
             }
         }
 
-        private class Waiter : IDisposable
+        private class Waiter
         {
             private int _maxCount;
             private EventStoreToken _token;
-            private Action<IEventStoreCollection> _onComplete;
-            private Action<Exception> _onError;
             private bool _isDisposed;
-            private IQueueExecution _executor;
+            private TaskCompletionSource<IEventStoreCollection> _task;
+            private CancellationToken _cancel;
+            private CancellationTokenRegistration _cancelRegistration;
 
-            public Waiter(int maxCount, EventStoreToken token, Action<IEventStoreCollection> onComplete, Action<Exception> onError, IQueueExecution executor)
+            public Waiter(int maxCount, EventStoreToken token, CancellationToken cancel)
             {
                 _maxCount = maxCount;
                 _token = token;
-                _onComplete = onComplete;
-                _onError = onError;
-                _executor = executor;
+                _cancel = cancel;
+                _task = new TaskCompletionSource<IEventStoreCollection>();
+                _cancelRegistration = cancel.Register(Dispose);
             }
+
+            public Task<IEventStoreCollection> Task { get { return _task.Task; } }
 
             public void NotifyEvents(IEnumerable<EventStoreEvent> events)
             {
@@ -215,37 +213,39 @@ namespace ServiceLib.Tests.TestUtils
                 var selectedEvents = events.Take(_maxCount).ToList();
                 if (selectedEvents.Count != 0)
                     _token = selectedEvents.Last().Token;
-                _executor.Enqueue(new EventStoreGetAllEventsComplete(_onComplete, selectedEvents, _token));
+                _cancelRegistration.Dispose();
+                _task.TrySetResult(new EventStoreCollection(selectedEvents, _token));
             }
 
             public void SendError(Exception exception)
             {
-                _executor.Enqueue(_onError, exception);
+                _task.TrySetException(exception);
             }
 
-            public void Dispose()
+            private void Dispose()
             {
                 _isDisposed = true;
+                _task.TrySetCanceled();
             }
         }
 
-        public void LoadSnapshot(string stream, Action<EventStoreSnapshot> onComplete, Action<Exception> onError)
+        public Task<EventStoreSnapshot> LoadSnapshot(string stream)
         {
             lock (_lock)
             {
                 EventStoreSnapshot snapshot;
                 _snapshots.TryGetValue(stream, out snapshot);
-                onComplete(snapshot);
+                return TaskUtils.FromResult(snapshot);
             }
         }
 
-        public void SaveSnapshot(string stream, EventStoreSnapshot snapshot, Action onComplete, Action<Exception> onError)
+        public Task SaveSnapshot(string stream, EventStoreSnapshot snapshot)
         {
             lock (_lock)
             {
                 snapshot.StreamName = stream;
                 _snapshots[stream] = snapshot;
-                onComplete();
+                return TaskUtils.CompletedTask();
             }
         }
     }

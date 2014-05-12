@@ -8,7 +8,6 @@ namespace ServiceLib.Tests.TestUtils
     {
         private string _method, _url, _clientIp;
         private MemoryStream _input, _output;
-        private ManualResetEventSlim _mre;
 
         public TestRawContext(string method, string url, string clientIp)
         {
@@ -20,7 +19,6 @@ namespace ServiceLib.Tests.TestUtils
             InputHeaders = new TestHeaders();
             OutputHeaders = new TestHeaders();
             RouteParameters = new List<RequestParameter>();
-            _mre = new ManualResetEventSlim();
         }
         public string Method { get { return _method; } }
         public string Url { get { return _url; } }
@@ -31,14 +29,6 @@ namespace ServiceLib.Tests.TestUtils
         public IList<RequestParameter> RouteParameters { get; private set; }
         public IHttpServerRawHeaders InputHeaders { get; private set; }
         public IHttpServerRawHeaders OutputHeaders { get; private set; }
-        public void Close()
-        {
-            _mre.Set();
-        }
-        public bool WaitForClose()
-        {
-            return _mre.Wait(100);
-        }
         public byte[] GetRawOutput()
         {
             return _output.ToArray();

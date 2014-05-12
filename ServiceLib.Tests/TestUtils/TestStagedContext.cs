@@ -15,7 +15,6 @@ namespace ServiceLib.Tests.TestUtils
         private IHttpServerStagedHeaders _inputHeaders, _outputHeaders;
         private Dictionary<string, List<string>> _parameters;
         private List<RequestParameter> _allParameters;
-        private ManualResetEventSlim _mre;
 
         public TestStagedContext(string method, string url, string client)
         {
@@ -27,7 +26,6 @@ namespace ServiceLib.Tests.TestUtils
             _outputHeaders = new HttpServerStagedContextHeaders();
             _parameters = new Dictionary<string, List<string>>();
             _allParameters = new List<RequestParameter>();
-            _mre = new ManualResetEventSlim();
 
             foreach (var param in ParametrizedUrl.ParseQueryString(_url))
             {
@@ -121,16 +119,6 @@ namespace ServiceLib.Tests.TestUtils
         public IHttpProcessedParameter Route(string name)
         {
             return new HttpProcessedParameter(RequestParameterType.QueryString, name, GetValues(GetKey(RequestParameterType.Path, name)));
-        }
-
-        public void Close()
-        {
-            _mre.Set();
-        }
-
-        public bool WaitForClose(int timeout = 100)
-        {
-            return _mre.Wait(timeout);
         }
     }
 }

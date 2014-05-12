@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace ServiceLib.Tests.TestUtils
 {
@@ -9,9 +11,9 @@ namespace ServiceLib.Tests.TestUtils
         public bool WaitsForLock;
         public bool IsLocked;
         public bool FailMode;
+        private TaskCompletionSource<object> _taskLock;
+        private CancellationTokenRegistration _taskCancel;
         public string ProcessName { get; set; }
-        private Action _onLockObtained;
-        private Action<Exception> _onLockError;
 
         public TestMetadataInstance()
         {
@@ -19,51 +21,41 @@ namespace ServiceLib.Tests.TestUtils
             Version = "";
         }
 
-        private class WaitForLock : IDisposable
-        {
-            public TestMetadataInstance TestMetadata;
-            public void Dispose()
-            {
-                TestMetadata.WaitsForLock = false;
-                TestMetadata._onLockError(new OperationCanceledException());
-            }
-        }
-
-        public void GetToken(Action<EventStoreToken> onCompleted, Action<Exception> onError)
+        public Task<EventStoreToken> GetToken()
         {
             if (FailMode)
-                onError(new SystemException("Metadata failing"));
+                return TaskUtils.FromError<EventStoreToken>(new SystemException("Metadata failing"));
             else
-                onCompleted(Token);
+                return TaskUtils.FromResult(Token);
         }
 
-        public void SetToken(EventStoreToken token, Action onCompleted, Action<Exception> onError)
+        public Task SetToken(EventStoreToken token)
         {
             if (FailMode)
-                onError(new SystemException("Metadata failing"));
+                return TaskUtils.FromError<object>(new SystemException("Metadata failing"));
             else
             {
                 Token = token;
-                onCompleted();
+                return TaskUtils.CompletedTask();
             }
         }
 
-        public void GetVersion(Action<string> onCompleted, Action<Exception> onError)
+        public Task<string> GetVersion()
         {
             if (FailMode)
-                onError(new SystemException("Metadata failing"));
+                return TaskUtils.FromError<string>(new SystemException("Metadata failing"));
             else
-                onCompleted(Version);
+                return TaskUtils.FromResult(Version);
         }
 
-        public void SetVersion(string version, Action onCompleted, Action<Exception> onError)
+        public Task SetVersion(string version)
         {
             if (FailMode)
-                onError(new SystemException("Metadata failing"));
+                return TaskUtils.FromError<object>(new SystemException("Metadata failing"));
             else
             {
                 Version = version;
-                onCompleted();
+                return TaskUtils.CompletedTask();
             }
         }
 
@@ -73,17 +65,17 @@ namespace ServiceLib.Tests.TestUtils
             {
                 IsLocked = true;
                 WaitsForLock = false;
-                _onLockObtained();
+                _taskCancel.Dispose();
+                _taskLock.TrySetResult(null);
             }
         }
 
-        public IDisposable Lock(Action onLockObtained, Action<Exception> onError)
+        public Task Lock(CancellationToken cancel)
         {
-            _onLockObtained = onLockObtained;
-            _onLockError = onError;
             WaitsForLock = true;
-            var waiter = new WaitForLock { TestMetadata = this };
-            return waiter;
+            _taskLock = new TaskCompletionSource<object>();
+            _taskCancel = cancel.Register(() => _taskLock.TrySetCanceled());
+            return _taskLock.Task;
         }
 
         public void Unlock()

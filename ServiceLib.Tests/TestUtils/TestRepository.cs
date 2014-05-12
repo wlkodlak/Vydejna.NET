@@ -37,26 +37,26 @@ namespace ServiceLib.Tests.TestUtils
             return _newEvents;
         }
 
-        public void Load(IAggregateId id, Action<T> onLoaded, Action onMissing, Action<Exception> onError)
+        public Task<T> Load(IAggregateId id)
         {
             List<object> all;
             if (!_allEvents.TryGetValue(id, out all))
-                onMissing();
+                return TaskUtils.FromResult<T>(null);
             else
             {
                 var aggregate = new T();
                 aggregate.LoadFromEvents(all);
                 aggregate.CommitChanges(all.Count);
-                onLoaded(aggregate);
+                return TaskUtils.FromResult(aggregate);
             }
         }
 
-        public void Save(T aggregate, Action onSaved, Action onConcurrency, Action<Exception> onError)
+        public Task<bool> Save(T aggregate)
         {
             try
             {
                 if (_throwConcurrency)
-                    onConcurrency();
+                    return TaskUtils.FromResult(false);
                 else
                 {
                     var events = aggregate.GetChanges();
@@ -69,14 +69,13 @@ namespace ServiceLib.Tests.TestUtils
                     _newEvents.AddRange(events);
 
                     aggregate.CommitChanges(all.Count);
+                    return TaskUtils.FromResult(true);
                 }
             }
             catch (Exception ex)
             {
-                onError(ex);
-                return;
+                return TaskUtils.FromError<bool>(ex);
             }
-            onSaved();
         }
     }
 }
