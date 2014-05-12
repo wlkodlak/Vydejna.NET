@@ -41,9 +41,6 @@ namespace ServiceLib
         private IEventSourcedSerializer _serializer;
         private IEventStreamer _streamer;
         private HashSet<string> _typeFilter;
-        private Action<EventStoreToken, object> _onEventRead;
-        private Action _onEventNotAvailable;
-        private Action<Exception, EventStoreEvent> _onError;
         private bool _nowait, _isDisposed;
         private string _processName;
 

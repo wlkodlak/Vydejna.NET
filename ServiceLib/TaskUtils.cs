@@ -126,6 +126,39 @@ namespace ServiceLib
             }
         }
 
+        private class DelayContext
+        {
+            private TaskCompletionSource<object> _tcs;
+            private Timer _timer;
+            private CancellationTokenRegistration _cancelHandler;
+            
+            public DelayContext(int milliseconds, CancellationToken cancel)
+            {
+                _tcs = new TaskCompletionSource<object>();
+                _timer = new Timer(OnTimer, null, milliseconds, Timeout.Infinite);
+                _cancelHandler = cancel.Register(OnCancel);
+            }
+
+            public Task Task { get { return _tcs.Task; } }
+
+            private void OnTimer(object state)
+            {
+                _timer.Dispose();
+                _cancelHandler.Dispose();
+                _tcs.TrySetResult(null);
+            }
+
+            private void OnCancel()
+            {
+                _timer.Dispose();
+                _tcs.TrySetCanceled();
+            }
+        }
+
+        public static Task Delay(int milliseconds, CancellationToken cancel)
+        {
+            return new DelayContext(milliseconds, cancel).Task;
+        }
     }
 
     public class TaskContinuationBuilder<T>

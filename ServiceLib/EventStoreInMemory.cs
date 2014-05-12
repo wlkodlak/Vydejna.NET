@@ -204,7 +204,7 @@ namespace ServiceLib
                 waiter.Complete();
         }
 
-        private class Waiter : IDisposable
+        private class Waiter
         {
             private EventStoreInMemory _parent;
             private int _skip;

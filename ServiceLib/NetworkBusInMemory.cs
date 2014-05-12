@@ -202,11 +202,11 @@ namespace ServiceLib
             {
                 contents.InProgress[message.MessageId] = message;
                 contents.DeliveredOn[message.MessageId] = _timeService.GetUtcTime();
-                return Task.FromResult(message);
+                return TaskUtils.FromResult(message);
             }
             else if (nowait)
             {
-                return Task.FromResult<Message>(null);
+                return TaskUtils.FromResult<Message>(null);
             }
             else
             {

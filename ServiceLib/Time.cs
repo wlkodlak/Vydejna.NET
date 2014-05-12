@@ -22,7 +22,7 @@ namespace ServiceLib
 
         public Task Delay(int milliseconds, CancellationToken cancel)
         {
-            return Task.Delay(milliseconds, cancel);
+            return TaskUtils.Delay(milliseconds, cancel);
         }
     }
 }

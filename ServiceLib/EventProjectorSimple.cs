@@ -36,216 +36,49 @@ namespace ServiceLib
 
     public class EventProjectorSimple : IEventProjector, IProcessWorker
     {
+        private readonly object _lock;
         private readonly IMetadataInstance _metadata;
         private readonly IEventStreamingDeserialized _streaming;
         private readonly ICommandSubscriptionManager _subscriptions;
         private readonly IEventProjection _projectionInfo;
-        private EventStoreToken _lastCompletedToken;
-        private string _version;
-        private EventProjectionUpgradeMode _upgradeMode;
-        private int _flushCounter;
-        private bool _metadataDirty;
-        private ICommandSubscription _currentHandler;
-        private object _currentEvent;
-        private IDisposable _waitForLock;
-        private string _storedVersion;
-        private EventStoreToken _currentToken;
-        private bool _flushNeeded;
         private ProcessState _processState;
         private Action<ProcessState> _onStateChanged;
+        private CancellationTokenSource _cancelPause, _cancelStop;
+        private bool _useDeadLetters;
+        private CancellationToken _cancelPauseToken;
+        private CancellationToken _cancelStopToken;
 
         public EventProjectorSimple(IEventProjection projection, IMetadataInstance metadata, IEventStreamingDeserialized streaming, ICommandSubscriptionManager subscriptions)
         {
+            _lock = new object();
             _projectionInfo = projection;
             _metadata = metadata;
             _streaming = streaming;
             _subscriptions = subscriptions;
+            _cancelPause = new CancellationTokenSource();
+            _cancelPauseToken = _cancelPause.Token;
+            _cancelStop = new CancellationTokenSource();
+            _cancelStopToken = _cancelStop.Token;
         }
 
-        public IHandleRegistration<CommandExecution<T>> Register<T>(IHandle<CommandExecution<T>> handler)
+        public void Register<T>(IProcess<T> handler)
         {
-            return _subscriptions.Register(handler);
+            _subscriptions.Register(handler);
         }
 
-
-        private void OnProjectionLocked()
+        public EventProjectorSimple UseDeadLetters(bool enabled = true)
         {
-            _metadata.GetVersion(OnVersionLoaded, OnError);
-        }
-        private void OnVersionLoaded(string version)
-        {
-            _storedVersion = version;
-            _metadata.GetToken(OnTokenLoaded, OnError);
-        }
-        private void OnTokenLoaded(EventStoreToken token)
-        {
-            try
-            {
-                _lastCompletedToken = token;
-                _version = _projectionInfo.GetVersion();
-                _upgradeMode = _projectionInfo.UpgradeMode(_storedVersion);
-                if (_upgradeMode == EventProjectionUpgradeMode.Rebuild)
-                    _lastCompletedToken = EventStoreToken.Initial;
-                _streaming.Setup(_lastCompletedToken, _subscriptions.GetHandledTypes().ToArray(), _metadata.ProcessName);
-                _flushCounter = 20;
-                SetProcessState(ProcessState.Running);
-                if (_upgradeMode == EventProjectionUpgradeMode.Rebuild)
-                {
-                    _flushNeeded = true;
-                    CallHandler(new ProjectorMessages.Reset(), SaveNewVersion, OnError);
-                }
-                else if (_upgradeMode == EventProjectionUpgradeMode.Upgrade)
-                    CallHandler(new ProjectorMessages.UpgradeFrom(_storedVersion), SaveNewVersion, OnError);
-                else
-                    WaitForEvents();
-            }
-            catch (Exception ex)
-            {
-                OnError(ex);
-            }
-        }
-        private void CallHandler(ProjectorMessages.Reset command, Action onComplete, Action<Exception> onError)
-        {
-            var handler = _subscriptions.FindHandler(typeof(ProjectorMessages.Reset));
-            if (handler != null)
-                handler.Handle(command, onComplete, onError);
-            else
-                _projectionInfo.Handle(new CommandExecution<ProjectorMessages.Reset>(command, onComplete, onError));
-        }
-        private void CallHandler(ProjectorMessages.UpgradeFrom command, Action onComplete, Action<Exception> onError)
-        {
-            var handler = _subscriptions.FindHandler(typeof(ProjectorMessages.UpgradeFrom));
-            if (handler != null)
-                handler.Handle(command, onComplete, onError);
-            else
-                _projectionInfo.Handle(new CommandExecution<ProjectorMessages.UpgradeFrom>(command, onComplete, onError));
-        }
-        private void CallHandler<T>(T command, Action onComplete, Action<Exception> onError)
-        {
-            var handler = _subscriptions.FindHandler(typeof(T));
-            if (handler != null)
-                handler.Handle(command, onComplete, onError);
-            else
-                onComplete();
-        }
-        private void SaveNewVersion()
-        {
-            if (_upgradeMode == EventProjectionUpgradeMode.Rebuild)
-                _metadata.SetVersion(_version, ProcessNextEvent, OnError);
-            else
-                _metadata.SetVersion(_version, WaitForEvents, OnError);
-        }
-        private void WaitForEvents()
-        {
-            if (_processState == ProcessState.Running)
-                _streaming.GetNextEvent(OnEventReceived, OnEventsUsedUp, OnEventsError, false);
-            else if (_processState == ProcessState.Pausing)
-                SaveToken();
-            else
-                StopRunning(ProcessState.Inactive);
-        }
-        private void ProcessNextEvent()
-        {
-            if (_processState == ProcessState.Running)
-                _streaming.GetNextEvent(OnEventReceived, OnEventsUsedUp, OnEventsError, true);
-            else if (_processState == ProcessState.Pausing)
-                SaveToken();
-            else
-                StopRunning(ProcessState.Inactive);
-        }
-        private void OnEventReceived(EventStoreToken token, object evnt)
-        {
-            try
-            {
-                _currentHandler = _subscriptions.FindHandler(evnt.GetType());
-                _currentEvent = evnt;
-                _currentToken = token;
-                _flushNeeded = true;
-                if (_currentHandler != null)
-                    _currentHandler.Handle(_currentEvent, OnEventProcessed, OnError);
-                else
-                    OnEventProcessed();
-            }
-            catch (Exception ex)
-            {
-                OnError(ex);
-            }
-        }
-        private void OnEventsUsedUp()
-        {
-            _currentEvent = null;
-            _currentHandler = null;
-            SaveToken();
-        }
-        private void OnEventsError(Exception exception, EventStoreEvent evnt)
-        {
-            OnError(exception);
-        }
-        private void OnEventProcessed()
-        {
-            _flushCounter--;
-            _metadataDirty = true;
-            _lastCompletedToken = _currentToken;
-            if (_flushCounter <= 0)
-                SaveToken();
-            else
-                ProcessNextEvent();
-        }
-        private void SaveToken()
-        {
-            if (_metadataDirty)
-                _metadata.SetToken(_lastCompletedToken, TokenSaved, OnError);
-            else if (_flushNeeded)
-                TokenSaved();
-            else
-                FlushReported();
-        }
-        private void TokenSaved()
-        {
-            _flushNeeded = false;
-            _metadataDirty = false;
-            if (_upgradeMode == EventProjectionUpgradeMode.Rebuild)
-            {
-                _upgradeMode = EventProjectionUpgradeMode.NotNeeded;
-                CallHandler(new ProjectorMessages.RebuildFinished(), TokenSaved, OnNotifyError);
-            }
-            else
-            {
-                _upgradeMode = EventProjectionUpgradeMode.NotNeeded;
-                CallHandler(new ProjectorMessages.Flush(), FlushReported, OnNotifyError);
-            }
-        }
-        private void FlushReported()
-        {
-            if (_processState == ProcessState.Pausing || _processState == ProcessState.Stopping)
-                StopRunning(ProcessState.Inactive);
-            else if (_currentEvent != null)
-                ProcessNextEvent();
-            else
-                WaitForEvents();
-        }
-
-        private void OnError(Exception exception)
-        {
-            StopRunning(ProcessState.Faulted);
-        }
-
-        private void OnNotifyError(Exception exception)
-        {
-            FlushReported();
-        }
-
-        private void StopRunning(ProcessState newState)
-        {
-            _streaming.Dispose();
-            _metadata.Unlock();
-            if (_processState != ProcessState.Faulted)
-                SetProcessState(newState);
+            _useDeadLetters = enabled;
+            return this;
         }
 
         public ProcessState State
         {
-            get { return _processState; }
+            get
+            {
+                lock (_lock)
+                    return _processState;
+            }
         }
 
         public void Init(Action<ProcessState> onStateChanged)
@@ -255,43 +88,217 @@ namespace ServiceLib
 
         private void SetProcessState(ProcessState state)
         {
-            _processState = state;
-            if (_onStateChanged != null)
-                _onStateChanged(state);
+            Action<ProcessState> handler;
+            lock (_lock)
+            {
+                if (_processState == state)
+                    return;
+                if (_processState == ProcessState.Inactive && (state == ProcessState.Pausing || state == ProcessState.Stopping))
+                    return;
+                _processState = state;
+                handler = _onStateChanged;
+            }
+            if (handler != null)
+            {
+                try { handler(state); }
+                catch { }
+            }
         }
 
         public void Start()
         {
             SetProcessState(ProcessState.Starting);
-            _waitForLock = _metadata.Lock(OnProjectionLocked, ex => { });
+            TaskUtils.FromEnumerable(ProjectorCore()).GetTask().ContinueWith(Finish);
+        }
+
+        private void Finish(Task task)
+        {
+            SetProcessState((task.Exception == null || task.IsCanceled) ? ProcessState.Inactive : ProcessState.Faulted);
         }
 
         public void Pause()
         {
-            Stop(false);
+            _cancelPause.Cancel();
+            SetProcessState(ProcessState.Pausing);
         }
 
         public void Stop()
         {
-            Stop(true);
-        }
-
-        private void Stop(bool immediatelly)
-        {
-            if (_processState != ProcessState.Running)
-                SetProcessState(ProcessState.Inactive);
-            else if (immediatelly)
-                SetProcessState(ProcessState.Stopping);
-            else
-                SetProcessState(ProcessState.Pausing);
-            _streaming.Dispose();
-            _waitForLock.Dispose();
+            _cancelPause.Cancel();
+            _cancelStop.Cancel();
+            SetProcessState(ProcessState.Stopping);
         }
 
         public void Dispose()
         {
-            _onStateChanged = null;
+            _cancelPause.Cancel();
+            _cancelStop.Cancel();
+            _cancelPause.Dispose();
+            _cancelStop.Dispose();
             _processState = ProcessState.Uninitialized;
+        }
+
+        private IEnumerable<Task> ProjectorCore()
+        {
+            yield return TaskUtils.Retry(() => _metadata.Lock(_cancelPauseToken));
+            try
+            {
+                var taskGetToken = TaskUtils.Retry(() => _metadata.GetToken(), _cancelPauseToken);
+                yield return taskGetToken;
+                var token = taskGetToken.Result;
+
+                var taskGetVersion = TaskUtils.Retry(() => _metadata.GetVersion(), _cancelPauseToken);
+                yield return taskGetVersion;
+                var savedVersion = taskGetVersion.Result;
+
+                var rebuildMode = _projectionInfo.UpgradeMode(savedVersion);
+
+                SetProcessState(ProcessState.Running);
+                _streaming.Setup(token, _subscriptions.GetHandledTypes(), _metadata.ProcessName);
+
+                var firstIteration = true;
+                var lastToken = (EventStoreToken)null;
+
+                if (rebuildMode == EventProjectionUpgradeMode.Upgrade)
+                {
+                    var taskUpgrade = TaskUtils.Retry(() => _projectionInfo.Handle(new ProjectorMessages.UpgradeFrom(savedVersion)), _cancelStopToken);
+                    yield return taskUpgrade;
+                    taskUpgrade.Wait();
+                    rebuildMode = EventProjectionUpgradeMode.NotNeeded;
+                }
+                else if (rebuildMode == EventProjectionUpgradeMode.Rebuild)
+                {
+                    var taskReset = TaskUtils.Retry(() => _projectionInfo.Handle(new ProjectorMessages.Reset()), _cancelStopToken);
+                    yield return taskReset;
+                    taskReset.Wait();
+
+                    var taskSetToken = TaskUtils.Retry(() => _metadata.SetToken(EventStoreToken.Initial), _cancelStopToken);
+                    yield return taskSetToken;
+                    taskSetToken.Wait();
+                    token = EventStoreToken.Initial;
+
+                    var taskSetVersion = TaskUtils.Retry(() => _metadata.SetVersion(_projectionInfo.GetVersion()), _cancelStopToken);
+                    yield return taskSetVersion;
+                    taskSetVersion.Wait();
+                }
+
+                while (!_cancelPauseToken.IsCancellationRequested)
+                {
+                    var nowait = firstIteration || lastToken != null || rebuildMode == EventProjectionUpgradeMode.Rebuild;
+                    firstIteration = false;
+                    var taskNextEvent = TaskUtils.Retry(() => _streaming.GetNextEvent(nowait), _cancelPauseToken);
+                    yield return taskNextEvent;
+                    var nextEvent = taskNextEvent.Result;
+
+                    var tokenToSave = (EventStoreToken)null;
+                    if (nextEvent == null)
+                    {
+                        if (rebuildMode == EventProjectionUpgradeMode.Rebuild)
+                        {
+                            var taskHandler = CallHandler(new ProjectorMessages.RebuildFinished());
+                            yield return taskHandler;
+                            taskHandler.Wait();
+                        }
+                        {
+                            var taskHandler = CallHandler(new ProjectorMessages.Flush());
+                            yield return taskHandler;
+                            taskHandler.Wait();
+                        }
+                        tokenToSave = lastToken;
+                    }
+                    else if (nextEvent.Event != null)
+                    {
+                        lastToken = nextEvent.Token;
+                        var taskHandler = CallHandler(nextEvent.Event);
+                        yield return taskHandler;
+                        taskHandler.Wait();
+
+                        if (_cancelPause.IsCancellationRequested)
+                            tokenToSave = lastToken;
+                    }
+
+                    if (tokenToSave != null)
+                    {
+                        while (!_cancelStopToken.IsCancellationRequested)
+                        {
+                            var taskSaveToken = _metadata.SetToken(tokenToSave);
+                            yield return taskSaveToken;
+                            if (taskSaveToken.Exception == null)
+                                break;
+                        }
+                    }
+
+                }
+            }
+            finally
+            {
+                _metadata.Unlock();
+            }
+        }
+
+        private Task CallHandler(object message)
+        {
+            return new CallHandlerContext(this, message).Execute();
+        }
+
+        private class CallHandlerContext
+        {
+            private EventProjectorSimple _parent;
+            private object _message;
+            private ICommandSubscription _handler;
+
+            public CallHandlerContext(EventProjectorSimple parent, object message)
+            {
+                _parent = parent;
+                _message = message;
+            }
+
+            public Task Execute()
+            {
+                _handler = _parent._subscriptions.FindHandler(_message.GetType());
+                if (_handler == null)
+                    return TaskUtils.CompletedTask();
+                else
+                    return CallHandler();
+            }
+
+            private Task CallHandler()
+            {
+                if (_parent._cancelStopToken.IsCancellationRequested)
+                    return TaskUtils.CancelledTask<object>();
+                else
+                    return _handler.Handle(_message).ContinueWith<Task>(HandlerFinished).Unwrap(); 
+            }
+
+            private Task HandlerFinished(Task task)
+            {
+                if (task.IsCanceled || task.Exception == null)
+                    return task;
+                else if (task.Exception.InnerException is TransientErrorException)
+                    return CallHandler();
+                else if (!_parent._useDeadLetters)
+                    return task;
+                else
+                    return MarkAsDeadLetter();
+            }
+
+            private Task MarkAsDeadLetter()
+            {
+                if (_parent._cancelStopToken.IsCancellationRequested)
+                    return TaskUtils.CancelledTask<object>();
+                else
+                    return _parent._streaming.MarkAsDeadLetter().ContinueWith<Task>(DeadLetterFinished).Unwrap();
+            }
+
+            private Task DeadLetterFinished(Task task)
+            {
+                if (task.IsCanceled || task.Exception == null)
+                    return task;
+                else if (task.Exception.InnerException is TransientErrorException)
+                    return MarkAsDeadLetter();
+                else
+                    return task;
+            }
         }
     }
 }

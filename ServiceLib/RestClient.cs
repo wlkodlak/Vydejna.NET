@@ -16,8 +16,6 @@ namespace ServiceLib
         private List<RequestParameter> _parameters;
         private byte[] _payload;
         private string _method;
-        private Action<RestClientResult> _onComplete;
-        private Action<Exception> _onError;
 
         protected RestClient(string url, IHttpClient client)
         {

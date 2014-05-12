@@ -8,7 +8,6 @@ namespace ServiceLib
     {
         private IHttpServerRawContext _rawContext;
         private HttpServerStagedParameters _parameters;
-        private StreamWriter _writer;
 
         public HttpServerStagedContext(IHttpServerRawContext context)
         {

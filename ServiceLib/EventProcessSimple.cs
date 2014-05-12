@@ -14,7 +14,6 @@ namespace ServiceLib
         private readonly ICommandSubscriptionManager _subscriptions;
         private readonly object _lock;
         private CancellationTokenSource _cancelPause, _cancelStop;
-        private int _flushAfter;
         private ProcessState _processState;
         private Action<ProcessState> _onProcessStateChanged;
 
@@ -23,7 +22,6 @@ namespace ServiceLib
             _metadata = metadata;
             _streaming = streaming;
             _subscriptions = subscriptions;
-            _flushAfter = 20;
             _processState = ProcessState.Uninitialized;
             _lock = new object();
             _cancelPause = new CancellationTokenSource();
@@ -36,12 +34,7 @@ namespace ServiceLib
             return this;
         }
 
-        public EventProcessSimple WithTokenFlushing(int flushAfter)
-        {
-            _flushAfter = flushAfter > 1 ? flushAfter : 1;
-            return this;
-        }
-
+        
         public ProcessState State
         {
             get
@@ -122,6 +115,7 @@ namespace ServiceLib
                 var taskGetToken = TaskUtils.Retry(() => _metadata.GetToken(), _cancelPause.Token);
                 yield return taskGetToken;
                 var token = taskGetToken.Result;
+                
                 SetProcessState(ProcessState.Running);
                 _streaming.Setup(token, _subscriptions.GetHandledTypes(), _metadata.ProcessName);
 
@@ -131,9 +125,11 @@ namespace ServiceLib
                 while (!_cancelPause.IsCancellationRequested)
                 {
                     var nowait = firstIteration || lastToken != null;
+                    firstIteration = false;
                     var taskNextEvent = TaskUtils.Retry(() => _streaming.GetNextEvent(nowait), _cancelPause.Token);
                     yield return taskNextEvent;
                     var nextEvent = taskNextEvent.Result;
+                    
                     var tokenToSave = (EventStoreToken)null;
                     if (nextEvent == null)
                     {

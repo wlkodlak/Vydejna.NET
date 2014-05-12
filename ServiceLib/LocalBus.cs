@@ -157,12 +157,6 @@ namespace ServiceLib
             return true;
         }
 
-        protected override void AttachedProcessesGone()
-        {
-            lock (_lock)
-                Monitor.PulseAll(_lock);
-        }
-
         protected override void PublishCore(ICollection<QueuedMessage> messages)
         {
             lock (_lock)
