@@ -110,7 +110,7 @@ namespace ServiceLib.Tests.TestUtils
             }
         }
 
-        public string GetDocument(string name)
+        public string GetDocumentSync(string name)
         {
             lock (_lock)
             {
@@ -122,7 +122,7 @@ namespace ServiceLib.Tests.TestUtils
             }
         }
 
-        public int GetVersion(string name)
+        public int GetVersionSync(string name)
         {
             lock (_lock)
             {
@@ -175,7 +175,7 @@ namespace ServiceLib.Tests.TestUtils
             }
         }
 
-        public void SaveDocument(string name, string value, int manualVersion = -1, IList<DocumentIndexing> indexes = null)
+        public void SaveDocumentSync(string name, string value, int manualVersion = -1, IList<DocumentIndexing> indexes = null)
         {
             lock (_lock)
             {

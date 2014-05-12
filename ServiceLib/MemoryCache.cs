@@ -40,6 +40,7 @@ namespace ServiceLib
         int OldVersion { get; }
         T OldValue { get; }
         bool OldValueAvailable { get; }
+        void Expires(int validity, int expiration);
     }
 
     public interface IMemoryCacheSave<T>
