@@ -28,6 +28,21 @@ namespace ServiceLib.Tests.TestUtils
             throw new NotImplementedException();
         }
 
+        public Task<TResult> Run<TResult>(Func<Task<TResult>> task)
+        {
+
+        }
+
+        public Task Run(Func<Task> task)
+        {
+
+        }
+
+        public void RunSync(Action task)
+        {
+
+        }
+
         public TaskFactory Factory { get { return null; } }
 
     }

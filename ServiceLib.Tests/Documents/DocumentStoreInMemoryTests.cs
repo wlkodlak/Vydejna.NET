@@ -21,7 +21,7 @@ namespace ServiceLib.Tests.Documents
 
         protected override IDocumentStore CreateEmptyDocumentStore()
         {
-            return Partitions[CurrentPartition] = new DocumentStoreInMemory(Executor);
+            return Partitions[CurrentPartition] = new DocumentStoreInMemory();
         }
 
         protected override IDocumentStore GetExistingDocumentStore()
@@ -40,7 +40,7 @@ namespace ServiceLib.Tests.Documents
         {
             base.InitializeCore();
             _disposables = new List<IDisposable>();
-            _db = new DatabasePostgres(GetConnectionString(), Executor);
+            _db = new DatabasePostgres(GetConnectionString());
         }
 
         private string GetConnectionString()
@@ -54,7 +54,7 @@ namespace ServiceLib.Tests.Documents
         }
         protected override IDocumentStore CreateEmptyDocumentStore()
         {
-            var store = new DocumentStorePostgres(_db, Executor, CurrentPartition);
+            var store = new DocumentStorePostgres(_db, CurrentPartition);
             _disposables.Add(store);
             store.Initialize();
             _db.ExecuteSync(DeleteAllDocuments);
@@ -62,7 +62,7 @@ namespace ServiceLib.Tests.Documents
         }
         protected override IDocumentStore GetExistingDocumentStore()
         {
-            var store = new DocumentStorePostgres(_db, Executor, CurrentPartition);
+            var store = new DocumentStorePostgres(_db, CurrentPartition);
             _disposables.Add(store);
             return store;
         }

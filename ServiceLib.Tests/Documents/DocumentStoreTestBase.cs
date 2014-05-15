@@ -15,15 +15,15 @@ namespace ServiceLib.Tests.Documents
         protected string CurrentPartition;
         protected HashSet<string> InitializedPartitions;
         protected IDocumentStore Store;
-        protected TestExecutor Executor;
+        protected TestScheduler Scheduler;
 
         [TestInitialize]
         public void Initialize()
         {
             InitializedPartitions = new HashSet<string>();
-            Executor = new TestExecutor();
+            Scheduler = new TestScheduler();
             InitializeCore();
-            SetPartition("documents");
+            Scheduler.RunSync(() => SetPartition("documents"));
         }
 
         protected virtual void InitializeCore() { }
@@ -76,7 +76,7 @@ namespace ServiceLib.Tests.Documents
             SetupDocument("testing", "doc2", "B", new[] { new DocumentIndexing("idxKey", "B") });
             SetupDocument("testing", "doc3", "C", new[] { new DocumentIndexing("idxKey", "C") });
             SetupDocument("testing", "doc4", "D", new[] { new DocumentIndexing("idxKey", "D") });
-            SetupDocument("testing", "doc5", "E", new[] { new DocumentIndexing("idxKey", new[] { "E", "F" } ) });
+            SetupDocument("testing", "doc5", "E", new[] { new DocumentIndexing("idxKey", new[] { "E", "F" }) });
             SetupDocument("testing", "doc6", "G", new[] { new DocumentIndexing("idxKey", "G") });
             VerifyDocumentKeys("testing", "idxKey", "B", "C", new[] { "doc2", "doc3" });
             VerifyDocumentKeys("testing", "idxKey", null, "A", new[] { "doc1" });
@@ -100,23 +100,17 @@ namespace ServiceLib.Tests.Documents
 
         protected void SetupDocument(string folder, string name, string contents, IList<DocumentIndexing> indexes = null)
         {
-            bool isSaved = false;
-            Store.GetFolder(folder).SaveDocument(name, contents, DocumentStoreVersion.New, indexes,
-                () => { isSaved = true; },
-                () => { throw new InvalidOperationException(string.Format("Document {0} already exists", name)); },
-                ex => { throw ex.PreserveStackTrace(); });
-            Executor.Process();
-            Assert.IsTrue(isSaved, "Document {0} setup", name);
+            var task = Scheduler.Run(() => Store.GetFolder(folder).SaveDocument(name, contents, DocumentStoreVersion.New, indexes));
+            Assert.IsTrue(task.IsCompleted, "Document {0} setup finished", name);
+            Assert.AreEqual(true, task.Result, "Document {0} setup OK", name);
         }
 
         protected void VerifyDocument(string folder, string name, DocumentStoreVersion expectedVersion, string expectedContents)
         {
-            string contents = "";
-            int version = 0;
-            bool failed = false;
-            Store.GetFolder(folder).GetDocument(name, (v, c) => { version = v; contents = c; }, () => { }, ex => failed = true);
-            Executor.Process();
-            Assert.IsFalse(failed, "GetDocument({0}) failed", name);
+            var task = Scheduler.Run(() => Store.GetFolder(folder).GetDocument(name));
+            Assert.IsTrue(task.IsCompleted, "GetDocument({0}) completed", name);
+            var version = task.Result.Version;
+            var contents = task.Result.Contents;
             if (!expectedVersion.VerifyVersion(version))
                 Assert.AreEqual(expectedVersion, DocumentStoreVersion.At(version), "Unexpected version for {0}", name);
             Assert.AreEqual(expectedContents ?? "", contents, "Contents for {0}", name);
@@ -124,38 +118,33 @@ namespace ServiceLib.Tests.Documents
 
         protected void VerifyDocumentKeys(string folder, string indexName, string minValue, string maxValue, IList<string> expectedKeys)
         {
-            bool failed = false;
-            IList<string> foundKeys = null;
-            Store.GetFolder(folder).FindDocumentKeys(indexName, minValue, maxValue, lst => foundKeys = lst, ex => failed = true);
-            Executor.Process();
-            Assert.IsFalse(failed, "FindDocumentKeys({0},{1},{2}) failed", indexName, minValue, maxValue);
+            var task = Scheduler.Run(() => Store.GetFolder(folder).FindDocumentKeys(indexName, minValue, maxValue));
+            Assert.IsTrue(task.IsCompleted, "FindDocumentKeys({0},{1},{2}) complete", indexName, minValue, maxValue);
+            var foundKeys = task.Result;
             Assert.IsNotNull(foundKeys, "FindDocumentKeys({0},{1},{2}) null", indexName, minValue, maxValue);
             Assert.AreEqual(string.Join(", ", expectedKeys), string.Join(", ", foundKeys), "FindDocumentKeys({0},{1},{2}) result", indexName, minValue, maxValue);
         }
 
         protected DocumentStoreFoundDocuments FindDocuments(string folder, string indexName, string minValue, string maxValue, int skip = 0, int maxCount = int.MaxValue, bool ascending = true)
         {
-            bool failed = false;
-            DocumentStoreFoundDocuments foundKeys = null;
-            Store.GetFolder(folder).FindDocuments(indexName, minValue, maxValue, skip, maxCount, ascending, lst => foundKeys = lst, ex => failed = true);
-            Executor.Process();
-            Assert.IsFalse(failed, "FindDocuments failed");
+            var task = Scheduler.Run(() => Store.GetFolder(folder).FindDocuments(indexName, minValue, maxValue, skip, maxCount, ascending));
+            Assert.IsTrue(task.IsCompleted, "FindDocuments complete");
+            var foundKeys = task.Result;
             Assert.IsNotNull(foundKeys, "FindDocuments null");
             return foundKeys;
         }
 
         protected void DeleteFolderContents(string folder)
         {
-            Store.GetFolder(folder).DeleteAll(() => { }, ex => { });
-            Executor.Process();
+            var task = Scheduler.Run(() => Store.GetFolder(folder).DeleteAll());
+            Assert.IsTrue(task.IsCompleted, "FindDocuments complete");
         }
 
         protected void SaveDocument(string folder, string name, DocumentStoreVersion expectedVersion, string contents, string expectedOutcome)
         {
-            string resultSave = null;
-            Store.GetFolder(folder).SaveDocument(name, contents, expectedVersion, null, 
-                () => resultSave = "saved", () => resultSave = "conflict", ex => resultSave = "error:" + ex.Message);
-            Executor.Process();
+            var task = Scheduler.Run(() => Store.GetFolder(folder).SaveDocument(name, contents, expectedVersion, null));
+            Assert.IsTrue(task.IsCompleted, "SaveDocument complete");
+            var resultSave = task.Exception != null ? "error: " + task.Exception.InnerException.Message : task.Result ? "saved" : "conflict";
             Assert.AreEqual(expectedOutcome, resultSave, "Outcome for {0}", name);
         }
 
