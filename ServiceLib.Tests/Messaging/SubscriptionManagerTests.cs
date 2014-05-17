@@ -74,11 +74,11 @@ namespace ServiceLib.Tests.Messaging
 
         private class TestMessage1
         {
-            public string Data;
+            public string Data = null;
         }
         private class TestMessage2
         {
-            public string Data;
+            public string Data = null;
         }
         private class TestHandler1 : IHandle<TestMessage1>, IHandle<TestMessage2>
         {

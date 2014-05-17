@@ -39,7 +39,7 @@ namespace ServiceLib
             if (Interlocked.Exchange(ref _canStartNotifications, 0) == 1)
             {
                 _db.Listen("eventstore", s => _notified.Set(), _cancelListening.Token);
-                _notificationTask = TaskUtils.FromEnumerable(WaitForEvents_CoreInternal()).Catch<Exception>(ex => true).GetTask();
+                _notificationTask = TaskUtils.FromEnumerable(WaitForEvents_CoreInternal()).CatchAll().GetTask();
             }
         }
 

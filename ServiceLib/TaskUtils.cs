@@ -164,27 +164,93 @@ namespace ServiceLib
     public class TaskContinuationBuilder<T>
     {
         private IEnumerable<Task> _tasks;
-        private bool _hasResult;
+        private bool _hasResult, _catchAll;
+        private TaskScheduler _scheduler;
+        private IEnumerator<Task> _enumerator;
+
+        private struct CatchPair
+        {
+            public Type Type;
+            public Predicate<Exception> Handler;
+            public CatchPair(Type type, Predicate<Exception> handler)
+            {
+                Type = type;
+                Handler = handler;
+            }
+        }
 
         public TaskContinuationBuilder(IEnumerable<Task> tasks, bool hasResult)
         {
             _tasks = tasks;
             _hasResult = hasResult;
+            _scheduler = TaskScheduler.Current;
         }
 
-        public TaskContinuationBuilder<T> Catch<TException>(Func<TException, bool> handler)
+        public TaskContinuationBuilder<T> CatchAll()
         {
+            _catchAll = true;
             return this;
         }
 
         public TaskContinuationBuilder<T> UseScheduler(TaskScheduler scheduler)
         {
+            _scheduler = scheduler;
             return this;
         }
 
         public Task<T> GetTask()
         {
-            return null;
+            _enumerator = _tasks.GetEnumerator();
+            var task = new Task<Task<T>>(ProcessingCore);
+            task.Start(_scheduler);
+            return task.Unwrap();
+        }
+
+        private Task<T> ProcessingCore()
+        {
+            return ProcessingCore(null);
+        }
+
+        private Task<T> ProcessingCore(Task previous)
+        {
+            try
+            {
+                if (_enumerator.MoveNext())
+                {
+                    return _enumerator.Current.ContinueWith<Task<T>>(ProcessingCore).Unwrap();
+                }
+                else
+                {
+                    _enumerator.Dispose();
+                    if (_hasResult)
+                    {
+                        var previousTyped = previous as Task<T>;
+                        if (previousTyped != null)
+                            return previousTyped;
+                        else if (previous == null)
+                        {
+                            return TaskUtils.FromError<T>(new InvalidOperationException(
+                                string.Format("Enumeration yielded no tasks for Task<{0}>", typeof(T).FullName)));
+                        }
+                        else
+                        {
+                            return TaskUtils.FromError<T>(new InvalidOperationException(
+                                string.Format("Last returned task is not a Task<{0}> (it's {1})", typeof(T).FullName, previous.GetType().FullName)));
+                        }
+                    }
+                    else
+                    {
+                        return TaskUtils.FromResult(default(T));
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                if (!_catchAll)
+                    return TaskUtils.FromError<T>(ex);
+                else
+                    return TaskUtils.FromResult(default(T));
+            }
         }
     }
 

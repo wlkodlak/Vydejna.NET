@@ -80,7 +80,7 @@ namespace ServiceLib
             {
                 while (_processState == ProcessState.Running)
                 {
-                    TaskUtils.FromEnumerable(ProcessRequestInternal(_listener.GetContext())).Catch<Exception>(ex => true).UseScheduler(_scheduler).GetTask();
+                    TaskUtils.FromEnumerable(ProcessRequestInternal(_listener.GetContext())).CatchAll().UseScheduler(_scheduler).GetTask();
                 }
             }
             catch (HttpListenerException)

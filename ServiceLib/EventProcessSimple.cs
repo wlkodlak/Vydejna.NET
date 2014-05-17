@@ -61,7 +61,7 @@ namespace ServiceLib
         public void Start()
         {
             SetProcessState(ProcessState.Starting);
-            TaskUtils.FromEnumerable(ProcessCore()).Catch<Exception>(ex => true).UseScheduler(_scheduler).GetTask()
+            TaskUtils.FromEnumerable(ProcessCore()).CatchAll().UseScheduler(_scheduler).GetTask()
                 .ContinueWith(t =>
                 {
                     if (t.Exception == null || t.IsCanceled)
