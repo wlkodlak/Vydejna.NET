@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace ServiceLib.Tests.Http
 {
@@ -58,9 +59,10 @@ namespace ServiceLib.Tests.Http
                 _name = name;
             }
 
-            public void Handle(IHttpServerRawContext context)
+            public Task Handle(IHttpServerRawContext context)
             {
                 _output.Add(_name);
+                return TaskUtils.CompletedTask();
             }
         }
     }

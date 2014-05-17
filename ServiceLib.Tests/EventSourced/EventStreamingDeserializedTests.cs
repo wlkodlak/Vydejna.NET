@@ -1,32 +1,32 @@
 ﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Moq;
 using System;
+using ServiceLib.Tests.TestUtils;
+using System.Threading.Tasks;
 
 namespace ServiceLib.Tests.EventSourced
 {
     [TestClass]
     public class EventStreamingDeserializedTests
     {
+        private TestScheduler _scheduler;
         private TestStreaming _streaming;
         private TestStreamer _streamer;
         private TestSerializer _serializer;
         private EventStreamingDeserialized _deserialized;
         private Type[] _types;
-        private string LastReceivedCall;
-        private EventStoreToken LastReceivedToken;
-        private object LastReceivedEvent;
-        private Exception LastReceivedException;
-        private EventStoreEvent LastReceivedRawEvent;
+        private Task<EventStreamingDeserializedEvent> _task;
 
         [TestInitialize]
         public void Initialize()
         {
+            _scheduler = new TestScheduler();
             _streamer = new TestStreamer();
             _streaming = new TestStreaming(_streamer);
             _serializer = new TestSerializer();
             _deserialized = new EventStreamingDeserialized(_streaming, _serializer);
             _types = new[] { typeof(TestEvent1), typeof(TestEvent2) };
-            ClearLastReceived();
+            _task = null;
         }
 
         [TestMethod]
@@ -48,7 +48,7 @@ namespace ServiceLib.Tests.EventSourced
         public void GetNextEventToStreamer()
         {
             _deserialized.Setup(new EventStoreToken("4493"), _types, "TestProcess");
-            _deserialized.GetNextEvent((t, e) => { }, () => { }, (x, e) => { }, true);
+            GetNextEvent(true);
             Assert.IsTrue(_streamer.Processing, "Processing");
             Assert.IsTrue(_streamer.Nowait, "Nowait");
         }
@@ -57,7 +57,7 @@ namespace ServiceLib.Tests.EventSourced
         public void WhenEventIsNotAvailable()
         {
             _deserialized.Setup(new EventStoreToken("4493"), _types, "TestProcess");
-            _deserialized.GetNextEvent(OnEventRead, OnEventNotAvailable, OnError, true);
+            GetNextEvent(true);
             _streamer.SendEmptyEvent();
             ExpectEventNotAvailable();
         }
@@ -66,7 +66,7 @@ namespace ServiceLib.Tests.EventSourced
         public void WhenSupportedEventArrives()
         {
             _deserialized.Setup(new EventStoreToken("4493"), _types, "TestProcess");
-            _deserialized.GetNextEvent(OnEventRead, OnEventNotAvailable, OnError, true);
+            GetNextEvent(true);
             _streamer.SendEvent("4496", "TestEvent1", "EventData");
             ExpectEvent("4496", "TestEvent1", "EventData");
         }
@@ -75,7 +75,7 @@ namespace ServiceLib.Tests.EventSourced
         public void WhenUnsupportedEventArrives()
         {
             _deserialized.Setup(new EventStoreToken("4493"), _types, "TestProcess");
-            _deserialized.GetNextEvent(OnEventRead, OnEventNotAvailable, OnError, true);
+            GetNextEvent(true);
             _streamer.SendEvent("4496", "TestEvent3", "EventData");
             ExpectNoCall();
             Assert.IsTrue(_streamer.Processing, "Processing");
@@ -86,65 +86,64 @@ namespace ServiceLib.Tests.EventSourced
         public void WhenDeserializationFails()
         {
             _deserialized.Setup(new EventStoreToken("4493"), _types, "TestProcess");
-            _deserialized.GetNextEvent(OnEventRead, OnEventNotAvailable, OnError, true);
+            GetNextEvent(true);
             _streamer.SendEvent("4496", "TestEvent2", "FAIL");
-            ExpectError();
-            Assert.IsNotNull(LastReceivedRawEvent, "Raw event");
+            ExpectDeserializationError();
         }
 
         [TestMethod]
         public void WhenRetrievalFails()
         {
             _deserialized.Setup(new EventStoreToken("4493"), _types, "TestProcess");
-            _deserialized.GetNextEvent(OnEventRead, OnEventNotAvailable, OnError, true);
+            GetNextEvent(true);
             _streamer.SendError(new NotSupportedException("Sent error"));
             ExpectError();
-            Assert.IsNull(LastReceivedRawEvent, "Raw event");
         }
 
-        private void ClearLastReceived()
+        private void GetNextEvent(bool nowait)
         {
-            LastReceivedCall = "none";
-            LastReceivedEvent = null;
-            LastReceivedToken = null;
-            LastReceivedException = null;
-            LastReceivedRawEvent = null;
+            _task = _scheduler.Run(() => _deserialized.GetNextEvent(nowait), false);
         }
-        private void OnEventRead(EventStoreToken token, object evnt)
-        {
-            LastReceivedCall = "success";
-            LastReceivedToken = token;
-            LastReceivedEvent = evnt;
-        }
-        private void OnEventNotAvailable()
-        {
-            LastReceivedCall = "empty";
-        }
-        private void OnError(Exception exception, EventStoreEvent evnt)
-        {
-            LastReceivedCall = "error";
-            LastReceivedException = exception;
-            LastReceivedRawEvent = evnt;
-        }
+
         private void ExpectEvent(string token, string type, string body)
         {
-            Assert.AreEqual("success", LastReceivedCall, "Call type");
-            Assert.IsNotNull(LastReceivedEvent, "Received event");
-            Assert.AreEqual(type, LastReceivedEvent.GetType().Name, "Event type");
-            Assert.AreEqual(body, (LastReceivedEvent as TestEvent).Data, "Data");
+            _scheduler.Process();
+            Assert.IsTrue(_task.IsCompleted, "Complete");
+            Assert.IsNull(_task.Exception, "Exception");
+            var evnt = _task.Result;
+            Assert.IsNotNull(evnt, "Received result");
+            Assert.IsNotNull(evnt.Event, "Received event");
+            Assert.AreEqual(type, evnt.Event.GetType().Name, "Event type");
+            Assert.AreEqual(body, (evnt.Event as TestEvent).Data, "Data");
         }
         private void ExpectEventNotAvailable()
         {
-            Assert.AreEqual("empty", LastReceivedCall, "Call type");
+            _scheduler.Process();
+            Assert.IsTrue(_task.IsCompleted, "Complete");
+            Assert.IsNull(_task.Exception, "Exception");
+            var evnt = _task.Result;
+            Assert.IsNull(evnt, "Received result");
         }
         private void ExpectNoCall()
         {
-            Assert.AreEqual("none", LastReceivedCall, "Call type");
+            _scheduler.Process();
+            Assert.IsFalse(_task.IsCompleted, "Complete");
         }
         private void ExpectError()
         {
-            Assert.AreEqual("error", LastReceivedCall, "Call type");
-            Assert.IsNotNull(LastReceivedException, "Exception");
+            _scheduler.Process();
+            Assert.IsTrue(_task.IsCompleted, "Complete");
+            Assert.IsNotNull(_task.Exception, "Exception");
+        }
+        private void ExpectDeserializationError()
+        {
+            _scheduler.Process();
+            Assert.IsTrue(_task.IsCompleted, "Complete");
+            Assert.IsNull(_task.Exception, "Task exception");
+            var evnt = _task.Result;
+            Assert.IsNotNull(evnt, "Received result");
+            Assert.IsNull(evnt.Event, "Received event");
+            Assert.IsNotNull(evnt.Raw, "Received raw event");
         }
 
         private class TestStreaming : IEventStreaming
@@ -233,12 +232,11 @@ namespace ServiceLib.Tests.EventSourced
         private class TestStreamer : IEventStreamer
         {
             public EventStoreToken LastProcessedToken;
+            public string LastProcessName;
             public bool Disposed;
             public bool Processing;
             public bool Nowait;
-            private Action<EventStoreEvent> _onComplete;
-            private Action<Exception> _onError;
-            private string LastProcessName;
+            public TaskCompletionSource<EventStoreEvent> Task;
 
             public void Setup(EventStoreToken token, string processName)
             {
@@ -247,18 +245,18 @@ namespace ServiceLib.Tests.EventSourced
                 Disposed = false;
             }
 
-            public void GetNextEvent(Action<EventStoreEvent> onComplete, Action<Exception> onError, bool withoutWaiting)
+            public Task<EventStoreEvent> GetNextEvent(bool withoutWaiting)
             {
                 Assert.IsFalse(Disposed, "Disposed");
                 Processing = true;
                 Nowait = withoutWaiting;
-                _onComplete = onComplete;
-                _onError = onError;
+                Task = new TaskCompletionSource<EventStoreEvent>();
+                return Task.Task;
             }
 
-            public void MarkAsDeadLetter(Action onComplete, Action<Exception> onError)
+            public Task MarkAsDeadLetter()
             {
-
+                return TaskUtils.CompletedTask();
             }
 
             public void Dispose()
@@ -269,7 +267,7 @@ namespace ServiceLib.Tests.EventSourced
             public void SendError(Exception exception)
             {
                 Assert.IsTrue(Processing, "Streamer not active");
-                _onError(exception);
+                Task.TrySetException(exception);
             }
 
             public void SendEvent(EventStoreEvent evnt)
@@ -277,7 +275,7 @@ namespace ServiceLib.Tests.EventSourced
                 Assert.IsTrue(Processing, "Streamer not active");
                 if (evnt != null)
                     LastProcessedToken = evnt.Token;
-                _onComplete(evnt);
+                Task.TrySetResult(evnt);
             }
 
             public void SendMessage(Message msg)

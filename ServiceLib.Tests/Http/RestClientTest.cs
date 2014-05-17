@@ -114,19 +114,20 @@ namespace ServiceLib.Tests.Http
         private class TestHttpClient : IHttpClient
         {
             public HttpClientRequest LastRequest;
-            private Action<HttpClientResponse> _onCompleted;
+            private TaskCompletionSource<HttpClientResponse> _tcs;
             private ManualResetEventSlim _mre = new ManualResetEventSlim();
 
             public void SendResponse(HttpClientResponse response)
             {
-                _onCompleted(response);
+                _tcs.TrySetResult(response);
             }
 
-            public void Execute(HttpClientRequest request, Action<HttpClientResponse> onCompleted, Action<Exception> onError)
+            public Task<HttpClientResponse> Execute(HttpClientRequest request)
             {
                 LastRequest = request;
-                _onCompleted = onCompleted;
+                _tcs = new TaskCompletionSource<HttpClientResponse>();
                 _mre.Set();
+                return _tcs.Task;
             }
 
             public bool WaitForExecute(int timeout = 100)
@@ -135,32 +136,18 @@ namespace ServiceLib.Tests.Http
             }
         }
 
-        private RestClientResult _response;
-        private ManualResetEventSlim _waitForCompletion;
-        private Exception _exception;
-
-        private void OnComplete(RestClientResult result)
-        {
-            _response = result;
-            _waitForCompletion.Set();
-        }
-
-        private void OnError(Exception exception)
-        {
-            _exception = exception;
-        }
-
         public RestClientResult RunTest(RestClient restClient)
         {
-            _waitForCompletion = new ManualResetEventSlim();
-            _response = null;
-            restClient.Execute(OnComplete, OnError);
+            var scheduler = new TestScheduler();
+            var task = scheduler.Run(() => restClient.Execute());
+
             _httpClient.WaitForExecute();
             _httpClient.SendResponse(PreparedResponse);
             _httpRequest = _httpClient.LastRequest;
-            _waitForCompletion.Wait(1000);
-            if (_exception != null)
-                throw _exception.PreserveStackTrace();
+
+            scheduler.Process();
+            Assert.IsTrue(task.IsCompleted, "Completed");
+            var response = task.Result;
             if (ExpectedResponse != null)
             {
                 if (ExpectedResponse.Value)
@@ -172,7 +159,7 @@ namespace ServiceLib.Tests.Http
                 Assert.AreEqual(ExpectedMethod, _httpRequest.Method, "Method");
             if (ExpectedUrl != null)
                 Assert.AreEqual(ExpectedUrl, _httpRequest.Url, "Url");
-            return _response;
+            return response;
         }
     }
 

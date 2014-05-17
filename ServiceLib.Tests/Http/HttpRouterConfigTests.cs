@@ -1,6 +1,7 @@
 ﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace ServiceLib.Tests.Http
 {
@@ -90,15 +91,17 @@ namespace ServiceLib.Tests.Http
         {
             public string Name;
             public TestProcessor(string name) { Name = name; }
-            public void Process(IHttpServerStagedContext context)
+            public Task Process(IHttpServerStagedContext context)
             {
+                return TaskUtils.CompletedTask();
             }
         }
 
         private class TestRawHandler : IHttpRouteHandler
         {
-            public void Handle(IHttpServerRawContext context)
+            public Task Handle(IHttpServerRawContext context)
             {
+                return TaskUtils.CompletedTask();
             }
         }
     }

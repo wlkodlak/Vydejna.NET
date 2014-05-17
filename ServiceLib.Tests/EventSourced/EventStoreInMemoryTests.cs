@@ -12,7 +12,7 @@ namespace ServiceLib.Tests.EventSourced
     {
         protected override IEventStoreWaitable GetEventStore()
         {
-            return new EventStoreInMemory(Executor);
+            return new EventStoreInMemory();
         }
     }
 
@@ -21,12 +21,14 @@ namespace ServiceLib.Tests.EventSourced
     {
         private DatabasePostgres _db;
         private List<IDisposable> _disposables;
+        private VirtualTime _time;
 
         protected override void InitializeCore()
         {
             base.InitializeCore();
+            _time = new VirtualTime();
             _disposables = new List<IDisposable>();
-            _db = new DatabasePostgres(GetConnectionString(), Executor);
+            _db = new DatabasePostgres(GetConnectionString());
             _db.ExecuteSync(Drop);
         }
 
@@ -42,7 +44,7 @@ namespace ServiceLib.Tests.EventSourced
 
         protected override IEventStoreWaitable GetEventStore()
         {
-            var store = new EventStorePostgres(_db, Executor);
+            var store = new EventStorePostgres(_db, _time);
             _disposables.Add(store);
             store.Initialize();
             return store;

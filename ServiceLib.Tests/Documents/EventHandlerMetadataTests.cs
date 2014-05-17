@@ -2,13 +2,15 @@
 using ServiceLib.Tests.TestUtils;
 using Moq;
 using System;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace ServiceLib.Tests.Documents
 {
     [TestClass]
     public class EventHandlerMetadataTests
     {
-        private TestExecutor _executor;
+        private TestScheduler _scheduler;
         private TestDocumentFolder _folder;
         private Mock<INodeLockManager> _locking;
         private MetadataManager _mgr;
@@ -17,8 +19,8 @@ namespace ServiceLib.Tests.Documents
         [TestInitialize]
         public void Initialize()
         {
-            _executor = new TestExecutor();
-            _folder = new TestDocumentFolder(_executor);
+            _scheduler = new TestScheduler();
+            _folder = new TestDocumentFolder();
             _locking = new Mock<INodeLockManager>();
             _mgr = new MetadataManager(_folder, _locking.Object);
             _inst = _mgr.GetConsumer("consumer");
@@ -27,62 +29,53 @@ namespace ServiceLib.Tests.Documents
         [TestMethod]
         public void GetNonexistingToken()
         {
-            EventStoreToken token = null;
-            _inst.GetToken(t => token = t, ThrowError);
-            _executor.Process();
+            var taskToken = _scheduler.Run(() => _inst.GetToken());
+            Assert.IsTrue(taskToken.IsCompleted, "Complete");
+            var token = taskToken.Result;
             Assert.AreEqual(EventStoreToken.Initial, token);
         }
 
         [TestMethod]
         public void GetExistingToken()
         {
-            _folder.SaveDocument("consumer_tok", "5584");
-            EventStoreToken token = null;
-            _inst.GetToken(t => token = t, ThrowError);
-            _executor.Process();
+            _folder.SaveDocumentSync("consumer_tok", "5584");
+            var taskToken = _scheduler.Run(() => _inst.GetToken());
+            Assert.IsTrue(taskToken.IsCompleted, "Complete");
+            var token = taskToken.Result;
             Assert.AreEqual(new EventStoreToken("5584"), token);
         }
 
         [TestMethod]
         public void GetNonexistingVersion()
         {
-            string version = null;
-            _inst.GetVersion(ver => version = ver, ThrowError);
-            _executor.Process();
+            var taskVersion = _scheduler.Run(() => _inst.GetVersion());
+            Assert.IsTrue(taskVersion.IsCompleted, "Complete");
+            var version = taskVersion.Result;
             Assert.AreEqual("", version ?? "");
         }
 
         [TestMethod]
         public void GetExistingVersion()
         {
-            _folder.SaveDocument("consumer_ver", "1.12");
-            string version = null;
-            _inst.GetVersion(ver => version = ver, ThrowError);
-            _executor.Process();
+            _folder.SaveDocumentSync("consumer_ver", "1.12");
+            var taskVersion = _scheduler.Run(() => _inst.GetVersion());
+            Assert.IsTrue(taskVersion.IsCompleted, "Complete");
+            var version = taskVersion.Result;
             Assert.AreEqual("1.12", version);
-        }
-
-        private class EmptyDisposable : IDisposable
-        {
-            public void Dispose() { }
         }
 
         [TestMethod]
         public void LockMetadata()
         {
-            bool obtained;
-            Action lockAction = null;
-            var lockWait = new EmptyDisposable();
+            var tcs = new TaskCompletionSource<object>();
             _locking
-                .Setup(l => l.Lock("consumer", It.IsAny<Action>(), It.IsAny<Action<Exception>>(), false))
-                .Callback<string, Action, Action<Exception>, bool>((doc, succ, fail, nowait) => lockAction = succ)
-                .Returns(lockWait);
-            var returnedWait = _inst.Lock(() => obtained = true, ex => { });
-            Assert.IsNotNull(lockAction, "No success action");
-            obtained = false;
-            lockAction();
-            Assert.IsTrue(obtained, "Correct action");
-            Assert.AreSame(lockWait, returnedWait, "IDisposable");
+                .Setup(l => l.Lock("consumer", CancellationToken.None, false))
+                .Returns(tcs.Task)
+                .Verifiable();
+            var taskLock = _scheduler.Run(() => _inst.Lock(CancellationToken.None));
+            tcs.SetResult(null);
+            _scheduler.Process();
+            Assert.AreEqual(TaskStatus.RanToCompletion, taskLock.Status, "Status");
         }
 
         [TestMethod]
@@ -91,11 +84,6 @@ namespace ServiceLib.Tests.Documents
             _locking.Setup(l => l.Unlock("consumer")).Verifiable();
             _inst.Unlock();
             _locking.Verify();
-        }
-
-        private void ThrowError(Exception ex)
-        {
-            throw ex;
         }
     }
 }

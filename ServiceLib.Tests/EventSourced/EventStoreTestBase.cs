@@ -4,19 +4,20 @@ using System;
 using System.Linq;
 using System.Collections.Generic;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace ServiceLib.Tests.EventSourced
 {
     [TestClass]
     public abstract class EventStoreTestBase
     {
-        protected TestExecutor Executor;
+        protected TestScheduler Scheduler;
         protected IEventStoreWaitable Store;
 
         [TestInitialize]
         public void Initialize()
         {
-            Executor = new TestExecutor();
+            Scheduler = new TestScheduler();
             InitializeCore();
             Store = GetEventStore();
         }
@@ -319,26 +320,17 @@ namespace ServiceLib.Tests.EventSourced
 
         protected IEventStoreStream ReadStream(string name, int minVersion, int maxCount)
         {
-            IEventStoreStream eventStream = null;
-            Store.ReadStream(name, minVersion, maxCount, true, s => eventStream = s, ThrowError);
-            Executor.Process();
-            return eventStream;
+            return Scheduler.Run(() => Store.ReadStream(name, minVersion, maxCount, true)).Result;
         }
 
         protected string AddToStream(string name, IList<EventStoreEvent> events, EventStoreVersion version)
         {
-            string outcome = null;
-            Store.AddToStream(name, events, version, () => outcome = "saved", () => outcome = "conflict", ThrowError);
-            Executor.Process();
-            return outcome;
+            return Scheduler.Run(() => Store.AddToStream(name, events, version)).Result ? "saved" : "conflict";
         }
 
         protected IEventStoreCollection GetAllEvents(EventStoreToken token)
         {
-            IEventStoreCollection result = null;
-            Store.GetAllEvents(token, int.MaxValue, false, r => result = r, ThrowError);
-            Executor.Process();
-            return result;
+            return Scheduler.Run(() => Store.GetAllEvents(token, int.MaxValue, false)).Result;
         }
 
         protected EventStoreToken GetTokenForEventNumber(int index)
@@ -350,67 +342,36 @@ namespace ServiceLib.Tests.EventSourced
 
         protected EventStoreSnapshot LoadSnapshot(string name)
         {
-            bool loaded = false;
-            EventStoreSnapshot snapshot = null;
-            Store.LoadSnapshot(name, s => { snapshot = s; loaded = true; }, ThrowError);
-            Executor.Process();
-            Assert.IsTrue(loaded, "Snapshot {0} not loaded", name);
-            return snapshot;
+            return Scheduler.Run(() => Store.LoadSnapshot(name)).Result;
         }
 
         protected void SaveSnapshot(string name, EventStoreSnapshot snapshot)
         {
-            string outcome = null;
-            Store.SaveSnapshot(name, snapshot, () => outcome = "saved", ThrowError);
-            Executor.Process();
-            Assert.AreEqual("saved", outcome, "Snapshot save outcome");
+            Scheduler.Run(() => Store.SaveSnapshot(name, snapshot));
         }
 
-        private IEventStoreCollection _waitResult;
-        private IDisposable _currentWait;
-        private Exception _waitException;
-        private ManualResetEventSlim _waitMre;
+        private Task<IEventStoreCollection> _waitTask;
+        private CancellationTokenSource _waitCancellation;
 
         protected void StartWaitingForEvents(EventStoreToken token)
         {
-            _waitMre = new ManualResetEventSlim();
-            _waitResult = null;
-            _waitException = null;
-            _currentWait = Store.WaitForEvents(token, int.MaxValue, false, 
-                r => { _waitResult = r; _waitMre.Set(); }, 
-                ex => { _waitException = ex; _waitMre.Set(); });
-            Executor.Process();
+            _waitCancellation = new CancellationTokenSource();
+            _waitTask = Scheduler.Run(() => Store.WaitForEvents(token, int.MaxValue, false, _waitCancellation.Token), false);
         }
 
         protected IEventStoreCollection GetAwaitedEvents()
         {
-            for (int i = 0; i < 3; i++)
-            {
-                Executor.Process();
-                if (_waitMre.Wait(30))
-                    break;
-            }
-            if (_waitException != null)
-                ThrowError(_waitException);
-            return _waitResult;
+            Scheduler.Process();
+            if (_waitTask.IsCompleted)
+                return _waitTask.Result;
+            else
+                return null;
         }
 
         protected void StopWaiting()
         {
-            _currentWait.Dispose();
-            for (int i = 0; i < 3; i++)
-            {
-                Executor.Process();
-                if (_waitMre.Wait(30))
-                    break;
-            }
-            if (_waitException != null)
-                ThrowError(_waitException);
-        }
-
-        protected void ThrowError(Exception ex)
-        {
-            throw ex;
+            _waitCancellation.Cancel();
+            Scheduler.Process();
         }
     }
 }

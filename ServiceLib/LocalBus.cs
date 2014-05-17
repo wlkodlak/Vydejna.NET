@@ -194,6 +194,7 @@ namespace ServiceLib
         private Action<ProcessState> _onStateChanged;
         private CancellationTokenSource _cancel;
         private int _workerCount;
+        private TaskScheduler _scheduler;
 
         public QueuedBusProcess(QueuedBus bus)
         {
@@ -205,9 +206,12 @@ namespace ServiceLib
         {
             State = ProcessState.Running;
             _cancel = new CancellationTokenSource();
-            _tasks = Enumerable.Range(0, _workerCount)
-                .Select(i => Task.Factory.StartNew(ProcessCore, TaskCreationOptions.LongRunning))
-                .ToArray();
+            _tasks = new Task[_workerCount];
+            for (int i = 0; i < _workerCount; i++)
+            {
+                _tasks[i] = new Task(ProcessCore, TaskCreationOptions.LongRunning);
+                _tasks[i].Start(_scheduler);
+            }
         }
 
         public void Pause()
@@ -248,9 +252,10 @@ namespace ServiceLib
             }
         }
 
-        public void Init(Action<ProcessState> onStateChanged)
+        public void Init(Action<ProcessState> onStateChanged, TaskScheduler scheduler)
         {
             _onStateChanged = onStateChanged;
+            _scheduler = scheduler;
         }
 
     }

@@ -29,7 +29,7 @@ namespace ServiceLib
     public interface IProcessWorker : IDisposable
     {
         ProcessState State { get; }
-        void Init(Action<ProcessState> onStateChanged);
+        void Init(Action<ProcessState> onStateChanged, TaskScheduler scheduler);
         void Start();
         void Pause();
         void Stop();

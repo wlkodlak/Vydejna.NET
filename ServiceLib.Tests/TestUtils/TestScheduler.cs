@@ -28,12 +28,12 @@ namespace ServiceLib.Tests.TestUtils
             throw new NotImplementedException();
         }
 
-        public Task<TResult> Run<TResult>(Func<Task<TResult>> task)
+        public Task<TResult> Run<TResult>(Func<Task<TResult>> task, bool mustComplete = true)
         {
 
         }
 
-        public Task Run(Func<Task> task)
+        public Task Run(Func<Task> task, bool mustComplete = true)
         {
 
         }

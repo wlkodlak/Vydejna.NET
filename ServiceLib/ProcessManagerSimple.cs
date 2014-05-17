@@ -88,7 +88,7 @@ namespace ServiceLib
         private void Register(ProcessInfo process)
         {
             _processes[process.Name] = process;
-            process.Worker.Init(process.OnStateChanged);
+            process.Worker.Init(process.OnStateChanged, TaskScheduler.Default);
         }
 
         private class ProcessInfo

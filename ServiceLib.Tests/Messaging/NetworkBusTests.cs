@@ -13,21 +13,18 @@ namespace ServiceLib.Tests.Messaging
     [TestClass]
     public abstract class NetworkBusTestsBase
     {
-        protected TestExecutor Executor;
+        protected TestScheduler Scheduler;
         protected INetworkBus Bus;
-        protected Message NullMessage;
-        protected ManualResetEventSlim Mre;
         protected Message LastMessage;
         protected VirtualTime TimeService;
-        private IDisposable CurrentWait;
+        private CancellationTokenSource CancelWait;
+        private Task<Message> CurrentWait;
 
         [TestInitialize]
         public void Initialize()
         {
-            Executor = new TestExecutor();
-            NullMessage = CreateMessage("NULL", "");
+            Scheduler = new TestScheduler();
             TimeService = new VirtualTime();
-            Mre = new ManualResetEventSlim();
             InitializeCore();
             Bus = CreateBus();
         }
@@ -174,29 +171,20 @@ namespace ServiceLib.Tests.Messaging
             };
         }
 
-        protected void ThrowError(Exception ex)
-        {
-            throw ex.PreserveStackTrace();
-        }
-
         protected void AdvanceTime(int seconds)
         {
             TimeService.SetTime(TimeService.GetUtcTime().AddSeconds(seconds));
-            Executor.Process();
+            Scheduler.Process();
         }
 
         protected void MarkAsDeadLetter(Message msg)
         {
-            var mre = new ManualResetEventSlim();
-            Bus.MarkProcessed(msg, MessageDestination.DeadLetters, () => mre.Set(), ThrowError);
-            Executor.Process();
+            Scheduler.Run(() => Bus.MarkProcessed(msg, MessageDestination.DeadLetters)).Wait();
         }
 
         protected void MarkAsProcessed(Message msg)
         {
-            var mre = new ManualResetEventSlim();
-            Bus.MarkProcessed(msg, MessageDestination.Processed, () => mre.Set(), ThrowError);
-            Executor.Process();
+            Scheduler.Run(() => Bus.MarkProcessed(msg, MessageDestination.Processed)).Wait();
         }
 
         protected abstract List<Message> GetAllDeadLetters();
@@ -207,53 +195,35 @@ namespace ServiceLib.Tests.Messaging
         {
             var destination = target == "SUBSCRIBE" ? MessageDestination.Subscribers : MessageDestination.For(target, "thisnode");
             var message = CreateMessage(type, body);
-            var sendMre = new ManualResetEventSlim();
-            Bus.Send(destination, message, () => sendMre.Set(), ThrowError);
-            Executor.Process();
-            Assert.IsTrue(sendMre.Wait(100), "Message sent");
+            Scheduler.Run(() => Bus.Send(destination, message)).Wait();
         }
 
         protected void Subscribe(string type, string target)
         {
             var mre = new ManualResetEventSlim();
             var destination = MessageDestination.For(target, "thisnode");
-            Bus.Subscribe(type, destination, false, () => mre.Set(), ThrowError);
-            Executor.Process();
-            Assert.IsTrue(mre.Wait(100), "Subscribed");
+            Scheduler.Run(() => Bus.Subscribe(type, destination, false)).Wait();
         }
 
         protected void DeleteAll(string target)
         {
             var mre = new ManualResetEventSlim();
             var destination = MessageDestination.For(target, "thisnode");
-            Bus.DeleteAll(destination, () => mre.Set(), ThrowError);
-            Executor.Process();
-            Assert.IsTrue(mre.Wait(100), "Everything deleted");
+            Scheduler.Run(() => Bus.DeleteAll(destination)).Wait();
         }
 
         protected void StartReceiving(string target, bool nowait)
         {
-            Mre.Reset();
-            LastMessage = null;
             var destination = MessageDestination.For(target, "thisnode");
-            CurrentWait = Bus.Receive(destination, nowait,
-                msg => { LastMessage = msg; Mre.Set(); },
-                () => { LastMessage = NullMessage; Mre.Set(); },
-                ThrowError);
-            Assert.IsNotNull(CurrentWait, "Cancellation option");
-            Executor.Process();
+            CancelWait = new CancellationTokenSource();
+            CurrentWait = Scheduler.Run(() => Bus.Receive(destination, nowait, CancelWait.Token), false);
         }
 
         protected Message EndReceiving()
         {
-            for (int i = 0; i < 3; i++)
-            {
-                if (Mre.Wait(30))
-                    break;
-                else
-                    Executor.Process();
-            }
-            Assert.IsTrue(Mre.Wait(10), "Response received");
+            Scheduler.Process();
+            Assert.IsTrue(CurrentWait.IsCompleted, "Completed");
+            LastMessage = CurrentWait.Result;
             return LastMessage;
         }
 
@@ -279,7 +249,7 @@ namespace ServiceLib.Tests.Messaging
     {
         protected override INetworkBus CreateBus()
         {
-            return new NetworkBusInMemory(Executor, TimeService);
+            return new NetworkBusInMemory(TimeService);
         }
 
         protected override List<Message> GetAllDeadLetters()
@@ -321,13 +291,13 @@ namespace ServiceLib.Tests.Messaging
 
         protected override void InitializeCore()
         {
-            _db = new DatabasePostgres(GetConnectionString(), Executor);
+            _db = new DatabasePostgres(GetConnectionString());
             _disposables = new List<IDisposable>();
         }
 
         protected override INetworkBus CreateBus()
         {
-            var bus = new NetworkBusPostgres("thisnode", Executor, _db, TimeService);
+            var bus = new NetworkBusPostgres("thisnode", _db, TimeService);
             _disposables.Add(bus);
             bus.Initialize();
             _db.ExecuteSync(DeleteAllDocuments);

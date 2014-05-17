@@ -16,6 +16,8 @@ namespace ServiceLib
         private CancellationTokenSource _cancelPause, _cancelStop;
         private ProcessState _processState;
         private Action<ProcessState> _onProcessStateChanged;
+        private int _flushAfter;
+        private TaskScheduler _scheduler;
 
         public EventProcessSimple(IMetadataInstance metadata, IEventStreamingDeserialized streaming, ICommandSubscriptionManager subscriptions)
         {
@@ -34,6 +36,11 @@ namespace ServiceLib
             return this;
         }
 
+        public EventProcessSimple WithTokenFlushing(int flushAfter)
+        {
+            _flushAfter = flushAfter;
+            return this;
+        }
         
         public ProcessState State
         {
@@ -44,23 +51,24 @@ namespace ServiceLib
             }
         }
 
-        public void Init(Action<ProcessState> onStateChanged)
+        public void Init(Action<ProcessState> onStateChanged, TaskScheduler scheduler)
         {
             _processState = ProcessState.Inactive;
             _onProcessStateChanged = onStateChanged;
+            _scheduler = scheduler;
         }
 
         public void Start()
         {
             SetProcessState(ProcessState.Starting);
-            TaskUtils.FromEnumerable(ProcessCore()).Catch<Exception>(ex => true).GetTask()
+            TaskUtils.FromEnumerable(ProcessCore()).Catch<Exception>(ex => true).UseScheduler(_scheduler).GetTask()
                 .ContinueWith(t =>
                 {
                     if (t.Exception == null || t.IsCanceled)
                         SetProcessState(ProcessState.Inactive);
                     else
                         SetProcessState(ProcessState.Faulted);
-                });
+                }, _scheduler);
         }
 
         public void Pause()

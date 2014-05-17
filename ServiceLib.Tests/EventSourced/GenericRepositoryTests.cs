@@ -157,14 +157,14 @@ namespace Vydejna.Tests.EventSourcedTests
 
         private readonly IAggregateId _aggregateGuid = new AggregateIdGuid("11111111-2222-3333-4444-000000000001");
         private readonly string _streamName = "testaggregate_11111111222233334444000000000001";
-        private TestExecutor _executor;
+        private TestScheduler _scheduler;
         private TestEventStore _store;
 
         [TestInitialize]
         public void Initialize()
         {
-            _executor = new TestExecutor();
-            _store = new TestEventStore(_executor);
+            _scheduler = new TestScheduler();
+            _store = new TestEventStore();
         }
 
         private TestRepository GetRepository()
@@ -178,9 +178,7 @@ namespace Vydejna.Tests.EventSourcedTests
         public void Get_Nonexistent_ReturnsNull()
         {
             var repository = GetRepository();
-            TestAggregate aggregate = null;
-            repository.Load(_aggregateGuid, agg => aggregate = agg, () => aggregate = null, ex => { throw ex; });
-            _executor.Process();
+            var aggregate = _scheduler.Run(() => repository.Load(_aggregateGuid)).Result;
             Assert.IsNull(aggregate);
         }
 
@@ -193,9 +191,7 @@ namespace Vydejna.Tests.EventSourcedTests
             _store.AddToStream(_streamName, storedEvents);
             var repository = GetRepository();
 
-            TestAggregate aggregate = null;
-            repository.Load(_aggregateGuid, agg => aggregate = agg, () => aggregate = null, ex => { throw ex; });
-            _executor.Process();
+            var aggregate = _scheduler.Run(() => repository.Load(_aggregateGuid)).Result;
 
             Assert.IsNotNull(aggregate, "No aggregate loaded");
             Assert.AreEqual(2, aggregate.LoadedEvents.Count, "Events count");
@@ -214,9 +210,7 @@ namespace Vydejna.Tests.EventSourcedTests
             _store.AddSnapshot(_streamName, storedSnapshot);
             var repository = GetRepository();
 
-            TestAggregate aggregate = null;
-            repository.Load(_aggregateGuid, agg => aggregate = agg, () => aggregate = null, ex => { throw ex; });
-            _executor.Process();
+            var aggregate = _scheduler.Run(() => repository.Load(_aggregateGuid)).Result;
 
             Assert.IsNotNull(aggregate, "No aggregate loaded");
             Assert.AreEqual(2, aggregate.AllEvents.Count, "Events count");
@@ -235,9 +229,7 @@ namespace Vydejna.Tests.EventSourcedTests
             _store.AddSnapshot(_streamName, storedSnapshot);
             var repository = GetRepository();
 
-            TestAggregate aggregate = null;
-            repository.Load(_aggregateGuid, agg => aggregate = agg, () => aggregate = null, ex => { throw ex; });
-            _executor.Process();
+            var aggregate = _scheduler.Run(() => repository.Load(_aggregateGuid)).Result;
 
             Assert.IsNotNull(aggregate, "No aggregate loaded");
             Assert.IsNotNull(aggregate.LoadedSnapshot, "Used snapshot");
@@ -251,12 +243,10 @@ namespace Vydejna.Tests.EventSourcedTests
             var aggregate = new TestAggregate();
             aggregate.Id = _aggregateGuid;
             aggregate.Changes.Add(new TestEvent2 { Contents = "NewEvent" });
-            string outcome = null;
 
-            repository.Save(aggregate, () => outcome = "saved", () => outcome = "conflict", ex => { throw ex; });
-            _executor.Process();
+            var outcome = _scheduler.Run(() => repository.Save(aggregate)).Result;
 
-            Assert.AreEqual("saved", outcome, "Outcome");
+            Assert.AreEqual(true, outcome, "Outcome");
             Assert.AreEqual(1, aggregate.CommitedVersion, "Committed version");
         }
 
@@ -268,8 +258,7 @@ namespace Vydejna.Tests.EventSourcedTests
             aggregate.Id = _aggregateGuid;
             aggregate.Changes.Add(new TestEvent2 { Contents = "NewEvent" });
 
-            repository.Save(aggregate, () => { }, () => { }, ex => { throw ex; });
-            _executor.Process();
+            var outcome = _scheduler.Run(() => repository.Save(aggregate)).Result;
 
             var storedEvents = _store.GetAllEvents();
             Assert.AreEqual(1, storedEvents.Count, "Count");
@@ -287,18 +276,14 @@ namespace Vydejna.Tests.EventSourcedTests
             _store.AddToStream(_streamName, initialEvents);
 
             var repository = GetRepository();
-            TestAggregate aggregate = null;
-            repository.Load(_aggregateGuid, agg => aggregate = agg, () => aggregate = null, ex => { throw ex; });
-            _executor.Process();
+            var aggregate = _scheduler.Run(() => repository.Load(_aggregateGuid)).Result;
             aggregate.Id = _aggregateGuid;  // ID is not present in test events - must be added manually
             aggregate.Changes.Add(new TestEvent2 { Contents = "NewEvent" });
 
-            string outcome = null;
-            repository.Save(aggregate, () => outcome = "saved", () => outcome = "conflict", ex => { throw ex; });
-            _executor.Process();
+            var outcome = _scheduler.Run(() => repository.Save(aggregate)).Result;
 
             var storedEvents = _store.GetAllEvents();
-            Assert.AreEqual("saved", outcome, "Outcome");
+            Assert.AreEqual(true, outcome, "Outcome");
             Assert.AreEqual(2, storedEvents.Count, "Count");
             Assert.AreEqual(_streamName, storedEvents[1].StreamName, "StreamName");
             Assert.AreEqual(2, storedEvents[1].StreamVersion, "StreamVersion");
@@ -315,20 +300,16 @@ namespace Vydejna.Tests.EventSourcedTests
             _store.AddToStream(_streamName, initialEvents);
 
             var repository = GetRepository();
-            TestAggregate aggregate = null;
-            repository.Load(_aggregateGuid, agg => aggregate = agg, () => aggregate = null, ex => { throw ex; });
-            _executor.Process();
+            var aggregate = _scheduler.Run(() => repository.Load(_aggregateGuid)).Result;
             aggregate.Id = _aggregateGuid;  // ID is not present in test events - must be added manually
             aggregate.Changes.Add(new TestEvent2 { Contents = "NewEvent" });
 
             _store.AddToStream(_streamName, new[] { new EventStoreEvent { Type = "TestEvent1", Body = "Contents2" } });
 
-            string outcome = null;
-            repository.Save(aggregate, () => outcome = "saved", () => outcome = "conflict", ex => { throw ex; });
-            _executor.Process();
+            var outcome = _scheduler.Run(() => repository.Save(aggregate)).Result;
 
             var storedEvents = _store.GetAllEvents();
-            Assert.AreEqual("conflict", outcome, "Outcome");
+            Assert.AreEqual(false, outcome, "Outcome");
             Assert.AreEqual(2, storedEvents.Count, "Count");
             Assert.AreEqual(_streamName, storedEvents[1].StreamName, "StreamName");
             Assert.AreEqual(2, storedEvents[1].StreamVersion, "StreamVersion");
@@ -346,18 +327,14 @@ namespace Vydejna.Tests.EventSourcedTests
 
             var repository = GetRepository();
             repository.SnapshotInterval = 2;
-            TestAggregate aggregate = null;
-            repository.Load(_aggregateGuid, agg => aggregate = agg, () => aggregate = null, ex => { throw ex; });
-            _executor.Process();
+            var aggregate = _scheduler.Run(() => repository.Load(_aggregateGuid)).Result;
             aggregate.Id = _aggregateGuid;  // ID is not present in test events - must be added manually
             aggregate.Changes.Add(new TestEvent2 { Contents = "NewEvent" });
 
-            string outcome = null;
-            repository.Save(aggregate, () => outcome = "saved", () => outcome = "conflict", ex => { throw ex; });
-            _executor.Process();
+            var outcome = _scheduler.Run(() => repository.Save(aggregate)).Result;
 
             var storedEvents = _store.GetAllEvents();
-            Assert.AreEqual("saved", outcome, "Outcome");
+            Assert.AreEqual(true, outcome, "Outcome");
             Assert.AreEqual(2, storedEvents.Count, "Count");
             Assert.AreEqual(_streamName, storedEvents[1].StreamName, "StreamName");
             Assert.AreEqual(2, storedEvents[1].StreamVersion, "StreamVersion");
@@ -375,18 +352,14 @@ namespace Vydejna.Tests.EventSourcedTests
 
             var repository = GetRepository();
             repository.SnapshotInterval = 2;
-            TestAggregate aggregate = null;
-            repository.Load(_aggregateGuid, agg => aggregate = agg, () => aggregate = null, ex => { throw ex; });
-            _executor.Process();
+            var aggregate = _scheduler.Run(() => repository.Load(_aggregateGuid)).Result;
             aggregate.Id = _aggregateGuid;  // ID is not present in test events - must be added manually
             aggregate.Changes.Add(new TestEvent2 { Contents = "NewEvent" });
 
-            string outcome = null;
-            repository.Save(aggregate, () => outcome = "saved", () => outcome = "conflict", ex => { throw ex; });
-            _executor.Process();
+            var outcome = _scheduler.Run(() => repository.Save(aggregate)).Result;
 
             var snapshots = _store.GetAllSnapshots();
-            Assert.AreEqual("saved", outcome);
+            Assert.AreEqual(true, outcome);
             Assert.AreEqual(1, snapshots.Count, "Count");
             Assert.AreEqual(_streamName, snapshots[0].StreamName, "StreamName");
             Assert.AreEqual("TestSnapshot", snapshots[0].Type, "Type");
@@ -406,18 +379,14 @@ namespace Vydejna.Tests.EventSourcedTests
 
             var repository = GetRepository();
             repository.SnapshotInterval = 2;
-            TestAggregate aggregate = null;
-            repository.Load(_aggregateGuid, agg => aggregate = agg, () => aggregate = null, ex => { throw ex; });
-            _executor.Process();
+            var aggregate = _scheduler.Run(() => repository.Load(_aggregateGuid)).Result;
             aggregate.Id = _aggregateGuid;  // ID is not present in test events - must be added manually
             aggregate.Changes.Add(new TestEvent2 { Contents = "NewEvent" });
 
-            string outcome = null;
-            repository.Save(aggregate, () => outcome = "saved", () => outcome = "conflict", ex => { throw ex; });
-            _executor.Process();
+            var outcome = _scheduler.Run(() => repository.Save(aggregate)).Result;
 
             var snapshots = _store.GetAllSnapshots();
-            Assert.AreEqual("saved", outcome);
+            Assert.AreEqual(true, outcome);
             Assert.AreEqual(1, snapshots.Count, "Count");
             Assert.AreEqual(_streamName, snapshots[0].StreamName, "StreamName");
             Assert.AreEqual("TestSnapshot", snapshots[0].Type, "Type");

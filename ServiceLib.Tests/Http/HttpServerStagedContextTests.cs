@@ -52,9 +52,6 @@ namespace ServiceLib.Tests.Http
             ctx.StatusCode = 302;
             ctx.OutputHeaders.Location = "http://new.location.com/";
 
-            ctx.Close();
-
-            _rawContext.WaitForClose();
             Assert.AreEqual(302, _rawContext.StatusCode, "StatusCode");
             var headers = string.Join("\r\n", _rawContext.OutputHeaders.Select(h => string.Format("{0}: {1}", h.Key, h.Value)));
             Assert.AreEqual("Location: http://new.location.com/", headers, "Headers");
@@ -67,9 +64,6 @@ namespace ServiceLib.Tests.Http
             ctx.StatusCode = 200;
             ctx.OutputString = "This is the result";
 
-            ctx.Close();
-
-            _rawContext.WaitForClose();
             var expectedOutput = Encoding.UTF8.GetBytes("This is the result");
             CollectionAssert.AreEqual(expectedOutput, _rawContext.GetRawOutput());
         }

@@ -8,7 +8,7 @@ namespace ServiceLib.Tests.TestUtils
 {
     public abstract class ReadModelTestBase
     {
-        protected TestExecutor _executor;
+        protected TestScheduler _scheduler;
         protected VirtualTime _time;
         protected TestDocumentFolder _folder;
         protected IEventProjection _projection;
@@ -24,10 +24,10 @@ namespace ServiceLib.Tests.TestUtils
         [TestInitialize]
         public void Initialize()
         {
-            _executor = new TestExecutor();
+            _scheduler = new TestScheduler();
             _time = new VirtualTime();
             _time.SetTime(new DateTime(2014, 2, 18, 11, 18, 22));
-            _folder = new TestDocumentFolder(_executor);
+            _folder = new TestDocumentFolder();
             InitializeCore();
             _projection = CreateProjection();
             _reader = CreateReader();
@@ -54,29 +54,10 @@ namespace ServiceLib.Tests.TestUtils
             if (_isStarted && !_isFlushed)
                 Flush();
 
-            var mre = new ManualResetEventSlim();
-            TResponse response = null;
-            Exception exception = null;
-            var query = new QueryExecution<TRequest, TResponse>(request,
-                r => { response = r; mre.Set(); },
-                ex => { exception = ex; mre.Set(); });
-            ((IAnswer<TRequest, TResponse>)_reader).Handle(query);
-            for (int i = 0; i < 5; i++)
-            {
-                _executor.Process();
-                if (mre.Wait(20))
-                {
-                    if (exception != null)
-                        throw exception.PreserveStackTrace();
-                    else
-                    {
-                        Assert.IsNotNull(response, "Query response NULL");
-                        return response;
-                    }
-                }
-            }
-            Assert.Fail("Query didn't finish in time");
-            return null;
+            var task = _scheduler.Run(() => ((IAnswer<TRequest, TResponse>)_reader).Handle(request));
+            var response = task.Result;
+            Assert.IsNotNull(response, "Query response NULL");
+            return response;
         }
 
         public void StartRebuild(string storedVersion = null)
@@ -121,12 +102,7 @@ namespace ServiceLib.Tests.TestUtils
 
         private void SendEventInternal<T>(T evnt, bool mustImplement)
         {
-            var mre = new ManualResetEventSlim();
-            Exception exception = null;
-            var execution = new CommandExecution<T>(evnt,
-                () => { mre.Set(); },
-                ex => { exception = ex; mre.Set(); });
-            var handler = _projection as IHandle<CommandExecution<T>>;
+            var handler = _projection as IProcess<T>;
             if (handler == null)
             {
                 if (mustImplement)
@@ -134,20 +110,8 @@ namespace ServiceLib.Tests.TestUtils
                 else
                     return;
             }
-            handler.Handle(execution);
-            for (int i = 0; i < 5; i++)
-            {
-                _executor.Process();
-                if (mre.Wait(20))
-                {
-                    if (exception != null)
-                        throw exception.PreserveStackTrace();
-                    else
-                        return;
-                }
-            }
-            Assert.Fail("Query didn't finish in time");
-            return;
+            var task =_scheduler.Run(() => handler.Handle(evnt));
+            Assert.IsTrue(task.Wait(500), "Query didn't finish in time");
         }
     }
 }

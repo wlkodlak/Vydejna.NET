@@ -2,13 +2,15 @@
 using ServiceLib.Tests.TestUtils;
 using System;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace ServiceLib.Tests.EventHandlers
 {
     [TestClass]
     public class EventProcessSimpleTests
     {
-        private TestExecutor _executor;
+        private TestScheduler _scheduler;
         private TestMetadataInstance _metadata;
         private TestStreaming _streaming;
         private ICommandSubscriptionManager _subscriptions;
@@ -18,27 +20,27 @@ namespace ServiceLib.Tests.EventHandlers
         [TestInitialize]
         public void Initialize()
         {
-            _executor = new TestExecutor();
+            _scheduler = new TestScheduler();
             _metadata = new TestMetadataInstance();
-            _streaming = new TestStreaming(_executor);
+            _streaming = new TestStreaming();
             _subscriptions = new CommandSubscriptionManager();
             _handler = new TestHandler();
-            _process = new EventProcessSimple(_metadata, _streaming, _subscriptions)
-                .WithTokenFlushing(5);
+            _process = new EventProcessSimple(_metadata, _streaming, _subscriptions).WithTokenFlushing(5);
             _process.Register<TestEvent1>(_handler);
             _process.Register<TestEvent2>(_handler);
             _process.Register<TestEvent3>(_handler);
             _process.Register<TestEvent4>(_handler);
+            _process.Init(null, _scheduler);
         }
 
         [TestMethod]
         public void LockNotAvailable()
         {
             _process.Start();
-            _executor.Process();
+            _scheduler.Process();
             Assert.IsTrue(_metadata.WaitsForLock, "Waits for lock");
             _process.Pause();
-            _executor.Process();
+            _scheduler.Process();
             Assert.AreEqual(ProcessState.Inactive, _process.State, "Process state");
             Assert.IsFalse(_metadata.WaitsForLock, "Does not wait for lock anymore");
         }
@@ -48,9 +50,9 @@ namespace ServiceLib.Tests.EventHandlers
         {
             _process.Start();
             _metadata.SendLock();
-            _executor.Process();
+            _scheduler.Process();
             _process.Pause();
-            _executor.Process();
+            _scheduler.Process();
             Assert.AreEqual(ProcessState.Inactive, _process.State, "Process state");
             Assert.IsFalse(_metadata.IsLocked, "Lock released");
         }
@@ -61,7 +63,7 @@ namespace ServiceLib.Tests.EventHandlers
             _metadata.FailMode = true;
             _process.Start();
             _metadata.SendLock();
-            _executor.Process();
+            _scheduler.Process();
             Assert.IsFalse(_metadata.IsLocked, "Lock released");
         }
 
@@ -70,7 +72,7 @@ namespace ServiceLib.Tests.EventHandlers
         {
             _process.Start();
             _metadata.SendLock();
-            _executor.Process();
+            _scheduler.Process();
             Assert.IsTrue(_streaming.IsReading, "Reading");
             Assert.IsTrue(_streaming.IsWaiting, "Waiting");
             Assert.AreEqual(EventStoreToken.Initial, _streaming.CurrentToken);
@@ -82,7 +84,7 @@ namespace ServiceLib.Tests.EventHandlers
             _process.Start();
             _metadata.Token = new EventStoreToken("10");
             _metadata.SendLock();
-            _executor.Process();
+            _scheduler.Process();
             Assert.IsTrue(_streaming.IsReading, "Reading");
             Assert.IsTrue(_streaming.IsWaiting, "Waiting");
             Assert.AreEqual(new EventStoreToken("10"), _streaming.CurrentToken);
@@ -95,7 +97,7 @@ namespace ServiceLib.Tests.EventHandlers
             _metadata.SendLock();
             _streaming.AddEvent("1", new TestEvent1());
             _streaming.MarkEndOfStream();
-            _executor.Process();
+            _scheduler.Process();
             Assert.AreEqual("1", _handler.Output, "Output");
             Assert.IsTrue(_streaming.IsReading, "Reading");
             Assert.IsTrue(_streaming.IsWaiting, "Waiting");
@@ -113,7 +115,7 @@ namespace ServiceLib.Tests.EventHandlers
             _streaming.AddEvent("3", new TestEvent2());
             _streaming.AddEvent("4", new TestEvent2());
             _streaming.AddEvent("5", new TestEvent1());
-            _executor.Process();
+            _scheduler.Process();
             Assert.AreEqual("13221", _handler.Output, "Output");
             Assert.IsTrue(_streaming.IsReading, "Reading");
             Assert.AreEqual(new EventStoreToken("5"), _streaming.CurrentToken, "CurrentToken");
@@ -128,13 +130,13 @@ namespace ServiceLib.Tests.EventHandlers
             _streaming.AddEvent("1", new TestEvent1());
             _streaming.AddEvent("2", new TestEvent3());
             _streaming.AddEvent("3", new TestEvent2());
-            _executor.Process();
+            _scheduler.Process();
             _process.Pause();
-            _executor.Process();
+            _scheduler.Process();
             _streaming.AddEvent("4", new TestEvent2());
             _streaming.AddEvent("5", new TestEvent1());
             _streaming.MarkEndOfStream();
-            _executor.Process();
+            _scheduler.Process();
             Assert.AreEqual("132", _handler.Output, "Output");
             Assert.IsFalse(_streaming.IsReading, "Reading");
             Assert.IsFalse(_streaming.IsWaiting, "Waiting");
@@ -153,7 +155,7 @@ namespace ServiceLib.Tests.EventHandlers
             _streaming.AddEvent("3", new TestEvent4());
             _streaming.AddEvent("4", new TestEvent2());
             _streaming.AddEvent("5", new TestEvent1());
-            _executor.Process();
+            _scheduler.Process();
             Assert.AreEqual("1321", _handler.Output, "Output");
             Assert.IsTrue(_streaming.IsReading, "Reading");
             Assert.AreEqual(new EventStoreToken("5"), _streaming.CurrentToken, "CurrentToken");
@@ -172,7 +174,7 @@ namespace ServiceLib.Tests.EventHandlers
             _streaming.AddEvent("3", new TestEvent4());
             _streaming.AddEvent("4", new TestEvent2());
             _streaming.AddEvent("5", new TestEvent1());
-            _executor.Process();
+            _scheduler.Process();
             Assert.AreEqual("1321", _handler.Output, "Output");
             Assert.IsTrue(_streaming.IsReading, "Reading");
             Assert.AreEqual(new EventStoreToken("5"), _streaming.CurrentToken, "CurrentToken");
@@ -191,7 +193,7 @@ namespace ServiceLib.Tests.EventHandlers
             _streaming.AddEvent("3", new TestEvent4());
             _streaming.AddEvent("4", new TestEvent2());
             _streaming.AddEvent("5", new TestEvent1());
-            _executor.Process();
+            _scheduler.Process();
             Assert.AreEqual("134!421", _handler.Output, "Output");
             Assert.IsTrue(_streaming.IsReading, "Reading");
             Assert.AreEqual(new EventStoreToken("5"), _streaming.CurrentToken, "CurrentToken");
@@ -200,52 +202,50 @@ namespace ServiceLib.Tests.EventHandlers
         }
 
         private class TestHandler
-            : IHandle<CommandExecution<TestEvent1>>
-            , IHandle<CommandExecution<TestEvent2>>
-            , IHandle<CommandExecution<TestEvent3>>
-            , IHandle<CommandExecution<TestEvent4>>
+            : IProcess<TestEvent1>
+            , IProcess<TestEvent2>
+            , IProcess<TestEvent3>
+            , IProcess<TestEvent4>
         {
             private StringBuilder _sb = new StringBuilder();
 
             public string Output { get { return _sb.ToString(); } }
             public string ErrorMode = "Error";
 
-            public void Handle(CommandExecution<TestEvent1> message)
+            public Task Handle(TestEvent1 message)
             {
                 _sb.Append("1");
-                message.OnCompleted();
+                return TaskUtils.CompletedTask();
             }
 
-            public void Handle(CommandExecution<TestEvent2> message)
+            public Task Handle(TestEvent2 message)
             {
                 _sb.Append("2");
-                message.OnCompleted();
+                return TaskUtils.CompletedTask();
             }
 
-            public void Handle(CommandExecution<TestEvent3> message)
+            public Task Handle(TestEvent3 message)
             {
                 _sb.Append("3");
-                message.OnCompleted();
+                return TaskUtils.CompletedTask();
             }
 
-            public void Handle(CommandExecution<TestEvent4> message)
+            public Task Handle(TestEvent4 message)
             {
                 switch (ErrorMode)
                 {
-                    case "Error":
-                        message.OnError(new FormatException("Error in handler"));
-                        break;
                     case "Fatal":
                         throw new FormatException("Error in handler");
                     case "None":
                         _sb.Append("4");
-                        message.OnCompleted();
-                        break;
+                        return TaskUtils.CompletedTask();
                     case "Transient":
                         _sb.Append("4!");
                         ErrorMode = "None";
-                        message.OnError(new TransientErrorException("TEST", "Test transient error"));
-                        break;
+                        return TaskUtils.FromError<object>(new TransientErrorException("TEST", "Test transient error"));
+                    case "Error":
+                    default:
+                        return TaskUtils.FromError<object>(new FormatException("Error in handler"));
                 }
             }
         }

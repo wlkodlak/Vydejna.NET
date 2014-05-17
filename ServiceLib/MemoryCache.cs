@@ -219,6 +219,12 @@ namespace ServiceLib
             public int Version { get { return _version; } }
             public T Value { get { return _value; } }
 
+            public void Expires(int validity, int expiration)
+            {
+                _loadingExpiration = expiration * 10000L;
+                _loadingValidity = validity * 10000L;
+            }
+
             public void LoadingFinished(Task<MemoryCacheItem<T>> taskLoading)
             {
                 IList<TaskCompletionSource<MemoryCacheItem<T>>> waiters;

@@ -47,6 +47,7 @@ namespace ServiceLib
         private bool _useDeadLetters;
         private CancellationToken _cancelPauseToken;
         private CancellationToken _cancelStopToken;
+        private TaskScheduler _scheduler;
 
         public EventProjectorSimple(IEventProjection projection, IMetadataInstance metadata, IEventStreamingDeserialized streaming, ICommandSubscriptionManager subscriptions)
         {
@@ -81,9 +82,10 @@ namespace ServiceLib
             }
         }
 
-        public void Init(Action<ProcessState> onStateChanged)
+        public void Init(Action<ProcessState> onStateChanged, TaskScheduler scheduler)
         {
             _onStateChanged = onStateChanged;
+            _scheduler = scheduler;
         }
 
         private void SetProcessState(ProcessState state)
@@ -108,7 +110,7 @@ namespace ServiceLib
         public void Start()
         {
             SetProcessState(ProcessState.Starting);
-            TaskUtils.FromEnumerable(ProjectorCore()).GetTask().ContinueWith(Finish);
+            TaskUtils.FromEnumerable(ProjectorCore()).UseScheduler(_scheduler).GetTask().ContinueWith(Finish, _scheduler);
         }
 
         private void Finish(Task task)

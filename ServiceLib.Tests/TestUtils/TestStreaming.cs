@@ -49,7 +49,7 @@ namespace ServiceLib.Tests.TestUtils
             return TaskUtils.CompletedTask();
         }
 
-        public void Setup(EventStoreToken firstToken, IList<Type> types, string processName)
+        public void Setup(EventStoreToken firstToken, IEnumerable<Type> types, string processName)
         {
             ProcessName = processName;
             CurrentToken = firstToken;

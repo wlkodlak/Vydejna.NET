@@ -64,38 +64,6 @@ namespace ServiceLib.Tests.Messaging
         }
 
         [TestMethod]
-        public void RegistrationCanBeRemovedUsingDispose()
-        {
-            var toRemove = _mgr.Register<TestMessage1>(_handler1);
-            _mgr.Register<TestMessage2>(_handler1);
-            _mgr.Register<TestMessage1>(_handler2);
-            _mgr.Register<TestMessage2>(_handler2);
-            toRemove.Dispose();
-            var handlers = _mgr.FindHandlers(typeof(TestMessage1));
-
-            Assert.IsNotNull(handlers, "FindHandlers returned null");
-            Assert.AreEqual(1, handlers.Count, "Found count");
-            foreach (var handler in handlers)
-                handler.Handle(new TestMessage1 { Data = "Hello" });
-            Assert.AreEqual("Msg1 H2 Hello", string.Join("\r\n", _outputs));
-        }
-
-        [TestMethod]
-        public void RegistrationCanBeReplacedWithAnotherHandler()
-        {
-            _mgr.Register<TestMessage1>(_handler1);
-            var toReplace = _mgr.Register<TestMessage2>(_handler1);
-            toReplace.ReplaceWith(_handler2);
-            var handlers = _mgr.FindHandlers(typeof(TestMessage2));
-
-            Assert.IsNotNull(handlers, "FindHandlers returned null");
-            Assert.AreEqual(1, handlers.Count, "Found count");
-            foreach (var handler in handlers)
-                handler.Handle(new TestMessage2 { Data = "Hello" });
-            Assert.AreEqual("Msg2 H2 Hello", string.Join("\r\n", _outputs));
-        }
-
-        [TestMethod]
         public void FindHandlersReturnsEmptyCollectionWhenTypeIsNotRegistered()
         {
             _mgr.Register<TestMessage1>(_handler1);

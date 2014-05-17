@@ -11,7 +11,7 @@ namespace ServiceLib.Tests.EventHandlers
     [TestClass]
     public class EventProjectorSimpleTests
     {
-        private TestExecutor _executor;
+        private TestScheduler _scheduler;
         private TestProjection _projection;
         private TestMetadataInstance _metadata;
         private TestStreaming _streaming;
@@ -21,12 +21,13 @@ namespace ServiceLib.Tests.EventHandlers
         [TestInitialize]
         public void Initialize()
         {
-            _executor = new TestExecutor();
+            _scheduler = new TestScheduler();
             _projection = new TestProjection();
             _metadata = new TestMetadataInstance();
-            _streaming = new TestStreaming(_executor);
+            _streaming = new TestStreaming();
             _subscriptions = new CommandSubscriptionManager();
             _process = new EventProjectorSimple(_projection, _metadata, _streaming, _subscriptions);
+            _process.Init(null, _scheduler);
             _process.Register<ProjectorMessages.Reset>(_projection);
             _process.Register<ProjectorMessages.UpgradeFrom>(_projection);
             _process.Register<ProjectorMessages.RebuildFinished>(_projection);
@@ -40,9 +41,9 @@ namespace ServiceLib.Tests.EventHandlers
         public void WaitingForLockEndsOnShutdown()
         {
             _process.Start();
-            _executor.Process();
+            _scheduler.Process();
             _process.Pause();
-            _executor.Process();
+            _scheduler.Process();
             Assert.IsFalse(_metadata.WaitsForLock, "WaitsForLock");
             Assert.IsFalse(_metadata.IsLocked, "IsLocked");
             Assert.AreEqual(ProcessState.Inactive, _process.State, "Process state");
@@ -56,7 +57,7 @@ namespace ServiceLib.Tests.EventHandlers
             _process.Start();
             
             _metadata.SendLock();
-            _executor.Process();
+            _scheduler.Process();
 
             Assert.AreEqual("0.8", _projection.OriginalVersion, "OriginalVersion");
             Assert.AreEqual("reset", _projection.Mode, "Mode");
@@ -74,7 +75,7 @@ namespace ServiceLib.Tests.EventHandlers
             _process.Start();
 
             _metadata.SendLock();
-            _executor.Process();
+            _scheduler.Process();
 
             Assert.AreEqual("0.9", _projection.OriginalVersion, "OriginalVersion");
             Assert.AreEqual("upgrade", _projection.Mode, "Mode");
@@ -92,7 +93,7 @@ namespace ServiceLib.Tests.EventHandlers
             _process.Start();
 
             _metadata.SendLock();
-            _executor.Process();
+            _scheduler.Process();
 
             Assert.AreEqual("1.0", _projection.OriginalVersion, "OriginalVersion");
             Assert.AreEqual("normal", _projection.Mode, "Mode");
@@ -109,9 +110,9 @@ namespace ServiceLib.Tests.EventHandlers
             _metadata.SendLock();
             _streaming.AddEvent("3", new TestEvent1 { Data = "75" });
             _streaming.MarkEndOfStream();
-            _executor.Process();
+            _scheduler.Process();
             _process.Pause();
-            _executor.Process();
+            _scheduler.Process();
             Assert.IsFalse(_metadata.IsLocked, "IsLocked");
             Assert.IsFalse(_streaming.IsReading, "IsReading");
             Assert.IsTrue(_streaming.IsDisposed, "Streaming IsDisposed");
@@ -123,13 +124,13 @@ namespace ServiceLib.Tests.EventHandlers
         {
             _process.Start();
             _metadata.SendLock();
-            _executor.Process();
+            _scheduler.Process();
 
             _streaming.AddEvent("1", new TestEvent1 { Data = "47" });
             _streaming.AddEvent("2", new TestEvent1 { Data = "32" });
             _streaming.AddEvent("3", new TestEvent1 { Data = "75" });
             _streaming.MarkEndOfStream();
-            _executor.Process();
+            _scheduler.Process();
 
             Assert.IsTrue(_streaming.IsWaiting, "IsWaiting");
             Assert.AreEqual(new EventStoreToken("3"), _metadata.Token, "Metadata token");
@@ -143,13 +144,13 @@ namespace ServiceLib.Tests.EventHandlers
             _metadata.Token = EventStoreToken.Initial;
             _process.Start();
             _metadata.SendLock();
-            _executor.Process();
+            _scheduler.Process();
 
             _streaming.AddEvent("1", new TestEvent1 { Data = "47" });
             _streaming.AddEvent("2", new TestEvent1 { Data = "32" });
             _streaming.AddEvent("3", new TestEvent1 { Data = "75" });
             _streaming.MarkEndOfStream();
-            _executor.Process();
+            _scheduler.Process();
 
             Assert.IsTrue(_streaming.IsWaiting, "IsWaiting");
             Assert.AreEqual(new EventStoreToken("3"), _metadata.Token, "Metadata token");
@@ -163,20 +164,20 @@ namespace ServiceLib.Tests.EventHandlers
             _metadata.Token = EventStoreToken.Initial;
             _process.Start();
             _metadata.SendLock();
-            _executor.Process();
+            _scheduler.Process();
 
             _streaming.AddEvent("1", new TestEvent1 { Data = "47" });
             _streaming.AddEvent("2", new TestEvent1 { Data = "32" });
             _streaming.AddEvent("3", new TestEvent1 { Data = "75" });
             _streaming.MarkEndOfStream();
-            _executor.Process();
+            _scheduler.Process();
             _streaming.MarkEndOfStream();
-            _executor.Process();
+            _scheduler.Process();
             _streaming.AddEvent("4", new TestEvent2 { Data = "87" });
             _streaming.MarkEndOfStream();
-            _executor.Process();
+            _scheduler.Process();
             _streaming.MarkEndOfStream();
-            _executor.Process();
+            _scheduler.Process();
 
             Assert.IsTrue(_streaming.IsWaiting, "IsWaiting");
             Assert.AreEqual(new EventStoreToken("4"), _metadata.Token, "Metadata token");
@@ -188,12 +189,12 @@ namespace ServiceLib.Tests.EventHandlers
         {
             _process.Start();
             _metadata.SendLock();
-            _executor.Process();
+            _scheduler.Process();
             _streaming.AddEvent("1", new TestEvent1 { Data = "47" });
             _streaming.AddEvent("2", new TestEvent3 { Data = "32" });
             _streaming.AddEvent("3", new TestEvent2 { Data = "75" });
             _streaming.MarkEndOfStream();
-            _executor.Process();
+            _scheduler.Process();
 
             Assert.IsFalse(_metadata.IsLocked, "IsLocked");
             Assert.IsFalse(_streaming.IsReading, "IsReading");
@@ -205,17 +206,17 @@ namespace ServiceLib.Tests.EventHandlers
         {
             _process.Start();
             _metadata.SendLock();
-            _executor.Process();
+            _scheduler.Process();
             _streaming.AddEvent("1", new TestEvent1 { Data = "47" });
             _streaming.AddEvent("2", new TestEvent2 { Data = "75" });
             _streaming.MarkEndOfStream();
-            _executor.Process();
+            _scheduler.Process();
             _streaming.AddEvent("3", new TestEvent2 { Data = "32" });
             _streaming.AddEvent("4", new TestEvent1 { Data = "14" });
             _streaming.MarkEndOfStream();
-            _executor.Process();
+            _scheduler.Process();
             _process.Pause();
-            _executor.Process();
+            _scheduler.Process();
 
             Assert.AreEqual(
                 "Reset\r\nTestEvent1: 47\r\nTestEvent2: 75\r\nRebuildFinished\r\nFlush\r\n" +
@@ -232,27 +233,27 @@ namespace ServiceLib.Tests.EventHandlers
 
         private class TestProjection
             : IEventProjection
-            , IHandle<CommandExecution<ProjectorMessages.Flush>>
-            , IHandle<CommandExecution<ProjectorMessages.RebuildFinished>>
-            , IHandle<CommandExecution<TestEvent1>>
-            , IHandle<CommandExecution<TestEvent2>>
-            , IHandle<CommandExecution<TestEvent3>>
+            , IProcess<ProjectorMessages.Flush>
+            , IProcess<ProjectorMessages.RebuildFinished>
+            , IProcess<TestEvent1>
+            , IProcess<TestEvent2>
+            , IProcess<TestEvent3>
         {
             public string Mode = "normal";
             public List<string> LogEntries = new List<string>();
             public string OriginalVersion;
 
-            private void ProcessCommand<T>(CommandExecution<T> message)
+            private Task ProcessCommand<T>(T message)
             {
                 LogEntries.Add(typeof(T).Name);
-                message.OnCompleted();
+                return TaskUtils.CompletedTask();
             }
 
-            private void ProcessEvent<T>(CommandExecution<T> message)
+            private Task ProcessEvent<T>(T message)
                 where T : TestEvent
             {
-                LogEntries.Add(string.Concat(typeof(T).Name, ": " + message.Command.Data));
-                message.OnCompleted();
+                LogEntries.Add(string.Concat(typeof(T).Name, ": " + message.Data));
+                return TaskUtils.CompletedTask();
             }
 
             public string GetVersion()
@@ -276,41 +277,41 @@ namespace ServiceLib.Tests.EventHandlers
                     return EventProjectionUpgradeMode.Rebuild;
             }
 
-            public void Handle(CommandExecution<ProjectorMessages.Reset> message)
+            public Task Handle(ProjectorMessages.Reset message)
             {
                 Mode = "reset";
-                ProcessCommand(message);
+                return ProcessCommand(message);
             }
 
-            public void Handle(CommandExecution<ProjectorMessages.UpgradeFrom> message)
+            public Task Handle(ProjectorMessages.UpgradeFrom message)
             {
                 Mode = "upgrade";
-                ProcessCommand(message);
+                return ProcessCommand(message);
             }
 
-            public void Handle(CommandExecution<ProjectorMessages.RebuildFinished> message)
+            public Task Handle(ProjectorMessages.RebuildFinished message)
             {
-                ProcessCommand(message);
+                return ProcessCommand(message);
             }
 
-            public void Handle(CommandExecution<ProjectorMessages.Flush> message)
+            public Task Handle(ProjectorMessages.Flush message)
             {
-                ProcessCommand(message);
+                return ProcessCommand(message);
             }
 
-            public void Handle(CommandExecution<TestEvent1> message)
+            public Task Handle(TestEvent1 message)
             {
-                ProcessEvent(message);
+                return ProcessEvent(message);
             }
 
-            public void Handle(CommandExecution<TestEvent2> message)
+            public Task Handle(TestEvent2 message)
             {
-                ProcessEvent(message);
+                return ProcessEvent(message);
             }
 
-            public void Handle(CommandExecution<TestEvent3> message)
+            public Task Handle(TestEvent3 message)
             {
-                message.OnError(new Exception("Handler error"));
+                return TaskUtils.FromError<object>(new Exception("Handler error"));
             }
         }
     }

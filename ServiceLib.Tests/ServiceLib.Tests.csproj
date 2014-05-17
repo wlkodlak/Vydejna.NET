@@ -74,8 +74,6 @@
     <Compile Include="Documents\DocumentStoreTestBase.cs" />
     <Compile Include="Documents\DocumentStoreVersionTests.cs" />
     <Compile Include="Documents\EventHandlerMetadataTests.cs" />
-    <Compile Include="Documents\NodeLockManagerTests.cs" />
-    <Compile Include="Documents\NodeLockTests.cs" />
     <Compile Include="EventHandlers\EventProcessSimpleTests.cs" />
     <Compile Include="EventHandlers\EventProjectorSimpleTests.cs" />
     <Compile Include="EventSourced\AggregateTests.cs" />
@@ -101,7 +99,6 @@
     <Compile Include="Messaging\BusTests.cs" />
     <Compile Include="Messaging\CommandSubscriptionManagerTests.cs" />
     <Compile Include="Messaging\NetworkBusTests.cs" />
-    <Compile Include="Messaging\QueuedExecutionTests.cs" />
     <Compile Include="Messaging\SubscriptionManagerTests.cs" />
     <Compile Include="Messaging\TypeMapperTests.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

@@ -24,6 +24,7 @@ namespace ServiceLib
         private int _workerCount;
         private ProcessState _processState;
         private Action<ProcessState> _onStateChanged;
+        private TaskScheduler _scheduler;
 
         public HttpServer(IEnumerable<string> prefixes, IHttpServerDispatcher dispatcher)
         {
@@ -45,10 +46,10 @@ namespace ServiceLib
                 _prefixes.ForEach(_listener.Prefixes.Add);
                 _listener.Start();
                 SetProcessState(ProcessState.Running);
-                _workers =
-                    Enumerable.Range(0, _workerCount).Select(i =>
-                        Task.Factory.StartNew(WorkerFunc, TaskCreationOptions.LongRunning))
+                _workers = Enumerable.Range(0, _workerCount)
+                    .Select(i => new Task(WorkerFunc, TaskCreationOptions.LongRunning))
                     .ToList();
+                _workers.ForEach(w => w.Start(_scheduler));
             }
             catch
             {
@@ -79,7 +80,7 @@ namespace ServiceLib
             {
                 while (_processState == ProcessState.Running)
                 {
-                    TaskUtils.FromEnumerable(ProcessRequestInternal(_listener.GetContext())).Catch<Exception>(ex => true).GetTask();
+                    TaskUtils.FromEnumerable(ProcessRequestInternal(_listener.GetContext())).Catch<Exception>(ex => true).UseScheduler(_scheduler).GetTask();
                 }
             }
             catch (HttpListenerException)
@@ -142,9 +143,10 @@ namespace ServiceLib
             get { return _processState; }
         }
 
-        public void Init(Action<ProcessState> onStateChanged)
+        public void Init(Action<ProcessState> onStateChanged, TaskScheduler scheduler)
         {
             _onStateChanged = onStateChanged;
+            _scheduler = scheduler;
         }
 
         public void Pause()

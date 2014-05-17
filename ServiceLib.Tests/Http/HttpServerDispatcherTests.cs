@@ -29,8 +29,8 @@ namespace ServiceLib.Tests.Http
             _router.Setup(r => r.FindRoute("http://localhost/path/to/resource")).Returns((HttpUsedRoute)null);
             _context.Setup(x => x.Url).Returns("http://localhost/path/to/resource");
             _context.SetupProperty(x => x.StatusCode, 200);
-            _context.Setup(x => x.Close()).Verifiable();
-            _dispatcher.DispatchRequest(_context.Object);
+            var task = _dispatcher.DispatchRequest(_context.Object);
+            task.Wait(500);
             Assert.AreEqual(404, _context.Object.StatusCode, "StatusCode");
             _context.Verify();
         }
@@ -44,8 +44,8 @@ namespace ServiceLib.Tests.Http
             _router.Setup(r => r.FindRoute("http://localhost/path/to/resource")).Returns(route);
             _context.Setup(x => x.Url).Returns("http://localhost/path/to/resource");
             _context.SetupProperty(x => x.StatusCode, 200);
-            _context.Setup(x => x.Close()).Verifiable();
-            _dispatcher.DispatchRequest(_context.Object);
+            var task = _dispatcher.DispatchRequest(_context.Object);
+            task.Wait(500);
             Assert.AreEqual(500, _context.Object.StatusCode, "StatusCode");
             _context.Verify();
         }

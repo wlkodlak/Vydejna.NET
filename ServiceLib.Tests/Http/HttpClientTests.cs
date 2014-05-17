@@ -90,14 +90,9 @@ namespace ServiceLib.Tests.Http
 
         private static HttpClientResponse ExecuteHttpClient(HttpClientRequest request)
         {
-            var mre = new ManualResetEventSlim();
-            HttpClientResponse response = null;
-            Exception exception = null;
-            new HttpClient().Execute(request, resp => { response = resp; mre.Set(); }, ex => { exception = ex; mre.Set(); });
-            mre.Wait(500);
-            if (exception != null)
-                throw exception.PreserveStackTrace();
-            return response;
+            var task = new HttpClient().Execute(request);
+            Assert.IsTrue(task.Wait(500));
+            return task.Result;
         }
 
         [TestMethod]

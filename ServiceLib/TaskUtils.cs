@@ -177,6 +177,11 @@ namespace ServiceLib
             return this;
         }
 
+        public TaskContinuationBuilder<T> UseScheduler(TaskScheduler scheduler)
+        {
+            return this;
+        }
+
         public Task<T> GetTask()
         {
             return null;
