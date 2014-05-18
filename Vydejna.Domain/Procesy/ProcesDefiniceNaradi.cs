@@ -1,14 +1,15 @@
 ﻿using ServiceLib;
 using System;
+using System.Threading.Tasks;
 using Vydejna.Contracts;
 
 namespace Vydejna.Domain.Procesy
 {
     public class ProcesDefiniceNaradi
         : ISubscribeToCommandManager
-        , IHandle<CommandExecution<ZahajenaDefiniceNaradiEvent>>
-        , IHandle<CommandExecution<ZahajenaAktivaceNaradiEvent>>
-        , IHandle<CommandExecution<DefinovanoNaradiEvent>>
+        , IProcess<ZahajenaDefiniceNaradiEvent>
+        , IProcess<ZahajenaAktivaceNaradiEvent>
+        , IProcess<DefinovanoNaradiEvent>
     {
         private IPublisher _bus;
 
@@ -24,39 +25,34 @@ namespace Vydejna.Domain.Procesy
             subscriptions.Register<DefinovanoNaradiEvent>(this);
         }
 
-        private void Handle<T>(T cmd, Action onCompleted, Action<Exception> onError)
+        public Task Handle(ZahajenaDefiniceNaradiEvent evt)
         {
-            _bus.Publish(new CommandExecution<T>(cmd, onCompleted, onError));
+            return _bus.SendCommand(new DefinovatNaradiCommand
+            {
+                NaradiId = evt.NaradiId,
+                Vykres = evt.Vykres,
+                Rozmer = evt.Rozmer,
+                Druh = evt.Druh
+            });
         }
 
-        public void Handle(CommandExecution<ZahajenaDefiniceNaradiEvent> evt)
+        public Task Handle(ZahajenaAktivaceNaradiEvent evt)
         {
-            Handle(new DefinovatNaradiCommand
+            return _bus.SendCommand(new AktivovatNaradiCommand
             {
-                NaradiId = evt.Command.NaradiId,
-                Vykres = evt.Command.Vykres,
-                Rozmer = evt.Command.Rozmer,
-                Druh = evt.Command.Druh
-            }, evt.OnCompleted, evt.OnError);
+                NaradiId = evt.NaradiId
+            });
         }
 
-        public void Handle(CommandExecution<ZahajenaAktivaceNaradiEvent> evt)
+        public Task Handle(DefinovanoNaradiEvent evt)
         {
-            Handle(new AktivovatNaradiCommand
+            return _bus.SendCommand(new DokoncitDefiniciNaradiInternalCommand
             {
-                NaradiId = evt.Command.NaradiId
-            }, evt.OnCompleted, evt.OnError);
-        }
-
-        public void Handle(CommandExecution<DefinovanoNaradiEvent> evt)
-        {
-            Handle(new DokoncitDefiniciNaradiInternalCommand
-            {
-                NaradiId = evt.Command.NaradiId,
-                Vykres = evt.Command.Vykres,
-                Rozmer = evt.Command.Rozmer,
-                Druh = evt.Command.Druh
-            }, evt.OnCompleted, evt.OnError);
+                NaradiId = evt.NaradiId,
+                Vykres = evt.Vykres,
+                Rozmer = evt.Rozmer,
+                Druh = evt.Druh
+            });
         }
     }
 }

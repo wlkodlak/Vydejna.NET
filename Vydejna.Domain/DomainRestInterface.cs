@@ -1,5 +1,7 @@
 ﻿using ServiceLib;
 using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 using Vydejna.Contracts;
 
 namespace Vydejna.Domain
@@ -13,32 +15,45 @@ namespace Vydejna.Domain
             _publisher = publisher;
         }
 
-        private void ProvestPrikaz<T>(IHttpServerStagedContext ctx)
+        private Task ProvestPrikaz<T>(IHttpServerStagedContext ctx)
+            where T : class
         {
+            return TaskUtils.FromEnumerable(ProvestPrikazInternal<T>(ctx)).GetTask();
+        }
+
+        private IEnumerable<Task> ProvestPrikazInternal<T>(IHttpServerStagedContext ctx)
+            where T : class
+        {
+            T cmd = null;
+
             try
             {
-                var cmd = ctx.InputSerializer.Deserialize<T>(ctx.InputString);
-                var exec = new CommandExecution<T>(cmd, () => PrikazUspel(ctx), ex => PrikazSelhal(ctx, ex));
-                _publisher.Publish(exec);
+                cmd = ctx.InputSerializer.Deserialize<T>(ctx.InputString);
             }
-            catch (Exception ex)
+            catch (Exception exception)
             {
-                PrikazSelhal(ctx, ex);
+                ctx.StatusCode = 400;
+                ctx.OutputHeaders.ContentType = "text/plain";
+                ctx.OutputString = exception.InnerException.Message;
             }
-        }
+            if (cmd != null)
+            {
+                var task = _publisher.SendCommand(cmd);
+                yield return task;
 
-        private void PrikazUspel(IHttpServerStagedContext ctx)
-        {
-            ctx.StatusCode = 204;
-            ctx.Close();
-        }
+                if (task.Exception == null)
+                {
+                    ctx.StatusCode = 204;
+                }
+                else
+                {
+                    ctx.StatusCode = 400;
+                    ctx.OutputHeaders.ContentType = "text/plain";
+                    ctx.OutputString = task.Exception.InnerException.Message;
+                }
+            }
 
-        private void PrikazSelhal(IHttpServerStagedContext ctx, Exception ex)
-        {
-            ctx.StatusCode = 400;
-            ctx.OutputHeaders.ContentType = "text/plain";
-            ctx.OutputString = ex.Message;
-            ctx.Close();
+            yield return TaskUtils.CompletedTask();
         }
 
         public void Register(IHttpRouteCommonConfigurator config)

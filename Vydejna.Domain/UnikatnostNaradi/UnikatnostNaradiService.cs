@@ -5,97 +5,39 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Vydejna.Contracts;
+using Vydejna.Domain.UnikatnostNaradi;
 
 namespace Vydejna.Domain.UnikatnostNaradi
 {
     public class UnikatnostNaradiService
-        : IHandle<CommandExecution<DefinovatNaradiCommand>>
-        , IHandle<CommandExecution<DokoncitDefiniciNaradiInternalCommand>>
+        : IProcess<DefinovatNaradiCommand>
+        , IProcess<DokoncitDefiniciNaradiInternalCommand>
     {
-        private log4net.ILog _log;
-        private IUnikatnostNaradiRepository _repoUnikatnost;
+        private IEventSourcedRepository<UnikatnostNaradiAggregate> _repoUnikatnost;
 
         public UnikatnostNaradiService(IUnikatnostNaradiRepository repoUnikatnost)
         {
-            _log = log4net.LogManager.GetLogger(typeof(UnikatnostNaradiService));
-            _repoUnikatnost = repoUnikatnost;
+            _repoUnikatnost = repoUnikatnost.AsGeneric();
         }
 
         public void Subscribe(ISubscribable bus)
         {
-            bus.Subscribe<CommandExecution<DefinovatNaradiCommand>>(this);
-            bus.Subscribe<CommandExecution<DokoncitDefiniciNaradiInternalCommand>>(this);
+            bus.Subscribe<DefinovatNaradiCommand>(this);
+            bus.Subscribe<DokoncitDefiniciNaradiInternalCommand>(this);
         }
 
-        public void Handle(CommandExecution<DefinovatNaradiCommand> message)
+        public Task Handle(DefinovatNaradiCommand msg)
         {
-            new UnikatnostHandler<DefinovatNaradiCommand>(
-                this, message,
-                (log, msg) => log.DebugFormat("DefinovatNaradi: {0}, vykres {1}, rozmer {2}, druh {3}", msg.NaradiId, msg.Vykres, msg.Rozmer, msg.Druh),
-                (msg, unikatnost) => unikatnost.ZahajitDefinici(msg.NaradiId, msg.Vykres, msg.Rozmer, msg.Druh))
+            return new EventSourcedServiceExecution<UnikatnostNaradiAggregate>(_repoUnikatnost, UnikatnostNaradiId.Value)
+                .OnRequest(unikatnost => unikatnost.ZahajitDefinici(msg.NaradiId, msg.Vykres, msg.Rozmer, msg.Druh))
                 .Execute();
         }
 
-        public void Handle(CommandExecution<DokoncitDefiniciNaradiInternalCommand> message)
+        public Task Handle(DokoncitDefiniciNaradiInternalCommand msg)
         {
-            new UnikatnostHandler<DokoncitDefiniciNaradiInternalCommand>(
-                this, message,
-                (log, msg) => log.DebugFormat("DokoncitDefiniciNaradiInternal: {0}, vykres {1}, rozmer {2}, druh {3}", msg.NaradiId, msg.Vykres, msg.Rozmer, msg.Druh),
-                (msg, unikatnost) => unikatnost.DokoncitDefinici(msg.NaradiId, msg.Vykres, msg.Rozmer, msg.Druh))
+            return new EventSourcedServiceExecution<UnikatnostNaradiAggregate>(_repoUnikatnost, UnikatnostNaradiId.Value)
+                .OnRequest(unikatnost => unikatnost.DokoncitDefinici(msg.NaradiId, msg.Vykres, msg.Rozmer, msg.Druh))
                 .Execute();
-        }
-
-        private class UnikatnostHandler<TCommand>
-        {
-            private UnikatnostNaradiService _parent;
-            private CommandExecution<TCommand> _message;
-            private Action<log4net.ILog, TCommand> _logAction;
-            private Action<TCommand, UnikatnostNaradiAggregate> _action;
-
-            public UnikatnostHandler(UnikatnostNaradiService parent, CommandExecution<TCommand> message,
-                Action<log4net.ILog, TCommand> logAction,
-                Action<TCommand, UnikatnostNaradiAggregate> action)
-            {
-                _parent = parent;
-                _message = message;
-                _logAction = logAction;
-                _action = action;
-            }
-            public void Execute()
-            {
-                try
-                {
-                    _logAction(_parent._log, _message.Command);
-                    _parent._repoUnikatnost.Load(UnikatnostNactena, _message.OnError);
-                }
-                catch (Exception ex)
-                {
-                    _message.OnError(ex);
-                }
-            }
-            private void UnikatnostNactena(UnikatnostNaradiAggregate unikatnost)
-            {
-                try
-                {
-                    _action(_message.Command, unikatnost);
-                    _parent._repoUnikatnost.Save(unikatnost, _message.OnCompleted, Konflikt, _message.OnError);
-                }
-                catch (Exception ex)
-                {
-                    _message.OnError(ex);
-                }
-            }
-            private void Konflikt()
-            {
-                try
-                {
-                    _parent._repoUnikatnost.Load(UnikatnostNactena, _message.OnError);
-                }
-                catch (Exception ex)
-                {
-                    _message.OnError(ex);
-                }
-            }
         }
     }
 }

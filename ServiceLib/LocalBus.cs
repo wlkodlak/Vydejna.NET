@@ -23,6 +23,18 @@ namespace ServiceLib
     {
     }
 
+    public class AsyncRpcMessage<TQuery, TResponse>
+    {
+        public readonly TQuery Query;
+        public readonly TaskCompletionSource<TResponse> Response;
+
+        public AsyncRpcMessage(TQuery query, TaskCompletionSource<TResponse> response)
+        {
+            Query = query;
+            Response = response;
+        }
+    }
+
     public static class BusExtensions
     {
         public static void Subscribe<T>(this ISubscribable self, Action<T> handler)
@@ -43,6 +55,74 @@ namespace ServiceLib
             {
                 _handler(message);
             }
+        }
+
+        public static void Subscribe<T>(this ISubscribable self, IProcess<T> handler)
+        {
+            self.Subscribe(new ProcessToHandleAdapter<T>(handler));
+        }
+
+        private class ProcessToHandleAdapter<T> : IHandle<AsyncRpcMessage<T, object>>
+        {
+            private IProcess<T> _handler;
+
+            public ProcessToHandleAdapter(IProcess<T> handler)
+            {
+                _handler = handler;
+            }
+
+            public void Handle(AsyncRpcMessage<T, object> message)
+            {
+                _handler.Handle(message.Query).ContinueWith(task =>
+                {
+                    if (task.Exception != null)
+                        message.Response.TrySetException(task.Exception.InnerExceptions);
+                    else if (task.IsCanceled)
+                        message.Response.TrySetCanceled();
+                    else
+                        message.Response.TrySetResult(null);
+                });
+            }
+        }
+
+        public static void Subscribe<TQuery, TAnswer>(this ISubscribable self, IAnswer<TQuery, TAnswer> handler)
+        {
+            self.Subscribe(new AnswerToHandleAdapter<TQuery, TAnswer>(handler));
+        }
+
+        private class AnswerToHandleAdapter<TQuery, TAnswer> : IHandle<AsyncRpcMessage<TQuery, TAnswer>>
+        {
+            private IAnswer<TQuery, TAnswer> _handler;
+
+            public AnswerToHandleAdapter(IAnswer<TQuery, TAnswer> handler)
+            {
+                _handler = handler;
+            }
+
+            public void Handle(AsyncRpcMessage<TQuery, TAnswer> message)
+            {
+                _handler.Handle(message.Query).ContinueWith(task =>
+                {
+                    if (task.Exception != null)
+                        message.Response.TrySetException(task.Exception.InnerExceptions);
+                    else if (task.IsCanceled)
+                        message.Response.TrySetCanceled();
+                    else
+                        message.Response.TrySetResult(task.Result);
+                });
+            }
+        }
+
+        public static Task SendCommand<TCommand>(this IPublisher self, TCommand command)
+        {
+            return SendQuery<TCommand, object>(self, command);
+        }
+
+        public static Task<TAnswer> SendQuery<TQuery, TAnswer>(this IPublisher self, TQuery query)
+        {
+            var tcs = new TaskCompletionSource<TAnswer>();
+            self.Publish(new AsyncRpcMessage<TQuery, TAnswer>(query, tcs));
+            return tcs.Task;
         }
     }
 

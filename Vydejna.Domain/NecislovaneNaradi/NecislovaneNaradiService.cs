@@ -1,15 +1,16 @@
 ﻿using ServiceLib;
+using System.Threading.Tasks;
 using Vydejna.Contracts;
 
 namespace Vydejna.Domain.NecislovaneNaradi
 {
     public class NecislovaneNaradiService
-        : IHandle<CommandExecution<NecislovaneNaradiPrijmoutNaVydejnuCommand>>
-        , IHandle<CommandExecution<NecislovaneNaradiVydatDoVyrobyCommand>>
-        , IHandle<CommandExecution<NecislovaneNaradiPrijmoutZVyrobyCommand>>
-        , IHandle<CommandExecution<NecislovaneNaradiPredatKOpraveCommand>>
-        , IHandle<CommandExecution<NecislovaneNaradiPrijmoutZOpravyCommand>>
-        , IHandle<CommandExecution<NecislovaneNaradiPredatKeSesrotovaniCommand>>
+        : IProcess<NecislovaneNaradiPrijmoutNaVydejnuCommand>
+        , IProcess<NecislovaneNaradiVydatDoVyrobyCommand>
+        , IProcess<NecislovaneNaradiPrijmoutZVyrobyCommand>
+        , IProcess<NecislovaneNaradiPredatKOpraveCommand>
+        , IProcess<NecislovaneNaradiPrijmoutZOpravyCommand>
+        , IProcess<NecislovaneNaradiPredatKeSesrotovaniCommand>
     {
         private IEventSourcedRepository<NecislovaneNaradiAggregate> _repository;
         private ITime _time;
@@ -24,59 +25,59 @@ namespace Vydejna.Domain.NecislovaneNaradi
 
         public void Subscribe(ISubscribable bus)
         {
-            bus.Subscribe<CommandExecution<NecislovaneNaradiPrijmoutNaVydejnuCommand>>(this);
-            bus.Subscribe<CommandExecution<NecislovaneNaradiVydatDoVyrobyCommand>>(this);
-            bus.Subscribe<CommandExecution<NecislovaneNaradiPrijmoutZVyrobyCommand>>(this);
-            bus.Subscribe<CommandExecution<NecislovaneNaradiPredatKOpraveCommand>>(this);
-            bus.Subscribe<CommandExecution<NecislovaneNaradiPrijmoutZOpravyCommand>>(this);
-            bus.Subscribe<CommandExecution<NecislovaneNaradiPredatKeSesrotovaniCommand>>(this);
+            bus.Subscribe<NecislovaneNaradiPrijmoutNaVydejnuCommand>(this);
+            bus.Subscribe<NecislovaneNaradiVydatDoVyrobyCommand>(this);
+            bus.Subscribe<NecislovaneNaradiPrijmoutZVyrobyCommand>(this);
+            bus.Subscribe<NecislovaneNaradiPredatKOpraveCommand>(this);
+            bus.Subscribe<NecislovaneNaradiPrijmoutZOpravyCommand>(this);
+            bus.Subscribe<NecislovaneNaradiPredatKeSesrotovaniCommand>(this);
         }
 
-        public void Handle(CommandExecution<NecislovaneNaradiPrijmoutNaVydejnuCommand> message)
+        public Task Handle(NecislovaneNaradiPrijmoutNaVydejnuCommand message)
         {
-            new EventSourcedServiceExecution<NecislovaneNaradiAggregate>(_repository, message.Command.NaradiId.ToId(), message.OnCompleted, message.OnError)
-                .Validate(() => _validator.Validace(message.Command))
-                .OnRequest(agg => agg.Execute(message.Command, _time))
+            return new EventSourcedServiceExecution<NecislovaneNaradiAggregate>(_repository, message.NaradiId.ToId())
+                .Validate(() => _validator.Validace(message))
+                .OnRequest(agg => agg.Execute(message, _time))
                 .Execute();
         }
 
-        public void Handle(CommandExecution<NecislovaneNaradiVydatDoVyrobyCommand> message)
+        public Task Handle(NecislovaneNaradiVydatDoVyrobyCommand message)
         {
-            new EventSourcedServiceExecution<NecislovaneNaradiAggregate>(_repository, message.Command.NaradiId.ToId(), message.OnCompleted, message.OnError)
-                .Validate(() => _validator.Validace(message.Command))
-                .OnRequest(agg => agg.Execute(message.Command, _time))
+            return new EventSourcedServiceExecution<NecislovaneNaradiAggregate>(_repository, message.NaradiId.ToId())
+                .Validate(() => _validator.Validace(message))
+                .OnRequest(agg => agg.Execute(message, _time))
                 .Execute();
         }
 
-        public void Handle(CommandExecution<NecislovaneNaradiPrijmoutZVyrobyCommand> message)
+        public Task Handle(NecislovaneNaradiPrijmoutZVyrobyCommand message)
         {
-            new EventSourcedServiceExecution<NecislovaneNaradiAggregate>(_repository, message.Command.NaradiId.ToId(), message.OnCompleted, message.OnError)
-                .Validate(() => _validator.Validace(message.Command))
-                .OnRequest(agg => agg.Execute(message.Command, _time))
+            return new EventSourcedServiceExecution<NecislovaneNaradiAggregate>(_repository, message.NaradiId.ToId())
+                .Validate(() => _validator.Validace(message))
+                .OnRequest(agg => agg.Execute(message, _time))
                 .Execute();
         }
 
-        public void Handle(CommandExecution<NecislovaneNaradiPredatKOpraveCommand> message)
+        public Task Handle(NecislovaneNaradiPredatKOpraveCommand message)
         {
-            new EventSourcedServiceExecution<NecislovaneNaradiAggregate>(_repository, message.Command.NaradiId.ToId(), message.OnCompleted, message.OnError)
-                .Validate(() => _validator.Validace(message.Command, _time))
-                .OnRequest(agg => agg.Execute(message.Command, _time))
+            return new EventSourcedServiceExecution<NecislovaneNaradiAggregate>(_repository, message.NaradiId.ToId())
+                .Validate(() => _validator.Validace(message, _time))
+                .OnRequest(agg => agg.Execute(message, _time))
                 .Execute();
         }
 
-        public void Handle(CommandExecution<NecislovaneNaradiPrijmoutZOpravyCommand> message)
+        public Task Handle(NecislovaneNaradiPrijmoutZOpravyCommand message)
         {
-            new EventSourcedServiceExecution<NecislovaneNaradiAggregate>(_repository, message.Command.NaradiId.ToId(), message.OnCompleted, message.OnError)
-                .Validate(() => _validator.Validace(message.Command))
-                .OnRequest(agg => agg.Execute(message.Command, _time))
+            return new EventSourcedServiceExecution<NecislovaneNaradiAggregate>(_repository, message.NaradiId.ToId())
+                .Validate(() => _validator.Validace(message))
+                .OnRequest(agg => agg.Execute(message, _time))
                 .Execute();
         }
 
-        public void Handle(CommandExecution<NecislovaneNaradiPredatKeSesrotovaniCommand> message)
+        public Task Handle(NecislovaneNaradiPredatKeSesrotovaniCommand message)
         {
-            new EventSourcedServiceExecution<NecislovaneNaradiAggregate>(_repository, message.Command.NaradiId.ToId(), message.OnCompleted, message.OnError)
-                .Validate(() => _validator.Validace(message.Command))
-                .OnRequest(agg => agg.Execute(message.Command, _time))
+            return new EventSourcedServiceExecution<NecislovaneNaradiAggregate>(_repository, message.NaradiId.ToId())
+                .Validate(() => _validator.Validace(message))
+                .OnRequest(agg => agg.Execute(message, _time))
                 .Execute();
         }
     }

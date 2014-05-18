@@ -2,13 +2,14 @@
 using System.Collections.Generic;
 using ServiceLib;
 using Vydejna.Contracts;
+using System.Threading.Tasks;
 
 namespace Vydejna.Domain.ExterniCiselniky
 {
     public class ExterniCiselnikyService
-        : IHandle<CommandExecution<DefinovanDodavatelEvent>>
-        , IHandle<CommandExecution<DefinovanaVadaNaradiEvent>>
-        , IHandle<CommandExecution<DefinovanoPracovisteEvent>>
+        : IProcess<DefinovanDodavatelEvent>
+        , IProcess<DefinovanaVadaNaradiEvent>
+        , IProcess<DefinovanoPracovisteEvent>
     {
         private IExterniCiselnikyRepository _repository;
 
@@ -19,30 +20,30 @@ namespace Vydejna.Domain.ExterniCiselniky
 
         public void Subscribe(ISubscribable bus)
         {
-            bus.Subscribe<CommandExecution<DefinovanDodavatelEvent>>(this);
-            bus.Subscribe<CommandExecution<DefinovanaVadaNaradiEvent>>(this);
-            bus.Subscribe<CommandExecution<DefinovanoPracovisteEvent>>(this);
+            bus.Subscribe<DefinovanDodavatelEvent>(this);
+            bus.Subscribe<DefinovanaVadaNaradiEvent>(this);
+            bus.Subscribe<DefinovanoPracovisteEvent>(this);
         }
 
-        public void Handle(CommandExecution<DefinovanDodavatelEvent> msg)
+        public Task Handle(DefinovanDodavatelEvent msg)
         {
-            _repository.UlozitDodavatele(msg.Command, msg.OnCompleted, msg.OnError);
+            return _repository.UlozitDodavatele(msg);
         }
-        public void Handle(CommandExecution<DefinovanaVadaNaradiEvent> msg)
+        public Task Handle(DefinovanaVadaNaradiEvent msg)
         {
-            _repository.UlozitVadu(msg.Command, msg.OnCompleted, msg.OnError);
+            return _repository.UlozitVadu(msg);
         }
-        public void Handle(CommandExecution<DefinovanoPracovisteEvent> msg)
+        public Task Handle(DefinovanoPracovisteEvent msg)
         {
-            _repository.UlozitPracoviste(msg.Command, msg.OnCompleted, msg.OnError);
+            return _repository.UlozitPracoviste(msg);
         }
     }
 
     public interface IExterniCiselnikyRepository
     {
-        void UlozitDodavatele(DefinovanDodavatelEvent evnt, Action onComplete, Action<Exception> onError);
-        void UlozitVadu(DefinovanaVadaNaradiEvent evnt, Action onComplete, Action<Exception> onError);
-        void UlozitPracoviste(DefinovanoPracovisteEvent evnt, Action onComplete, Action<Exception> onError);
+        Task UlozitDodavatele(DefinovanDodavatelEvent evnt);
+        Task UlozitVadu(DefinovanaVadaNaradiEvent evnt);
+        Task UlozitPracoviste(DefinovanoPracovisteEvent evnt);
     }
 
     public class ExterniCiselnikyRepository : IExterniCiselnikyRepository
@@ -58,23 +59,23 @@ namespace Vydejna.Domain.ExterniCiselniky
             _serializer = serializer;
         }
 
-        public void UlozitDodavatele(DefinovanDodavatelEvent evnt, Action onComplete, Action<Exception> onError)
+        public Task UlozitDodavatele(DefinovanDodavatelEvent evnt)
         {
             var storedEvent = new EventStoreEvent();
             _serializer.Serialize(evnt, storedEvent);
-            _store.AddToStream(_prefix + "-dodavatele", new[] { storedEvent }, EventStoreVersion.Any, onComplete, () => onError(new InvalidOperationException("Unexpected concurrency exception")), onError);
+            return _store.AddToStream(_prefix + "-dodavatele", new[] { storedEvent }, EventStoreVersion.Any);
         }
-        public void UlozitVadu(DefinovanaVadaNaradiEvent evnt, Action onComplete, Action<Exception> onError)
+        public Task UlozitVadu(DefinovanaVadaNaradiEvent evnt)
         {
             var storedEvent = new EventStoreEvent();
             _serializer.Serialize(evnt, storedEvent);
-            _store.AddToStream(_prefix + "-vady", new[] { storedEvent }, EventStoreVersion.Any, onComplete, () => onError(new InvalidOperationException("Unexpected concurrency exception")), onError);
+            return _store.AddToStream(_prefix + "-vady", new[] { storedEvent }, EventStoreVersion.Any);
         }
-        public void UlozitPracoviste(DefinovanoPracovisteEvent evnt, Action onComplete, Action<Exception> onError)
+        public Task UlozitPracoviste(DefinovanoPracovisteEvent evnt)
         {
             var storedEvent = new EventStoreEvent();
             _serializer.Serialize(evnt, storedEvent);
-            _store.AddToStream(_prefix + "-pracoviste", new[] { storedEvent }, EventStoreVersion.Any, onComplete, () => onError(new InvalidOperationException("Unexpected concurrency exception")), onError);
+            return _store.AddToStream(_prefix + "-pracoviste", new[] { storedEvent }, EventStoreVersion.Any);
         }
     }
 }

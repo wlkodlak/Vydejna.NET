@@ -3,6 +3,7 @@ using ServiceLib;
 using ServiceLib.Tests.TestUtils;
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using Vydejna.Contracts;
 using Vydejna.Domain.UnikatnostNaradi;
 
@@ -16,10 +17,12 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
         private IEnumerator<object> _aktualniUdalost;
         private List<object> _obsahRepository;
         private UnikatnostNaradiService _svc;
+        private TestScheduler _scheduler;
 
         [TestInitialize]
         public void Initialize()
         {
+            _scheduler = new TestScheduler();
             _repository = new UnikatnostRepositoryMock(this);
             _udalosti = new List<object>();
             _obsahRepository = new List<object>();
@@ -33,11 +36,9 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
 
         private void ZpracovatPrikaz<T>(T cmd)
         {
-            var outcome = "none";
-            var execution = new CommandExecution<T>(cmd, () => outcome = "complete", ex => { throw ex.PreserveStackTrace(); });
-            var svc = (IHandle<CommandExecution<T>>)_svc;
-            svc.Handle(execution);
-            Assert.AreEqual("complete", outcome, "Prikaz mel byt dokoncen");
+            var task = _scheduler.Run(() => ((IProcess<T>)_svc).Handle(cmd));
+            if (task.Exception != null)
+                throw task.Exception.InnerException.PreserveStackTrace();
         }
 
         private T OcekavanaUdalost<T>()
@@ -71,16 +72,16 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
                 _parent = parent;
             }
 
-            public void Load(Action<UnikatnostNaradiAggregate> onLoaded, Action<Exception> onError)
+            public Task<UnikatnostNaradiAggregate> Load()
             {
-                onLoaded(UnikatnostNaradiAggregate.LoadFrom(_parent._obsahRepository));
+                return TaskUtils.FromResult(UnikatnostNaradiAggregate.LoadFrom(_parent._obsahRepository));
             }
 
-            public void Save(UnikatnostNaradiAggregate unikatnost, Action onSaved, Action onConcurrency, Action<Exception> onError)
+            public Task<bool> Save(UnikatnostNaradiAggregate unikatnost)
             {
                 var udalosti = (unikatnost as IEventSourcedAggregate).GetChanges();
                 _parent._udalosti.AddRange(udalosti);
-                onSaved();
+                return TaskUtils.FromResult(true);
             }
         }
 

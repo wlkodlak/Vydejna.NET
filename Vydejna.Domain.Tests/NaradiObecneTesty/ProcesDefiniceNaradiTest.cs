@@ -13,11 +13,13 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
     {
         private MockPublisher _bus;
         private ProcesDefiniceNaradi _proces;
+        private TestScheduler _scheduler;
 
         [TestInitialize]
         public void Inicialize()
         {
             _bus = new MockPublisher();
+            _scheduler = new TestScheduler();
         }
 
         private class MockPublisher : IPublisher
@@ -26,11 +28,11 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
 
             public void SetHandler<T>(Action<T> action)
             {
-                _handlers[typeof(CommandExecution<T>)] = o =>
+                _handlers[typeof(AsyncRpcMessage<T, object>)] = o =>
                 {
-                    var msg = (CommandExecution<T>)o;
-                    action(msg.Command);
-                    msg.OnCompleted();
+                    var msg = (AsyncRpcMessage<T, object>)o;
+                    action(msg.Query);
+                    msg.Response.TrySetResult(null);
                 };
             }
 
@@ -55,10 +57,9 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
 
         private void Vykonat<T>(T evnt)
         {
-            bool completed = false;
-            var handler = _proces as IHandle<CommandExecution<T>>;
-            handler.Handle(new CommandExecution<T>(evnt, () => completed = true, ex => { throw ex.PreserveStackTrace(); }));
-            Assert.IsTrue(completed, "Handler dokoncen");
+            var task = _scheduler.Run(() => ((IProcess<T>)_proces).Handle(evnt));
+            if (task.Exception != null)
+                throw task.Exception.InnerException.PreserveStackTrace();
         }
 
         [TestMethod]

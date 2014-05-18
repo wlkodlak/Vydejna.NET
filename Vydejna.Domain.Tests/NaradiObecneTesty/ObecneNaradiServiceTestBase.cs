@@ -12,7 +12,7 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
     public abstract class ObecneNaradiServiceTestBase<TAggregate, TService>
         where TAggregate : class, IEventSourcedAggregate, new()
     {
-        protected TestExecutor _executor;
+        protected TestScheduler _scheduler;
         protected TService _svc;
         protected Exception _caughtException;
         protected TestRepository<TAggregate> _repository;
@@ -24,7 +24,7 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
         {
             _time = new VirtualTime();
             _time.SetTime(new DateTime(2012, 1, 18, 8, 19, 21));
-            _executor = new TestExecutor();
+            _scheduler = new TestScheduler();
             _repository = new TestRepository<TAggregate>();
             InitializeCore();
             _svc = CreateService();
@@ -36,15 +36,8 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
 
         protected virtual void Execute<T>(T cmd)
         {
-            var mre = new ManualResetEventSlim();
-            var msg = new CommandExecution<T>(cmd, () => mre.Set(), ex => { _caughtException = ex; mre.Set(); });
-            ((IHandle<CommandExecution<T>>)_svc).Handle(msg);
-            for (int i = 0; i < 3; i++)
-            {
-                _executor.Process();
-                if (mre.Wait(10))
-                    break;
-            }
+            var task = _scheduler.Run(() => ((IProcess<T>)_svc).Handle(cmd));
+            _caughtException = task.Exception != null ? task.Exception.InnerException : null;
         }
 
         protected void ChybaValidace(string kategorie, string polozka)

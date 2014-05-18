@@ -1,13 +1,14 @@
 ﻿using ServiceLib;
 using System;
+using System.Threading.Tasks;
 using Vydejna.Contracts;
 
 namespace Vydejna.Domain.DefinovaneNaradi
 {
     public class DefinovaneNaradiService
-        : IHandle<CommandExecution<AktivovatNaradiCommand>>
-        , IHandle<CommandExecution<DeaktivovatNaradiCommand>>
-        , IHandle<CommandExecution<DefinovatNaradiInternalCommand>>
+        : IProcess<AktivovatNaradiCommand>
+        , IProcess<DeaktivovatNaradiCommand>
+        , IProcess<DefinovatNaradiInternalCommand>
     {
         private log4net.ILog _log;
         private IDefinovaneNaradiRepository _repoNaradi;
@@ -20,117 +21,27 @@ namespace Vydejna.Domain.DefinovaneNaradi
 
         public void Subscribe(ISubscribable bus)
         {
-            bus.Subscribe<CommandExecution<AktivovatNaradiCommand>>(this);
-            bus.Subscribe<CommandExecution<DeaktivovatNaradiCommand>>(this);
-            bus.Subscribe<CommandExecution<DefinovatNaradiInternalCommand>>(this);
+            bus.Subscribe<AktivovatNaradiCommand>(this);
+            bus.Subscribe<DeaktivovatNaradiCommand>(this);
+            bus.Subscribe<DefinovatNaradiInternalCommand>(this);
         }
 
-        public void Handle(CommandExecution<AktivovatNaradiCommand> message)
+        public Task Handle(AktivovatNaradiCommand msg)
         {
-            new NaradiHandler<AktivovatNaradiCommand>(
-                this, message,
-                msg => msg.NaradiId,
-                (log, msg) => log.DebugFormat("AktivovatNaradi: {0}", msg.NaradiId),
-                (msg, naradi) => naradi.Aktivovat(),
-                msg => null)
+            return new EventSourcedServiceExecution<DefinovaneNaradiAggregate>(_repoNaradi, msg.NaradiId.ToId())
+                .OnRequest(naradi => naradi.Aktivovat()).Execute();
+        }
+        public Task Handle(DeaktivovatNaradiCommand msg)
+        {
+            return new EventSourcedServiceExecution<DefinovaneNaradiAggregate>(_repoNaradi, msg.NaradiId.ToId())
+                .OnRequest(naradi => naradi.Deaktivovat()).Execute();
+        }
+
+        public Task Handle(DefinovatNaradiInternalCommand msg)
+        {
+            return new EventSourcedServiceExecution<DefinovaneNaradiAggregate>(_repoNaradi, msg.NaradiId.ToId())
+                .OnNew(naradi => DefinovaneNaradiAggregate.Definovat(msg.NaradiId, msg.Vykres, msg.Rozmer, msg.Druh))
                 .Execute();
-        }
-        public void Handle(CommandExecution<DeaktivovatNaradiCommand> message)
-        {
-            new NaradiHandler<DeaktivovatNaradiCommand>(
-                this, message,
-                msg => msg.NaradiId,
-                (log, msg) => log.DebugFormat("DeaktivovatNaradi: {0}", msg.NaradiId),
-                (msg, naradi) => naradi.Deaktivovat(),
-                msg => null)
-                .Execute();
-        }
-
-        public void Handle(CommandExecution<DefinovatNaradiInternalCommand> message)
-        {
-            new NaradiHandler<DefinovatNaradiInternalCommand>(
-                this, message,
-                msg => msg.NaradiId,
-                (log, msg) => log.DebugFormat("DefinovatNaradiInternal: {0}, vykres {1}, rozmer {2}, druh {3}", msg.NaradiId, msg.Vykres, msg.Rozmer, msg.Druh),
-                (msg, naradi) => { },
-                msg => DefinovaneNaradiAggregate.Definovat(msg.NaradiId, msg.Vykres, msg.Rozmer, msg.Druh))
-                .Execute();
-        }
-
-        private class NaradiHandler<TCommand>
-        {
-            private DefinovaneNaradiService _parent;
-            private CommandExecution<TCommand> _message;
-            private Func<TCommand, Guid> _getId;
-            private Action<log4net.ILog, TCommand> _logAction;
-            private Action<TCommand, DefinovaneNaradiAggregate> _forExisting;
-            private Func<TCommand, DefinovaneNaradiAggregate> _forNew;
-            private Guid _id;
-
-            public NaradiHandler(DefinovaneNaradiService parent, CommandExecution<TCommand> message,
-                Func<TCommand, Guid> getId,
-                Action<log4net.ILog, TCommand> logAction,
-                Action<TCommand, DefinovaneNaradiAggregate> forExisting,
-                Func<TCommand, DefinovaneNaradiAggregate> forMissing)
-            {
-                _parent = parent;
-                _message = message;
-                _getId = getId;
-                _logAction = logAction;
-                _forExisting = forExisting;
-                _forNew = forMissing;
-            }
-            public void Execute()
-            {
-                try
-                {
-                    _logAction(_parent._log, _message.Command);
-                    _id = _getId(_message.Command);
-                    _parent._repoNaradi.Load(_id.ToId(), NaradiNacteno, NaradiChybi, _message.OnError);
-                }
-                catch (Exception ex)
-                {
-                    _message.OnError(ex);
-                }
-            }
-            private void NaradiNacteno(DefinovaneNaradiAggregate naradi)
-            {
-                try
-                {
-                    _forExisting(_message.Command, naradi);
-                    _parent._repoNaradi.Save(naradi, _message.OnCompleted, Konflikt, _message.OnError);
-                }
-                catch (Exception ex)
-                {
-                    _message.OnError(ex);
-                }
-            }
-            private void NaradiChybi()
-            {
-                try
-                {
-                    var naradi = _forNew(_message.Command);
-                    if (naradi != null)
-                        _parent._repoNaradi.Save(naradi, _message.OnCompleted, Konflikt, _message.OnError);
-                    else
-                        _message.OnCompleted();
-                }
-                catch (Exception ex)
-                {
-                    _message.OnError(ex);
-                }
-            }
-            private void Konflikt()
-            {
-                try
-                {
-                    _parent._repoNaradi.Load(_id.ToId(), NaradiNacteno, NaradiChybi, _message.OnError);
-                }
-                catch (Exception ex)
-                {
-                    _message.OnError(ex);
-                }
-            }
         }
     }
 }

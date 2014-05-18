@@ -3,6 +3,7 @@ using ServiceLib;
 using ServiceLib.Tests.TestUtils;
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using Vydejna.Contracts;
 using Vydejna.Domain.DefinovaneNaradi;
 
@@ -16,10 +17,12 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
         private IEnumerator<object> _aktualniUdalost;
         private Dictionary<Guid, List<object>> _obsahRepository;
         private DefinovaneNaradiService _svc;
+        private TestScheduler _scheduler;
 
         [TestInitialize]
         public void Initialize()
         {
+            _scheduler = new TestScheduler();
             _repository = new NaradiRepositoryMock(this);
             _udalosti = new List<object>();
             _obsahRepository = new Dictionary<Guid, List<object>>();
@@ -33,12 +36,9 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
 
         private void ZpracovatPrikaz<T>(T cmd)
         {
-            string outcome = "none";
-            var execution = new CommandExecution<T>(
-                cmd, () => outcome = "complete", ex => { throw ex.PreserveStackTrace(); });
-            var svc = (IHandle<CommandExecution<T>>)_svc;
-            svc.Handle(execution);
-            Assert.AreEqual("complete", outcome, "Prikaz ma by zpracovan");
+            var task = _scheduler.Run(() => ((IProcess<T>)_svc).Handle(cmd));
+            if (task.Exception != null)
+                throw task.Exception.InnerException.PreserveStackTrace();
         }
 
         private T OcekavanaUdalost<T>()
@@ -75,21 +75,21 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
                 _parent = parent;
             }
 
-            public void Load(IAggregateId id, Action<DefinovaneNaradiAggregate> onLoaded, Action onMissing, Action<Exception> onError)
+            public Task<DefinovaneNaradiAggregate> Load(IAggregateId id)
             {
                 List<object> udalosti;
                 var guid = ((AggregateIdGuid)id).Guid;
                 if (!_parent._obsahRepository.TryGetValue(guid, out udalosti))
-                    onMissing();
+                    return TaskUtils.FromResult<DefinovaneNaradiAggregate>(null);
                 else
-                    onLoaded(DefinovaneNaradiAggregate.LoadFrom(udalosti));
+                    return TaskUtils.FromResult(DefinovaneNaradiAggregate.LoadFrom(udalosti));
             }
 
-            public void Save(DefinovaneNaradiAggregate aggregate, Action onSaved, Action onConcurrency, Action<Exception> onError)
+            public Task<bool> Save(DefinovaneNaradiAggregate aggregate)
             {
                 var udalosti = (aggregate as IEventSourcedAggregate).GetChanges();
                 _parent._udalosti.AddRange(udalosti);
-                onSaved();
+                return TaskUtils.FromResult(true);
             }
         }
 

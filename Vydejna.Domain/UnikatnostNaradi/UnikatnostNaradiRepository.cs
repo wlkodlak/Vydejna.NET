@@ -1,12 +1,13 @@
 ﻿using ServiceLib;
 using System;
+using System.Threading.Tasks;
 
 namespace Vydejna.Domain.UnikatnostNaradi
 {
     public interface IUnikatnostNaradiRepository
     {
-        void Load(Action<UnikatnostNaradiAggregate> onLoaded, Action<Exception> onError);
-        void Save(UnikatnostNaradiAggregate aggregate, Action onSaved, Action onConcurrency, Action<Exception> onError);
+        Task<UnikatnostNaradiAggregate> Load();
+        Task<bool> Save(UnikatnostNaradiAggregate aggregate);
     }
 
     public class UnikatnostNaradiId : IAggregateId
@@ -44,9 +45,41 @@ namespace Vydejna.Domain.UnikatnostNaradi
             return new UnikatnostNaradiAggregate();
         }
 
-        public void Load(Action<UnikatnostNaradiAggregate> onLoaded, Action<Exception> onError)
+        public Task<UnikatnostNaradiAggregate> Load()
         {
-            Load(UnikatnostNaradiId.Value, onLoaded, () => onLoaded(new UnikatnostNaradiAggregate()), onError);
+            return Load(UnikatnostNaradiId.Value);
+        }
+    }
+
+    public static class UnikatnostNaradiRepositoryExtensions
+    {
+        public static IEventSourcedRepository<UnikatnostNaradiAggregate> AsGeneric(this IUnikatnostNaradiRepository repository)
+        {
+            var direct = repository as IEventSourcedRepository<UnikatnostNaradiAggregate>;
+            if (direct != null)
+                return direct;
+            else
+                return new UnikatnostNaradiRepositoryToGeneric(repository);
+        }
+
+        private class UnikatnostNaradiRepositoryToGeneric : IEventSourcedRepository<UnikatnostNaradiAggregate>
+        {
+            private IUnikatnostNaradiRepository _repository;
+
+            public UnikatnostNaradiRepositoryToGeneric(IUnikatnostNaradiRepository repository)
+            {
+                _repository = repository;
+            }
+
+            public Task<UnikatnostNaradiAggregate> Load(IAggregateId id)
+            {
+                return _repository.Load();
+            }
+
+            public Task<bool> Save(UnikatnostNaradiAggregate aggregate)
+            {
+                return _repository.Save(aggregate);
+            }
         }
     }
 }
