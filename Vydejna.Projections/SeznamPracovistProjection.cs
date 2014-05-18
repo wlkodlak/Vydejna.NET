@@ -3,24 +3,25 @@ using System;
 using System.Linq;
 using System.Collections.Generic;
 using Vydejna.Contracts;
+using System.Threading.Tasks;
 
 namespace Vydejna.Projections.SeznamPracovistReadModel
 {
     public class SeznamPracovistProjection
         : IEventProjection
         , ISubscribeToCommandManager
-        , IHandle<CommandExecution<ProjectorMessages.Flush>>
-        , IHandle<CommandExecution<DefinovanoPracovisteEvent>>
+        , IProcess<ProjectorMessages.Flush>
+        , IProcess<DefinovanoPracovisteEvent>
     {
         private SeznamPracovistRepository _repository;
         private MemoryCache<InformaceOPracovisti> _cachePracovist;
         private SeznamPracovistDataPracovisteKodComparer _comparer;
 
-        public SeznamPracovistProjection(SeznamPracovistRepository repository, IQueueExecution executor, ITime time)
+        public SeznamPracovistProjection(SeznamPracovistRepository repository, ITime time)
         {
             _repository = repository;
             _comparer = new SeznamPracovistDataPracovisteKodComparer();
-            _cachePracovist = new MemoryCache<InformaceOPracovisti>(executor, time);
+            _cachePracovist = new MemoryCache<InformaceOPracovisti>(time);
         }
 
         public void Subscribe(ICommandSubscriptionManager mgr)
@@ -39,44 +40,38 @@ namespace Vydejna.Projections.SeznamPracovistReadModel
             return storedVersion == GetVersion() ? EventProjectionUpgradeMode.NotNeeded : EventProjectionUpgradeMode.Rebuild;
         }
 
-        public void Handle(CommandExecution<ProjectorMessages.Reset> message)
+        public Task Handle(ProjectorMessages.Reset message)
         {
             _cachePracovist.Clear();
-            _repository.Reset(message.OnCompleted, message.OnError);
+            return _repository.Reset();
         }
 
-        public void Handle(CommandExecution<ProjectorMessages.UpgradeFrom> message)
+        public Task Handle(ProjectorMessages.UpgradeFrom message)
         {
             throw new NotSupportedException();
         }
 
-        public void Handle(CommandExecution<ProjectorMessages.Flush> message)
+        public Task Handle(ProjectorMessages.Flush message)
         {
-            _cachePracovist.Flush(message.OnCompleted, message.OnError,
-                save => _repository.UlozitPracoviste(save.Version, save.Value, save.Value.Aktivni, save.SavedAsVersion, save.SavingFailed));
+            return _cachePracovist.Flush(save => _repository.UlozitPracoviste(save.Version, save.Value, save.Value.Aktivni));
         }
 
-        public void Handle(CommandExecution<DefinovanoPracovisteEvent> message)
+        public Task Handle(DefinovanoPracovisteEvent message)
         {
-            _cachePracovist.Get(
-                message.Command.Kod,
-                (verze, pracoviste) =>
+            return _cachePracovist.Get(message.Kod, load => _repository.NacistPracoviste(message.Kod)).ContinueWith(task =>
+            {
+                var pracoviste = task.Result.Value;
+                if (pracoviste == null)
                 {
-                    if (pracoviste == null)
-                    {
-                        pracoviste = new InformaceOPracovisti();
-                        pracoviste.Kod = message.Command.Kod;
-                    }
-                    pracoviste.Nazev = message.Command.Nazev;
-                    pracoviste.Stredisko = message.Command.Stredisko;
-                    pracoviste.Aktivni = !message.Command.Deaktivovano;
+                    pracoviste = new InformaceOPracovisti();
+                    pracoviste.Kod = message.Kod;
+                }
+                pracoviste.Nazev = message.Nazev;
+                pracoviste.Stredisko = message.Stredisko;
+                pracoviste.Aktivni = !message.Deaktivovano;
 
-                    _cachePracovist.Insert(message.Command.Kod, verze, pracoviste, dirty: true);
-                    message.OnCompleted();
-                },
-                message.OnError,
-                load => _repository.NacistPracoviste(message.Command.Kod, load.SetLoadedValue, load.LoadingFailed)
-                );
+                _cachePracovist.Insert(message.Kod, task.Result.Version, pracoviste, dirty: true);
+            });
         }
     }
 
@@ -98,16 +93,15 @@ namespace Vydejna.Projections.SeznamPracovistReadModel
             _folder = folder;
         }
 
-        public void Reset(Action onComplete, Action<Exception> onError)
+        public Task Reset()
         {
-            _folder.DeleteAll(onComplete, onError);
+            return _folder.DeleteAll();
         }
 
-        public void NacistPracoviste(string kodPracoviste, Action<int, InformaceOPracovisti> onLoaded, Action<Exception> onError)
+        public Task<MemoryCacheItem<InformaceOPracovisti>> NacistPracoviste(string kodPracoviste)
         {
-            _folder.GetDocument(kodPracoviste,
-                (verze, raw) => onLoaded(verze, DeserializovatPracoviste(raw)),
-                () => onLoaded(0, null), ex => onError(ex));
+            return _folder.GetDocument(kodPracoviste)
+                .ContinueWith(task => ProjectorUtils.LoadFromDocument(task, JsonSerializer.DeserializeFromString<InformaceOPracovisti>)).Unwrap();
         }
 
         private static InformaceOPracovisti DeserializovatPracoviste(string raw)
@@ -115,22 +109,19 @@ namespace Vydejna.Projections.SeznamPracovistReadModel
             return string.IsNullOrEmpty(raw) ? null : JsonSerializer.DeserializeFromString<InformaceOPracovisti>(raw);
         }
 
-        public void UlozitPracoviste(int verze, InformaceOPracovisti data, bool zobrazitVSeznamu, Action<int> onSaved, Action<Exception> onError)
+        public Task<int> UlozitPracoviste(int verze, InformaceOPracovisti data, bool zobrazitVSeznamu)
         {
-            _folder.SaveDocument(data.Kod,
+            return _folder.SaveDocument(data.Kod,
                 JsonSerializer.SerializeToString(data),
                 DocumentStoreVersion.At(verze),
-                zobrazitVSeznamu ? new[] { new DocumentIndexing("kodPracoviste", data.Kod) } : null,
-                () => onSaved(verze + 1),
-                () => onError(new ProjectorMessages.ConcurrencyException()),
-                ex => onError(ex));
+                zobrazitVSeznamu ? new[] { new DocumentIndexing("kodPracoviste", data.Kod) } : null)
+                .ContinueWith(saved => ProjectorUtils.CheckConcurrency(saved, verze + 1)).Unwrap();
         }
 
-        public void NacistSeznamPracovist(int offset, int pocet, Action<int, List<InformaceOPracovisti>> onLoaded, Action<Exception> onError)
+        public Task<Tuple<int, List<InformaceOPracovisti>>> NacistSeznamPracovist(int offset, int pocet)
         {
-            _folder.FindDocuments("kodPracoviste", null, null, offset, pocet, true,
-                list => onLoaded(list.TotalFound, list.Select(p => DeserializovatPracoviste(p.Contents)).ToList()),
-                ex => onError(ex));
+            return _folder.FindDocuments("kodPracoviste", null, null, offset, pocet, true)
+                .ContinueWith(task => Tuple.Create(task.Result.TotalFound, task.Result.Select(p => DeserializovatPracoviste(p.Contents)).ToList()));
         }
     }
 
@@ -140,26 +131,23 @@ namespace Vydejna.Projections.SeznamPracovistReadModel
         private SeznamPracovistRepository _repository;
         private IMemoryCache<ZiskatSeznamPracovistResponse> _cache;
 
-        public SeznamPracovistReader(SeznamPracovistRepository repository, IQueueExecution executor, ITime time)
+        public SeznamPracovistReader(SeznamPracovistRepository repository, ITime time)
         {
             _repository = repository;
-            _cache = new MemoryCache<ZiskatSeznamPracovistResponse>(executor, time);
+            _cache = new MemoryCache<ZiskatSeznamPracovistResponse>(time);
         }
 
         public void Subscribe(ISubscribable bus)
         {
-            bus.Subscribe<QueryExecution<ZiskatSeznamPracovistRequest, ZiskatSeznamPracovistResponse>>(this);
+            bus.Subscribe<ZiskatSeznamPracovistRequest, ZiskatSeznamPracovistResponse>(this);
         }
 
-        public void Handle(QueryExecution<ZiskatSeznamPracovistRequest, ZiskatSeznamPracovistResponse> message)
+        public Task<ZiskatSeznamPracovistResponse> Handle(ZiskatSeznamPracovistRequest message)
         {
-            _cache.Get(
-                message.Request.Stranka.ToString(),
-                (verze, response) => message.OnCompleted(response),
-                ex => message.OnError(ex),
-                load => _repository.NacistSeznamPracovist(message.Request.Stranka * 100 - 100, 100,
-                    (celkem, seznam) => load.SetLoadedValue(1, VytvoritResponse(message.Request, celkem, seznam)),
-                    ex => load.LoadingFailed(ex)));
+            return _cache.Get(message.Stranka.ToString(), 
+                load => _repository.NacistSeznamPracovist(message.Stranka * 100 - 100, 100)
+                    .ContinueWith(task => new MemoryCacheItem<ZiskatSeznamPracovistResponse>(1, VytvoritResponse(message, task.Result.Item1, task.Result.Item2))))
+                .ContinueWith(task => task.Result.Value);
         }
 
         private ZiskatSeznamPracovistResponse VytvoritResponse(ZiskatSeznamPracovistRequest request, int celkem, List<InformaceOPracovisti> seznam)

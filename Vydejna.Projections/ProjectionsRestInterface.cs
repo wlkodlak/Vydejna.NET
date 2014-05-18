@@ -1,5 +1,6 @@
 ﻿using ServiceLib;
 using System;
+using System.Threading.Tasks;
 using Vydejna.Contracts;
 
 namespace Vydejna.Projections
@@ -36,217 +37,217 @@ namespace Vydejna.Projections
             config.Route("vady/seznam").To(SeznamVad);
         }
 
-        public void DetailNaradi(IHttpServerStagedContext ctx)
+        public Task DetailNaradi(IHttpServerStagedContext ctx)
         {
             try
             {
                 var request = new DetailNaradiRequest();
                 request.NaradiId = ctx.Parameter("naradiid").AsGuid().Mandatory().Get();
-                _bus.Publish(new QueryExecution<DetailNaradiRequest, DetailNaradiResponse>(request, res => SendResponse(ctx, res), ex => SendError(ctx, ex)));
+                return _bus.SendQuery<DetailNaradiRequest, DetailNaradiResponse>(request).ContinueWith(task => Finish(task, ctx));
             }
             catch (Exception ex)
             {
-                SendError(ctx, ex);
+                return TaskUtils.FromError<object>(ex);
             }
         }
 
-        public void NajitObjednavku(IHttpServerStagedContext ctx)
+        public Task NajitObjednavku(IHttpServerStagedContext ctx)
         {
             try
             {
                 var request = new NajitObjednavkuRequest();
                 request.Objednavka = ctx.Parameter("objednavka").AsString().Mandatory().Get();
-                _bus.Publish(new QueryExecution<NajitObjednavkuRequest, NajitObjednavkuResponse>(request, res => SendResponse(ctx, res), ex => SendError(ctx, ex)));
+                return _bus.SendQuery<NajitObjednavkuRequest, NajitObjednavkuResponse>(request).ContinueWith(task => Finish(task, ctx));
             }
             catch (Exception ex)
             {
-                SendError(ctx, ex);
+                return TaskUtils.FromError<object>(ex);
             }
         }
 
-        public void NajitDodaciList(IHttpServerStagedContext ctx)
+        public Task NajitDodaciList(IHttpServerStagedContext ctx)
         {
             try
             {
                 var request = new NajitDodaciListRequest();
                 request.DodaciList = ctx.Parameter("dodacilist").AsString().Mandatory().Get();
-                _bus.Publish(new QueryExecution<NajitDodaciListRequest, NajitDodaciListResponse>(request, res => SendResponse(ctx, res), ex => SendError(ctx, ex)));
+                return _bus.SendQuery<NajitDodaciListRequest, NajitDodaciListResponse>(request).ContinueWith(task => Finish(task, ctx));
             }
             catch (Exception ex)
             {
-                SendError(ctx, ex);
+                return TaskUtils.FromError<object>(ex);
             }
         }
 
-        public void NaradiNaObjednavce(IHttpServerStagedContext ctx)
+        public Task NaradiNaObjednavce(IHttpServerStagedContext ctx)
         {
             try
             {
                 var request = new ZiskatNaradiNaObjednavceRequest();
                 request.Objednavka = ctx.Parameter("objednavka").AsString().Mandatory().Get();
                 request.KodDodavatele = ctx.Parameter("dodavatel").AsString().Mandatory().Get();
-                _bus.Publish(new QueryExecution<ZiskatNaradiNaObjednavceRequest, ZiskatNaradiNaObjednavceResponse>(request, res => SendResponse(ctx, res), ex => SendError(ctx, ex)));
+                return _bus.SendQuery<ZiskatNaradiNaObjednavceRequest, ZiskatNaradiNaObjednavceResponse>(request).ContinueWith(task => Finish(task, ctx));
             }
             catch (Exception ex)
             {
-                SendError(ctx, ex);
+                return TaskUtils.FromError<object>(ex);
             }
         }
 
-        public void NaradiNaPracovisti(IHttpServerStagedContext ctx)
+        public Task NaradiNaPracovisti(IHttpServerStagedContext ctx)
         {
             try
             {
                 var request = new ZiskatNaradiNaPracovistiRequest();
                 request.KodPracoviste = ctx.Parameter("pracoviste").AsString().Mandatory().Get();
-                _bus.Publish(new QueryExecution<ZiskatNaradiNaPracovistiRequest, ZiskatNaradiNaPracovistiResponse>(request, res => SendResponse(ctx, res), ex => SendError(ctx, ex)));
+                return _bus.SendQuery<ZiskatNaradiNaPracovistiRequest, ZiskatNaradiNaPracovistiResponse>(request).ContinueWith(task => Finish(task, ctx));
             }
             catch (Exception ex)
             {
-                SendError(ctx, ex);
+                return TaskUtils.FromError<object>(ex);
             }
         }
 
-        public void NaradiNaVydejne(IHttpServerStagedContext ctx)
+        public Task NaradiNaVydejne(IHttpServerStagedContext ctx)
         {
             try
             {
                 var request = new ZiskatNaradiNaVydejneRequest();
                 request.Stranka = ctx.Parameter("stranka").AsInteger().Default(1).Get();
-                _bus.Publish(new QueryExecution<ZiskatNaradiNaVydejneRequest, ZiskatNaradiNaVydejneResponse>(request, res => SendResponse(ctx, res), ex => SendError(ctx, ex)));
+                return _bus.SendQuery<ZiskatNaradiNaVydejneRequest, ZiskatNaradiNaVydejneResponse>(request).ContinueWith(task => Finish(task, ctx));
             }
             catch (Exception ex)
             {
-                SendError(ctx, ex);
+                return TaskUtils.FromError<object>(ex);
             }
         }
 
-        public void PrehledNaradi(IHttpServerStagedContext ctx)
+        public Task PrehledNaradi(IHttpServerStagedContext ctx)
         {
             try
             {
                 var request = new PrehledNaradiRequest();
                 request.Stranka = ctx.Parameter("stranka").AsInteger().Default(1).Get();
-                _bus.Publish(new QueryExecution<PrehledNaradiRequest, PrehledNaradiResponse>(request, res => SendResponse(ctx, res), ex => SendError(ctx, ex)));
+                return _bus.SendQuery<PrehledNaradiRequest, PrehledNaradiResponse>(request).ContinueWith(task => Finish(task, ctx));
             }
             catch (Exception ex)
             {
-                SendError(ctx, ex);
+                return TaskUtils.FromError<object>(ex);
             }
         }
 
-        public void PrehledCislovaneho(IHttpServerStagedContext ctx)
+        public Task PrehledCislovaneho(IHttpServerStagedContext ctx)
         {
             try
             {
                 var request = new PrehledCislovanehoNaradiRequest();
                 request.Stranka = ctx.Parameter("stranka").AsInteger().Default(1).Get();
-                _bus.Publish(new QueryExecution<PrehledCislovanehoNaradiRequest, PrehledCislovanehoNaradiResponse>(request, res => SendResponse(ctx, res), ex => SendError(ctx, ex)));
+                return _bus.SendQuery<PrehledCislovanehoNaradiRequest, PrehledCislovanehoNaradiResponse>(request).ContinueWith(task => Finish(task, ctx));
             }
             catch (Exception ex)
             {
-                SendError(ctx, ex);
+                return TaskUtils.FromError<object>(ex);
             }
         }
 
-        public void PrehledObjednavek(IHttpServerStagedContext ctx)
+        public Task PrehledObjednavek(IHttpServerStagedContext ctx)
         {
             try
             {
                 var request = new PrehledObjednavekRequest();
                 request.Stranka = ctx.Parameter("stranka").AsInteger().Default(1).Get();
                 request.Razeni = ctx.Parameter("razeni").AsEnum<PrehledObjednavekRazeni>().Default(PrehledObjednavekRazeni.PodleCislaObjednavky).Get();
-                _bus.Publish(new QueryExecution<PrehledObjednavekRequest, PrehledObjednavekResponse>(request, res => SendResponse(ctx, res), ex => SendError(ctx, ex)));
+                return _bus.SendQuery<PrehledObjednavekRequest, PrehledObjednavekResponse>(request).ContinueWith(task => Finish(task, ctx));
             }
             catch (Exception ex)
             {
-                SendError(ctx, ex);
+                return TaskUtils.FromError<object>(ex);
             }
         }
 
-        public void OveritUnikatnost(IHttpServerStagedContext ctx)
+        public Task OveritUnikatnost(IHttpServerStagedContext ctx)
         {
             try
             {
                 var request = new OvereniUnikatnostiRequest();
                 request.Vykres = ctx.Parameter("vykres").AsString().Mandatory().Get();
                 request.Rozmer = ctx.Parameter("rozmer").AsString().Mandatory().Get();
-                _bus.Publish(new QueryExecution<OvereniUnikatnostiRequest, OvereniUnikatnostiResponse>(request, res => SendResponse(ctx, res), ex => SendError(ctx, ex)));
+                return _bus.SendQuery<OvereniUnikatnostiRequest, OvereniUnikatnostiResponse>(request).ContinueWith(task => Finish(task, ctx));
             }
             catch (Exception ex)
             {
-                SendError(ctx, ex);
+                return TaskUtils.FromError<object>(ex);
             }
         }
 
-        public void SeznamDodavatelu(IHttpServerStagedContext ctx)
+        public Task SeznamDodavatelu(IHttpServerStagedContext ctx)
         {
             try
             {
                 var request = new ZiskatSeznamDodavateluRequest();
-                _bus.Publish(new QueryExecution<ZiskatSeznamDodavateluRequest, ZiskatSeznamDodavateluResponse>(request, res => SendResponse(ctx, res), ex => SendError(ctx, ex)));
+                return _bus.SendQuery<ZiskatSeznamDodavateluRequest, ZiskatSeznamDodavateluResponse>(request).ContinueWith(task => Finish(task, ctx));
             }
             catch (Exception ex)
             {
-                SendError(ctx, ex);
+                return TaskUtils.FromError<object>(ex);
             }
         }
 
-        public void SeznamNaradi(IHttpServerStagedContext ctx)
+        public Task SeznamNaradi(IHttpServerStagedContext ctx)
         {
             try
             {
                 var request = new ZiskatSeznamNaradiRequest();
                 request.Stranka = ctx.Parameter("stranka").AsInteger().Default(1).Get();
-                _bus.Publish(new QueryExecution<ZiskatSeznamNaradiRequest, ZiskatSeznamNaradiResponse>(request, res => SendResponse(ctx, res), ex => SendError(ctx, ex)));
+                return _bus.SendQuery<ZiskatSeznamNaradiRequest, ZiskatSeznamNaradiResponse>(request).ContinueWith(task => Finish(task, ctx));
             }
             catch (Exception ex)
             {
-                SendError(ctx, ex);
+                return TaskUtils.FromError<object>(ex);
             }
         }
 
-        public void SeznamPracovist(IHttpServerStagedContext ctx)
+        public Task SeznamPracovist(IHttpServerStagedContext ctx)
         {
             try
             {
                 var request = new ZiskatSeznamPracovistRequest();
                 request.Stranka = ctx.Parameter("stranka").AsInteger().Default(1).Get();
-                _bus.Publish(new QueryExecution<ZiskatSeznamPracovistRequest, ZiskatSeznamPracovistResponse>(request, res => SendResponse(ctx, res), ex => SendError(ctx, ex)));
+                return _bus.SendQuery<ZiskatSeznamPracovistRequest, ZiskatSeznamPracovistResponse>(request).ContinueWith(task => Finish(task, ctx));
             }
             catch (Exception ex)
             {
-                SendError(ctx, ex);
+                return TaskUtils.FromError<object>(ex);
             }
         }
 
-        public void SeznamVad(IHttpServerStagedContext ctx)
+        public Task SeznamVad(IHttpServerStagedContext ctx)
         {
             try
             {
                 var request = new ZiskatSeznamVadRequest();
-                _bus.Publish(new QueryExecution<ZiskatSeznamVadRequest, ZiskatSeznamVadResponse>(request, res => SendResponse(ctx, res), ex => SendError(ctx, ex)));
+                return _bus.SendQuery<ZiskatSeznamVadRequest, ZiskatSeznamVadResponse>(request).ContinueWith(task => Finish(task, ctx));
             }
             catch (Exception ex)
             {
-                SendError(ctx, ex);
+                return TaskUtils.FromError<object>(ex);
             }
         }
 
-        private void SendResponse<T>(IHttpServerStagedContext ctx, T response)
+        private void Finish<T>(Task<T> task, IHttpServerStagedContext ctx)
         {
-            ctx.StatusCode = 200;
-            ctx.OutputString = ctx.OutputSerializer.Serialize(response);
-            ctx.OutputHeaders.ContentType = ctx.OutputSerializer.ContentType;
-            ctx.Close();
-        }
-
-        private void SendError(IHttpServerStagedContext ctx, Exception ex)
-        {
-            ctx.StatusCode = 400;
-            ctx.OutputString = ex.Message;
-            ctx.OutputHeaders.ContentType = "text/plain";
-            ctx.Close();
+            if (task.Exception == null)
+            {
+                ctx.StatusCode = 200;
+                ctx.OutputString = ctx.OutputSerializer.Serialize(task.Result);
+                ctx.OutputHeaders.ContentType = ctx.OutputSerializer.ContentType;
+            }
+            else
+            {
+                ctx.StatusCode = 400;
+                ctx.OutputString = task.Exception.InnerException.Message;
+                ctx.OutputHeaders.ContentType = "text/plain";
+            }
         }
     }
 }

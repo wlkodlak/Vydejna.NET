@@ -41,7 +41,7 @@ namespace ServiceLib
             _flushAfter = flushAfter;
             return this;
         }
-        
+
         public ProcessState State
         {
             get
@@ -125,7 +125,7 @@ namespace ServiceLib
                 var taskGetToken = TaskUtils.Retry(() => _metadata.GetToken(), _cancelPause.Token);
                 yield return taskGetToken;
                 var token = taskGetToken.Result;
-                
+
                 SetProcessState(ProcessState.Running);
                 _streaming.Setup(token, _subscriptions.GetHandledTypes(), _metadata.ProcessName);
 
@@ -141,7 +141,7 @@ namespace ServiceLib
                     if (_cancelPause.IsCancellationRequested)
                         break;
                     var nextEvent = taskNextEvent.Result;
-                    
+
                     var tokenToSave = (EventStoreToken)null;
                     if (nextEvent == null)
                     {
@@ -185,6 +185,56 @@ namespace ServiceLib
             {
                 _metadata.Unlock();
             }
+        }
+    }
+
+    public static class ProjectorUtils
+    {
+        public static Task<int> CheckConcurrency(Task<bool> saved, int savedAsVersion)
+        {
+            var tcs = new TaskCompletionSource<int>();
+            if (saved.IsCanceled)
+                tcs.SetCanceled();
+            else if (saved.Exception != null)
+                tcs.SetException(saved.Exception.InnerExceptions);
+            else if (saved.Result)
+                tcs.SetResult(savedAsVersion);
+            else
+                tcs.SetException(new ProjectorMessages.ConcurrencyException());
+            return tcs.Task;
+        }
+
+        public static Task<MemoryCacheItem<T>> LoadFromDocument<T>(Task<DocumentStoreFoundDocument> task, Func<string, T> deserializer)
+        {
+            var tcs = new TaskCompletionSource<MemoryCacheItem<T>>();
+            if (task.IsCanceled)
+                tcs.SetCanceled();
+            else if (task.Exception != null)
+                tcs.SetException(task.Exception.InnerExceptions);
+            else
+            {
+                var result = task.Result;
+                if (result == null)
+                    tcs.SetResult(new MemoryCacheItem<T>(0, default(T)));
+                else if (!result.HasNewerContent)
+                    tcs.SetResult(null);
+                else if (string.IsNullOrEmpty(result.Contents))
+                {
+                    tcs.SetResult(new MemoryCacheItem<T>(result.Version, default(T)));
+                }
+                else
+                {
+                    try
+                    {
+                        tcs.SetResult(new MemoryCacheItem<T>(result.Version, deserializer(result.Contents)));
+                    }
+                    catch (Exception ex)
+                    {
+                        tcs.SetException(ex);
+                    }
+                }
+            }
+            return tcs.Task;
         }
     }
 }

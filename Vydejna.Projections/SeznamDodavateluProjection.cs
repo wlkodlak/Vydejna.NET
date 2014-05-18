@@ -3,24 +3,25 @@ using System;
 using System.Linq;
 using System.Collections.Generic;
 using Vydejna.Contracts;
+using System.Threading.Tasks;
 
 namespace Vydejna.Projections.SeznamDodavateluReadModel
 {
     public class SeznamDodavateluProjection
         : IEventProjection
         , ISubscribeToCommandManager
-        , IHandle<CommandExecution<ProjectorMessages.Flush>>
-        , IHandle<CommandExecution<DefinovanDodavatelEvent>>
+        , IProcess<ProjectorMessages.Flush>
+        , IProcess<DefinovanDodavatelEvent>
     {
         private SeznamDodavateluRepository _repository;
         private SeznamDodavateluNazevComparer _comparer;
         private MemoryCache<SeznamDodavateluData> _cache;
 
-        public SeznamDodavateluProjection(SeznamDodavateluRepository repository, IQueueExecution executor, ITime time)
+        public SeznamDodavateluProjection(SeznamDodavateluRepository repository, ITime time)
         {
             _repository = repository;
             _comparer = new SeznamDodavateluNazevComparer();
-            _cache = new MemoryCache<SeznamDodavateluData>(executor, time);
+            _cache = new MemoryCache<SeznamDodavateluData>(time);
         }
 
         public void Subscribe(ICommandSubscriptionManager mgr)
@@ -39,49 +40,48 @@ namespace Vydejna.Projections.SeznamDodavateluReadModel
             return storedVersion == GetVersion() ? EventProjectionUpgradeMode.NotNeeded : EventProjectionUpgradeMode.Rebuild;
         }
 
-        public void Handle(CommandExecution<ProjectorMessages.Reset> message)
+        public Task Handle(ProjectorMessages.Reset message)
         {
             _cache.Clear();
-            _repository.Reset(message.OnCompleted, message.OnError);
+            return _repository.Reset();
         }
 
-        public void Handle(CommandExecution<ProjectorMessages.UpgradeFrom> message)
+        public Task Handle(ProjectorMessages.UpgradeFrom message)
         {
             throw new NotSupportedException();
         }
 
-        public void Handle(CommandExecution<ProjectorMessages.Flush> message)
+        public Task Handle(ProjectorMessages.Flush message)
         {
-            _cache.Flush(message.OnCompleted, message.OnError, save => _repository.UlozitDodavatele(save.Version, save.Value, save.SavedAsVersion, save.SavingFailed));
+            return _cache.Flush(save => _repository.UlozitDodavatele(save.Version, save.Value));
         }
 
-        public void Handle(CommandExecution<DefinovanDodavatelEvent> message)
+        public Task Handle(DefinovanDodavatelEvent message)
         {
-            _cache.Get("dodavatele", (verze, data) =>
+            return _cache.Get("dodavatele", load => _repository.NacistDodavatele().ContinueWith(task => RozsiritData(task.Result))).ContinueWith(task =>
+            {
+                var data = task.Result.Value;
+                InformaceODodavateli dodavatel;
+                if (!data.PodleKodu.TryGetValue(message.Kod, out dodavatel))
                 {
-                    InformaceODodavateli dodavatel;
-                    if (!data.PodleKodu.TryGetValue(message.Command.Kod, out dodavatel))
-                    {
-                        dodavatel = new InformaceODodavateli();
-                        dodavatel.Kod = message.Command.Kod;
-                        data.PodleKodu[dodavatel.Kod] = dodavatel;
-                        data.Seznam.Add(dodavatel);
-                    }
-                    dodavatel.Nazev = message.Command.Nazev;
-                    dodavatel.Adresa = message.Command.Adresa;
-                    dodavatel.Ico = message.Command.Ico;
-                    dodavatel.Dic = message.Command.Dic;
-                    dodavatel.Aktivni = !message.Command.Deaktivovan;
+                    dodavatel = new InformaceODodavateli();
+                    dodavatel.Kod = message.Kod;
+                    data.PodleKodu[dodavatel.Kod] = dodavatel;
+                    data.Seznam.Add(dodavatel);
+                }
+                dodavatel.Nazev = message.Nazev;
+                dodavatel.Adresa = message.Adresa;
+                dodavatel.Ico = message.Ico;
+                dodavatel.Dic = message.Dic;
+                dodavatel.Aktivni = !message.Deaktivovan;
 
-                    _cache.Insert("dodavatele", verze, data, dirty: true);
-                    message.OnCompleted();
-                },
-                message.OnError,
-                load => _repository.NacistDodavatele((verze, data) => load.SetLoadedValue(verze, RozsiritData(data)), load.LoadingFailed));
+                _cache.Insert("dodavatele", task.Result.Version, data, dirty: true);
+            });
         }
 
-        private SeznamDodavateluData RozsiritData(SeznamDodavateluData data)
+        private MemoryCacheItem<SeznamDodavateluData> RozsiritData(MemoryCacheItem<SeznamDodavateluData> item)
         {
+            var data = item.Value;
             if (data == null)
             {
                 data = new SeznamDodavateluData();
@@ -94,7 +94,7 @@ namespace Vydejna.Projections.SeznamDodavateluReadModel
                 foreach (var dodavatel in data.Seznam)
                     data.PodleKodu[dodavatel.Kod] = dodavatel;
             }
-            return data;
+            return new MemoryCacheItem<SeznamDodavateluData>(item.Version, data);
         }
     }
 
@@ -121,28 +121,21 @@ namespace Vydejna.Projections.SeznamDodavateluReadModel
             _folder = folder;
         }
 
-        public void Reset(Action onComplete, Action<Exception> onError)
+        public Task Reset()
         {
-            _folder.DeleteAll(onComplete, onError);
+            return _folder.DeleteAll();
         }
 
-        public void NacistDodavatele(Action<int, SeznamDodavateluData> onLoaded, Action<Exception> onError)
+        public Task<MemoryCacheItem<SeznamDodavateluData>> NacistDodavatele()
         {
-            _folder.GetDocument("dodavatele",
-                (verze, raw) => onLoaded(verze, string.IsNullOrEmpty(raw) ? null : JsonSerializer.DeserializeFromString<SeznamDodavateluData>(raw)),
-                () => onLoaded(0, null), ex => onError(ex));
+            return _folder.GetDocument("dodavatele")
+                .ContinueWith(task => ProjectorUtils.LoadFromDocument<SeznamDodavateluData>(task, JsonSerializer.DeserializeFromString<SeznamDodavateluData>)).Unwrap();
         }
 
-        public void UlozitDodavatele(int verze, SeznamDodavateluData data, Action<int> onSaved, Action<Exception> onError)
+        public Task<int> UlozitDodavatele(int verze, SeznamDodavateluData data)
         {
-            _folder.SaveDocument("dodavatele",
-                JsonSerializer.SerializeToString(data),
-                DocumentStoreVersion.At(verze),
-                null,
-                () => onSaved(verze + 1),
-                () => onError(new ProjectorMessages.ConcurrencyException()),
-                ex => onError(ex)
-                );
+            return _folder.SaveDocument("dodavatele", JsonSerializer.SerializeToString(data), DocumentStoreVersion.At(verze), null)
+                .ContinueWith(task => ProjectorUtils.CheckConcurrency(task, verze + 1)).Unwrap();
         }
     }
 
@@ -152,31 +145,32 @@ namespace Vydejna.Projections.SeznamDodavateluReadModel
         private IMemoryCache<ZiskatSeznamDodavateluResponse> _cache;
         private SeznamDodavateluRepository _repository;
 
-        public SeznamDodavateluReader(SeznamDodavateluRepository repository, IQueueExecution executor, ITime time)
+        public SeznamDodavateluReader(SeznamDodavateluRepository repository, ITime time)
         {
             _repository = repository;
-            _cache = new MemoryCache<ZiskatSeznamDodavateluResponse>(executor, time);
+            _cache = new MemoryCache<ZiskatSeznamDodavateluResponse>(time);
         }
 
         public void Subscribe(ISubscribable bus)
         {
-            bus.Subscribe<QueryExecution<ZiskatSeznamDodavateluRequest, ZiskatSeznamDodavateluResponse>>(this);
+            bus.Subscribe<ZiskatSeznamDodavateluRequest, ZiskatSeznamDodavateluResponse>(this);
         }
 
-        public void Handle(QueryExecution<ZiskatSeznamDodavateluRequest, ZiskatSeznamDodavateluResponse> message)
+        public Task<ZiskatSeznamDodavateluResponse> Handle(ZiskatSeznamDodavateluRequest message)
         {
-            _cache.Get("dodavatele", (verze, data) => message.OnCompleted(data), message.OnError,
-                load => _repository.NacistDodavatele((verze, data) => load.SetLoadedValue(verze, VytvoritResponse(data)), load.LoadingFailed));
+            return _cache.Get("dodavatele", load => _repository.NacistDodavatele()
+                    .ContinueWith(task => VytvoritResponse(task.Result)))
+                .ContinueWith(task => task.Result.Value);
         }
 
-        private ZiskatSeznamDodavateluResponse VytvoritResponse(SeznamDodavateluData zaklad)
+        private MemoryCacheItem<ZiskatSeznamDodavateluResponse> VytvoritResponse(MemoryCacheItem<SeznamDodavateluData> zaklad)
         {
             var response = new ZiskatSeznamDodavateluResponse();
             if (zaklad == null)
                 response.Seznam = new List<InformaceODodavateli>();
             else
-                response.Seznam = zaklad.Seznam.Where(d => d.Aktivni).OrderBy(d => d.Nazev).ToList();
-            return response;
+                response.Seznam = zaklad.Value.Seznam.Where(d => d.Aktivni).OrderBy(d => d.Nazev).ToList();
+            return new MemoryCacheItem<ZiskatSeznamDodavateluResponse>(zaklad.Version, response);
         }
     }
 }

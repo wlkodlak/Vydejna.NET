@@ -3,23 +3,24 @@ using System;
 using System.Linq;
 using System.Collections.Generic;
 using Vydejna.Contracts;
+using System.Threading.Tasks;
 
 namespace Vydejna.Projections.SeznamVadReadModel
 {
     public class SeznamVadProjection
         : IEventProjection
         , ISubscribeToCommandManager
-        , IHandle<CommandExecution<ProjectorMessages.Flush>>
-        , IHandle<CommandExecution<DefinovanaVadaNaradiEvent>>
+        , IProcess<ProjectorMessages.Flush>
+        , IProcess<DefinovanaVadaNaradiEvent>
     {
         private SeznamVadRepository _repository;
         private MemoryCache<SeznamVadData> _cache;
         private IComparer<SeznamVadPolozka> _comparer;
 
-        public SeznamVadProjection(SeznamVadRepository repository, IQueueExecution executor, ITime time)
+        public SeznamVadProjection(SeznamVadRepository repository, ITime time)
         {
             _repository = repository;
-            _cache = new MemoryCache<SeznamVadData>(executor, time);
+            _cache = new MemoryCache<SeznamVadData>(time);
             _comparer = new SeznamVadKodComparer();
         }
 
@@ -39,57 +40,57 @@ namespace Vydejna.Projections.SeznamVadReadModel
             return storedVersion == GetVersion() ? EventProjectionUpgradeMode.NotNeeded : EventProjectionUpgradeMode.Rebuild;
         }
 
-        public void Handle(CommandExecution<ProjectorMessages.Reset> message)
+        public Task Handle(ProjectorMessages.Reset message)
         {
             _cache.Clear();
-            _repository.Reset(message.OnCompleted, message.OnError);
+            return _repository.Reset();
         }
 
-        public void Handle(CommandExecution<ProjectorMessages.UpgradeFrom> message)
+        public Task Handle(ProjectorMessages.UpgradeFrom message)
         {
             throw new NotSupportedException();
         }
 
-        public void Handle(CommandExecution<ProjectorMessages.Flush> message)
+        public Task Handle(ProjectorMessages.Flush message)
         {
-            _cache.Flush(message.OnCompleted, message.OnError, save => _repository.UlozitVady(save.Version, save.Value, save.SavedAsVersion, save.SavingFailed));
+            return _cache.Flush(save => _repository.UlozitVady(save.Version, save.Value));
         }
 
-        public void Handle(CommandExecution<DefinovanaVadaNaradiEvent> message)
+        public Task Handle(DefinovanaVadaNaradiEvent message)
         {
-            _cache.Get("vady", (verze, seznamVad) =>
+            return _cache.Get("vady", load => _repository.NacistVady().ContinueWith(task => RozsiritData(task.Result))).ContinueWith(task =>
+            {
+                var verze = task.Result.Version;
+                var seznamVad = task.Result.Value;
+                var vzor = new SeznamVadPolozka { Kod = message.Kod };
+                var index = seznamVad.Seznam.BinarySearch(vzor, _comparer);
+                SeznamVadPolozka vada;
+                if (index >= 0)
                 {
-                    var vzor = new SeznamVadPolozka { Kod = message.Command.Kod };
-                    var index = seznamVad.Seznam.BinarySearch(vzor, _comparer);
-                    SeznamVadPolozka vada;
-                    if (index >= 0)
-                    {
-                        vada = seznamVad.Seznam[index];
-                    }
-                    else
-                    {
-                        vada = new SeznamVadPolozka();
-                        vada.Kod = message.Command.Kod;
-                        seznamVad.Seznam.Insert(~index, vada);
-                    }
-                    vada.Nazev = message.Command.Nazev;
-                    vada.Aktivni = !message.Command.Deaktivovana;
+                    vada = seznamVad.Seznam[index];
+                }
+                else
+                {
+                    vada = new SeznamVadPolozka();
+                    vada.Kod = message.Kod;
+                    seznamVad.Seznam.Insert(~index, vada);
+                }
+                vada.Nazev = message.Nazev;
+                vada.Aktivni = !message.Deaktivovana;
 
-                    _cache.Insert("vady", verze, seznamVad, dirty: true);
-                    message.OnCompleted();
-                },
-                message.OnError,
-                load => _repository.NacistVady((verze, data) => load.SetLoadedValue(verze, RozsiritData(data)), load.LoadingFailed));
+                _cache.Insert("vady", verze, seznamVad, dirty: true);
+            });
         }
 
-        private SeznamVadData RozsiritData(SeznamVadData data)
+        private MemoryCacheItem<SeznamVadData> RozsiritData(MemoryCacheItem<SeznamVadData> item)
         {
+            var data = item.Value;
             if (data == null)
             {
                 data = new SeznamVadData();
                 data.Seznam = new List<SeznamVadPolozka>();
             }
-            return data;
+            return new MemoryCacheItem<SeznamVadData>(item.Version, data);
         }
     }
 
@@ -107,28 +108,22 @@ namespace Vydejna.Projections.SeznamVadReadModel
             _folder = folder;
         }
 
-        public void Reset(Action onComplete, Action<Exception> onError)
+        public Task Reset()
         {
-            _folder.DeleteAll(onComplete, onError);
+            return _folder.DeleteAll();
         }
 
-        public void NacistVady(Action<int, SeznamVadData> onLoaded, Action<Exception> onError)
+        public Task<MemoryCacheItem<SeznamVadData>> NacistVady()
         {
-            _folder.GetDocument("vady",
-                (verze, raw) => onLoaded(verze, string.IsNullOrEmpty(raw) ? null : JsonSerializer.DeserializeFromString<SeznamVadData>(raw)),
-                () => onLoaded(0, null), ex => onError(ex));
+            return _folder.GetDocument("vady")
+                .ContinueWith(task => ProjectorUtils.LoadFromDocument(task, JsonSerializer.DeserializeFromString<SeznamVadData>)).Unwrap();
         }
 
-        public void UlozitVady(int verze, SeznamVadData data, Action<int> onSaved, Action<Exception> onError)
+        public Task<int> UlozitVady(int verze, SeznamVadData data)
         {
-            _folder.SaveDocument("vady",
-                JsonSerializer.SerializeToString(data),
-                DocumentStoreVersion.At(verze),
-                null,
-                () => onSaved(verze + 1),
-                () => onError(new ProjectorMessages.ConcurrencyException()),
-                ex => onError(ex)
-                );
+            return _folder
+                .SaveDocument("vady", JsonSerializer.SerializeToString(data), DocumentStoreVersion.At(verze), null)
+                .ContinueWith(saved => ProjectorUtils.CheckConcurrency(saved, verze + 1)).Unwrap();
         }
     }
 
@@ -138,31 +133,32 @@ namespace Vydejna.Projections.SeznamVadReadModel
         private SeznamVadRepository _repository;
         private IMemoryCache<ZiskatSeznamVadResponse> _cache;
 
-        public SeznamVadReader(SeznamVadRepository repository, IQueueExecution executor, ITime time)
+        public SeznamVadReader(SeznamVadRepository repository, ITime time)
         {
             _repository = repository;
-            _cache = new MemoryCache<ZiskatSeznamVadResponse>(executor, time);
+            _cache = new MemoryCache<ZiskatSeznamVadResponse>(time);
         }
 
         public void Subscribe(ISubscribable bus)
         {
-            bus.Subscribe<QueryExecution<ZiskatSeznamVadRequest, ZiskatSeznamVadResponse>>(this);
+            bus.Subscribe<ZiskatSeznamVadRequest, ZiskatSeznamVadResponse>(this);
         }
 
-        public void Handle(QueryExecution<ZiskatSeznamVadRequest, ZiskatSeznamVadResponse> message)
+        public Task<ZiskatSeznamVadResponse> Handle(ZiskatSeznamVadRequest message)
         {
-            _cache.Get("vady", (verze, data) => message.OnCompleted(data), message.OnError,
-                load => _repository.NacistVady((verze, data) => load.SetLoadedValue(verze, VytvoritResponse(data)), load.LoadingFailed));
+            return _cache
+                .Get("vady", load => _repository.NacistVady().ContinueWith(task => VytvoritResponse(task.Result)))
+                .ContinueWith(task => task.Result.Value);
         }
 
-        private ZiskatSeznamVadResponse VytvoritResponse(SeznamVadData zaklad)
+        private MemoryCacheItem<ZiskatSeznamVadResponse> VytvoritResponse(MemoryCacheItem<SeznamVadData> zaklad)
         {
             var response = new ZiskatSeznamVadResponse();
             if (zaklad == null)
                 response.Seznam = new List<SeznamVadPolozka>();
             else
-                response.Seznam = zaklad.Seznam.Where(v => v.Aktivni).ToList();
-            return response;
+                response.Seznam = zaklad.Value.Seznam.Where(v => v.Aktivni).ToList();
+            return new MemoryCacheItem<ZiskatSeznamVadResponse>(zaklad.Version, response);
         }
     }
 

@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using Vydejna.Contracts;
 
 namespace Vydejna.Projections.SeznamNaradiReadModel
@@ -9,20 +10,20 @@ namespace Vydejna.Projections.SeznamNaradiReadModel
     public class SeznamNaradiProjection
         : IEventProjection
         , ISubscribeToCommandManager
-        , IHandle<CommandExecution<ProjectorMessages.Flush>>
-        , IHandle<CommandExecution<DefinovanoNaradiEvent>>
-        , IHandle<CommandExecution<AktivovanoNaradiEvent>>
-        , IHandle<CommandExecution<DeaktivovanoNaradiEvent>>
+        , IProcess<ProjectorMessages.Flush>
+        , IProcess<DefinovanoNaradiEvent>
+        , IProcess<AktivovanoNaradiEvent>
+        , IProcess<DeaktivovanoNaradiEvent>
     {
         private SeznamNaradiRepository _repository;
         private MemoryCache<TypNaradiDto> _cacheNaradi;
         private MemoryCache<int> _cacheTag;
 
-        public SeznamNaradiProjection(SeznamNaradiRepository repository, IQueueExecution executor, ITime time)
+        public SeznamNaradiProjection(SeznamNaradiRepository repository, ITime time)
         {
             _repository = repository;
-            _cacheNaradi = new MemoryCache<TypNaradiDto>(executor, time);
-            _cacheTag = new MemoryCache<int>(executor, time);
+            _cacheNaradi = new MemoryCache<TypNaradiDto>(time);
+            _cacheTag = new MemoryCache<int>(time);
         }
 
         public void Subscribe(ICommandSubscriptionManager mgr)
@@ -43,101 +44,83 @@ namespace Vydejna.Projections.SeznamNaradiReadModel
             return GetVersion() == storedVersion ? EventProjectionUpgradeMode.NotNeeded : EventProjectionUpgradeMode.Rebuild;
         }
 
-        public void Handle(CommandExecution<ProjectorMessages.Reset> message)
+        public Task Handle(ProjectorMessages.Reset message)
         {
             _cacheTag.Clear();
             _cacheNaradi.Clear();
-            _repository.Reset(message.OnCompleted, message.OnError);
+            return _repository.Reset();
         }
 
-        public void Handle(CommandExecution<ProjectorMessages.UpgradeFrom> message)
+        public Task Handle(ProjectorMessages.UpgradeFrom message)
         {
             throw new NotSupportedException();
         }
 
-        public void Handle(CommandExecution<ProjectorMessages.Flush> message)
+        public Task Handle(ProjectorMessages.Flush message)
         {
-            _cacheNaradi.Flush(
-                () => _cacheTag.Flush(message.OnCompleted, message.OnError, save => _repository.UlozitTagSeznamu(save.Version, save.Value, save.SavedAsVersion, save.SavingFailed)),
-                message.OnError, save => _repository.UlozitNaradi(save.Version, save.Value, save.SavedAsVersion, save.SavingFailed));
+            return TaskUtils.FromEnumerable(FlushInternal()).GetTask();
         }
 
-        private class ZpracovatNaradi
+        private IEnumerable<Task> FlushInternal()
         {
-            private SeznamNaradiProjection _parent;
-            private Action _onComplete;
-            private Action<Exception> _onError;
-            private Guid _naradiId;
-            private Action<TypNaradiDto> _akce;
-            
-            private int _verzeTagu;
-            private int _obsahTagu;
-            
-            public ZpracovatNaradi(SeznamNaradiProjection parent, Action onComplete, Action<Exception> onError, Guid naradiId, Action<TypNaradiDto> akce)
-            {
-                _parent = parent;
-                _onComplete = onComplete;
-                _onError = onError;
-                _naradiId = naradiId;
-                _akce = akce;
-            }
+            var taskNaradi = _cacheNaradi.Flush(save => _repository.UlozitNaradi(save.Version, save.Value));
+            yield return taskNaradi;
+            taskNaradi.Wait();
 
-            public void Execute()
-            {
-                _parent._cacheTag.Get("tag", NactenTag, _onError, load => _parent._repository.NacistTagSeznamu(load.SetLoadedValue, load.LoadingFailed));
-            }
-
-            private void NactenTag(int verzeTagu, int obsahTagu)
-            {
-                _verzeTagu = verzeTagu;
-                _obsahTagu = obsahTagu;
-
-                _parent._cacheNaradi.Get(_naradiId.ToString(), NactenoNaradi, _onError, 
-                    load => _parent._repository.NacistNaradi(_naradiId, load.SetLoadedValue, load.LoadingFailed));
-            }
-
-            private void NactenoNaradi(int verzeNaradi, TypNaradiDto naradi)
-            {
-                if (naradi == null)
-                {
-                    naradi = new TypNaradiDto();
-                    naradi.Id = _naradiId;
-                }
-                _akce(naradi);
-                _obsahTagu++;
-                _parent._cacheNaradi.Insert(_naradiId.ToString(), verzeNaradi, naradi, dirty: true);
-                _parent._cacheTag.Insert("tag", _verzeTagu, _obsahTagu, dirty: true);
-                _onComplete();
-            }
-
-
+            var taskTag = _cacheTag.Flush(save => _repository.UlozitTagSeznamu(save.Version, save.Value));
+            yield return taskNaradi;
+            taskNaradi.Wait();
         }
 
-        public void Handle(CommandExecution<DefinovanoNaradiEvent> message)
+        private IEnumerable<Task> ZpracovatNaradi(Guid naradiId, Action<TypNaradiDto> akce)
         {
-            new ZpracovatNaradi(this, message.OnCompleted, message.OnError, message.Command.NaradiId, naradi =>
+            var taskTag = _cacheTag.Get("tag", load => _repository.NacistTagSeznamu());
+            yield return taskTag;
+            var verzeTagu = taskTag.Result.Version;
+            var obsahTagu = taskTag.Result.Value;
+
+            var taskNaradi = _cacheNaradi.Get(naradiId.ToString(), load => _repository.NacistNaradi(naradiId));
+            yield return taskNaradi;
+            var verzeNaradi = taskNaradi.Result.Version;
+            var naradi = taskNaradi.Result.Value;
+
+            if (naradi == null)
             {
-                naradi.Vykres = message.Command.Vykres;
-                naradi.Rozmer = message.Command.Rozmer;
-                naradi.Druh = message.Command.Druh;
+                naradi = new TypNaradiDto();
+                naradi.Id = naradiId;
+            }
+            akce(naradi);
+            obsahTagu++;
+            
+            _cacheNaradi.Insert(naradiId.ToString(), verzeNaradi, naradi, dirty: true);
+            _cacheTag.Insert("tag", verzeTagu, obsahTagu, dirty: true);
+        }
+
+        public Task Handle(DefinovanoNaradiEvent message)
+        {
+            return TaskUtils.FromEnumerable(ZpracovatNaradi(message.NaradiId, naradi =>
+            {
+                naradi.Vykres = message.Vykres;
+                naradi.Rozmer = message.Rozmer;
+                naradi.Druh = message.Druh;
                 naradi.Aktivni = true;
-            }).Execute();
+            })).GetTask();
         }
 
-        public void Handle(CommandExecution<AktivovanoNaradiEvent> message)
+        public Task Handle(AktivovanoNaradiEvent message)
         {
-            new ZpracovatNaradi(this, message.OnCompleted, message.OnError, message.Command.NaradiId, naradi =>
+            return TaskUtils.FromEnumerable(ZpracovatNaradi(message.NaradiId, naradi =>
             {
                 naradi.Aktivni = true;
-            }).Execute();
+            })).GetTask();
         }
 
-        public void Handle(CommandExecution<DeaktivovanoNaradiEvent> message)
+        public Task Handle(DeaktivovanoNaradiEvent message)
         {
-            new ZpracovatNaradi(this, message.OnCompleted, message.OnError, message.Command.NaradiId, naradi =>
+            return TaskUtils.FromEnumerable(ZpracovatNaradi(message.NaradiId, naradi =>
             {
                 naradi.Aktivni = false;
-            }).Execute();
+            })).GetTask();
         }
     }
 
@@ -150,24 +133,20 @@ namespace Vydejna.Projections.SeznamNaradiReadModel
             _folder = folder;
         }
 
-        public void Reset(Action onComplete, Action<Exception> onError)
+        public Task Reset()
         {
-            _folder.DeleteAll(onComplete, onError);
+            return _folder.DeleteAll();
         }
 
-        public void NacistNaradi(Guid naradiId, Action<int, TypNaradiDto> onLoaded, Action<Exception> onError)
+        public Task<MemoryCacheItem<TypNaradiDto>> NacistNaradi(Guid naradiId)
         {
-            _folder.GetDocument(
-                naradiId.ToString("N"),
-                (verze, raw) => onLoaded(verze, DeserializovatNaradi(raw)),
-                () => onLoaded(0, null),
-                ex => onError(ex));
+            return _folder.GetDocument(naradiId.ToString("N")).ContinueWith(task => ProjectorUtils.LoadFromDocument<TypNaradiDto>(task, DeserializovatNaradi)).Unwrap();
         }
 
-        public void NacistVsechnoNaradi(Action<List<TypNaradiDto>> onLoaded, Action<Exception> onError)
+        public Task<List<TypNaradiDto>> NacistVsechnoNaradi()
         {
-            _folder.FindDocuments("vykresRozmer", null, null, 0, int.MaxValue, true,
-                list => onLoaded(list.Select(n => DeserializovatNaradi(n.Contents)).ToList()), onError);
+            return _folder.FindDocuments("vykresRozmer", null, null, 0, int.MaxValue, true)
+                .ContinueWith(task => task.Result.Select(n => DeserializovatNaradi(n.Contents)).ToList());
         }
 
         private TypNaradiDto DeserializovatNaradi(string raw)
@@ -175,21 +154,19 @@ namespace Vydejna.Projections.SeznamNaradiReadModel
             return string.IsNullOrEmpty(raw) ? null : JsonSerializer.DeserializeFromString<TypNaradiDto>(raw);
         }
 
-        public void UlozitNaradi(int verze, TypNaradiDto data, Action<int> onSaved, Action<Exception> onError)
+        public Task<int> UlozitNaradi(int verze, TypNaradiDto data)
         {
-            _folder.SaveDocument(
+            return _folder.SaveDocument(
                 data.Id.ToString("N"),
                 JsonSerializer.SerializeToString(data),
                 DocumentStoreVersion.At(verze),
-                new[] { new DocumentIndexing("vykresRozmer", string.Concat(data.Vykres, " ", data.Rozmer)) },
-                () => onSaved(verze + 1),
-                () => onError(new ProjectorMessages.ConcurrencyException()),
-                ex => onError(ex));
+                new[] { new DocumentIndexing("vykresRozmer", string.Concat(data.Vykres, " ", data.Rozmer)) })
+                .ContinueWith(task => ProjectorUtils.CheckConcurrency(task, verze + 1)).Unwrap();
         }
 
-        public void NacistTagSeznamu(Action<int, int> onLoaded, Action<Exception> onError)
+        public Task<MemoryCacheItem<int>> NacistTagSeznamu()
         {
-            _folder.GetDocument("tag", (verze, raw) => onLoaded(verze, DeserializovatTag(raw)), () => onLoaded(0, 0), onError);
+            return _folder.GetDocument("tag").ContinueWith(task => ProjectorUtils.LoadFromDocument<int>(task, DeserializovatTag)).Unwrap();
         }
 
         private int DeserializovatTag(string raw)
@@ -199,10 +176,10 @@ namespace Vydejna.Projections.SeznamNaradiReadModel
             return tag;
         }
 
-        public void UlozitTagSeznamu(int verze, int hodnota, Action<int> onSaved, Action<Exception> onError)
+        public Task<int> UlozitTagSeznamu(int verze, int hodnota)
         {
-            _folder.SaveDocument("tag", hodnota.ToString(), DocumentStoreVersion.At(verze), null,
-                () => onSaved(verze + 1), () => onError(new ProjectorMessages.ConcurrencyException()), ex => onError(ex));
+            return _folder.SaveDocument("tag", hodnota.ToString(), DocumentStoreVersion.At(verze), null)
+                .ContinueWith(Task => ProjectorUtils.CheckConcurrency(Task, verze + 1)).Unwrap();
         }
     }
 
@@ -221,28 +198,28 @@ namespace Vydejna.Projections.SeznamNaradiReadModel
         private SeznamNaradiRepository _repository;
         private UnikatnostComparer _comparer;
 
-        public SeznamNaradiReader(SeznamNaradiRepository repository, IQueueExecution executor, ITime time)
+        public SeznamNaradiReader(SeznamNaradiRepository repository, ITime time)
         {
             _repository = repository;
-            _cache = new MemoryCache<SeznamNaradiCachedData>(executor, time);
+            _cache = new MemoryCache<SeznamNaradiCachedData>(time);
             _comparer = new UnikatnostComparer();
         }
 
         public void Subscribe(ISubscribable bus)
         {
-            bus.Subscribe<QueryExecution<ZiskatSeznamNaradiRequest, ZiskatSeznamNaradiResponse>>(this);
-            bus.Subscribe<QueryExecution<OvereniUnikatnostiRequest, OvereniUnikatnostiResponse>>(this);
+            bus.Subscribe<ZiskatSeznamNaradiRequest, ZiskatSeznamNaradiResponse>(this);
+            bus.Subscribe<OvereniUnikatnostiRequest, OvereniUnikatnostiResponse>(this);
         }
 
-        public void Handle(QueryExecution<ZiskatSeznamNaradiRequest, ZiskatSeznamNaradiResponse> message)
+        public Task<ZiskatSeznamNaradiResponse> Handle(ZiskatSeznamNaradiRequest message)
         {
-            _cache.Get("seznam",
-                (verze, seznam) => message.OnCompleted(VytvoritResponseSeznamu(message.Request, seznam)),
-                ex => message.OnError(ex), load => new NacistCacheWorker(this, load).Execute());
+            return _cache.Get("seznam", load => TaskUtils.FromEnumerable<MemoryCacheItem<SeznamNaradiCachedData>>(NacistCacheInternal(load)).GetTask())
+                .ContinueWith(task => VytvoritResponseSeznamu(message, task.Result));
         }
 
-        private ZiskatSeznamNaradiResponse VytvoritResponseSeznamu(ZiskatSeznamNaradiRequest request, SeznamNaradiCachedData seznam)
+        private ZiskatSeznamNaradiResponse VytvoritResponseSeznamu(ZiskatSeznamNaradiRequest request, MemoryCacheItem<SeznamNaradiCachedData> item)
         {
+            var seznam = item.Value;
             return new ZiskatSeznamNaradiResponse
             {
                 PocetCelkem = seznam.PocetCelkem,
@@ -252,15 +229,15 @@ namespace Vydejna.Projections.SeznamNaradiReadModel
             };
         }
 
-        public void Handle(QueryExecution<OvereniUnikatnostiRequest, OvereniUnikatnostiResponse> message)
+        public Task<OvereniUnikatnostiResponse> Handle(OvereniUnikatnostiRequest message)
         {
-            _cache.Get("seznam",
-                (verze, seznam) => message.OnCompleted(VytvoritResponseUnikatnosti(message.Request, seznam)),
-                ex => message.OnError(ex), load => new NacistCacheWorker(this, load).Execute());
+            return _cache.Get("seznam", load => TaskUtils.FromEnumerable<MemoryCacheItem<SeznamNaradiCachedData>>(NacistCacheInternal(load)).GetTask())
+                .ContinueWith(task => VytvoritResponseUnikatnosti(message, task.Result));
         }
 
-        private OvereniUnikatnostiResponse VytvoritResponseUnikatnosti(OvereniUnikatnostiRequest request, SeznamNaradiCachedData seznam)
+        private OvereniUnikatnostiResponse VytvoritResponseUnikatnosti(OvereniUnikatnostiRequest request, MemoryCacheItem<SeznamNaradiCachedData> item)
         {
+            var seznam = item.Value;
             var vzor = new TypNaradiDto { Vykres = request.Vykres, Rozmer = request.Rozmer };
             var index = seznam.Seznam.BinarySearch(vzor, _comparer);
             return new OvereniUnikatnostiResponse
@@ -284,51 +261,35 @@ namespace Vydejna.Projections.SeznamNaradiReadModel
             }
         }
 
-        private class NacistCacheWorker
+        private IEnumerable<Task> NacistCacheInternal(IMemoryCacheLoad<SeznamNaradiCachedData> load)
         {
-            private SeznamNaradiReader _parent;
-            private IMemoryCacheLoad<SeznamNaradiCachedData> _load;
-            private int _verzeSeznamu;
+            var taskTag = _repository.NacistTagSeznamu();
+            yield return taskTag;
+            var tag = taskTag.Result.Value;
 
-            public NacistCacheWorker(SeznamNaradiReader parent, IMemoryCacheLoad<SeznamNaradiCachedData> load)
+            if (!load.OldValueAvailable || load.OldValue == null || load.OldValue.VerzeSeznamu != tag)
             {
-                _parent = parent;
-                _load = load;
-            }
+                var taskSeznam = _repository.NacistVsechnoNaradi();
+                yield return taskSeznam;
+                var seznam = taskSeznam.Result;
 
-            public void Execute()
-            {
-                _parent._repository.NacistTagSeznamu(NactenTag, _load.LoadingFailed);
-            }
-
-            private void NactenTag(int verzeTagu, int obsahTagu)
-            {
-                _verzeSeznamu = obsahTagu;
-                if (!_load.OldValueAvailable || _load.OldValue == null || _load.OldValue.VerzeSeznamu != _verzeSeznamu)
-                {
-                    _parent._repository.NacistVsechnoNaradi(NactenoNaradi, _load.LoadingFailed);
-                }
-                else
-                {
-                    _load.ValueIsStillValid();
-                }
-            }
-
-            private void NactenoNaradi(List<TypNaradiDto> seznam)
-            {
                 if (seznam == null)
                     seznam = new List<TypNaradiDto>();
                 var data = new SeznamNaradiCachedData
                 {
-                    VerzeSeznamu = _verzeSeznamu,
+                    VerzeSeznamu = tag,
                     Seznam = new List<TypNaradiDto>(seznam),
                     PocetCelkem = seznam.Count,
                     PocetStranek = (seznam.Count + 99) / 100
                 };
-                data.Seznam.Sort(_parent._comparer);
-                _load.SetLoadedValue(_load.OldVersion + 1, data);
+                data.Seznam.Sort(_comparer);
+
+                yield return TaskUtils.FromResult(new MemoryCacheItem<SeznamNaradiCachedData>(load.OldVersion + 1, data));
+            }
+            else
+            {
+                yield return TaskUtils.FromResult<MemoryCacheItem<SeznamNaradiCachedData>>(null);
             }
         }
-
     }
 }

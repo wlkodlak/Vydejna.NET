@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using Vydejna.Contracts;
 
 namespace Vydejna.Projections.DetailNaradiReadModel
@@ -9,26 +10,26 @@ namespace Vydejna.Projections.DetailNaradiReadModel
     public class DetailNaradiProjection
         : IEventProjection
         , ISubscribeToCommandManager
-        , IHandle<CommandExecution<ProjectorMessages.Flush>>
-        , IHandle<CommandExecution<DefinovanoNaradiEvent>>
-        , IHandle<CommandExecution<AktivovanoNaradiEvent>>
-        , IHandle<CommandExecution<DeaktivovanoNaradiEvent>>
-        , IHandle<CommandExecution<ZmenenStavNaSkladeEvent>>
-        , IHandle<CommandExecution<DefinovanDodavatelEvent>>
-        , IHandle<CommandExecution<DefinovanaVadaNaradiEvent>>
-        , IHandle<CommandExecution<DefinovanoPracovisteEvent>>
-        , IHandle<CommandExecution<CislovaneNaradiPrijatoNaVydejnuEvent>>
-        , IHandle<CommandExecution<CislovaneNaradiVydanoDoVyrobyEvent>>
-        , IHandle<CommandExecution<CislovaneNaradiPrijatoZVyrobyEvent>>
-        , IHandle<CommandExecution<CislovaneNaradiPredanoKOpraveEvent>>
-        , IHandle<CommandExecution<CislovaneNaradiPrijatoZOpravyEvent>>
-        , IHandle<CommandExecution<CislovaneNaradiPredanoKeSesrotovaniEvent>>
-        , IHandle<CommandExecution<NecislovaneNaradiPrijatoNaVydejnuEvent>>
-        , IHandle<CommandExecution<NecislovaneNaradiVydanoDoVyrobyEvent>>
-        , IHandle<CommandExecution<NecislovaneNaradiPrijatoZVyrobyEvent>>
-        , IHandle<CommandExecution<NecislovaneNaradiPredanoKOpraveEvent>>
-        , IHandle<CommandExecution<NecislovaneNaradiPrijatoZOpravyEvent>>
-        , IHandle<CommandExecution<NecislovaneNaradiPredanoKeSesrotovaniEvent>>
+        , IProcess<ProjectorMessages.Flush>
+        , IProcess<DefinovanoNaradiEvent>
+        , IProcess<AktivovanoNaradiEvent>
+        , IProcess<DeaktivovanoNaradiEvent>
+        , IProcess<ZmenenStavNaSkladeEvent>
+        , IProcess<DefinovanDodavatelEvent>
+        , IProcess<DefinovanaVadaNaradiEvent>
+        , IProcess<DefinovanoPracovisteEvent>
+        , IProcess<CislovaneNaradiPrijatoNaVydejnuEvent>
+        , IProcess<CislovaneNaradiVydanoDoVyrobyEvent>
+        , IProcess<CislovaneNaradiPrijatoZVyrobyEvent>
+        , IProcess<CislovaneNaradiPredanoKOpraveEvent>
+        , IProcess<CislovaneNaradiPrijatoZOpravyEvent>
+        , IProcess<CislovaneNaradiPredanoKeSesrotovaniEvent>
+        , IProcess<NecislovaneNaradiPrijatoNaVydejnuEvent>
+        , IProcess<NecislovaneNaradiVydanoDoVyrobyEvent>
+        , IProcess<NecislovaneNaradiPrijatoZVyrobyEvent>
+        , IProcess<NecislovaneNaradiPredanoKOpraveEvent>
+        , IProcess<NecislovaneNaradiPrijatoZOpravyEvent>
+        , IProcess<NecislovaneNaradiPredanoKeSesrotovaniEvent>
     {
         private const string _version = "0.01";
         private DetailNaradiRepository _repository;
@@ -37,13 +38,13 @@ namespace Vydejna.Projections.DetailNaradiReadModel
         private MemoryCache<DetailNaradiDataVady> _cacheVady;
         private MemoryCache<DefinovanoPracovisteEvent> _cachePracoviste;
 
-        public DetailNaradiProjection(DetailNaradiRepository repository, IQueueExecution executor, ITime time)
+        public DetailNaradiProjection(DetailNaradiRepository repository, ITime time)
         {
             _repository = repository;
-            _cacheDetail = new MemoryCache<DetailNaradiDataDetail>(executor, time);
-            _cacheDodavatele = new MemoryCache<DetailNaradiDataDodavatele>(executor, time);
-            _cachePracoviste = new MemoryCache<DefinovanoPracovisteEvent>(executor, time);
-            _cacheVady = new MemoryCache<DetailNaradiDataVady>(executor, time);
+            _cacheDetail = new MemoryCache<DetailNaradiDataDetail>(time);
+            _cacheDodavatele = new MemoryCache<DetailNaradiDataDodavatele>(time);
+            _cachePracoviste = new MemoryCache<DefinovanoPracovisteEvent>(time);
+            _cacheVady = new MemoryCache<DetailNaradiDataVady>(time);
         }
 
         public void Subscribe(ICommandSubscriptionManager mgr)
@@ -85,21 +86,21 @@ namespace Vydejna.Projections.DetailNaradiReadModel
             return string.Equals(storedVersion, _version, StringComparison.Ordinal) ? EventProjectionUpgradeMode.NotNeeded : EventProjectionUpgradeMode.Rebuild;
         }
 
-        public void Handle(CommandExecution<ProjectorMessages.Reset> message)
+        public Task Handle(ProjectorMessages.Reset message)
         {
             _cacheDetail.Clear();
             _cacheDodavatele.Clear();
             _cachePracoviste.Clear();
             _cacheVady.Clear();
-            _repository.Reset(message.OnCompleted, message.OnError);
+            return _repository.Reset();
         }
 
-        public void Handle(CommandExecution<ProjectorMessages.UpgradeFrom> message)
+        public Task Handle(ProjectorMessages.UpgradeFrom message)
         {
             throw new NotSupportedException();
         }
 
-        public void Handle(CommandExecution<ProjectorMessages.Flush> message)
+        public Task Handle(ProjectorMessages.Flush message)
         {
             new FlushWorker(this, message.OnCompleted, message.OnError).Execute();
         }
@@ -160,22 +161,22 @@ namespace Vydejna.Projections.DetailNaradiReadModel
             private void FlushDodavatelu()
             {
                 _parent._cacheDodavatele.Flush(FlushPracovist, _onError,
-                    save => _parent._repository.UlozitDodavatele(save.Version, save.Value, save.SavedAsVersion, save.SavingFailed));
+                    save => _parent._repository.UlozitDodavatele(save.Version, save.Value));
             }
             private void FlushPracovist()
             {
                 _parent._cachePracoviste.Flush(FlushVad, _onError,
-                    save => _parent._repository.UlozitPracoviste(save.Key, save.Version, save.Value, save.SavedAsVersion, save.SavingFailed));
+                    save => _parent._repository.UlozitPracoviste(save.Key, save.Version, save.Value));
             }
             private void FlushVad()
             {
                 _parent._cacheVady.Flush(FlushDetailu, _onError,
-                    save => _parent._repository.UlozitVadu(save.Version, save.Value, save.SavedAsVersion, save.SavingFailed));
+                    save => _parent._repository.UlozitVadu(save.Version, save.Value));
             }
             private void FlushDetailu()
             {
                 _parent._cacheDetail.Flush(_onCompleted, _onError,
-                    save => _parent._repository.UlozitDetail(save.Value.NaradiId, save.Version, save.Value, save.SavedAsVersion, save.SavingFailed));
+                    save => _parent._repository.UlozitDetail(save.Value.NaradiId, save.Version, save.Value));
             }
         }
 
@@ -194,9 +195,9 @@ namespace Vydejna.Projections.DetailNaradiReadModel
                     load.ValueIsStillValid, load.LoadingFailed));
         }
 
-        public void Handle(CommandExecution<DefinovanoNaradiEvent> message)
+        public Task Handle(DefinovanoNaradiEvent message)
         {
-            var evnt = message.Command;
+            var evnt = message;
             ZpracovatHoleNaradi(evnt.NaradiId, message.OnCompleted, message.OnError, data =>
             {
                 data.NaradiId = evnt.NaradiId;
@@ -207,40 +208,40 @@ namespace Vydejna.Projections.DetailNaradiReadModel
             });
         }
 
-        public void Handle(CommandExecution<AktivovanoNaradiEvent> message)
+        public Task Handle(AktivovanoNaradiEvent message)
         {
-            var evnt = message.Command;
+            var evnt = message;
             ZpracovatHoleNaradi(evnt.NaradiId, message.OnCompleted, message.OnError, data =>
             {
                 data.Aktivni = true;
             });
         }
 
-        public void Handle(CommandExecution<DeaktivovanoNaradiEvent> message)
+        public Task Handle(DeaktivovanoNaradiEvent message)
         {
-            var evnt = message.Command;
+            var evnt = message;
             ZpracovatHoleNaradi(evnt.NaradiId, message.OnCompleted, message.OnError, data =>
             {
                 data.Aktivni = true;
             });
         }
 
-        public void Handle(CommandExecution<ZmenenStavNaSkladeEvent> message)
+        public Task Handle(ZmenenStavNaSkladeEvent message)
         {
-            var evnt = message.Command;
+            var evnt = message;
             ZpracovatHoleNaradi(evnt.NaradiId, message.OnCompleted, message.OnError, data =>
             {
-                data.NaSklade = message.Command.NovyStav;
+                data.NaSklade = message.NovyStav;
             });
         }
 
-        public void Handle(CommandExecution<DefinovanDodavatelEvent> message)
+        public Task Handle(DefinovanDodavatelEvent message)
         {
             _cacheDodavatele.Get("dodavatele",
                 (verze, ciselnik) =>
                 {
                     DetailNaradiDataDodavatel existujici;
-                    var novy = message.Command;
+                    var novy = message;
                     bool zmeneno = false;
 
                     if (!ciselnik.IndexDodavatelu.TryGetValue(novy.Kod, out existujici))
@@ -268,13 +269,13 @@ namespace Vydejna.Projections.DetailNaradiReadModel
                 );
         }
 
-        public void Handle(CommandExecution<DefinovanaVadaNaradiEvent> message)
+        public Task Handle(DefinovanaVadaNaradiEvent message)
         {
             _cacheVady.Get("vady",
                 (verze, ciselnik) =>
                 {
                     DefinovanaVadaNaradiEvent existujici;
-                    var nova = message.Command;
+                    var nova = message;
                     bool zmeneno = false;
                     if (ciselnik == null)
                     {
@@ -310,13 +311,13 @@ namespace Vydejna.Projections.DetailNaradiReadModel
                     load.LoadingFailed));
         }
 
-        public void Handle(CommandExecution<DefinovanoPracovisteEvent> message)
+        public Task Handle(DefinovanoPracovisteEvent message)
         {
             _cachePracoviste.Get(
-                message.Command.Kod,
+                message.Kod,
                 (verze, existujici) =>
                 {
-                    var nove = message.Command;
+                    var nove = message;
                     bool zmeneno = false;
                     if (existujici != null)
                     {
@@ -688,9 +689,9 @@ namespace Vydejna.Projections.DetailNaradiReadModel
             }
         }
 
-        public void Handle(CommandExecution<CislovaneNaradiPrijatoNaVydejnuEvent> message)
+        public Task Handle(CislovaneNaradiPrijatoNaVydejnuEvent message)
         {
-            var evnt = message.Command;
+            var evnt = message;
             ZpracovatHoleNaradi(evnt.NaradiId, message.OnCompleted, message.OnError, data =>
             {
                 var cislovane = new DetailNaradiCislovane();
@@ -704,44 +705,44 @@ namespace Vydejna.Projections.DetailNaradiReadModel
             });
         }
 
-        public void Handle(CommandExecution<CislovaneNaradiVydanoDoVyrobyEvent> message)
+        public Task Handle(CislovaneNaradiVydanoDoVyrobyEvent message)
         {
-            var evnt = message.Command;
+            var evnt = message;
             new ZpracovatCislovaneNaradi(this, evnt.NaradiId, message.OnCompleted, message.OnError, evnt.CisloNaradi,
                 evnt.PredchoziUmisteni, evnt.NoveUmisteni).Execute();
         }
 
-        public void Handle(CommandExecution<CislovaneNaradiPrijatoZVyrobyEvent> message)
+        public Task Handle(CislovaneNaradiPrijatoZVyrobyEvent message)
         {
-            var evnt = message.Command;
+            var evnt = message;
             new ZpracovatCislovaneNaradi(this, evnt.NaradiId, message.OnCompleted, message.OnError, evnt.CisloNaradi,
                 evnt.PredchoziUmisteni, evnt.NoveUmisteni, kodVady: evnt.KodVady).Execute();
         }
 
-        public void Handle(CommandExecution<CislovaneNaradiPredanoKOpraveEvent> message)
+        public Task Handle(CislovaneNaradiPredanoKOpraveEvent message)
         {
-            var evnt = message.Command;
+            var evnt = message;
             new ZpracovatCislovaneNaradi(this, evnt.NaradiId, message.OnCompleted, message.OnError, evnt.CisloNaradi,
                 evnt.PredchoziUmisteni, evnt.NoveUmisteni, terminDodani: evnt.TerminDodani).Execute();
         }
 
-        public void Handle(CommandExecution<CislovaneNaradiPrijatoZOpravyEvent> message)
+        public Task Handle(CislovaneNaradiPrijatoZOpravyEvent message)
         {
-            var evnt = message.Command;
+            var evnt = message;
             new ZpracovatCislovaneNaradi(this, evnt.NaradiId, message.OnCompleted, message.OnError, evnt.CisloNaradi,
                 evnt.PredchoziUmisteni, evnt.NoveUmisteni).Execute();
         }
 
-        public void Handle(CommandExecution<CislovaneNaradiPredanoKeSesrotovaniEvent> message)
+        public Task Handle(CislovaneNaradiPredanoKeSesrotovaniEvent message)
         {
-            var evnt = message.Command;
+            var evnt = message;
             new ZpracovatCislovaneNaradi(this, evnt.NaradiId, message.OnCompleted, message.OnError, evnt.CisloNaradi,
                 evnt.PredchoziUmisteni, evnt.NoveUmisteni).Execute();
         }
 
-        public void Handle(CommandExecution<NecislovaneNaradiPrijatoNaVydejnuEvent> message)
+        public Task Handle(NecislovaneNaradiPrijatoNaVydejnuEvent message)
         {
-            var evnt = message.Command;
+            var evnt = message;
             ZpracovatHoleNaradi(evnt.NaradiId, message.OnCompleted, message.OnError, data =>
             {
                 DetailNaradiNecislovane naradi;
@@ -950,37 +951,37 @@ namespace Vydejna.Projections.DetailNaradiReadModel
             }
         }
 
-        public void Handle(CommandExecution<NecislovaneNaradiVydanoDoVyrobyEvent> message)
+        public Task Handle(NecislovaneNaradiVydanoDoVyrobyEvent message)
         {
-            var evnt = message.Command;
+            var evnt = message;
             new ZpracovatNecislovaneNaradi(this, evnt.NaradiId, message.OnCompleted, message.OnError,
                 evnt.PredchoziUmisteni, evnt.NoveUmisteni, evnt.Pocet).Execute();
         }
 
-        public void Handle(CommandExecution<NecislovaneNaradiPrijatoZVyrobyEvent> message)
+        public Task Handle(NecislovaneNaradiPrijatoZVyrobyEvent message)
         {
-            var evnt = message.Command;
+            var evnt = message;
             new ZpracovatNecislovaneNaradi(this, evnt.NaradiId, message.OnCompleted, message.OnError,
                 evnt.PredchoziUmisteni, evnt.NoveUmisteni, evnt.Pocet).Execute();
         }
 
-        public void Handle(CommandExecution<NecislovaneNaradiPredanoKOpraveEvent> message)
+        public Task Handle(NecislovaneNaradiPredanoKOpraveEvent message)
         {
-            var evnt = message.Command;
+            var evnt = message;
             new ZpracovatNecislovaneNaradi(this, evnt.NaradiId, message.OnCompleted, message.OnError,
                 evnt.PredchoziUmisteni, evnt.NoveUmisteni, evnt.Pocet, terminDodani: evnt.TerminDodani).Execute();
         }
 
-        public void Handle(CommandExecution<NecislovaneNaradiPrijatoZOpravyEvent> message)
+        public Task Handle(NecislovaneNaradiPrijatoZOpravyEvent message)
         {
-            var evnt = message.Command;
+            var evnt = message;
             new ZpracovatNecislovaneNaradi(this, evnt.NaradiId, message.OnCompleted, message.OnError,
                 evnt.PredchoziUmisteni, evnt.NoveUmisteni, evnt.Pocet).Execute();
         }
 
-        public void Handle(CommandExecution<NecislovaneNaradiPredanoKeSesrotovaniEvent> message)
+        public Task Handle(NecislovaneNaradiPredanoKeSesrotovaniEvent message)
         {
-            var evnt = message.Command;
+            var evnt = message;
             new ZpracovatNecislovaneNaradi(this, evnt.NaradiId, message.OnCompleted, message.OnError,
                 evnt.PredchoziUmisteni, evnt.NoveUmisteni, evnt.Pocet).Execute();
         }
@@ -1213,18 +1214,18 @@ namespace Vydejna.Projections.DetailNaradiReadModel
         private DetailNaradiRepository _repository;
         private MemoryCache<DetailNaradiResponse> _cacheDetaily;
 
-        public DetailNaradiReader(DetailNaradiRepository repository, IQueueExecution executor, ITime time)
+        public DetailNaradiReader(DetailNaradiRepository repository, ITime time)
         {
             _repository = repository;
-            _cacheDetaily = new MemoryCache<DetailNaradiResponse>(executor, time);
+            _cacheDetaily = new MemoryCache<DetailNaradiResponse>(time);
         }
 
         public void Subscribe(ISubscribable bus)
         {
-            bus.Subscribe<QueryExecution<DetailNaradiRequest, DetailNaradiResponse>>(this);
+            bus.Subscribe<DetailNaradiRequest, DetailNaradiResponse>(this);
         }
 
-        public void Handle(QueryExecution<DetailNaradiRequest, DetailNaradiResponse> message)
+        public Task<DetailNaradiResponse> Handle(DetailNaradiRequest message)
         {
             _cacheDetaily.Get(
                 message.Request.NaradiId.ToString("N"),

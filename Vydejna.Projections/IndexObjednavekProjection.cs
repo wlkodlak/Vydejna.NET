@@ -11,24 +11,24 @@ namespace Vydejna.Projections.IndexObjednavekReadModel
     public class IndexObjednavekProjection
         : IEventProjection
         , ISubscribeToCommandManager
-        , IHandle<CommandExecution<ProjectorMessages.Flush>>
-        , IHandle<CommandExecution<CislovaneNaradiPredanoKOpraveEvent>>
-        , IHandle<CommandExecution<NecislovaneNaradiPredanoKOpraveEvent>>
-        , IHandle<CommandExecution<CislovaneNaradiPrijatoZOpravyEvent>>
-        , IHandle<CommandExecution<NecislovaneNaradiPrijatoZOpravyEvent>>
-        , IHandle<CommandExecution<DefinovanDodavatelEvent>>
+        , IProcess<ProjectorMessages.Flush>
+        , IProcess<CislovaneNaradiPredanoKOpraveEvent>
+        , IProcess<NecislovaneNaradiPredanoKOpraveEvent>
+        , IProcess<CislovaneNaradiPrijatoZOpravyEvent>
+        , IProcess<NecislovaneNaradiPrijatoZOpravyEvent>
+        , IProcess<DefinovanDodavatelEvent>
     {
         private IndexObjednavekRepository _repository;
         private MemoryCache<IndexObjednavekDodavatele> _cacheDodavatelu;
         private MemoryCache<IndexObjednavekDataObjednavek> _cacheObjednavek;
         private MemoryCache<IndexObjednavekDataDodacichListu> _cacheDodacichListu;
 
-        public IndexObjednavekProjection(IndexObjednavekRepository repository, IQueueExecution executor, ITime time)
+        public IndexObjednavekProjection(IndexObjednavekRepository repository, ITime time)
         {
             _repository = repository;
-            _cacheDodavatelu = new MemoryCache<IndexObjednavekDodavatele>(executor, time);
-            _cacheObjednavek = new MemoryCache<IndexObjednavekDataObjednavek>(executor, time);
-            _cacheDodacichListu = new MemoryCache<IndexObjednavekDataDodacichListu>(executor, time);
+            _cacheDodavatelu = new MemoryCache<IndexObjednavekDodavatele>(time);
+            _cacheObjednavek = new MemoryCache<IndexObjednavekDataObjednavek>(time);
+            _cacheDodacichListu = new MemoryCache<IndexObjednavekDataDodacichListu>(time);
         }
 
         public void Subscribe(ICommandSubscriptionManager mgr)
@@ -51,15 +51,15 @@ namespace Vydejna.Projections.IndexObjednavekReadModel
             return GetVersion() == storedVersion ? EventProjectionUpgradeMode.NotNeeded : EventProjectionUpgradeMode.Rebuild;
         }
 
-        public void Handle(CommandExecution<ProjectorMessages.Reset> message)
+        public Task Handle(ProjectorMessages.Reset message)
         {
             _cacheDodavatelu.Clear();
             _cacheObjednavek.Clear();
             _cacheDodacichListu.Clear();
-            _repository.Reset(message.OnCompleted, message.OnError);
+            return _repository.Reset();
         }
 
-        public void Handle(CommandExecution<ProjectorMessages.Flush> message)
+        public Task Handle(ProjectorMessages.Flush message)
         {
             new UlozitZmeny(this, message.OnCompleted, message.OnError).Execute();
         }
@@ -80,35 +80,35 @@ namespace Vydejna.Projections.IndexObjednavekReadModel
             public void Execute()
             {
                 _parent._cacheDodavatelu.Flush(UlozitObjednavky, _onError,
-                    save => _parent._repository.UlozitDodavatele(save.Version, save.Value, save.SavedAsVersion, save.SavingFailed));
+                    save => _parent._repository.UlozitDodavatele(save.Version, save.Value));
             }
 
             private void UlozitObjednavky()
             {
                 _parent._cacheObjednavek.Flush(UlozitDodaciListy, _onError,
-                    save => _parent._repository.UlozitObjednavku(save.Version, save.Value, save.SavedAsVersion, save.SavingFailed));
+                    save => _parent._repository.UlozitObjednavku(save.Version, save.Value));
             }
 
             private void UlozitDodaciListy()
             {
                 _parent._cacheDodacichListu.Flush(_onComplete, _onError,
-                    save => _parent._repository.UlozitDodaciList(save.Version, save.Value, save.SavedAsVersion, save.SavingFailed));
+                    save => _parent._repository.UlozitDodaciList(save.Version, save.Value));
             }
         }
 
-        public void Handle(CommandExecution<ProjectorMessages.UpgradeFrom> message)
+        public Task Handle(ProjectorMessages.UpgradeFrom message)
         {
             throw new NotSupportedException();
         }
 
-        public void Handle(CommandExecution<CislovaneNaradiPredanoKOpraveEvent> message)
+        public Task Handle(CislovaneNaradiPredanoKOpraveEvent message)
         {
-            new ZpracovatObjednavku(this, message.OnCompleted, message.OnError, message.Command.Objednavka, message.Command.KodDodavatele, message.Command.TerminDodani).Execute();
+            new ZpracovatObjednavku(this, message.OnCompleted, message.OnError, message.Objednavka, message.KodDodavatele, message.TerminDodani).Execute();
         }
 
-        public void Handle(CommandExecution<NecislovaneNaradiPredanoKOpraveEvent> message)
+        public Task Handle(NecislovaneNaradiPredanoKOpraveEvent message)
         {
-            new ZpracovatObjednavku(this, message.OnCompleted, message.OnError, message.Command.Objednavka, message.Command.KodDodavatele, message.Command.TerminDodani).Execute();
+            new ZpracovatObjednavku(this, message.OnCompleted, message.OnError, message.Objednavka, message.KodDodavatele, message.TerminDodani).Execute();
         }
 
         private class ZpracovatObjednavku
@@ -190,14 +190,14 @@ namespace Vydejna.Projections.IndexObjednavekReadModel
             }
         }
 
-        public void Handle(CommandExecution<CislovaneNaradiPrijatoZOpravyEvent> message)
+        public Task Handle(CislovaneNaradiPrijatoZOpravyEvent message)
         {
-            new ZpracovatDodaciList(this, message.OnCompleted, message.OnError, message.Command.DodaciList, message.Command.KodDodavatele, message.Command.Objednavka).Execute();
+            new ZpracovatDodaciList(this, message.OnCompleted, message.OnError, message.DodaciList, message.KodDodavatele, message.Objednavka).Execute();
         }
 
-        public void Handle(CommandExecution<NecislovaneNaradiPrijatoZOpravyEvent> message)
+        public Task Handle(NecislovaneNaradiPrijatoZOpravyEvent message)
         {
-            new ZpracovatDodaciList(this, message.OnCompleted, message.OnError, message.Command.DodaciList, message.Command.KodDodavatele, message.Command.Objednavka).Execute();
+            new ZpracovatDodaciList(this, message.OnCompleted, message.OnError, message.DodaciList, message.KodDodavatele, message.Objednavka).Execute();
         }
 
         private class ZpracovatDodaciList
@@ -298,21 +298,21 @@ namespace Vydejna.Projections.IndexObjednavekReadModel
             return data;
         }
 
-        public void Handle(CommandExecution<DefinovanDodavatelEvent> message)
+        public Task Handle(DefinovanDodavatelEvent message)
         {
             _cacheDodavatelu.Get(
                 "dodavatele",
                 (verze, data) =>
                 {
                     IndexObjednavekDodavatel existujici;
-                    if (!data.IndexDodavatelu.TryGetValue(message.Command.Kod, out existujici))
+                    if (!data.IndexDodavatelu.TryGetValue(message.Kod, out existujici))
                     {
                         existujici = new IndexObjednavekDodavatel();
-                        existujici.Kod = message.Command.Kod;
+                        existujici.Kod = message.Kod;
                         data.Dodavatele.Add(existujici);
                         data.IndexDodavatelu[existujici.Kod] = existujici;
                     }
-                    existujici.Nazev = message.Command.Nazev;
+                    existujici.Nazev = message.Nazev;
                     _cacheDodavatelu.Insert("dodavatele", verze, data, dirty: true);
                     message.OnCompleted();
                 },
@@ -434,20 +434,20 @@ namespace Vydejna.Projections.IndexObjednavekReadModel
         private MemoryCache<NajitDodaciListResponse> _cacheDodacichListu;
         private IndexObjednavekRepository _repository;
 
-        public IndexObjednavekReader(IndexObjednavekRepository repository, IQueueExecution executor, ITime time)
+        public IndexObjednavekReader(IndexObjednavekRepository repository, ITime time)
         {
             _repository = repository;
-            _cacheObjednavek = new MemoryCache<NajitObjednavkuResponse>(executor, time);
-            _cacheDodacichListu = new MemoryCache<NajitDodaciListResponse>(executor, time);
+            _cacheObjednavek = new MemoryCache<NajitObjednavkuResponse>(time);
+            _cacheDodacichListu = new MemoryCache<NajitDodaciListResponse>(time);
         }
 
         public void Subscribe(ISubscribable bus)
         {
-            bus.Subscribe<QueryExecution<NajitObjednavkuRequest, NajitObjednavkuResponse>>(this);
-            bus.Subscribe<QueryExecution<NajitDodaciListRequest, NajitDodaciListResponse>>(this);
+            bus.Subscribe<NajitObjednavkuRequest, NajitObjednavkuResponse>(this);
+            bus.Subscribe<NajitDodaciListRequest, NajitDodaciListResponse>(this);
         }
 
-        public void Handle(QueryExecution<NajitObjednavkuRequest, NajitObjednavkuResponse> message)
+        public Task<NajitObjednavkuResponse> Handle(NajitObjednavkuRequest message)
         {
             _cacheObjednavek.Get(message.Request.Objednavka, (verze, data) => message.OnCompleted(data), message.OnError,
                 load => _repository.NacistObjednavku(message.Request.Objednavka, load.OldVersion,
@@ -465,7 +465,7 @@ namespace Vydejna.Projections.IndexObjednavekReadModel
             };
         }
 
-        public void Handle(QueryExecution<NajitDodaciListRequest, NajitDodaciListResponse> message)
+        public Task<NajitDodaciListResponse> Handle(NajitDodaciListRequest message)
         {
             _cacheDodacichListu.Get(message.Request.DodaciList, (verze, data) => message.OnCompleted(data), message.OnError,
                 load => _repository.NacistDodaciList(message.Request.DodaciList, load.OldVersion,
