@@ -255,7 +255,14 @@ namespace ServiceLib
                     }
                     else
                     {
-                        return TaskUtils.FromResult(default(T));
+                        if (_catchAll)
+                            return TaskUtils.FromResult(default(T));
+                        else if (previous.IsCanceled)
+                            return TaskUtils.CancelledTask<T>();
+                        else if (previous.Exception == null)
+                            return TaskUtils.FromResult(default(T));
+                        else
+                            return TaskUtils.FromError<T>(previous.Exception);
                     }
                 }
             }

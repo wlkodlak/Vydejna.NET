@@ -29,18 +29,20 @@ namespace Vydejna.Domain.DefinovaneNaradi
         public Task Handle(AktivovatNaradiCommand msg)
         {
             return new EventSourcedServiceExecution<DefinovaneNaradiAggregate>(_repoNaradi, msg.NaradiId.ToId())
-                .OnRequest(naradi => naradi.Aktivovat()).Execute();
+                .OnExisting(naradi => naradi.Aktivovat())
+                .Execute();
         }
         public Task Handle(DeaktivovatNaradiCommand msg)
         {
             return new EventSourcedServiceExecution<DefinovaneNaradiAggregate>(_repoNaradi, msg.NaradiId.ToId())
-                .OnRequest(naradi => naradi.Deaktivovat()).Execute();
+                .OnExisting(naradi => naradi.Deaktivovat())
+                .Execute();
         }
 
         public Task Handle(DefinovatNaradiInternalCommand msg)
         {
             return new EventSourcedServiceExecution<DefinovaneNaradiAggregate>(_repoNaradi, msg.NaradiId.ToId())
-                .OnNew(naradi => DefinovaneNaradiAggregate.Definovat(msg.NaradiId, msg.Vykres, msg.Rozmer, msg.Druh))
+                .OnNew(() => DefinovaneNaradiAggregate.Definovat(msg.NaradiId, msg.Vykres, msg.Rozmer, msg.Druh))
                 .Execute();
         }
     }

@@ -72,27 +72,43 @@ namespace ServiceLib
                     yield return TaskUtils.FromError<object>(validationResult);
                     yield break;
                 }
-                for (_tryNumber = 0; _tryNumber <= 3; _tryNumber++)
-                {
-                    var loadTask = _repository.Load(_aggregateId);
-                    yield return loadTask;
+            }
+            for (_tryNumber = 0; _tryNumber <= 3; _tryNumber++)
+            {
+                var loadTask = _repository.Load(_aggregateId);
+                yield return loadTask;
 
-                    var aggregate = loadTask.Result;
-                    if (aggregate == null)
-                        _newAction();
+                var aggregate = loadTask.Result;
+                if (aggregate == null)
+                {
+                    if (_newAction != null)
+                        aggregate = _newAction();
                     else
+                        aggregate = null;
+                }
+                else
+                {
+                    if (_existingAction != null)
                         _existingAction(aggregate);
+                }
+                bool aggregateSaved;
+                if (aggregate != null)
+                {
                     var saveTask = _repository.Save(aggregate);
                     yield return saveTask;
 
-                    if (saveTask.Result)
-                    {
-                        yield return TaskUtils.CompletedTask();
-                        yield break;
-                    }
+                    aggregateSaved = saveTask.Result;
                 }
-                yield return TaskUtils.FromError<object>(new TransientErrorException("CONCURRENCY", "Could not save aggregate", _tryNumber));
+                else
+                    aggregateSaved = true;
+                if (aggregateSaved)
+                {
+                    yield return TaskUtils.CompletedTask();
+                    yield break;
+                }
             }
+            yield return TaskUtils.FromError<object>(new TransientErrorException("CONCURRENCY", "Could not save aggregate", _tryNumber));
         }
+
     }
 }
