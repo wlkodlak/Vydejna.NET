@@ -115,15 +115,12 @@ namespace Vydejna.Projections.SeznamVadReadModel
 
         public Task<MemoryCacheItem<SeznamVadData>> NacistVady()
         {
-            return _folder.GetDocument("vady")
-                .ContinueWith(task => ProjectorUtils.LoadFromDocument(task, JsonSerializer.DeserializeFromString<SeznamVadData>)).Unwrap();
+            return _folder.GetDocument("vady").ToMemoryCacheItem(JsonSerializer.DeserializeFromString<SeznamVadData>);
         }
 
         public Task<int> UlozitVady(int verze, SeznamVadData data)
         {
-            return _folder
-                .SaveDocument("vady", JsonSerializer.SerializeToString(data), DocumentStoreVersion.At(verze), null)
-                .ContinueWith(saved => ProjectorUtils.CheckConcurrency(saved, verze + 1)).Unwrap();
+            return ProjectorUtils.Save(_folder, "vady", verze, JsonSerializer.SerializeToString(data), null);
         }
     }
 
@@ -146,19 +143,17 @@ namespace Vydejna.Projections.SeznamVadReadModel
 
         public Task<ZiskatSeznamVadResponse> Handle(ZiskatSeznamVadRequest message)
         {
-            return _cache
-                .Get("vady", load => _repository.NacistVady().ContinueWith(task => VytvoritResponse(task.Result)))
-                .ContinueWith(task => task.Result.Value);
+            return _cache.Get("vady", load => _repository.NacistVady().Transform(VytvoritResponse)).ExtractValue();
         }
 
-        private MemoryCacheItem<ZiskatSeznamVadResponse> VytvoritResponse(MemoryCacheItem<SeznamVadData> zaklad)
+        private ZiskatSeznamVadResponse VytvoritResponse(SeznamVadData zaklad)
         {
             var response = new ZiskatSeznamVadResponse();
             if (zaklad == null)
                 response.Seznam = new List<SeznamVadPolozka>();
             else
-                response.Seznam = zaklad.Value.Seznam.Where(v => v.Aktivni).ToList();
-            return new MemoryCacheItem<ZiskatSeznamVadResponse>(zaklad.Version, response);
+                response.Seznam = zaklad.Seznam.Where(v => v.Aktivni).ToList();
+            return response;
         }
     }
 

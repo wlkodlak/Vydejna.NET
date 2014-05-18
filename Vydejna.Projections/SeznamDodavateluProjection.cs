@@ -58,7 +58,7 @@ namespace Vydejna.Projections.SeznamDodavateluReadModel
 
         public Task Handle(DefinovanDodavatelEvent message)
         {
-            return _cache.Get("dodavatele", load => _repository.NacistDodavatele().ContinueWith(task => RozsiritData(task.Result))).ContinueWith(task =>
+            return _cache.Get("dodavatele", load => _repository.NacistDodavatele().Transform(RozsiritData)).ContinueWith(task =>
             {
                 var data = task.Result.Value;
                 InformaceODodavateli dodavatel;
@@ -79,9 +79,8 @@ namespace Vydejna.Projections.SeznamDodavateluReadModel
             });
         }
 
-        private MemoryCacheItem<SeznamDodavateluData> RozsiritData(MemoryCacheItem<SeznamDodavateluData> item)
+        private SeznamDodavateluData RozsiritData(SeznamDodavateluData data)
         {
-            var data = item.Value;
             if (data == null)
             {
                 data = new SeznamDodavateluData();
@@ -94,7 +93,7 @@ namespace Vydejna.Projections.SeznamDodavateluReadModel
                 foreach (var dodavatel in data.Seznam)
                     data.PodleKodu[dodavatel.Kod] = dodavatel;
             }
-            return new MemoryCacheItem<SeznamDodavateluData>(item.Version, data);
+            return data;
         }
     }
 
@@ -128,14 +127,12 @@ namespace Vydejna.Projections.SeznamDodavateluReadModel
 
         public Task<MemoryCacheItem<SeznamDodavateluData>> NacistDodavatele()
         {
-            return _folder.GetDocument("dodavatele")
-                .ContinueWith(task => ProjectorUtils.LoadFromDocument<SeznamDodavateluData>(task, JsonSerializer.DeserializeFromString<SeznamDodavateluData>)).Unwrap();
+            return _folder.GetDocument("dodavatele").ToMemoryCacheItem(JsonSerializer.DeserializeFromString<SeznamDodavateluData>);
         }
 
         public Task<int> UlozitDodavatele(int verze, SeznamDodavateluData data)
         {
-            return _folder.SaveDocument("dodavatele", JsonSerializer.SerializeToString(data), DocumentStoreVersion.At(verze), null)
-                .ContinueWith(task => ProjectorUtils.CheckConcurrency(task, verze + 1)).Unwrap();
+            return ProjectorUtils.Save(_folder, "dodavatele", verze, JsonSerializer.SerializeToString(data), null);
         }
     }
 
@@ -158,19 +155,17 @@ namespace Vydejna.Projections.SeznamDodavateluReadModel
 
         public Task<ZiskatSeznamDodavateluResponse> Handle(ZiskatSeznamDodavateluRequest message)
         {
-            return _cache.Get("dodavatele", load => _repository.NacistDodavatele()
-                    .ContinueWith(task => VytvoritResponse(task.Result)))
-                .ContinueWith(task => task.Result.Value);
+            return _cache.Get("dodavatele", load => _repository.NacistDodavatele().Transform(VytvoritResponse)).ExtractValue();
         }
 
-        private MemoryCacheItem<ZiskatSeznamDodavateluResponse> VytvoritResponse(MemoryCacheItem<SeznamDodavateluData> zaklad)
+        private ZiskatSeznamDodavateluResponse VytvoritResponse(SeznamDodavateluData zaklad)
         {
             var response = new ZiskatSeznamDodavateluResponse();
             if (zaklad == null)
                 response.Seznam = new List<InformaceODodavateli>();
             else
-                response.Seznam = zaklad.Value.Seznam.Where(d => d.Aktivni).OrderBy(d => d.Nazev).ToList();
-            return new MemoryCacheItem<ZiskatSeznamDodavateluResponse>(zaklad.Version, response);
+                response.Seznam = zaklad.Seznam.Where(d => d.Aktivni).OrderBy(d => d.Nazev).ToList();
+            return response;
         }
     }
 }

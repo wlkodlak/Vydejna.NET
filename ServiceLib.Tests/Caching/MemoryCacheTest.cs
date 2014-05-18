@@ -278,7 +278,7 @@ namespace ServiceLib.Tests.Caching
 
         private MemoryCacheLoadDelegate<string> LoadComplete(int version, string data)
         {
-            return load => TaskUtils.FromResult(new MemoryCacheItem<string>(version, data));
+            return load => TaskUtils.FromResult(MemoryCacheItem.Create(version, data));
         }
 
         private MemoryCacheLoadDelegate<string> LoadComplete(int version, string data, int validity, int expiration)
@@ -286,7 +286,7 @@ namespace ServiceLib.Tests.Caching
             return load =>
             {
                 load.Expires(validity, expiration);
-                return TaskUtils.FromResult(new MemoryCacheItem<string>(version, data));
+                return TaskUtils.FromResult(MemoryCacheItem.Create(version, data));
             };
         }
 

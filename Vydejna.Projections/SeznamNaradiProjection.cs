@@ -91,7 +91,7 @@ namespace Vydejna.Projections.SeznamNaradiReadModel
             }
             akce(naradi);
             obsahTagu++;
-            
+
             _cacheNaradi.Insert(naradiId.ToString(), verzeNaradi, naradi, dirty: true);
             _cacheTag.Insert("tag", verzeTagu, obsahTagu, dirty: true);
         }
@@ -140,7 +140,7 @@ namespace Vydejna.Projections.SeznamNaradiReadModel
 
         public Task<MemoryCacheItem<TypNaradiDto>> NacistNaradi(Guid naradiId)
         {
-            return _folder.GetDocument(naradiId.ToString("N")).ContinueWith(task => ProjectorUtils.LoadFromDocument<TypNaradiDto>(task, DeserializovatNaradi)).Unwrap();
+            return _folder.GetDocument(naradiId.ToString("N")).ToMemoryCacheItem(DeserializovatNaradi);
         }
 
         public Task<List<TypNaradiDto>> NacistVsechnoNaradi()
@@ -156,17 +156,13 @@ namespace Vydejna.Projections.SeznamNaradiReadModel
 
         public Task<int> UlozitNaradi(int verze, TypNaradiDto data)
         {
-            return _folder.SaveDocument(
-                data.Id.ToString("N"),
-                JsonSerializer.SerializeToString(data),
-                DocumentStoreVersion.At(verze),
-                new[] { new DocumentIndexing("vykresRozmer", string.Concat(data.Vykres, " ", data.Rozmer)) })
-                .ContinueWith(task => ProjectorUtils.CheckConcurrency(task, verze + 1)).Unwrap();
+            return ProjectorUtils.Save(_folder, data.Id.ToString("N"), verze, JsonSerializer.SerializeToString(data),
+                new[] { new DocumentIndexing("vykresRozmer", string.Concat(data.Vykres, " ", data.Rozmer)) });
         }
 
         public Task<MemoryCacheItem<int>> NacistTagSeznamu()
         {
-            return _folder.GetDocument("tag").ContinueWith(task => ProjectorUtils.LoadFromDocument<int>(task, DeserializovatTag)).Unwrap();
+            return _folder.GetDocument("tag").ToMemoryCacheItem(DeserializovatTag);
         }
 
         private int DeserializovatTag(string raw)
@@ -178,8 +174,7 @@ namespace Vydejna.Projections.SeznamNaradiReadModel
 
         public Task<int> UlozitTagSeznamu(int verze, int hodnota)
         {
-            return _folder.SaveDocument("tag", hodnota.ToString(), DocumentStoreVersion.At(verze), null)
-                .ContinueWith(Task => ProjectorUtils.CheckConcurrency(Task, verze + 1)).Unwrap();
+            return ProjectorUtils.Save(_folder, "tag", verze, hodnota.ToString(), null);
         }
     }
 

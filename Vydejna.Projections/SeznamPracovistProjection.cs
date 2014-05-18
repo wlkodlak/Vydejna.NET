@@ -100,8 +100,7 @@ namespace Vydejna.Projections.SeznamPracovistReadModel
 
         public Task<MemoryCacheItem<InformaceOPracovisti>> NacistPracoviste(string kodPracoviste)
         {
-            return _folder.GetDocument(kodPracoviste)
-                .ContinueWith(task => ProjectorUtils.LoadFromDocument(task, JsonSerializer.DeserializeFromString<InformaceOPracovisti>)).Unwrap();
+            return _folder.GetDocument(kodPracoviste).ToMemoryCacheItem(JsonSerializer.DeserializeFromString<InformaceOPracovisti>);
         }
 
         private static InformaceOPracovisti DeserializovatPracoviste(string raw)
@@ -111,11 +110,8 @@ namespace Vydejna.Projections.SeznamPracovistReadModel
 
         public Task<int> UlozitPracoviste(int verze, InformaceOPracovisti data, bool zobrazitVSeznamu)
         {
-            return _folder.SaveDocument(data.Kod,
-                JsonSerializer.SerializeToString(data),
-                DocumentStoreVersion.At(verze),
-                zobrazitVSeznamu ? new[] { new DocumentIndexing("kodPracoviste", data.Kod) } : null)
-                .ContinueWith(saved => ProjectorUtils.CheckConcurrency(saved, verze + 1)).Unwrap();
+            return ProjectorUtils.Save(_folder, data.Kod, verze, JsonSerializer.SerializeToString(data),
+                zobrazitVSeznamu ? new[] { new DocumentIndexing("kodPracoviste", data.Kod) } : null);
         }
 
         public Task<Tuple<int, List<InformaceOPracovisti>>> NacistSeznamPracovist(int offset, int pocet)
@@ -146,7 +142,7 @@ namespace Vydejna.Projections.SeznamPracovistReadModel
         {
             return _cache.Get(message.Stranka.ToString(), 
                 load => _repository.NacistSeznamPracovist(message.Stranka * 100 - 100, 100)
-                    .ContinueWith(task => new MemoryCacheItem<ZiskatSeznamPracovistResponse>(1, VytvoritResponse(message, task.Result.Item1, task.Result.Item2))))
+                    .ContinueWith(task => MemoryCacheItem.Create(1, VytvoritResponse(message, task.Result.Item1, task.Result.Item2))))
                 .ContinueWith(task => task.Result.Value);
         }
 

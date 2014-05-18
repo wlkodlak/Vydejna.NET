@@ -85,12 +85,13 @@ namespace Vydejna.Projections.PrehledObjednavekReadModel
 
         public Task Handle(DefinovanDodavatelEvent message)
         {
-            return _cacheDodavatelu.Get("dodavatele", NacistDodavatele).ContinueWith(task => ZpracovatDefiniciDodavatele(task.Result.Version, task.Result.Value, message));
+            return _cacheDodavatelu.Get("dodavatele", NacistDodavatele)
+                .ContinueWith(task => ZpracovatDefiniciDodavatele(task.Result.Version, task.Result.Value, message));
         }
 
         private Task<MemoryCacheItem<PrehledObjednavekDataSeznamDodavatelu>> NacistDodavatele(IMemoryCacheLoad<PrehledObjednavekDataSeznamDodavatelu> load)
         {
-            return _repository.NacistDodavatele().ContinueWith(task => new MemoryCacheItem<PrehledObjednavekDataSeznamDodavatelu>(task.Result.Version, RozsiritData(task.Result.Value)));
+            return _repository.NacistDodavatele().Transform(RozsiritData);
         }
 
         private PrehledObjednavekDataSeznamDodavatelu RozsiritData(PrehledObjednavekDataSeznamDodavatelu dodavatele)
@@ -231,17 +232,14 @@ namespace Vydejna.Projections.PrehledObjednavekReadModel
         public Task<MemoryCacheItem<PrehledObjednavekDataObjednavky>> NacistObjednavku(string kodDodavatele, string cisloObjednavky)
         {
             return _folder.GetDocument(PrehledObjednavekProjection.DokumentObjednavky(kodDodavatele, cisloObjednavky))
-                .ContinueWith(task => ProjectorUtils.LoadFromDocument(task, DeserializovatObjednavku)).Unwrap();
+                .ToMemoryCacheItem(DeserializovatObjednavku);
         }
 
         public Task<int> UlozitObjednavku(int verze, PrehledObjednavekDataObjednavky data)
         {
-            return _folder.SaveDocument(
+            return ProjectorUtils.Save(_folder, 
                 PrehledObjednavekProjection.DokumentObjednavky(data.KodDodavatele, data.Objednavka),
-                JsonSerializer.SerializeToString(data),
-                DocumentStoreVersion.At(verze),
-                IndexyObjednavky(data))
-                .ContinueWith(task => ProjectorUtils.CheckConcurrency(task, verze + 1)).Unwrap();
+                verze, JsonSerializer.SerializeToString(data), IndexyObjednavky(data));
         }
 
         private DocumentIndexing[] IndexyObjednavky(PrehledObjednavekDataObjednavky data)
@@ -275,26 +273,22 @@ namespace Vydejna.Projections.PrehledObjednavekReadModel
 
         public Task<MemoryCacheItem<PrehledObjednavekDataSeznamDodavatelu>> NacistDodavatele()
         {
-            return _folder.GetDocument("dodavatele").ContinueWith(task => ProjectorUtils.LoadFromDocument<PrehledObjednavekDataSeznamDodavatelu>(
-                task, JsonSerializer.DeserializeFromString<PrehledObjednavekDataSeznamDodavatelu>)).Unwrap();
+            return _folder.GetDocument("dodavatele").ToMemoryCacheItem(JsonSerializer.DeserializeFromString<PrehledObjednavekDataSeznamDodavatelu>);
         }
 
         public Task<int> UlozitDodavatele(int verze, PrehledObjednavekDataSeznamDodavatelu data)
         {
-            return _folder.SaveDocument("dodavatele", JsonSerializer.SerializeToString(data), DocumentStoreVersion.At(verze), null)
-                .ContinueWith(task => ProjectorUtils.CheckConcurrency(task, verze + 1)).Unwrap();
+            return ProjectorUtils.Save(_folder, "dodavatele", verze, JsonSerializer.SerializeToString(data), null);
         }
 
         public Task<MemoryCacheItem<int>> NacistVerziSeznamu()
         {
-            return _folder.GetDocument("verzeSeznamu")
-                .ContinueWith(task => ProjectorUtils.LoadFromDocument<int>(task, DeserializovatVerziSeznamu)).Unwrap();
+            return _folder.GetDocument("verzeSeznamu").ToMemoryCacheItem(DeserializovatVerziSeznamu);
         }
 
         public Task<int> UlozitVerziSeznamu(int verzeDokumentu, int verzeSeznamu)
         {
-            return _folder.SaveDocument("verzeSeznamu", verzeSeznamu.ToString(), DocumentStoreVersion.At(verzeDokumentu), null)
-                .ContinueWith(task => ProjectorUtils.CheckConcurrency(task, verzeDokumentu + 1)).Unwrap();
+            return ProjectorUtils.Save(_folder, "verzeSeznamu", verzeDokumentu, verzeSeznamu.ToString(), null);
         }
 
         private int DeserializovatVerziSeznamu(string raw)

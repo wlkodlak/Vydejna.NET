@@ -22,6 +22,45 @@ namespace ServiceLib
         List<T> GetAllChanges();
     }
 
+    public static class MemoryCacheItem
+    {
+        public static MemoryCacheItem<T> Create<T>(int version, T value)
+        {
+            return MemoryCacheItem.Create(version, value);
+        }
+
+        public static MemoryCacheItem<TOut> Transform<TIn, TOut>(this MemoryCacheItem<TIn> input, Func<TIn, TOut> tranformer)
+        {
+            return new MemoryCacheItem<TOut>(input.Version, tranformer(input.Value));
+        }
+
+        public static Task<MemoryCacheItem<TOut>> Transform<TIn, TOut>(this Task<MemoryCacheItem<TIn>> inputTask, Func<TIn, TOut> tranformer)
+        {
+            return inputTask.ContinueWith(task => new MemoryCacheItem<TOut>(inputTask.Result.Version, tranformer(inputTask.Result.Value)));
+        }
+
+        public static Task<MemoryCacheItem<TOut>> ToMemoryCacheItem<TOut>(this Task<DocumentStoreFoundDocument> inputTask, Func<string, TOut> deserializer)
+        {
+            return inputTask.ContinueWith<MemoryCacheItem<TOut>>(task =>
+            {
+                var result = task.Result;
+                if (result == null)
+                    return new MemoryCacheItem<TOut>(0, default(TOut));
+                else if (!result.HasNewerContent)
+                    return null;
+                else if (string.IsNullOrEmpty(result.Contents))
+                    return new MemoryCacheItem<TOut>(result.Version, default(TOut));
+                else
+                    return new MemoryCacheItem<TOut>(result.Version, deserializer(result.Contents));
+            });
+        }
+
+        public static Task<T> ExtractValue<T>(this Task<MemoryCacheItem<T>> inputTask)
+        {
+            return inputTask.ContinueWith(task => task.Result.Value);
+        }
+    }
+
     public class MemoryCacheItem<T>
     {
         public readonly int Version;
@@ -110,7 +149,7 @@ namespace ServiceLib
             {
                 item.NotifyUsage();
                 if (item.ShouldReturnImmediately(onLoading == null, currentTime))
-                    resultTask = TaskUtils.FromResult(new MemoryCacheItem<T>(item.OldVersion, item.OldValue));
+                    resultTask = TaskUtils.FromResult(MemoryCacheItem.Create(item.OldVersion, item.OldValue));
                 else
                 {
                     resultTask = item.AddLoadingWaiter();
@@ -259,11 +298,11 @@ namespace ServiceLib
                         }
                         else if (_hasValue)
                         {
-                            result = new MemoryCacheItem<T>(_version, _value);
+                            result = MemoryCacheItem.Create(_version, _value);
                         }
                         else
                         {
-                            result = new MemoryCacheItem<T>(0, default(T));
+                            result = MemoryCacheItem.Create(0, default(T));
                         }
                     }
                     foreach (var waiter in waiters)
@@ -301,7 +340,7 @@ namespace ServiceLib
                         waiters = _loadingWaiters.ToList();
                         _loadingWaiters.Clear();
                         _version = taskSave.Result;
-                        result = new MemoryCacheItem<T>(_version, _value);
+                        result = MemoryCacheItem.Create(_version, _value);
                     }
                     foreach (var waiter in waiters)
                         waiter.TrySetResult(result);
