@@ -72,10 +72,11 @@ namespace ServiceLib.Tests.Documents
                 .Setup(l => l.Lock("consumer", CancellationToken.None, false))
                 .Returns(tcs.Task)
                 .Verifiable();
-            var taskLock = _scheduler.Run(() => _inst.Lock(CancellationToken.None));
+            var taskLock = _scheduler.Run(() => _inst.Lock(CancellationToken.None), false);
             tcs.SetResult(null);
             _scheduler.Process();
-            Assert.AreEqual(TaskStatus.RanToCompletion, taskLock.Status, "Status");
+            Assert.IsTrue(taskLock.IsCompleted, "Completed");
+            Assert.IsNull(taskLock.Exception, "Exception");
         }
 
         [TestMethod]

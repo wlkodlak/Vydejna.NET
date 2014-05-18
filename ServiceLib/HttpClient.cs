@@ -111,6 +111,7 @@ namespace ServiceLib
             response.Body = memoryStream.ToArray();
             if (_log.IsDebugEnabled)
                 LogResponse(response);
+            yield return TaskUtils.FromResult(response);
         }
 
         private void LogRequest(HttpClientRequest request)

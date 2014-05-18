@@ -40,19 +40,33 @@ namespace ServiceLib.Tests.Http
             _picker.Setup(p => p.PickSerializer(It.IsAny<IHttpServerStagedContext>(), _serializers, null))
                 .Returns(_serializer.Object).Verifiable();
 
-            _handler.Handle(_rawContext);
+            var scheduler = new TestScheduler();
+            scheduler.AllowWaiting();
+            var taskHandle = scheduler.Run(() => _handler.Handle(_rawContext), false);
             _staged = _processor.WaitForCall();
-
             Assert.IsNotNull(_staged, "Staged context not available");
+            _staged.StatusCode = 302;
+            _staged.OutputHeaders.Location = "http://new.location.com/";
+            _staged.OutputString = "Greetings!";
+            _processor.SendCompletion();
+            scheduler.Process();
+
             Assert.AreEqual(_rawContext.Method, _staged.Method, "Method");
             Assert.AreEqual(_rawContext.Url, _staged.Url, "Url");
             Assert.AreSame(_serializer.Object, _staged.OutputSerializer, "Serializer");
             Assert.AreEqual("", _staged.InputString, "InputString");
+
+            Assert.AreEqual(302, _rawContext.StatusCode, "Status Code");
+            Assert.AreEqual("http://new.location.com/", _rawContext.OutputHeaders.Where(h => h.Key == "Location").Select(h => h.Value).FirstOrDefault(), "Location header");
+            var expectedOutput = Encoding.UTF8.GetBytes("Greetings!");
+            CollectionAssert.AreEqual(expectedOutput, _rawContext.GetRawOutput(), "Raw output");
         }
 
         [TestMethod]
         public void WithPostdata()
         {
+            var scheduler = new TestScheduler();
+            scheduler.AllowWaiting();
             _rawContext = new TestRawContext("POST", "http://localhost/articles/483/comments", "10.3.24.22");
             _picker.Setup(p => p.PickDeserializer(It.IsAny<IHttpServerStagedContext>(), _serializers, null))
                 .Returns(_serializer.Object).Verifiable();
@@ -60,10 +74,12 @@ namespace ServiceLib.Tests.Http
                 .Returns(_serializer.Object).Verifiable();
             _rawContext.SetInput(Encoding.UTF8.GetBytes("Hello World!"));
 
-            _handler.Handle(_rawContext);
+            var taskHandle = scheduler.Run(() => _handler.Handle(_rawContext), false);
             _staged = _processor.WaitForCall();
-
             Assert.IsNotNull(_staged, "Staged context not available");
+            _processor.SendCompletion();
+            scheduler.Process();
+
             Assert.AreEqual(_rawContext.Method, _staged.Method, "Method");
             Assert.AreEqual(_rawContext.Url, _staged.Url, "Url");
             Assert.AreSame(_serializer.Object, _staged.InputSerializer, "Serializer-Input");
@@ -73,20 +89,24 @@ namespace ServiceLib.Tests.Http
 
         private class TestProcessor : IHttpProcessor
         {
-            private ManualResetEventSlim _mre = new ManualResetEventSlim();
             private IHttpServerStagedContext _context;
+            private TaskCompletionSource<object> _tcs;
 
             public IHttpServerStagedContext WaitForCall()
             {
-                _mre.Wait(100);
                 return _context;
             }
 
             public Task Process(IHttpServerStagedContext context)
             {
                 _context = context;
-                _mre.Set();
-                return TaskUtils.CompletedTask();
+                _tcs = new TaskCompletionSource<object>();
+                return _tcs.Task;
+            }
+
+            public void SendCompletion()
+            {
+                _tcs.SetResult(null);
             }
         }
     }

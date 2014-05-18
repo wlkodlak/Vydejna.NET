@@ -44,28 +44,5 @@ namespace ServiceLib.Tests.Http
             var parameters = string.Join(", ", ctx.RawParameters.OrderBy(p => p.Name).Select(p => string.Format("{0}:{1}", p.Name, p.Value)));
             Assert.AreEqual("id:448, name:wlkodlak, res:resource", parameters);
         }
-
-        [TestMethod]
-        public void WritesStatusAndHeadersOnClose()
-        {
-            var ctx = new HttpServerStagedContext(_rawContext);
-            ctx.StatusCode = 302;
-            ctx.OutputHeaders.Location = "http://new.location.com/";
-
-            Assert.AreEqual(302, _rawContext.StatusCode, "StatusCode");
-            var headers = string.Join("\r\n", _rawContext.OutputHeaders.Select(h => string.Format("{0}: {1}", h.Key, h.Value)));
-            Assert.AreEqual("Location: http://new.location.com/", headers, "Headers");
-        }
-
-        [TestMethod]
-        public void WritesOutputString()
-        {
-            var ctx = new HttpServerStagedContext(_rawContext);
-            ctx.StatusCode = 200;
-            ctx.OutputString = "This is the result";
-
-            var expectedOutput = Encoding.UTF8.GetBytes("This is the result");
-            CollectionAssert.AreEqual(expectedOutput, _rawContext.GetRawOutput());
-        }
     }
 }

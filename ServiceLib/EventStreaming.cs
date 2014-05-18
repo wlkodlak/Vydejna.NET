@@ -86,6 +86,7 @@ namespace ServiceLib
             private CancellationTokenSource _cancel;
             private MessageDestination _inputMessagingQueue;
             private AutoResetEventAsync _waitForSignal;
+            private AggregateException _pendingError;
 
             public EventsStream(EventStreaming parent, EventStoreToken token, string processName)
             {
@@ -119,7 +120,8 @@ namespace ServiceLib
                     taskMarkProcessed.Wait();
                 }
                 EventStoreEvent readyEvent = null;
-                while (readyEvent == null)
+                var cancelToken = _cancel.Token;
+                while (readyEvent == null && !cancelToken.IsCancellationRequested)
                 {
                     bool startWaitingForEvents = false;
                     bool startWaitingForMessages = false;
@@ -127,6 +129,13 @@ namespace ServiceLib
                     bool nowaitGetMessage = false;
                     lock (_lock)
                     {
+                        if (_pendingError != null)
+                        {
+                            var error = _pendingError;
+                            _pendingError = null;
+                            yield return TaskUtils.FromError<EventStoreEvent>(error);
+                            yield break;
+                        }
                         if (_prefetchedMessage != null)
                         {
                             _currentMessage = _prefetchedMessage;
@@ -151,7 +160,7 @@ namespace ServiceLib
                     }
                     if (nowaitGetMessage && readyEvent == null)
                     {
-                        var taskReceive = _parent._messaging.Receive(_inputMessagingQueue, true, _cancel.Token);
+                        var taskReceive = _parent._messaging.Receive(_inputMessagingQueue, true, cancelToken);
                         yield return taskReceive;
                         _currentMessage = taskReceive.Result;
                         if (_currentMessage != null)
@@ -161,7 +170,7 @@ namespace ServiceLib
                     }
                     if (nowaitGetEvents && readyEvent == null)
                     {
-                        var taskGetEvents = _parent.GetEvents(_token, true, _cancel.Token);
+                        var taskGetEvents = _parent.GetEvents(_token, true, cancelToken);
                         yield return taskGetEvents;
                         var loadedEvents = taskGetEvents.Result;
                         foreach (var evnt in loadedEvents.Events)
@@ -174,13 +183,13 @@ namespace ServiceLib
                     }
                     if (startWaitingForMessages)
                     {
-                        _parent._messaging.Receive(_inputMessagingQueue, false, _cancel.Token).ContinueWith(GetNextEvent_FromMessaging);
+                        _parent._messaging.Receive(_inputMessagingQueue, false, cancelToken).ContinueWith(GetNextEvent_FromMessaging);
                     }
                     if (startWaitingForEvents)
                     {
-                        _parent.GetEvents(_token, false, _cancel.Token).ContinueWith(GetNextEvent_FromEventStore);
+                        _parent.GetEvents(_token, false, cancelToken).ContinueWith(GetNextEvent_FromEventStore);
                     }
-                    if (nowait)
+                    if (nowait || readyEvent != null)
                     {
                         break;
                     }
@@ -198,7 +207,17 @@ namespace ServiceLib
                 lock (_lock)
                 {
                     _isWaitingForMessages = false;
-                    _prefetchedMessage = taskReceive.Result;
+                    if (!taskReceive.IsCanceled)
+                    {
+                        if (taskReceive.Exception == null)
+                        {
+                            _prefetchedMessage = taskReceive.Result;
+                        }
+                        else
+                        {
+                            _pendingError = taskReceive.Exception;
+                        }
+                    }
                 }
                 _waitForSignal.Set();
             }
@@ -208,10 +227,20 @@ namespace ServiceLib
                 lock (_lock)
                 {
                     _isWaitingForEvents = false;
-                    var loadedEvents = taskReceive.Result;
-                    foreach (var evnt in loadedEvents.Events)
-                        _prefetchedEvents.Enqueue(evnt);
-                    _token = loadedEvents.NextToken;
+                    if (!taskReceive.IsCanceled)
+                    {
+                        if (taskReceive.Exception == null)
+                        {
+                            var loadedEvents = taskReceive.Result;
+                            foreach (var evnt in loadedEvents.Events)
+                                _prefetchedEvents.Enqueue(evnt);
+                            _token = loadedEvents.NextToken;
+                        }
+                        else
+                        {
+                            _pendingError = taskReceive.Exception;
+                        }
+                    }
                 }
                 _waitForSignal.Set();
             }

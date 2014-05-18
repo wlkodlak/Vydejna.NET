@@ -108,7 +108,8 @@ namespace ServiceLib.Tests.EventSourced
             var task = _scheduler.Run(() => streamer.GetNextEvent(false), false);
             streamer.Dispose();
             _scheduler.Process();
-            Assert.AreEqual(TaskStatus.RanToCompletion, task.Status, "Status");
+            Assert.IsTrue(task.IsCompleted, "Completed");
+            Assert.IsNull(task.Exception, "Exception");
             Assert.IsNull(task.Result, "Received event");
         }
 

@@ -109,8 +109,8 @@ namespace ServiceLib.Tests.Documents
         {
             var task = Scheduler.Run(() => Store.GetFolder(folder).GetDocument(name));
             Assert.IsTrue(task.IsCompleted, "GetDocument({0}) completed", name);
-            var version = task.Result.Version;
-            var contents = task.Result.Contents;
+            var version = task.Result == null ? 0 : task.Result.Version;
+            var contents = task.Result == null ? "" : task.Result.Contents ?? "";
             if (!expectedVersion.VerifyVersion(version))
                 Assert.AreEqual(expectedVersion, DocumentStoreVersion.At(version), "Unexpected version for {0}", name);
             Assert.AreEqual(expectedContents ?? "", contents, "Contents for {0}", name);

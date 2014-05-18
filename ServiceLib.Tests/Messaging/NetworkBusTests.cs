@@ -64,7 +64,7 @@ namespace ServiceLib.Tests.Messaging
         public void NullMessageIfCancelledAndNoMessagesReady()
         {
             StartReceiving("testprocess", false);
-            CurrentWait.Dispose();
+            CancelWait.Cancel();
             ExpectMessage(null, null);
         }
 
@@ -72,7 +72,9 @@ namespace ServiceLib.Tests.Messaging
         public void AwaitedMessageIsReceived()
         {
             StartReceiving("testprocess", false);
+            AdvanceTime(3);
             SendMessage("Msg", "Awaited", "testprocess");
+            AdvanceTime(3);
             ExpectMessage("Msg", "Awaited");
         }
 
@@ -232,8 +234,7 @@ namespace ServiceLib.Tests.Messaging
             var message = EndReceiving();
             if (type == null)
             {
-                Assert.IsNotNull(message, "No result");
-                Assert.AreEqual("NULL", message.Type, "Expected null message");
+                Assert.IsNull(message, "No result");
             }
             else
             {
@@ -291,7 +292,8 @@ namespace ServiceLib.Tests.Messaging
 
         protected override void InitializeCore()
         {
-            _db = new DatabasePostgres(GetConnectionString());
+            _db = new DatabasePostgres(GetConnectionString(), TimeService);
+            Scheduler.AllowWaiting(4, 50);
             _disposables = new List<IDisposable>();
         }
 

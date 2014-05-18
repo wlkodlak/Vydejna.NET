@@ -26,9 +26,10 @@ namespace ServiceLib.Tests.EventSourced
         protected override void InitializeCore()
         {
             base.InitializeCore();
+            Scheduler.AllowWaiting(2, 50);
             _time = new VirtualTime();
             _disposables = new List<IDisposable>();
-            _db = new DatabasePostgres(GetConnectionString());
+            _db = new DatabasePostgres(GetConnectionString(), _time);
             _db.ExecuteSync(Drop);
         }
 

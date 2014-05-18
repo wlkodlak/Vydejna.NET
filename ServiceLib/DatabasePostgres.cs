@@ -15,10 +15,12 @@ namespace ServiceLib
         private string _connectionString;
         private NotificationWatcher _notifications;
         private int _listenerKey;
+        private ITime _time;
 
-        public DatabasePostgres(string connectionString)
+        public DatabasePostgres(string connectionString, ITime time)
         {
             _connectionString = connectionString;
+            _time = time;
             _notifications = new NotificationWatcher(this);
             _notifications.Start();
         }
@@ -305,6 +307,7 @@ namespace ServiceLib
                         attemptNumber++;
                         using (var conn = new NpgsqlConnection(_connectionString))
                         {
+                            conn.Notification += OnNotified;
                             if (OpenConnection(conn, cancel, attemptNumber))
                                 attemptNumber = 0;
                             else
@@ -333,7 +336,7 @@ namespace ServiceLib
 
             private bool OpenConnection(NpgsqlConnection conn, CancellationToken cancel, int attemptNumber)
             {
-                var attemptStart = DateTime.UtcNow;
+                var attemptStart = _parent._time.GetUtcTime();
                 try
                 {
                     conn.Open();
@@ -341,7 +344,7 @@ namespace ServiceLib
                 }
                 catch (IOException)
                 {
-                    var attemptLength = (int)(DateTime.UtcNow - attemptStart).TotalMilliseconds;
+                    var attemptLength = (int)(_parent._time.GetUtcTime() - attemptStart).TotalMilliseconds;
                     var timeout = Math.Max(0, (attemptNumber == 0 ? 0 : 20000) - attemptLength);
                     if (timeout > 0)
                         cancel.WaitHandle.WaitOne(timeout);

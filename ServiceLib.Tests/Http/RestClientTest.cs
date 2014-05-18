@@ -139,7 +139,7 @@ namespace ServiceLib.Tests.Http
         public RestClientResult RunTest(RestClient restClient)
         {
             var scheduler = new TestScheduler();
-            var task = scheduler.Run(() => restClient.Execute());
+            var task = scheduler.Run(() => restClient.Execute(), false);
 
             _httpClient.WaitForExecute();
             _httpClient.SendResponse(PreparedResponse);

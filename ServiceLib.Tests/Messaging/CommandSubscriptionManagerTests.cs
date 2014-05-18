@@ -34,7 +34,8 @@ namespace ServiceLib.Tests.Messaging
             Assert.IsNotNull(handler, "FindHandler returned null");
             var task = handler.Handle(new TestMessage1 { Data = "Hello" });
             Assert.AreEqual("Msg1 H1 Hello", string.Join("\r\n", _outputs));
-            Assert.AreEqual(TaskStatus.RanToCompletion, task.Status, "Task status");
+            Assert.IsTrue(task.IsCompleted, "Completed");
+            Assert.IsNull(task.Exception, "Exception");
         }
 
         [TestMethod]

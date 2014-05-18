@@ -13,11 +13,13 @@ namespace ServiceLib
         private Dictionary<string, ProcessInfo> _processes;
         private IBus _bus;
         private IProcessWorker _primaryWorker;
+        private ITime _time;
 
-        public ProcessManagerSimple()
+        public ProcessManagerSimple(ITime time)
         {
             _lock = new object();
             _processes = new Dictionary<string, ProcessInfo>();
+            _time = time;
         }
 
         public void RegisterBus(string name, IBus bus, IProcessWorker worker)
@@ -107,14 +109,14 @@ namespace ServiceLib
 
         public bool WaitForStop(int timeout = 2000)
         {
-            var endTime = DateTime.UtcNow.AddMilliseconds(timeout);
+            var endTime = _time.GetUtcTime().AddMilliseconds(timeout);
             bool allStopped = true;
             foreach (var process in _processes.Values)
             {
                 var state = process.Worker.State;
                 if (state == ProcessState.Uninitialized || state == ProcessState.Inactive || state == ProcessState.Faulted)
                     continue;
-                var waitMs = Math.Max(1, (int)(endTime - DateTime.UtcNow).TotalMilliseconds);
+                var waitMs = Math.Max(1, (int)(endTime - _time.GetUtcTime()).TotalMilliseconds);
                 allStopped = allStopped | process.StopEvent.Wait(waitMs);
             }
             return allStopped;

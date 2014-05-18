@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using ServiceLib.Tests.TestUtils;
 
 namespace ServiceLib.Tests.Documents
 {
@@ -40,7 +41,7 @@ namespace ServiceLib.Tests.Documents
         {
             base.InitializeCore();
             _disposables = new List<IDisposable>();
-            _db = new DatabasePostgres(GetConnectionString());
+            _db = new DatabasePostgres(GetConnectionString(), new VirtualTime());
         }
 
         private string GetConnectionString()

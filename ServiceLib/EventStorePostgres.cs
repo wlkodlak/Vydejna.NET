@@ -256,7 +256,7 @@ namespace ServiceLib
         private IEventStoreStream ReadStreamWorker(NpgsqlConnection conn, object objContext)
         {
             var context = (ReadStreamParameters)objContext;
-            var version = GetStreamVersion(conn, context.Stream);
+            var version = Math.Max(0, GetStreamVersion(conn, context.Stream));
             if (version < context.MinVersion)
             {
                 return new EventStoreStream(EmptyList, version, version);
@@ -509,7 +509,7 @@ namespace ServiceLib
                 EventId = eventId;
                 MaxCount = maxCount;
                 Cancel = cancel;
-                Nowait = nowait || EventId != -1 && MaxCount > 0;
+                Nowait = nowait || EventId == -1 || MaxCount == 0;
                 if (!nowait)
                 {
                     Task = new TaskCompletionSource<IEventStoreCollection>();
@@ -566,7 +566,11 @@ namespace ServiceLib
             {
                 waiter.Task.TrySetException(taskImmediate.Exception.InnerExceptions);
             }
-            else if (taskImmediate.Result.Events.Count > 0 || waiter.Nowait)
+            else if (waiter.Nowait)
+            {
+                waiter.Task.TrySetResult(taskImmediate.Result.BuildFinal());
+            }
+            else if (taskImmediate.Result.Events != null && taskImmediate.Result.Events.Count > 0)
             {
                 waiter.Task.TrySetResult(taskImmediate.Result.BuildFinal());
             }
@@ -585,6 +589,7 @@ namespace ServiceLib
                             WaitForEvents_RemoveWaiter(waiter);
                         else
                             _notified.Set();
+                        break;
                     }
                 }
             }
@@ -595,7 +600,7 @@ namespace ServiceLib
             WaitForEventsContext waiter = (WaitForEventsContext)param;
             WaitForEventsContext removedWaiter;
             _waiters.TryRemove(waiter.WaiterId, out removedWaiter);
-            waiter.Task.TrySetCanceled();
+            waiter.Task.TrySetResult(null);
         }
 
         private void WaitForEvents_Timer(Task task)
@@ -638,7 +643,7 @@ namespace ServiceLib
                     continue;
                 }
                 var results = taskQuery.Result;
-                if (results.Events.Count == 0)
+                if (results.Events == null || results.Events.Count == 0)
                     continue;
                 foreach (var waiter in _waiters.Values)
                 {

@@ -57,7 +57,7 @@ namespace ServiceLib
             try
             {
                 var type = typeof(T);
-                var list = FindHandlers(type);
+                var list = FindHandlersInternal(type);
                 var copy = list.ToList();
                 copy.Add(new Subscription<T>(handler));
                 _handlers[type] = copy;
@@ -73,16 +73,21 @@ namespace ServiceLib
             _lock.EnterReadLock();
             try
             {
-                ICollection<ISubscription> found;
-                if (_handlers.TryGetValue(type, out found))
-                    return found;
-                else
-                    return _empty;
+                return FindHandlersInternal(type);
             }
             finally
             {
                 _lock.ExitReadLock();
             }
+        }
+
+        private ICollection<ISubscription> FindHandlersInternal(Type type)
+        {
+            ICollection<ISubscription> found;
+            if (_handlers.TryGetValue(type, out found))
+                return found;
+            else
+                return _empty;
         }
 
         public IEnumerable<Type> GetHandledTypes()

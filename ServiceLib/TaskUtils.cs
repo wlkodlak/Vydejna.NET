@@ -26,6 +26,8 @@ namespace ServiceLib
             var tcs = new TaskCompletionSource<T>();
             if (exception is TaskCanceledException)
                 tcs.SetCanceled();
+            else if (exception is AggregateException)
+                tcs.SetException((exception as AggregateException).InnerExceptions);
             else
                 tcs.SetException(exception);
             return tcs.Task;
@@ -232,10 +234,14 @@ namespace ServiceLib
                             return TaskUtils.FromError<T>(new InvalidOperationException(
                                 string.Format("Enumeration yielded no tasks for Task<{0}>", typeof(T).FullName)));
                         }
+                        else if (previous.IsCanceled)
+                            return TaskUtils.CancelledTask<T>();
+                        else if (previous.IsFaulted)
+                            return TaskUtils.FromError<T>(previous.Exception);
                         else
                         {
                             return TaskUtils.FromError<T>(new InvalidOperationException(
-                                string.Format("Last returned task is not a Task<{0}> (it's {1})", typeof(T).FullName, previous.GetType().FullName)));
+                                string.Format("Last returned task is not a Task<{0}> (it's {1})", typeof(T).FullName, TaskType(previous.GetType()))));
                         }
                     }
                     else
@@ -251,6 +257,14 @@ namespace ServiceLib
                 else
                     return TaskUtils.FromResult(default(T));
             }
+        }
+
+        private string TaskType(Type type)
+        {
+            if (!type.IsGenericType)
+                return "Task";
+            else
+                return type.GetGenericArguments()[0].FullName;
         }
     }
 

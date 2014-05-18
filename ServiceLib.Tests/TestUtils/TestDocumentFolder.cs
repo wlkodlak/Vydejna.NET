@@ -84,7 +84,7 @@ namespace ServiceLib.Tests.TestUtils
                 else
                 {
                     AddToLog("Get", name, 0);
-                    return TaskUtils.FromResult(new DocumentStoreFoundDocument(name, 0, true, ""));
+                    return TaskUtils.FromResult<DocumentStoreFoundDocument>(null);
                 }
             }
         }
@@ -105,7 +105,7 @@ namespace ServiceLib.Tests.TestUtils
                 else
                 {
                     AddToLog("Get", name, 0);
-                    return TaskUtils.FromResult(new DocumentStoreFoundDocument(name, 0, true, ""));
+                    return TaskUtils.FromResult<DocumentStoreFoundDocument>(null);
                 }
             }
         }

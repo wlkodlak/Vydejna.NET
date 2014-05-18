@@ -121,7 +121,7 @@ namespace ServiceLib
             else
             {
                 message.Destination = destination;
-                message.CreatedOn = DateTime.UtcNow;
+                message.CreatedOn = _timeService.GetUtcTime();
                 message.MessageId = Guid.NewGuid().ToString("N");
                 message.Source = _nodeId;
                 return _database.Execute(SendWorker, new SendParameters(destination, message));
@@ -220,7 +220,6 @@ namespace ServiceLib
             public MessageDestination Destination;
             public bool Nowait;
             public CancellationToken Cancel;
-            public TaskCompletionSource<Message> Task;
             public AutoResetEventAsync Event;
             public CancellationTokenRegistration CancelRegistration;
 
@@ -231,7 +230,6 @@ namespace ServiceLib
                 Cancel = cancel;
                 if (!Nowait)
                 {
-                    Task = new TaskCompletionSource<Message>();
                     Event = new AutoResetEventAsync();
                 }
             }
@@ -287,7 +285,7 @@ namespace ServiceLib
                 {
                     lock (_waiters)
                         _waiters.Remove(waiter);
-                    yield return TaskUtils.CancelledTask<Message>();
+                    yield return TaskUtils.FromResult<Message>(null);
                     yield break;
                 }
 
@@ -318,7 +316,7 @@ namespace ServiceLib
                         "ORDER BY id LIMIT 1 FOR UPDATE";
                     cmd.Parameters.AddWithValue("node", destination.NodeId);
                     cmd.Parameters.AddWithValue("destination", destination.ProcessName);
-                    cmd.Parameters.AddWithValue("since", DateTime.UtcNow.AddSeconds(-_deliveryTimeout));
+                    cmd.Parameters.AddWithValue("since", _timeService.GetUtcTime().AddSeconds(-_deliveryTimeout));
                     using (var reader = cmd.ExecuteReader())
                     {
                         if (!reader.Read())
@@ -328,9 +326,9 @@ namespace ServiceLib
                             message = new Message();
                             message.Destination = destination;
                             message.MessageId = reader.GetString(0);
-                            message.CorellationId = reader.GetString(1);
+                            message.CorellationId = reader.IsDBNull(1) ? null : reader.GetString(1);
                             message.CreatedOn = reader.GetDateTime(2);
-                            message.Source = reader.GetString(3);
+                            message.Source = reader.IsDBNull(3) ? null : reader.GetString(3);
                             message.Type = reader.GetString(4);
                             message.Format = reader.GetString(5);
                             message.Body = reader.GetString(6);
@@ -340,7 +338,7 @@ namespace ServiceLib
                 using (var cmd = conn.CreateCommand())
                 {
                     cmd.CommandText = "UPDATE " + _tableMessages + " SET processing = :now WHERE messageid = :messageid";
-                    cmd.Parameters.AddWithValue("now", DateTime.UtcNow);
+                    cmd.Parameters.AddWithValue("now", _timeService.GetUtcTime());
                     cmd.Parameters.AddWithValue("messageid", message.MessageId);
                     cmd.ExecuteReader();
                 }

@@ -36,24 +36,25 @@ namespace ServiceLib
 
         private void DoCollect(Task task)
         {
-            if (task.Exception != null)
+            if (task.Exception != null || task.IsCanceled)
+                return;
+
+            DateTime removedDateTime;
+            Message removedMessage;
+            var limit = _timeService.GetUtcTime().AddSeconds(-_collectTimeout);
+            foreach (var destination in _destinations.Values)
             {
-                DateTime removedDateTime;
-                Message removedMessage;
-                var limit = _timeService.GetUtcTime().AddSeconds(-_collectTimeout);
-                foreach (var destination in _destinations.Values)
+                var old = destination.DeliveredOn.Where(p => p.Value <= limit).Select(p => p.Key).ToList();
+                foreach (var oldKey in old)
                 {
-                    var old = destination.DeliveredOn.Where(p => p.Value <= limit).Select(p => p.Key).ToList();
-                    foreach (var oldKey in old)
-                    {
-                        destination.DeliveredOn.TryRemove(oldKey, out removedDateTime);
-                        if (destination.InProgress.TryRemove(oldKey, out removedMessage))
-                            destination.Incoming.Enqueue(removedMessage);
-                    }
+                    destination.DeliveredOn.TryRemove(oldKey, out removedDateTime);
+                    if (destination.InProgress.TryRemove(oldKey, out removedMessage))
+                        destination.Incoming.Enqueue(removedMessage);
                 }
-                _timeService.Delay(1000 * _collectInterval, _cancel.Token)
-                    .ContinueWith(DoCollect, _cancel.Token);
             }
+            _timeService.Delay(1000 * _collectInterval, _cancel.Token)
+                .ContinueWith(DoCollect, _cancel.Token);
+
         }
 
         public void Dispose()
@@ -155,7 +156,7 @@ namespace ServiceLib
         private void WaiterCancelled(object param)
         {
             var waiter = param as Waiter;
-            waiter.Task.TrySetCanceled();
+            waiter.Task.TrySetResult(null);
         }
 
         public Task Send(MessageDestination destination, Message message)
@@ -163,7 +164,7 @@ namespace ServiceLib
             message.Destination = destination;
             message.MessageId = Guid.NewGuid().ToString("N");
             message.Source = "local";
-            message.CreatedOn = DateTime.UtcNow;
+            message.CreatedOn = _timeService.GetUtcTime();
             if (destination == MessageDestination.Processed)
             {
             }
@@ -215,7 +216,7 @@ namespace ServiceLib
                 {
                     waiter.CancelRegistration = cancel.Register(WaiterCancelled, waiter);
                 }
-                contents.Waiters.Add(new Waiter(contents, cancel));
+                contents.Waiters.Add(waiter);
                 Notify(contents);
                 return waiter.Task.Task;
             }

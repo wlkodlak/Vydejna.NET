@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace ServiceLib.Tests.TestUtils
@@ -12,6 +13,9 @@ namespace ServiceLib.Tests.TestUtils
         private TaskFactory _defaultFactory;
         private Queue<Task> _tasks;
         private List<Task> _faulted;
+        private HashSet<Task> _pendingTasks;
+        private bool _allowWaiting;
+        private int _waitCycles, _waitMs;
 
         public TestScheduler()
         {
@@ -19,6 +23,19 @@ namespace ServiceLib.Tests.TestUtils
             _defaultFactory = new TaskFactory(this);
             _tasks = new Queue<Task>();
             _faulted = new List<Task>();
+            _pendingTasks = new HashSet<Task>();
+            _waitCycles = 2;
+            _waitMs = 20;
+        }
+
+        public TestScheduler AllowWaiting(int waitCycles = -1, int waitMs = -1)
+        {
+            _allowWaiting = true;
+            if (waitCycles > 0)
+                _waitCycles = waitCycles;
+            if (waitMs > 0)
+                _waitMs = waitMs;
+            return this;
         }
 
         protected override IEnumerable<Task> GetScheduledTasks()
@@ -30,7 +47,10 @@ namespace ServiceLib.Tests.TestUtils
         protected override void QueueTask(Task task)
         {
             lock (_lock)
+            {
                 _tasks.Enqueue(task);
+                Monitor.PulseAll(_lock);
+            }
         }
 
         protected override bool TryExecuteTaskInline(Task task, bool taskWasPreviouslyQueued)
@@ -47,7 +67,25 @@ namespace ServiceLib.Tests.TestUtils
 
         public void Process()
         {
-            ProcessTasks();
+            var attemptsLeft = 5;
+            while (attemptsLeft > 0)
+            {
+                ProcessTasks();
+                lock (_lock)
+                {
+                    foreach (var task in _pendingTasks.ToList())
+                    {
+                        if (task.IsCompleted)
+                            _pendingTasks.Remove(task);
+                    }
+                    if (_pendingTasks.Count == 0 || !_allowWaiting)
+                        attemptsLeft = 0;
+                    else if (!Monitor.Wait(_lock, 50))
+                        attemptsLeft--;
+                }
+            }
+
+
         }
 
         private bool ProcessTasks()
@@ -58,8 +96,7 @@ namespace ServiceLib.Tests.TestUtils
             {
                 lock (_lock)
                 {
-                    if (task != null && task.Exception != null)
-                        _faulted.Add(task);
+                    FinishPreviousTask(task);
                     if (_tasks.Count == 0)
                         return anythingDone;
                     task = _tasks.Dequeue();
@@ -69,6 +106,26 @@ namespace ServiceLib.Tests.TestUtils
                 else
                     task = null;
             }
+        }
+
+        private void FinishPreviousTask(Task task)
+        {
+            if (task != null)
+            {
+                if (task.Exception != null)
+                    _faulted.Add(task);
+                else if (!task.IsCanceled)
+                {
+                    var taskType = task.GetType();
+                    if (taskType.IsGenericType && taskType.GetGenericTypeDefinition() == typeof(Task<>))
+                    {
+                        var pending = taskType.GetProperty("Result").GetValue(task, null) as Task;
+                        if (pending != null)
+                            _pendingTasks.Add(pending);
+                    }
+                }
+            }
+
         }
 
         public Task<TResult> Run<TResult>(Func<Task<TResult>> action, bool mustComplete = true)

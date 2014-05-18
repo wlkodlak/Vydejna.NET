@@ -150,7 +150,7 @@ namespace ServiceLib
                     if (_queue.Count != 0)
                         message = _queue.Dequeue();
                     else
-                        Monitor.Wait(_lock);
+                        return false;
                 }
             }
             message.Process();
