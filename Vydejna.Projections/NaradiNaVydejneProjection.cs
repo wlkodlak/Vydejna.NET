@@ -77,23 +77,27 @@ namespace Vydejna.Projections.NaradiNaVydejneReadModel
 
         public Task Handle(ProjectorMessages.Flush message)
         {
-            _cacheNaradi.Flush(
-                () => _cacheVydejna.Flush(message.OnCompleted, message.OnError,
-                    save => _repository.UlozitUmistene(save.Version, save.Value, save.Value.PocetCelkem == 0)),
-                message.OnError, save => _repository.UlozitDefinici(save.Version, save.Value));
+            return TaskUtils.FromEnumerable(FlushInternal()).GetTask();
+        }
+
+        private IEnumerable<Task> FlushInternal()
+        {
+            var taskNaradi = _cacheNaradi.Flush(save => _repository.UlozitDefinici(save.Version, save.Value));
+            yield return taskNaradi;
+            taskNaradi.Wait();
+
+            var taskVydejna = _cacheVydejna.Flush(save => _repository.UlozitUmistene(save.Version, save.Value, save.Value.PocetCelkem == 0));
+            yield return taskVydejna;
+            taskVydejna.Wait();
         }
 
         public Task Handle(DefinovanoNaradiEvent message)
         {
-            _cacheNaradi.Get(
-                DokumentDefiniceNaradi(message.NaradiId),
-                (verze, naradi) => ZpracovatDefiniciNaradi(message, verze, naradi),
-                message.OnError,
-                load => _repository.NacistDefinici(message.NaradiId, load.SetLoadedValue, load.LoadingFailed)
-                );
+            return _cacheNaradi.Get(DokumentDefiniceNaradi(message.NaradiId), load => _repository.NacistDefinici(message.NaradiId))
+                .ContinueWith(task => ZpracovatDefiniciNaradi(message, task.Result.Version, task.Result.Value));
         }
 
-        private void ZpracovatDefiniciNaradi(CommandExecution<DefinovanoNaradiEvent> message, int verze, InformaceONaradi naradi)
+        private void ZpracovatDefiniciNaradi(DefinovanoNaradiEvent message, int verze, InformaceONaradi naradi)
         {
             if (naradi == null)
             {
@@ -104,7 +108,6 @@ namespace Vydejna.Projections.NaradiNaVydejneReadModel
             naradi.Rozmer = message.Rozmer;
             naradi.Druh = message.Druh;
             _cacheNaradi.Insert(DokumentDefiniceNaradi(message.NaradiId), verze, naradi, dirty: true);
-            message.OnCompleted();
         }
 
         public static string DokumentDefiniceNaradi(Guid naradiId)
@@ -117,24 +120,17 @@ namespace Vydejna.Projections.NaradiNaVydejneReadModel
             return string.Concat("vydejna-", naradiId.ToString("N"), "-", stavNaradi.ToString().ToLowerInvariant());
         }
 
-        private void UpravitNaradi(Action onComplete, Action<Exception> onError, Guid naradiId, int cisloNaradi, StavNaradi stavNaradi, int pocetCelkem)
+        private IEnumerable<Task> UpravitNaradi(Guid naradiId, int cisloNaradi, StavNaradi stavNaradi, int pocetCelkem)
         {
-            _cacheNaradi.Get(
-                DokumentDefiniceNaradi(naradiId),
-                (verzeDefinice, definice) =>
-                {
-                    _cacheVydejna.Get(
-                        DokumentNaradiNaVydejne(naradiId, stavNaradi),
-                        (verze, umistene) => UpravitNaradi(onComplete, naradiId, cisloNaradi, stavNaradi, pocetCelkem, definice, verze, umistene),
-                        onError,
-                        load => _repository.NacistUmistene(naradiId, stavNaradi, load.SetLoadedValue, load.LoadingFailed));
-                },
-                onError,
-                load => _repository.NacistDefinici(naradiId, load.SetLoadedValue, load.LoadingFailed));
-        }
+            var taskNaradi = _cacheNaradi.Get(DokumentDefiniceNaradi(naradiId), load => _repository.NacistDefinici(naradiId));
+            yield return taskNaradi;
+            var definice = taskNaradi.Result.Value;
 
-        private void UpravitNaradi(Action onComplete, Guid naradiId, int cisloNaradi, StavNaradi stavNaradi, int pocetCelkem, InformaceONaradi definice, int verze, NaradiNaVydejne umistene)
-        {
+            var taskVydejna = _cacheVydejna.Get(                        DokumentNaradiNaVydejne(naradiId, stavNaradi),load => _repository.NacistUmistene(naradiId, stavNaradi));
+            yield return taskVydejna;
+            var verze = taskVydejna.Result.Version;
+            var umistene = taskVydejna.Result.Value;
+
             if (definice == null)
             {
                 definice = new InformaceONaradi();
@@ -161,7 +157,6 @@ namespace Vydejna.Projections.NaradiNaVydejneReadModel
                 umistene.PocetCelkem = umistene.PocetCelkem + umistene.SeznamCislovanych.Count;
 
                 _cacheVydejna.Insert(DokumentNaradiNaVydejne(naradiId, stavNaradi), verze, umistene, dirty: true);
-                onComplete();
             }
             else if (pocetCelkem > 0)
             {
@@ -174,70 +169,67 @@ namespace Vydejna.Projections.NaradiNaVydejneReadModel
                     umistene.SeznamCislovanych.Add(cisloNaradi);
                 umistene.PocetCelkem = pocetCelkem;
                 _cacheVydejna.Insert(DokumentNaradiNaVydejne(naradiId, stavNaradi), verze, umistene, dirty: true);
-                onComplete();
             }
-            else
-                onComplete();
         }
 
         public Task Handle(CislovaneNaradiPrijatoNaVydejnuEvent message)
         {
-            UpravitNaradi(message.OnCompleted, message.OnError, message.NaradiId, message.CisloNaradi, StavNaradi.VPoradku, 1);
+            return TaskUtils.FromEnumerable(UpravitNaradi(message.NaradiId, message.CisloNaradi, StavNaradi.VPoradku, 1)).GetTask();
         }
 
         public Task Handle(CislovaneNaradiVydanoDoVyrobyEvent message)
         {
-            UpravitNaradi(message.OnCompleted, message.OnError, message.NaradiId, message.CisloNaradi, StavNaradi.VPoradku, 0);
+            return TaskUtils.FromEnumerable(UpravitNaradi(message.NaradiId, message.CisloNaradi, StavNaradi.VPoradku, 0)).GetTask();
         }
 
         public Task Handle(CislovaneNaradiPrijatoZVyrobyEvent message)
         {
-            UpravitNaradi(message.OnCompleted, message.OnError, message.NaradiId, message.CisloNaradi, message.StavNaradi, 1);
+            return TaskUtils.FromEnumerable(UpravitNaradi(message.NaradiId, message.CisloNaradi, message.StavNaradi, 1)).GetTask();
         }
 
         public Task Handle(CislovaneNaradiPredanoKOpraveEvent message)
         {
-            UpravitNaradi(message.OnCompleted, message.OnError, message.NaradiId, message.CisloNaradi, StavNaradi.NutnoOpravit, 0);
+            return TaskUtils.FromEnumerable(UpravitNaradi(message.NaradiId, message.CisloNaradi, StavNaradi.NutnoOpravit, 0)).GetTask();
         }
 
         public Task Handle(CislovaneNaradiPrijatoZOpravyEvent message)
         {
-            UpravitNaradi(message.OnCompleted, message.OnError, message.NaradiId, message.CisloNaradi, message.StavNaradi, 1);
+            return TaskUtils.FromEnumerable(UpravitNaradi(message.NaradiId, message.CisloNaradi, message.StavNaradi, 1)).GetTask();
         }
 
         public Task Handle(CislovaneNaradiPredanoKeSesrotovaniEvent message)
         {
-            UpravitNaradi(message.OnCompleted, message.OnError, message.NaradiId, message.CisloNaradi, StavNaradi.Neopravitelne, 0);
+            return TaskUtils.FromEnumerable(UpravitNaradi(message.NaradiId, message.CisloNaradi, StavNaradi.Neopravitelne, 0)).GetTask();
         }
 
         public Task Handle(NecislovaneNaradiPrijatoNaVydejnuEvent message)
         {
-            UpravitNaradi(message.OnCompleted, message.OnError, message.NaradiId, 0, StavNaradi.VPoradku, message.PocetNaNovem);
+            return TaskUtils.FromEnumerable(UpravitNaradi(message.NaradiId, 0, StavNaradi.VPoradku, message.PocetNaNovem)).GetTask();
         }
 
         public Task Handle(NecislovaneNaradiVydanoDoVyrobyEvent message)
         {
-            UpravitNaradi(message.OnCompleted, message.OnError, message.NaradiId, 0, StavNaradi.VPoradku, message.PocetNaPredchozim);
+            return TaskUtils.FromEnumerable(UpravitNaradi(message.NaradiId, 0, StavNaradi.VPoradku, message.PocetNaPredchozim)).GetTask();
         }
 
         public Task Handle(NecislovaneNaradiPrijatoZVyrobyEvent message)
         {
-            UpravitNaradi(message.OnCompleted, message.OnError, message.NaradiId, 0, message.StavNaradi, message.PocetNaNovem);
+            return TaskUtils.FromEnumerable(UpravitNaradi(message.NaradiId, 0, message.StavNaradi, message.PocetNaNovem)).GetTask();
         }
 
         public Task Handle(NecislovaneNaradiPredanoKOpraveEvent message)
         {
-            UpravitNaradi(message.OnCompleted, message.OnError, message.NaradiId, 0, StavNaradi.NutnoOpravit, message.PocetNaPredchozim);
+            return TaskUtils.FromEnumerable(UpravitNaradi(message.NaradiId, 0, StavNaradi.NutnoOpravit, message.PocetNaPredchozim)).GetTask();
         }
 
         public Task Handle(NecislovaneNaradiPrijatoZOpravyEvent message)
         {
-            UpravitNaradi(message.OnCompleted, message.OnError, message.NaradiId, 0, message.StavNaradi, message.PocetNaNovem);
+            return TaskUtils.FromEnumerable(UpravitNaradi(message.NaradiId, 0, message.StavNaradi, message.PocetNaNovem)).GetTask();
         }
 
         public Task Handle(NecislovaneNaradiPredanoKeSesrotovaniEvent message)
         {
-            UpravitNaradi(message.OnCompleted, message.OnError, message.NaradiId, 0, StavNaradi.Neopravitelne, message.PocetNaPredchozim);
+            return TaskUtils.FromEnumerable(UpravitNaradi(message.NaradiId, 0, StavNaradi.Neopravitelne, message.PocetNaPredchozim)).GetTask();
         }
     }
 
@@ -250,60 +242,41 @@ namespace Vydejna.Projections.NaradiNaVydejneReadModel
             _folder = folder;
         }
 
-        public void Reset(Action onComplete, Action<Exception> onError)
+        public Task Reset()
         {
-            _folder.DeleteAll(onComplete, onError);
+            return _folder.DeleteAll();
         }
 
-        public void NacistUmistene(Guid naradiId, StavNaradi stavNaradi, Action<int, NaradiNaVydejne> onLoaded, Action<Exception> onError)
+        public Task<MemoryCacheItem<NaradiNaVydejne>> NacistUmistene(Guid naradiId, StavNaradi stavNaradi)
         {
-            _folder.GetDocument(
-                NaradiNaVydejneProjection.DokumentNaradiNaVydejne(naradiId, stavNaradi),
-                (verze, raw) => onLoaded(verze, string.IsNullOrEmpty(raw) ? null : JsonSerializer.DeserializeFromString<NaradiNaVydejne>(raw)),
-                () => onLoaded(0, null),
-                ex => onError(ex));
+            return _folder.GetDocument(NaradiNaVydejneProjection.DokumentNaradiNaVydejne(naradiId, stavNaradi)).ToMemoryCacheItem(JsonSerializer.DeserializeFromString<NaradiNaVydejne>);
         }
 
-        public void UlozitUmistene(int verze, NaradiNaVydejne data, bool smazat, Action<int> onSaved, Action<Exception> onError)
+        public Task<int> UlozitUmistene(int verze, NaradiNaVydejne data, bool smazat)
         {
-            _folder.SaveDocument(
-                NaradiNaVydejneProjection.DokumentNaradiNaVydejne(data.NaradiId, data.StavNaradi),
+            return ProjectorUtils.Save(_folder, NaradiNaVydejneProjection.DokumentNaradiNaVydejne(data.NaradiId, data.StavNaradi), verze,
                 smazat ? null : JsonSerializer.SerializeToString(data),
-                DocumentStoreVersion.At(verze),
                 smazat ? null : new[] { 
                     new DocumentIndexing("naradiId", data.NaradiId.ToString()),
                     new DocumentIndexing("podleVykresu", string.Concat(data.Vykres, data.Rozmer))
-                },
-                () => onSaved(verze + 1),
-                () => onError(new ProjectorMessages.ConcurrencyException()),
-                ex => onError(ex));
+                });
         }
 
-        public void NacistDefinici(Guid naradiId, Action<int, InformaceONaradi> onLoaded, Action<Exception> onError)
+        public Task<MemoryCacheItem<InformaceONaradi>> NacistDefinici(Guid naradiId)
         {
-            _folder.GetDocument(
-                NaradiNaVydejneProjection.DokumentDefiniceNaradi(naradiId),
-                (verze, raw) => onLoaded(verze, string.IsNullOrEmpty(raw) ? null : JsonSerializer.DeserializeFromString<InformaceONaradi>(raw)),
-                () => onLoaded(0, null),
-                ex => onError(ex));
+            return _folder.GetDocument(NaradiNaVydejneProjection.DokumentDefiniceNaradi(naradiId)).ToMemoryCacheItem(JsonSerializer.DeserializeFromString<InformaceONaradi>);
         }
 
-        public void UlozitDefinici(int verze, InformaceONaradi data, Action<int> onSaved, Action<Exception> onError)
+        public Task<int> UlozitDefinici(int verze, InformaceONaradi data)
         {
-            _folder.SaveDocument(
-                NaradiNaVydejneProjection.DokumentDefiniceNaradi(data.NaradiId),
-                JsonSerializer.SerializeToString(data),
-                DocumentStoreVersion.At(verze),
-                null,
-                () => onSaved(verze + 1),
-                () => onError(new ProjectorMessages.ConcurrencyException()),
-                ex => onError(ex));
+            return ProjectorUtils.Save(_folder, NaradiNaVydejneProjection.DokumentDefiniceNaradi(data.NaradiId), verze,
+                JsonSerializer.SerializeToString(data), null);
         }
 
-        public void NacistSeznamUmistenych(int offset, int pocet, Action<int, List<NaradiNaVydejne>> onLoaded, Action<Exception> onError)
+        public Task<Tuple<int, List<NaradiNaVydejne>>> NacistSeznamUmistenych(int offset, int pocet)
         {
-            _folder.FindDocuments("podleVykresu", null, null, offset, pocet, true,
-                list => onLoaded(list.TotalFound, VytvoritSeznamUmistenych(list)), onError);
+            return _folder.FindDocuments("podleVykresu", null, null, offset, pocet, true)
+                .ContinueWith(task => Tuple.Create(task.Result.TotalFound, VytvoritSeznamUmistenych(task.Result)));
         }
 
         private static List<NaradiNaVydejne> VytvoritSeznamUmistenych(DocumentStoreFoundDocuments list)
@@ -334,12 +307,9 @@ namespace Vydejna.Projections.NaradiNaVydejneReadModel
 
         public Task<ZiskatNaradiNaVydejneResponse> Handle(ZiskatNaradiNaVydejneRequest message)
         {
-            _cache.Get(message.Request.Stranka.ToString(),
-                (verze, data) => message.OnCompleted(data),
-                message.OnError,
-                load => _repository.NacistSeznamUmistenych(message.Request.Stranka * 100 - 100, 100,
-                    (pocet, seznam) => load.SetLoadedValue(1, VytvoritResponse(message.Request, pocet, seznam)),
-                    load.LoadingFailed));
+            return _cache.Get(message.Stranka.ToString(), load => _repository.NacistSeznamUmistenych(message.Stranka * 100 - 100, 100)
+                .ContinueWith(task => MemoryCacheItem.Create(1, VytvoritResponse(message, task.Result.Item1, task.Result.Item2))))
+                .ExtractValue();
         }
 
         private ZiskatNaradiNaVydejneResponse VytvoritResponse(ZiskatNaradiNaVydejneRequest request, int pocetCelkem, IList<NaradiNaVydejne> list)
