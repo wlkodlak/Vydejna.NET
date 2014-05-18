@@ -55,6 +55,7 @@ namespace ServiceLib.Tests.EventHandlers
             _metadata.Version = "0.8";
             _metadata.Token = new EventStoreToken("333");
             _process.Start();
+            _scheduler.Process();
             
             _metadata.SendLock();
             _scheduler.Process();
@@ -63,7 +64,6 @@ namespace ServiceLib.Tests.EventHandlers
             Assert.AreEqual("reset", _projection.Mode, "Mode");
             Assert.AreEqual("1.0", _metadata.Version, "Version");
             Assert.IsTrue(_streaming.IsReading, "IsReading");
-            Assert.IsFalse(_streaming.IsWaiting, "IsWaiting");
             Assert.AreEqual(EventStoreToken.Initial, _streaming.CurrentToken, "Streaming token");
         }
 
@@ -73,6 +73,7 @@ namespace ServiceLib.Tests.EventHandlers
             _metadata.Version = "0.9";
             _metadata.Token = new EventStoreToken("333");
             _process.Start();
+            _scheduler.Process();
 
             _metadata.SendLock();
             _scheduler.Process();
@@ -81,7 +82,6 @@ namespace ServiceLib.Tests.EventHandlers
             Assert.AreEqual("upgrade", _projection.Mode, "Mode");
             Assert.AreEqual("1.0", _metadata.Version, "Version");
             Assert.IsTrue(_streaming.IsReading, "IsReading");
-            Assert.IsTrue(_streaming.IsWaiting, "IsWaiting");
             Assert.AreEqual(new EventStoreToken("333"), _streaming.CurrentToken, "Streaming token");
         }
 
@@ -91,6 +91,7 @@ namespace ServiceLib.Tests.EventHandlers
             _metadata.Version = "1.0";
             _metadata.Token = new EventStoreToken("333");
             _process.Start();
+            _scheduler.Process();
 
             _metadata.SendLock();
             _scheduler.Process();
@@ -99,7 +100,6 @@ namespace ServiceLib.Tests.EventHandlers
             Assert.AreEqual("normal", _projection.Mode, "Mode");
             Assert.AreEqual("1.0", _metadata.Version, "Version");
             Assert.IsTrue(_streaming.IsReading, "IsReading");
-            Assert.IsTrue(_streaming.IsWaiting, "IsWaiting");
             Assert.AreEqual(new EventStoreToken("333"), _streaming.CurrentToken, "Streaming token");
         }
 
@@ -107,6 +107,7 @@ namespace ServiceLib.Tests.EventHandlers
         public void UnlockOnShutdown()
         {
             _process.Start();
+            _scheduler.Process();
             _metadata.SendLock();
             _streaming.AddEvent("3", new TestEvent1 { Data = "75" });
             _streaming.MarkEndOfStream();
@@ -123,6 +124,7 @@ namespace ServiceLib.Tests.EventHandlers
         public void NotifyAboutFinishedRebuild()
         {
             _process.Start();
+            _scheduler.Process();
             _metadata.SendLock();
             _scheduler.Process();
 
@@ -143,6 +145,7 @@ namespace ServiceLib.Tests.EventHandlers
             _metadata.Version = "1.0";
             _metadata.Token = EventStoreToken.Initial;
             _process.Start();
+            _scheduler.Process();
             _metadata.SendLock();
             _scheduler.Process();
 
@@ -163,6 +166,7 @@ namespace ServiceLib.Tests.EventHandlers
             _metadata.Version = "1.0";
             _metadata.Token = EventStoreToken.Initial;
             _process.Start();
+            _scheduler.Process();
             _metadata.SendLock();
             _scheduler.Process();
 
@@ -188,6 +192,7 @@ namespace ServiceLib.Tests.EventHandlers
         public void StopOnError()
         {
             _process.Start();
+            _scheduler.Process();
             _metadata.SendLock();
             _scheduler.Process();
             _streaming.AddEvent("1", new TestEvent1 { Data = "47" });
@@ -205,6 +210,7 @@ namespace ServiceLib.Tests.EventHandlers
         public void CallsEventHandlers()
         {
             _process.Start();
+            _scheduler.Process();
             _metadata.SendLock();
             _scheduler.Process();
             _streaming.AddEvent("1", new TestEvent1 { Data = "47" });

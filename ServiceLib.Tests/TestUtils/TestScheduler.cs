@@ -92,7 +92,7 @@ namespace ServiceLib.Tests.TestUtils
         {
             var anythingDone = false;
             Task task = null;
-            while (true)
+            for (var i = 0; i < 1000; i++)
             {
                 lock (_lock)
                 {
@@ -106,6 +106,7 @@ namespace ServiceLib.Tests.TestUtils
                 else
                     task = null;
             }
+            throw new InvalidOperationException("Too many tasks processed - there's probably a endless loop");
         }
 
         private void FinishPreviousTask(Task task)

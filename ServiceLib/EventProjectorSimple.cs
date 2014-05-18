@@ -120,15 +120,17 @@ namespace ServiceLib
 
         public void Pause()
         {
-            _cancelPause.Cancel();
             SetProcessState(ProcessState.Pausing);
+            _cancelPause.Cancel();
+            _streaming.Dispose();
         }
 
         public void Stop()
         {
+            SetProcessState(ProcessState.Stopping);
             _cancelPause.Cancel();
             _cancelStop.Cancel();
-            SetProcessState(ProcessState.Stopping);
+            _streaming.Dispose();
         }
 
         public void Dispose()
@@ -156,7 +158,6 @@ namespace ServiceLib
                 var rebuildMode = _projectionInfo.UpgradeMode(savedVersion);
 
                 SetProcessState(ProcessState.Running);
-                _streaming.Setup(token, _subscriptions.GetHandledTypes(), _metadata.ProcessName);
 
                 var firstIteration = true;
                 var lastToken = (EventStoreToken)null;
@@ -166,6 +167,11 @@ namespace ServiceLib
                     var taskUpgrade = TaskUtils.Retry(() => _projectionInfo.Handle(new ProjectorMessages.UpgradeFrom(savedVersion)), _cancelStopToken);
                     yield return taskUpgrade;
                     taskUpgrade.Wait();
+
+                    var taskSetVersion = TaskUtils.Retry(() => _metadata.SetVersion(_projectionInfo.GetVersion()), _cancelStopToken);
+                    yield return taskSetVersion;
+                    taskSetVersion.Wait();
+
                     rebuildMode = EventProjectionUpgradeMode.NotNeeded;
                 }
                 else if (rebuildMode == EventProjectionUpgradeMode.Rebuild)
@@ -183,6 +189,8 @@ namespace ServiceLib
                     yield return taskSetVersion;
                     taskSetVersion.Wait();
                 }
+                _streaming.Setup(token, _subscriptions.GetHandledTypes(), _metadata.ProcessName);
+                var needsFlush = false;
 
                 while (!_cancelPauseToken.IsCancellationRequested)
                 {
@@ -200,23 +208,37 @@ namespace ServiceLib
                             var taskHandler = CallHandler(new ProjectorMessages.RebuildFinished());
                             yield return taskHandler;
                             taskHandler.Wait();
+                            rebuildMode = EventProjectionUpgradeMode.NotNeeded;
+                            needsFlush = true;
                         }
+                        if (needsFlush)
                         {
                             var taskHandler = CallHandler(new ProjectorMessages.Flush());
                             yield return taskHandler;
                             taskHandler.Wait();
+                            needsFlush = false;
                         }
                         tokenToSave = lastToken;
+                        lastToken = null;
                     }
                     else if (nextEvent.Event != null)
                     {
                         lastToken = nextEvent.Token;
-                        var taskHandler = CallHandler(nextEvent.Event);
-                        yield return taskHandler;
-                        taskHandler.Wait();
+                        {
+                            var taskHandler = CallHandler(nextEvent.Event);
+                            yield return taskHandler;
+                            taskHandler.Wait();
+                            needsFlush = true;
+                        }
 
                         if (_cancelPause.IsCancellationRequested)
+                        {
+                            var taskHandler = CallHandler(new ProjectorMessages.Flush());
+                            yield return taskHandler;
+                            taskHandler.Wait();
+                            needsFlush = false;
                             tokenToSave = lastToken;
+                        }
                     }
 
                     if (tokenToSave != null)
@@ -235,6 +257,7 @@ namespace ServiceLib
             finally
             {
                 _metadata.Unlock();
+                _streaming.Dispose();
             }
         }
 
@@ -269,7 +292,7 @@ namespace ServiceLib
                 if (_parent._cancelStopToken.IsCancellationRequested)
                     return TaskUtils.CancelledTask<object>();
                 else
-                    return _handler.Handle(_message).ContinueWith<Task>(HandlerFinished).Unwrap(); 
+                    return _handler.Handle(_message).ContinueWith<Task>(HandlerFinished).Unwrap();
             }
 
             private Task HandlerFinished(Task task)

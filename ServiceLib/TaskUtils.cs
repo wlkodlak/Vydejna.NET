@@ -109,7 +109,16 @@ namespace ServiceLib
 
             public Task RunAttempt()
             {
-                return _attempt().ContinueWith<Task>(Finish).Unwrap();
+                Task taskAttempt;
+                try
+                {
+                    taskAttempt = _attempt();
+                }
+                catch (Exception exception)
+                {
+                    return TaskUtils.FromError<object>(exception);
+                }
+                return taskAttempt.ContinueWith<Task>(Finish).Unwrap();
             }
 
             private Task Finish(Task taskAttempt)

@@ -49,6 +49,7 @@ namespace ServiceLib.Tests.EventHandlers
         public void LockedWhenShuttingDown()
         {
             _process.Start();
+            _scheduler.Process();
             _metadata.SendLock();
             _scheduler.Process();
             _process.Pause();
@@ -62,6 +63,7 @@ namespace ServiceLib.Tests.EventHandlers
         {
             _metadata.FailMode = true;
             _process.Start();
+            _scheduler.Process();
             _metadata.SendLock();
             _scheduler.Process();
             Assert.IsFalse(_metadata.IsLocked, "Lock released");
@@ -71,10 +73,10 @@ namespace ServiceLib.Tests.EventHandlers
         public void StartReadingStreamFromStart()
         {
             _process.Start();
+            _scheduler.Process();
             _metadata.SendLock();
             _scheduler.Process();
             Assert.IsTrue(_streaming.IsReading, "Reading");
-            Assert.IsTrue(_streaming.IsWaiting, "Waiting");
             Assert.AreEqual(EventStoreToken.Initial, _streaming.CurrentToken);
         }
 
@@ -82,11 +84,11 @@ namespace ServiceLib.Tests.EventHandlers
         public void StartReadingStreamFromToken()
         {
             _process.Start();
+            _scheduler.Process();
             _metadata.Token = new EventStoreToken("10");
             _metadata.SendLock();
             _scheduler.Process();
             Assert.IsTrue(_streaming.IsReading, "Reading");
-            Assert.IsTrue(_streaming.IsWaiting, "Waiting");
             Assert.AreEqual(new EventStoreToken("10"), _streaming.CurrentToken);
         }
 
@@ -94,6 +96,7 @@ namespace ServiceLib.Tests.EventHandlers
         public void WhenOnlyOneEventArrives()
         {
             _process.Start();
+            _scheduler.Process();
             _metadata.SendLock();
             _streaming.AddEvent("1", new TestEvent1());
             _streaming.MarkEndOfStream();
@@ -109,6 +112,7 @@ namespace ServiceLib.Tests.EventHandlers
         public void AfterProcessingFlushNumberEvents()
         {
             _process.Start();
+            _scheduler.Process();
             _metadata.SendLock();
             _streaming.AddEvent("1", new TestEvent1());
             _streaming.AddEvent("2", new TestEvent3());
@@ -126,6 +130,7 @@ namespace ServiceLib.Tests.EventHandlers
         public void ShutdownWhileProcessingEvents()
         {
             _process.Start();
+            _scheduler.Process();
             _metadata.SendLock();
             _streaming.AddEvent("1", new TestEvent1());
             _streaming.AddEvent("2", new TestEvent3());
@@ -149,6 +154,7 @@ namespace ServiceLib.Tests.EventHandlers
         public void NormalErrorInHandler()
         {
             _process.Start();
+            _scheduler.Process();
             _metadata.SendLock();
             _streaming.AddEvent("1", new TestEvent1());
             _streaming.AddEvent("2", new TestEvent3());
@@ -168,6 +174,7 @@ namespace ServiceLib.Tests.EventHandlers
         {
             _handler.ErrorMode = "Fatal";
             _process.Start();
+            _scheduler.Process();
             _metadata.SendLock();
             _streaming.AddEvent("1", new TestEvent1());
             _streaming.AddEvent("2", new TestEvent3());
@@ -187,6 +194,7 @@ namespace ServiceLib.Tests.EventHandlers
         {
             _handler.ErrorMode = "Transient";
             _process.Start();
+            _scheduler.Process();
             _metadata.SendLock();
             _streaming.AddEvent("1", new TestEvent1());
             _streaming.AddEvent("2", new TestEvent3());

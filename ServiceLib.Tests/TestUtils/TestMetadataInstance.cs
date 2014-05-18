@@ -74,7 +74,11 @@ namespace ServiceLib.Tests.TestUtils
         {
             WaitsForLock = true;
             _taskLock = new TaskCompletionSource<object>();
-            _taskCancel = cancel.Register(() => _taskLock.TrySetCanceled());
+            _taskCancel = cancel.Register(() =>
+            {
+                _taskLock.TrySetCanceled(); 
+                WaitsForLock = false;
+            });
             return _taskLock.Task;
         }
 

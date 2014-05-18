@@ -73,15 +73,17 @@ namespace ServiceLib
 
         public void Pause()
         {
-            _cancelPause.Cancel();
             SetProcessState(ProcessState.Pausing);
+            _cancelPause.Cancel();
+            _streaming.Dispose();
         }
 
         public void Stop()
         {
+            SetProcessState(ProcessState.Stopping);
             _cancelPause.Cancel();
             _cancelStop.Cancel();
-            SetProcessState(ProcessState.Stopping);
+            _streaming.Dispose();
         }
 
         public void Dispose()
@@ -136,12 +138,15 @@ namespace ServiceLib
                     firstIteration = false;
                     var taskNextEvent = TaskUtils.Retry(() => _streaming.GetNextEvent(nowait), _cancelPause.Token);
                     yield return taskNextEvent;
+                    if (_cancelPause.IsCancellationRequested)
+                        break;
                     var nextEvent = taskNextEvent.Result;
                     
                     var tokenToSave = (EventStoreToken)null;
                     if (nextEvent == null)
                     {
                         tokenToSave = lastToken;
+                        lastToken = null;
                     }
                     else if (nextEvent.Event != null)
                     {
