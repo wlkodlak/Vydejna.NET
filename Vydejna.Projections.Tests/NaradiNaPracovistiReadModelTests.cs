@@ -443,12 +443,12 @@ namespace Vydejna.Projections.Tests
 
         protected override IEventProjection CreateProjection()
         {
-            return new NaradiNaPracovistiProjection(new NaradiNaPracovistiRepository(_folder), _executor, _time);
+            return new NaradiNaPracovistiProjection(new NaradiNaPracovistiRepository(_folder), _time);
         }
 
         protected override object CreateReader()
         {
-            return new NaradiNaPracovistiReader(new NaradiNaPracovistiRepository(_folder), _executor, _time);
+            return new NaradiNaPracovistiReader(new NaradiNaPracovistiRepository(_folder), _time);
         }
     }
 }

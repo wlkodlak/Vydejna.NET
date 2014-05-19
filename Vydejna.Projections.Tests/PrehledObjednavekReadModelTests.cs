@@ -329,12 +329,12 @@ namespace Vydejna.Projections.Tests
 
         protected override IEventProjection CreateProjection()
         {
-            return new PrehledObjednavekProjection(new PrehledObjednavekRepository(_folder), _executor, _time);
+            return new PrehledObjednavekProjection(new PrehledObjednavekRepository(_folder), _time);
         }
 
         protected override object CreateReader()
         {
-            return new PrehledObjednavekReader(new PrehledObjednavekRepository(_folder), _executor, _time);
+            return new PrehledObjednavekReader(new PrehledObjednavekRepository(_folder), _time);
         }
     }
 }

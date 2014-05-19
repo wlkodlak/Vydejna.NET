@@ -774,12 +774,12 @@ namespace Vydejna.Projections.Tests
 
         protected override IEventProjection CreateProjection()
         {
-            return new DetailNaradiProjection(new DetailNaradiRepository(_folder), _executor, _time);
+            return new DetailNaradiProjection(new DetailNaradiRepository(_folder), _time);
         }
 
         protected override object CreateReader()
         {
-            return new DetailNaradiReader(new DetailNaradiRepository(_folder), _executor, _time);
+            return new DetailNaradiReader(new DetailNaradiRepository(_folder), _time);
         }
     }
 }

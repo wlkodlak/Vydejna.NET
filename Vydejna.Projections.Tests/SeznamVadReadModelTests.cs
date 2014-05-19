@@ -111,12 +111,12 @@ namespace Vydejna.Projections.Tests
 
         protected override IEventProjection CreateProjection()
         {
-            return new SeznamVadProjection(new SeznamVadRepository(_folder), _executor, _time);
+            return new SeznamVadProjection(new SeznamVadRepository(_folder), _time);
         }
 
         protected override object CreateReader()
         {
-            return new SeznamVadReader(new SeznamVadRepository(_folder), _executor, _time);
+            return new SeznamVadReader(new SeznamVadRepository(_folder), _time);
         }
     }
 }

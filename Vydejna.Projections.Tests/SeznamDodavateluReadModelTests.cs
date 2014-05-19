@@ -134,12 +134,12 @@ namespace Vydejna.Projections.Tests
 
         protected override IEventProjection CreateProjection()
         {
-            return new SeznamDodavateluProjection(new SeznamDodavateluRepository(_folder), _executor, _time);
+            return new SeznamDodavateluProjection(new SeznamDodavateluRepository(_folder), _time);
         }
 
         protected override object CreateReader()
         {
-            return new SeznamDodavateluReader(new SeznamDodavateluRepository(_folder), _executor, _time);
+            return new SeznamDodavateluReader(new SeznamDodavateluRepository(_folder), _time);
         }
     }
 

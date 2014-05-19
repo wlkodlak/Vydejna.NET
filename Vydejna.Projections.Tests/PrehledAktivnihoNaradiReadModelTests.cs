@@ -476,12 +476,12 @@ namespace Vydejna.Projections.Tests
 
         protected override IEventProjection CreateProjection()
         {
-            return new PrehledAktivnihoNaradiProjection(new PrehledAktivnihoNaradiRepository(_folder), _executor, _time);
+            return new PrehledAktivnihoNaradiProjection(new PrehledAktivnihoNaradiRepository(_folder), _time);
         }
 
         protected override object CreateReader()
         {
-            return new PrehledAktivnihoNaradiReader(new PrehledAktivnihoNaradiRepository(_folder), _executor, _time);
+            return new PrehledAktivnihoNaradiReader(new PrehledAktivnihoNaradiRepository(_folder), _time);
         }
     }
 }

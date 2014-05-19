@@ -241,12 +241,12 @@ namespace Vydejna.Projections.Tests
 
         protected override IEventProjection CreateProjection()
         {
-            return new SeznamNaradiProjection(new SeznamNaradiRepository(_folder), _executor, _time);
+            return new SeznamNaradiProjection(new SeznamNaradiRepository(_folder), _time);
         }
 
         protected override object CreateReader()
         {
-            return new SeznamNaradiReader(new SeznamNaradiRepository(_folder), _executor, _time);
+            return new SeznamNaradiReader(new SeznamNaradiRepository(_folder), _time);
         }
     }
 }

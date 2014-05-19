@@ -237,12 +237,12 @@ namespace Vydejna.Projections.Tests
 
         protected override IEventProjection CreateProjection()
         {
-            return new IndexObjednavekProjection(new IndexObjednavekRepository(_folder), _executor, _time);
+            return new IndexObjednavekProjection(new IndexObjednavekRepository(_folder), _time);
         }
 
         protected override object CreateReader()
         {
-            return new IndexObjednavekReader(new IndexObjednavekRepository(_folder), _executor, _time);
+            return new IndexObjednavekReader(new IndexObjednavekRepository(_folder), _time);
         }
     }
 }

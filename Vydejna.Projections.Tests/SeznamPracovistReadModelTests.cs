@@ -197,12 +197,12 @@ namespace Vydejna.Projections.Tests
 
         protected override IEventProjection CreateProjection()
         {
-            return new SeznamPracovistProjection(new SeznamPracovistRepository(_folder), _executor, _time);
+            return new SeznamPracovistProjection(new SeznamPracovistRepository(_folder), _time);
         }
 
         protected override object CreateReader()
         {
-            return new SeznamPracovistReader(new SeznamPracovistRepository(_folder), _executor, _time);
+            return new SeznamPracovistReader(new SeznamPracovistRepository(_folder), _time);
         }
     }
 }

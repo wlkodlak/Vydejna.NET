@@ -368,12 +368,12 @@ namespace Vydejna.Projections.Tests
 
         protected override IEventProjection CreateProjection()
         {
-            return new PrehledCislovanehoNaradiProjection(new PrehledCislovanehoNaradiRepository(_folder), _executor, _time);
+            return new PrehledCislovanehoNaradiProjection(new PrehledCislovanehoNaradiRepository(_folder), _time);
         }
 
         protected override object CreateReader()
         {
-            return new PrehledCislovanehoNaradiReader(new PrehledCislovanehoNaradiRepository(_folder), _executor, _time);
+            return new PrehledCislovanehoNaradiReader(new PrehledCislovanehoNaradiRepository(_folder), _time);
         }
     }
 }

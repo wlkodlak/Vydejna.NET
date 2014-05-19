@@ -359,12 +359,12 @@ namespace Vydejna.Projections.Tests
 
         protected override IEventProjection CreateProjection()
         {
-            return new NaradiNaObjednavceProjection(new NaradiNaObjednavceRepository(_folder), _executor, _time);
+            return new NaradiNaObjednavceProjection(new NaradiNaObjednavceRepository(_folder), _time);
         }
 
         protected override object CreateReader()
         {
-            return new NaradiNaObjednavceReader(new NaradiNaObjednavceRepository(_folder), _executor, _time);
+            return new NaradiNaObjednavceReader(new NaradiNaObjednavceRepository(_folder), _time);
         }
     }
 }
