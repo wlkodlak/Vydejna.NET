@@ -91,7 +91,7 @@ namespace ServiceLib
 
     public class MemoryCache<T> : IMemoryCache<T>
     {
-        private readonly ConcurrentDictionary<string, MemoryCacheItem> _contents;
+        private readonly ConcurrentDictionary<string, InternalItem> _contents;
         private readonly ITime _timeService;
 
         private int _accessIncrement, _agingShift, _roundLimit;
@@ -102,7 +102,7 @@ namespace ServiceLib
 
         public MemoryCache(ITime timeService)
         {
-            _contents = new ConcurrentDictionary<string, MemoryCacheItem>();
+            _contents = new ConcurrentDictionary<string, InternalItem>();
             _timeService = timeService;
             _evicting = 0;
             _lastEvictTime = GetTime();
@@ -139,9 +139,9 @@ namespace ServiceLib
 
         public Task<MemoryCacheItem<T>> Get(string key, MemoryCacheLoadDelegate<T> onLoading)
         {
-            MemoryCacheItem item;
+            InternalItem item;
             if (!_contents.TryGetValue(key, out item))
-                item = _contents.GetOrAdd(key, new MemoryCacheItem(this, key));
+                item = _contents.GetOrAdd(key, new InternalItem(this, key));
             bool startLoading = false;
             var currentTime = GetTime();
             Task<MemoryCacheItem<T>> resultTask;
@@ -169,9 +169,9 @@ namespace ServiceLib
 
         public void Insert(string key, int version, T value, int validity = -1, int expiration = -1, bool dirty = false)
         {
-            MemoryCacheItem item;
+            InternalItem item;
             if (!_contents.TryGetValue(key, out item))
-                item = _contents.GetOrAdd(key, new MemoryCacheItem(this, key));
+                item = _contents.GetOrAdd(key, new InternalItem(this, key));
             lock (item)
             {
                 item.NotifyUsage();
@@ -181,13 +181,13 @@ namespace ServiceLib
 
         public void Evict(string key)
         {
-            MemoryCacheItem item;
+            InternalItem item;
             _contents.TryRemove(key, out item);
         }
 
         public void Invalidate(string key)
         {
-            MemoryCacheItem item;
+            InternalItem item;
             if (!_contents.TryGetValue(key, out item))
                 return;
             item.Invalidate();
@@ -199,7 +199,7 @@ namespace ServiceLib
                 return;
             try
             {
-                MemoryCacheItem removed;
+                InternalItem removed;
                 int minScore = (_contents.Count < _minCacheSize) ? 0 : _minScore;
                 int shift = 0;
                 if (currentTime >= _nextEvictTime)
@@ -227,7 +227,7 @@ namespace ServiceLib
             }
         }
 
-        private class MemoryCacheItem : IMemoryCacheLoad<T>, IMemoryCacheSave<T>
+        private class InternalItem : IMemoryCacheLoad<T>, IMemoryCacheSave<T>
         {
             private readonly MemoryCache<T> _parent;
             private readonly string _key;
@@ -239,7 +239,7 @@ namespace ServiceLib
             private int _roundScore, _totalScore;
             private List<TaskCompletionSource<MemoryCacheItem<T>>> _loadingWaiters;
 
-            public MemoryCacheItem(MemoryCache<T> parent, string key)
+            public InternalItem(MemoryCache<T> parent, string key)
             {
                 _parent = parent;
                 _key = key;
@@ -452,7 +452,7 @@ namespace ServiceLib
 
         private IEnumerable<Task> FlushInternal(MemoryCacheSaveDelegate<T> saveAction)
         {
-            var pendingSaves = new List<MemoryCacheItem>();
+            var pendingSaves = new List<InternalItem>();
             foreach (var data in _contents.Values)
             {
                 lock (data)
