@@ -67,49 +67,32 @@ namespace Vydejna.Projections.NaradiNaObjednavceReadModel
 
         public Task Handle(ProjectorMessages.Flush message)
         {
-            new FlushExecutor(this, message.OnCompleted, message.OnError).Execute();
+            return TaskUtils.FromEnumerable(FlushInternal()).GetTask();
         }
 
-        private class FlushExecutor
+        private IEnumerable<Task> FlushInternal()
         {
-            private NaradiNaObjednavceProjection _parent;
-            private Action _onComplete;
-            private Action<Exception> _onError;
+            var taskDodavatele = _cacheDodavatele.Flush(save => _repository.UlozitDodavatele(save.Version, save.Value));
+            yield return taskDodavatele;
+            taskDodavatele.Wait();
 
-            public FlushExecutor(NaradiNaObjednavceProjection parent, Action onComplete, Action<Exception> onError)
-            {
-                _parent = parent;
-                _onComplete = onComplete;
-                _onError = onError;
-            }
+            var taskNaradi = _cacheNaradi.Flush(save => _repository.UlozitNaradi(save.Version, save.Value));
+            yield return taskNaradi;
+            taskNaradi.Wait();
 
-            public void Execute()
-            {
-                _parent._cacheDodavatele.Flush(UlozitNaradi, _onError, save => _parent._repository.UlozitDodavatele(save.Version, save.Value));
-            }
-
-            private void UlozitNaradi()
-            {
-                _parent._cacheNaradi.Flush(UlozitObjednavky, _onError, save => _parent._repository.UlozitNaradi(save.Version, save.Value));
-            }
-
-            private void UlozitObjednavky()
-            {
-                _parent._cacheObjednavek.Flush(_onComplete, _onError, save => _parent._repository.UlozitObjednavku(save.Version, save.Value));
-            }
+            var taskObjednavky = _cacheObjednavek.Flush(save => _repository.UlozitObjednavku(save.Version, save.Value));
+            yield return taskObjednavky;
+            taskObjednavky.Wait();
         }
 
         public Task Handle(DefinovanoNaradiEvent message)
         {
             var klic = NaradiNaObjednavceRepository.DokumentNaradi(message.NaradiId);
-            _cacheNaradi.Get(
-                klic,
-                (verze, naradiInfo) => ZpracovatDefiniciNaradi(message, klic, verze, naradiInfo),
-                message.OnError,
-                load => _repository.NacistNaradi(message.NaradiId, load.SetLoadedValue, load.LoadingFailed));
+            return _cacheNaradi.Get(klic, load => _repository.NacistNaradi(message.NaradiId))
+                .ContinueWith(task => ZpracovatDefiniciNaradi(message, klic, task.Result.Version, task.Result.Value));
         }
 
-        private void ZpracovatDefiniciNaradi(CommandExecution<DefinovanoNaradiEvent> message, string klic, int verze, InformaceONaradi naradiInfo)
+        private void ZpracovatDefiniciNaradi(DefinovanoNaradiEvent message, string klic, int verze, InformaceONaradi naradiInfo)
         {
             if (naradiInfo == null)
             {
@@ -120,16 +103,12 @@ namespace Vydejna.Projections.NaradiNaObjednavceReadModel
             naradiInfo.Rozmer = message.Rozmer;
             naradiInfo.Druh = message.Druh;
             _cacheNaradi.Insert(klic, verze, naradiInfo, dirty: true);
-            message.OnCompleted();
         }
 
         public Task Handle(DefinovanDodavatelEvent message)
         {
-            _cacheDodavatele.Get(
-                "dodavatele",
-                (verze, dodavatele) => ZpracovatDefiniciDodavatele(message, verze, dodavatele),
-                message.OnError,
-                load => _repository.NacistDodavatele((verze, data) => load.SetLoadedValue(verze, RozsiritData(data)), load.LoadingFailed));
+            return _cacheDodavatele.Get("dodavatele", load => _repository.NacistDodavatele().Transform(RozsiritData))
+                .ContinueWith(task => ZpracovatDefiniciDodavatele(message, task.Result.Version, task.Result.Value));
         }
 
         private static NaradiNaObjednavceDataDodavatele RozsiritData(NaradiNaObjednavceDataDodavatele data)
@@ -149,7 +128,7 @@ namespace Vydejna.Projections.NaradiNaObjednavceReadModel
             return data;
         }
 
-        private void ZpracovatDefiniciDodavatele(CommandExecution<DefinovanDodavatelEvent> message, int verze, NaradiNaObjednavceDataDodavatele dodavatele)
+        private void ZpracovatDefiniciDodavatele(DefinovanDodavatelEvent message, int verze, NaradiNaObjednavceDataDodavatele dodavatele)
         {
             InformaceODodavateli dodavatelInfo;
             if (!dodavatele.IndexDodavatelu.TryGetValue(message.Kod, out dodavatelInfo))
@@ -165,171 +144,110 @@ namespace Vydejna.Projections.NaradiNaObjednavceReadModel
             dodavatelInfo.Dic = message.Dic;
             dodavatelInfo.Aktivni = !message.Deaktivovan;
             _cacheDodavatele.Insert("dodavatele", verze, dodavatele, dirty: true);
-            message.OnCompleted();
         }
 
-        private class UpravitObjednavku
+        private IEnumerable<Task> UpravitObjednavku(string kodDodavatele, string cisloObjednavky, Guid naradiId, int cisloNaradi, int novyPocet, DateTime? terminDodani)
         {
-            private NaradiNaObjednavceProjection _parent;
-            private Action _onComplete;
-            private Action<Exception> _onError;
-            private string _kodDodavatele;
-            private string _cisloObjednavky;
-            private Guid _naradiId;
-            private int _cisloNaradi;
-            private int _novyPocet;
-            private DateTime? _terminDodani;
+            var nazevDokumentuObjednavky = NaradiNaObjednavceRepository.DokumentObjednavky(kodDodavatele, cisloObjednavky);
+            var taskObjednavky = _cacheObjednavek.Get(nazevDokumentuObjednavky, load => _repository.NacistObjednavku(kodDodavatele, cisloObjednavky));
+            yield return taskObjednavky;
+            var verzeObjednavky = taskObjednavky.Result.Version;
+            var dataObjednavky = taskObjednavky.Result.Value;
 
-            private int _verzeObjednavky;
-            private NaradiNaObjednavceDataObjednavky _dataObjednavky;
-            private InformaceONaradi _naradiInfo;
-            private InformaceODodavateli _dodavatel;
-            private string _nazevDokumentuObjednavky;
+            var taskNaradi = _cacheNaradi.Get(NaradiNaObjednavceRepository.DokumentNaradi(naradiId), load => _repository.NacistNaradi(naradiId));
+            yield return taskNaradi;
+            var naradiInfo = taskNaradi.Result.Value;
 
-            public UpravitObjednavku(NaradiNaObjednavceProjection parent, string kodDodavatele, string cisloObjednavky, Action onComplete, Action<Exception> onError,
-                Guid naradiId, int cisloNaradi, int novyPocet, DateTime? terminDodani)
+            var taskDodavatele = _cacheDodavatele.Get("dodavatele", load => _repository.NacistDodavatele());
+            yield return taskDodavatele;
+            var dodavatele = taskDodavatele.Result.Value;
+            InformaceODodavateli dodavatel;
+            if (!dodavatele.IndexDodavatelu.TryGetValue(kodDodavatele, out dodavatel))
             {
-                _parent = parent;
-                _onComplete = onComplete;
-                _onError = onError;
-                _kodDodavatele = kodDodavatele;
-                _cisloObjednavky = cisloObjednavky;
-                _naradiId = naradiId;
-                _cisloNaradi = cisloNaradi;
-                _novyPocet = novyPocet;
-                _terminDodani = terminDodani;
+                dodavatel = new InformaceODodavateli();
+                dodavatel.Kod = kodDodavatele;
             }
 
-            public void Execute()
-            {
-                _nazevDokumentuObjednavky = NaradiNaObjednavceRepository.DokumentObjednavky(_kodDodavatele, _cisloObjednavky);
-                _parent._cacheObjednavek.Get(
-                    _nazevDokumentuObjednavky,
-                    (verze, data) => NactenyObjednavky(verze, data),
-                    ex => _onError(ex),
-                    load => _parent._repository.NacistObjednavku(_kodDodavatele, _cisloObjednavky, load.SetLoadedValue, load.LoadingFailed));
+            NaradiNaObjednavce naradiNaObjednavce;
 
+            if (dataObjednavky == null)
+            {
+                dataObjednavky = new NaradiNaObjednavceDataObjednavky();
+                dataObjednavky.Seznam = new List<NaradiNaObjednavce>();
+                dataObjednavky.IndexPodleIdNaradi = new Dictionary<Guid, NaradiNaObjednavce>();
+            }
+            else if (dataObjednavky.IndexPodleIdNaradi == null)
+            {
+                dataObjednavky.IndexPodleIdNaradi = new Dictionary<Guid, NaradiNaObjednavce>();
+                foreach (var naradi in dataObjednavky.Seznam)
+                    dataObjednavky.IndexPodleIdNaradi[naradi.NaradiId] = naradi;
             }
 
-            private void NactenyObjednavky(int verzeObjednavky, NaradiNaObjednavceDataObjednavky dataObjednavky)
-            {
-                _verzeObjednavky = verzeObjednavky;
-                _dataObjednavky = dataObjednavky;
+            dataObjednavky.Objednavka = cisloObjednavky;
+            dataObjednavky.Dodavatel = dodavatel;
+            if (terminDodani != null)
+                dataObjednavky.TerminDodani = terminDodani;
 
-                _parent._cacheNaradi.Get(
-                    NaradiNaObjednavceRepository.DokumentNaradi(_naradiId),
-                    (verze, data) => NactenoNaradi(verze, data),
-                    ex => _onError(ex),
-                    load => _parent._repository.NacistNaradi(_naradiId, load.SetLoadedValue, load.LoadingFailed)
-                    );
+            if (!dataObjednavky.IndexPodleIdNaradi.TryGetValue(naradiId, out naradiNaObjednavce))
+            {
+                naradiNaObjednavce = new NaradiNaObjednavce();
+                naradiNaObjednavce.NaradiId = naradiId;
+                naradiNaObjednavce.SeznamCislovanych = new List<int>();
+                dataObjednavky.IndexPodleIdNaradi[naradiId] = naradiNaObjednavce;
+                dataObjednavky.Seznam.Add(naradiNaObjednavce);
+            }
+            if (naradiInfo != null)
+            {
+                naradiNaObjednavce.Vykres = naradiInfo.Vykres;
+                naradiNaObjednavce.Rozmer = naradiInfo.Rozmer;
+                naradiNaObjednavce.Druh = naradiInfo.Druh;
             }
 
-            private void NactenoNaradi(int verzeNaradi, InformaceONaradi dataNaradi)
+            if (cisloNaradi == 0)
             {
-                _naradiInfo = dataNaradi;
-
-                _parent._cacheDodavatele.Get(
-                    "dodavatele",
-                    (verze, data) => NacteniDodavatele(verze, data),
-                    ex => _onError(ex),
-                    load => _parent._repository.NacistDodavatele(load.SetLoadedValue, load.LoadingFailed)
-                    );
+                naradiNaObjednavce.PocetNecislovanych = novyPocet;
             }
-
-            private void NacteniDodavatele(int verze, NaradiNaObjednavceDataDodavatele data)
+            else
             {
-                if (!data.IndexDodavatelu.TryGetValue(_kodDodavatele, out _dodavatel))
-                {
-                    _dodavatel = new InformaceODodavateli();
-                    _dodavatel.Kod = _kodDodavatele;
-                }
-
-                ExecuteInternal();
-                _parent._cacheObjednavek.Insert(_nazevDokumentuObjednavky, _verzeObjednavky, _dataObjednavky, dirty: true);
-                _onComplete();
+                if (novyPocet == 1 && !naradiNaObjednavce.SeznamCislovanych.Contains(cisloNaradi))
+                    naradiNaObjednavce.SeznamCislovanych.Add(cisloNaradi);
+                else if (novyPocet == 0)
+                    naradiNaObjednavce.SeznamCislovanych.Remove(cisloNaradi);
             }
+            naradiNaObjednavce.PocetCelkem = naradiNaObjednavce.PocetNecislovanych + naradiNaObjednavce.SeznamCislovanych.Count;
+            dataObjednavky.PocetCelkem = dataObjednavky.IndexPodleIdNaradi.Values.Sum(n => n.PocetCelkem);
 
-            private void ExecuteInternal()
+            if (naradiNaObjednavce.PocetCelkem == 0)
             {
-                NaradiNaObjednavce naradiNaObjednavce;
-
-                if (_dataObjednavky == null)
-                {
-                    _dataObjednavky = new NaradiNaObjednavceDataObjednavky();
-                    _dataObjednavky.Seznam = new List<NaradiNaObjednavce>();
-                    _dataObjednavky.IndexPodleIdNaradi = new Dictionary<Guid, NaradiNaObjednavce>();
-                }
-                else if (_dataObjednavky.IndexPodleIdNaradi == null)
-                {
-                    _dataObjednavky.IndexPodleIdNaradi = new Dictionary<Guid, NaradiNaObjednavce>();
-                    foreach (var naradi in _dataObjednavky.Seznam)
-                        _dataObjednavky.IndexPodleIdNaradi[naradi.NaradiId] = naradi;
-                }
-
-                _dataObjednavky.Objednavka = _cisloObjednavky;
-                _dataObjednavky.Dodavatel = _dodavatel;
-                if (_terminDodani != null)
-                    _dataObjednavky.TerminDodani = _terminDodani;
-
-                if (!_dataObjednavky.IndexPodleIdNaradi.TryGetValue(_naradiId, out naradiNaObjednavce))
-                {
-                    naradiNaObjednavce = new NaradiNaObjednavce();
-                    naradiNaObjednavce.NaradiId = _naradiId;
-                    naradiNaObjednavce.SeznamCislovanych = new List<int>();
-                    _dataObjednavky.IndexPodleIdNaradi[_naradiId] = naradiNaObjednavce;
-                    _dataObjednavky.Seznam.Add(naradiNaObjednavce);
-                }
-                if (_naradiInfo != null)
-                {
-                    naradiNaObjednavce.Vykres = _naradiInfo.Vykres;
-                    naradiNaObjednavce.Rozmer = _naradiInfo.Rozmer;
-                    naradiNaObjednavce.Druh = _naradiInfo.Druh;
-                }
-
-                if (_cisloNaradi == 0)
-                {
-                    naradiNaObjednavce.PocetNecislovanych = _novyPocet;
-                }
-                else
-                {
-                    if (_novyPocet == 1 && !naradiNaObjednavce.SeznamCislovanych.Contains(_cisloNaradi))
-                        naradiNaObjednavce.SeznamCislovanych.Add(_cisloNaradi);
-                    else if (_novyPocet == 0)
-                        naradiNaObjednavce.SeznamCislovanych.Remove(_cisloNaradi);
-                }
-                naradiNaObjednavce.PocetCelkem = naradiNaObjednavce.PocetNecislovanych + naradiNaObjednavce.SeznamCislovanych.Count;
-                _dataObjednavky.PocetCelkem = _dataObjednavky.IndexPodleIdNaradi.Values.Sum(n => n.PocetCelkem);
-
-                if (naradiNaObjednavce.PocetCelkem == 0)
-                {
-                    _dataObjednavky.Seznam.Remove(naradiNaObjednavce);
-                    _dataObjednavky.IndexPodleIdNaradi.Remove(_naradiId);
-                }
+                dataObjednavky.Seznam.Remove(naradiNaObjednavce);
+                dataObjednavky.IndexPodleIdNaradi.Remove(naradiId);
             }
+            
+            _cacheObjednavek.Insert(nazevDokumentuObjednavky, verzeObjednavky, dataObjednavky, dirty: true);
         }
 
         public Task Handle(CislovaneNaradiPredanoKOpraveEvent message)
         {
-            new UpravitObjednavku(this, message.KodDodavatele, message.Objednavka, message.OnCompleted, message.OnError,
-                message.NaradiId, message.CisloNaradi, 1, message.TerminDodani).Execute();
+            return TaskUtils.FromEnumerable(UpravitObjednavku(message.KodDodavatele, message.Objednavka,
+                message.NaradiId, message.CisloNaradi, 1, message.TerminDodani)).GetTask();
         }
 
         public Task Handle(CislovaneNaradiPrijatoZOpravyEvent message)
         {
-            new UpravitObjednavku(this, message.KodDodavatele, message.Objednavka, message.OnCompleted, message.OnError,
-                message.NaradiId, message.CisloNaradi, 0, null).Execute();
+            return TaskUtils.FromEnumerable(UpravitObjednavku(message.KodDodavatele, message.Objednavka,
+                message.NaradiId, message.CisloNaradi, 0, null)).GetTask();
         }
 
         public Task Handle(NecislovaneNaradiPredanoKOpraveEvent message)
         {
-            new UpravitObjednavku(this, message.KodDodavatele, message.Objednavka, message.OnCompleted, message.OnError,
-                message.NaradiId, 0, message.PocetNaNovem, message.TerminDodani).Execute();
+            return TaskUtils.FromEnumerable(UpravitObjednavku(message.KodDodavatele, message.Objednavka,
+                message.NaradiId, 0, message.PocetNaNovem, message.TerminDodani)).GetTask();
         }
 
         public Task Handle(NecislovaneNaradiPrijatoZOpravyEvent message)
         {
-            new UpravitObjednavku(this, message.KodDodavatele, message.Objednavka, message.OnCompleted, message.OnError,
-                message.NaradiId, 0, message.PocetNaPredchozim, null).Execute();
+            return TaskUtils.FromEnumerable(UpravitObjednavku(message.KodDodavatele, message.Objednavka,
+                message.NaradiId, 0, message.PocetNaPredchozim, null)).GetTask();
         }
     }
 
@@ -357,23 +275,14 @@ namespace Vydejna.Projections.NaradiNaObjednavceReadModel
             _folder = folder;
         }
 
-        public void NacistDodavatele(Action<int, NaradiNaObjednavceDataDodavatele> onLoaded, Action<Exception> onError)
+        public Task<MemoryCacheItem<NaradiNaObjednavceDataDodavatele>> NacistDodavatele()
         {
-            _folder.GetDocument("dodavatele",
-                (verze, raw) => onLoaded(verze, string.IsNullOrEmpty(raw) ? null : JsonSerializer.DeserializeFromString<NaradiNaObjednavceDataDodavatele>(raw)),
-                () => onLoaded(0, null), ex => onError(ex));
+            return _folder.GetDocument("dodavatele").ToMemoryCacheItem(JsonSerializer.DeserializeFromString<NaradiNaObjednavceDataDodavatele>);
         }
 
-        public void UlozitDodavatele(int verze, NaradiNaObjednavceDataDodavatele dodavatele, Action<int> onSaved, Action<Exception> onError)
+        public Task<int> UlozitDodavatele(int verze, NaradiNaObjednavceDataDodavatele dodavatele)
         {
-            _folder.SaveDocument(
-                "dodavatele",
-                JsonSerializer.SerializeToString(dodavatele),
-                DocumentStoreVersion.At(verze),
-                null,
-                () => onSaved(verze + 1),
-                () => onError(new ProjectorMessages.ConcurrencyException()),
-                ex => onError(ex));
+            return ProjectorUtils.Save(_folder, "dodavatele", verze, JsonSerializer.SerializeToString(dodavatele), null);
         }
 
         public static string DokumentObjednavky(string kodDodavatele, string cisloObjednavky)
@@ -381,24 +290,14 @@ namespace Vydejna.Projections.NaradiNaObjednavceReadModel
             return DocumentStoreUtils.CreateBasicDocumentName("objednavka-", kodDodavatele, "-", cisloObjednavky);
         }
 
-        public void NacistObjednavku(string kodDodavatele, string cisloObjednavky, Action<int, NaradiNaObjednavceDataObjednavky> onLoaded, Action<Exception> onError)
+        public Task<MemoryCacheItem<NaradiNaObjednavceDataObjednavky>> NacistObjednavku(string kodDodavatele, string cisloObjednavky)
         {
-            _folder.GetDocument(
-                DokumentObjednavky(kodDodavatele, cisloObjednavky),
-                (verze, raw) => onLoaded(verze, string.IsNullOrEmpty(raw) ? null : JsonSerializer.DeserializeFromString<NaradiNaObjednavceDataObjednavky>(raw)),
-                () => onLoaded(0, null), ex => onError(ex));
+            return _folder.GetDocument(DokumentObjednavky(kodDodavatele, cisloObjednavky)).ToMemoryCacheItem(JsonSerializer.DeserializeFromString<NaradiNaObjednavceDataObjednavky>);
         }
 
-        public void UlozitObjednavku(int verze, NaradiNaObjednavceDataObjednavky objednavka, Action<int> onSaved, Action<Exception> onError)
+        public Task<int> UlozitObjednavku(int verze, NaradiNaObjednavceDataObjednavky objednavka)
         {
-            _folder.SaveDocument(
-                DokumentObjednavky(objednavka.Dodavatel.Kod, objednavka.Objednavka),
-                JsonSerializer.SerializeToString(objednavka),
-                DocumentStoreVersion.At(verze),
-                null,
-                () => onSaved(verze + 1),
-                () => onError(new ProjectorMessages.ConcurrencyException()),
-                ex => onError(ex));
+            return ProjectorUtils.Save(_folder, DokumentObjednavky(objednavka.Dodavatel.Kod, objednavka.Objednavka), verze, JsonSerializer.SerializeToString(objednavka), null);
         }
 
         public static string DokumentNaradi(Guid naradiId)
@@ -406,29 +305,19 @@ namespace Vydejna.Projections.NaradiNaObjednavceReadModel
             return string.Concat("naradi-", naradiId.ToString("N"));
         }
 
-        public void NacistNaradi(Guid naradiId, Action<int, InformaceONaradi> onLoaded, Action<Exception> onError)
+        public Task<MemoryCacheItem<InformaceONaradi>> NacistNaradi(Guid naradiId)
         {
-            _folder.GetDocument(
-                DokumentNaradi(naradiId),
-                (verze, raw) => onLoaded(verze, string.IsNullOrEmpty(raw) ? null : JsonSerializer.DeserializeFromString<InformaceONaradi>(raw)),
-                () => onLoaded(0, null), ex => onError(ex));
+            return _folder.GetDocument(DokumentNaradi(naradiId)).ToMemoryCacheItem(JsonSerializer.DeserializeFromString<InformaceONaradi>);
         }
 
-        public void UlozitNaradi(int verze, InformaceONaradi naradi, Action<int> onSaved, Action<Exception> onError)
+        public Task<int> UlozitNaradi(int verze, InformaceONaradi naradi)
         {
-            _folder.SaveDocument(
-                DokumentNaradi(naradi.NaradiId),
-                JsonSerializer.SerializeToString(naradi),
-                DocumentStoreVersion.At(verze),
-                null,
-                () => onSaved(verze + 1),
-                () => onError(new ProjectorMessages.ConcurrencyException()),
-                ex => onError(ex));
+            return ProjectorUtils.Save(_folder, DokumentNaradi(naradi.NaradiId), verze, JsonSerializer.SerializeToString(naradi), null);
         }
 
-        public void Reset(Action onComplete, Action<Exception> onError)
+        public Task Reset()
         {
-            _folder.DeleteAll(onComplete, onError);
+            return _folder.DeleteAll();
         }
     }
 
@@ -451,13 +340,10 @@ namespace Vydejna.Projections.NaradiNaObjednavceReadModel
 
         public Task<ZiskatNaradiNaObjednavceResponse> Handle(ZiskatNaradiNaObjednavceRequest message)
         {
-            _cache.Get(
-                NaradiNaObjednavceRepository.DokumentObjednavky(message.Request.KodDodavatele, message.Request.Objednavka),
-                (verze, data) => message.OnCompleted(data),
-                message.OnError,
-                load => _repository.NacistObjednavku(message.Request.KodDodavatele, message.Request.Objednavka,
-                    (verze, data) => load.SetLoadedValue(verze, VytvoritResponse(message.Request.KodDodavatele, message.Request.Objednavka, data)),
-                    load.LoadingFailed));
+            return _cache.Get(
+                NaradiNaObjednavceRepository.DokumentObjednavky(message.KodDodavatele, message.Objednavka),
+                load => _repository.NacistObjednavku(message.KodDodavatele, message.Objednavka).Transform(data => VytvoritResponse(message.KodDodavatele, message.Objednavka, data)))
+                .ExtractValue();
         }
 
         private ZiskatNaradiNaObjednavceResponse VytvoritResponse(string kodDodavatele, string cisloObjednavky, NaradiNaObjednavceDataObjednavky zaklad)

@@ -64,31 +64,18 @@ namespace Vydejna.Projections.NaradiNaPracovistiReadModel
 
         public Task Handle(ProjectorMessages.Flush message)
         {
-            new FlushExecutor(this, message.OnCompleted, message.OnError).Execute();
+            return TaskUtils.FromEnumerable(FlushInternal()).GetTask();
         }
 
-        private class FlushExecutor
+        private IEnumerable<Task> FlushInternal()
         {
-            private NaradiNaPracovistiProjection _parent;
-            private Action _onComplete;
-            private Action<Exception> _onError;
+            var taskNaradi = _cacheNaradi.Flush(save => _repository.UlozitNaradi(save.Version, save.Value));
+            yield return taskNaradi;
+            taskNaradi.Wait();
 
-            public FlushExecutor(NaradiNaPracovistiProjection parent, Action onComplete, Action<Exception> onError)
-            {
-                _parent = parent;
-                _onComplete = onComplete;
-                _onError = onError;
-            }
-
-            public void Execute()
-            {
-                _parent._cacheNaradi.Flush(UlozitPracoviste, _onError, save => _parent._repository.UlozitNaradi(save.Version, save.Value));
-            }
-
-            private void UlozitPracoviste()
-            {
-                _parent._cachePracovist.Flush(_onComplete, _onError, save => _parent._repository.UlozitPracoviste(save.Version, save.Value));
-            }
+            var taskPracoviste = _cachePracovist.Flush(save => _repository.UlozitPracoviste(save.Version, save.Value));
+            yield return taskPracoviste;
+            taskPracoviste.Wait();
         }
 
         private class NaradiIdComparer : IComparer<NaradiNaPracovisti>
@@ -97,127 +84,6 @@ namespace Vydejna.Projections.NaradiNaPracovistiReadModel
             {
                 return x.NaradiId.CompareTo(y.NaradiId);
             }
-        }
-
-        private class UpravitNaradiNaPracovisti
-        {
-            private NaradiNaPracovistiProjection _parent;
-            private string _kodPracoviste;
-            private Action _onComplete;
-            private Action<Exception> _onError;
-            private Guid _naradiId;
-            private int _cisloNaradi;
-            private int _novyPocet;
-            private DateTime? _datumVydeje;
-
-            private NaradiNaPracovistiDataPracoviste _dataPracoviste;
-            private InformaceONaradi _naradiInfo;
-            private int _verzePracoviste;
-
-            public UpravitNaradiNaPracovisti(NaradiNaPracovistiProjection parent, string kodPracoviste, Action onComplete, Action<Exception> onError, Guid naradiId, int cisloNaradi, int novyPocet, DateTime? datumVydeje)
-            {
-                _parent = parent;
-                _kodPracoviste = kodPracoviste;
-                _onComplete = onComplete;
-                _onError = onError;
-                _naradiId = naradiId;
-                _cisloNaradi = cisloNaradi;
-                _novyPocet = novyPocet;
-                _datumVydeje = datumVydeje;
-            }
-
-            public void Execute()
-            {
-                _parent._cachePracovist.Get(_kodPracoviste, NactenoPracoviste, _onError,
-                    load => _parent._repository.NacistPracoviste(_kodPracoviste, load.OldVersion,
-                        (verze, data) => load.SetLoadedValue(verze, RozsiritData(_kodPracoviste, data)),
-                        load.ValueIsStillValid, load.LoadingFailed));
-            }
-
-            private void NactenoPracoviste(int verzePracoviste, NaradiNaPracovistiDataPracoviste dataPracoviste)
-            {
-                _verzePracoviste = verzePracoviste;
-                _dataPracoviste = dataPracoviste;
-
-                _parent._cacheNaradi.Get(_naradiId.ToString(), NactenoNaradi, _onError,
-                    load => _parent._repository.NacistNaradi(_naradiId, load.SetLoadedValue, load.LoadingFailed));
-            }
-
-            private void NactenoNaradi(int verzeNaradi, InformaceONaradi naradiInfo)
-            {
-                _naradiInfo = naradiInfo;
-
-                ExecuteInternal();
-                _parent._cachePracovist.Insert(_kodPracoviste, _verzePracoviste, _dataPracoviste, dirty: true);
-                _onComplete();
-            }
-
-            private void ExecuteInternal()
-            {
-                NaradiNaPracovisti naradiNaPracovisti;
-                if (!_dataPracoviste.IndexPodleIdNaradi.TryGetValue(_naradiId, out naradiNaPracovisti))
-                {
-                    _dataPracoviste.IndexPodleIdNaradi[_naradiId] = naradiNaPracovisti = new NaradiNaPracovisti();
-                    naradiNaPracovisti.NaradiId = _naradiId;
-                    naradiNaPracovisti.SeznamCislovanych = new List<int>();
-                    var naradiComparer = new NaradiIdComparer();
-                    var index = _dataPracoviste.Seznam.BinarySearch(naradiNaPracovisti, naradiComparer);
-                    if (index < 0)
-                        index = ~index;
-                    _dataPracoviste.Seznam.Insert(index, naradiNaPracovisti);
-                }
-                if (_naradiInfo != null)
-                {
-                    naradiNaPracovisti.Vykres = _naradiInfo.Vykres;
-                    naradiNaPracovisti.Rozmer = _naradiInfo.Rozmer;
-                    naradiNaPracovisti.Druh = _naradiInfo.Druh;
-                }
-
-                if (_datumVydeje.HasValue)
-                    naradiNaPracovisti.DatumPoslednihoVydeje = _datumVydeje.Value;
-                if (_cisloNaradi == 0)
-                {
-                    naradiNaPracovisti.PocetNecislovanych = _novyPocet;
-                }
-                else
-                {
-                    if (_novyPocet == 1 && !naradiNaPracovisti.SeznamCislovanych.Contains(_cisloNaradi))
-                        naradiNaPracovisti.SeznamCislovanych.Add(_cisloNaradi);
-                    else if (_novyPocet == 0)
-                        naradiNaPracovisti.SeznamCislovanych.Remove(_cisloNaradi);
-                }
-                naradiNaPracovisti.PocetCelkem = naradiNaPracovisti.PocetNecislovanych + naradiNaPracovisti.SeznamCislovanych.Count;
-                if (naradiNaPracovisti.PocetCelkem == 0)
-                {
-                    _dataPracoviste.Seznam.Remove(naradiNaPracovisti);
-                    _dataPracoviste.IndexPodleIdNaradi.Remove(naradiNaPracovisti.NaradiId);
-                }
-                _dataPracoviste.PocetCelkem = _dataPracoviste.IndexPodleIdNaradi.Values.Sum(n => n.PocetCelkem);
-            }
-        }
-
-        public Task Handle(DefinovanoPracovisteEvent message)
-        {
-            _cachePracovist.Get(message.Kod,
-                (verze, data) => ZpracovatDefiniciPracoviste(message, verze, data),
-                message.OnError,
-                load => _repository.NacistPracoviste(message.Kod, load.OldVersion,
-                    (verze, data) => load.SetLoadedValue(verze, RozsiritData(message.Kod, data)),
-                    load.ValueIsStillValid, load.LoadingFailed));
-        }
-
-        private void ZpracovatDefiniciPracoviste(CommandExecution<DefinovanoPracovisteEvent> message, int verze, NaradiNaPracovistiDataPracoviste data)
-        {
-            data.Pracoviste = new InformaceOPracovisti
-            {
-                Kod = message.Kod,
-                Nazev = message.Nazev,
-                Stredisko = message.Stredisko,
-                Aktivni = !message.Deaktivovano
-            };
-
-            _cachePracovist.Insert(message.Kod, verze, data, dirty: true);
-            message.OnCompleted();
         }
 
         private static NaradiNaPracovistiDataPracoviste RozsiritData(string kodPracoviste, NaradiNaPracovistiDataPracoviste data)
@@ -244,36 +110,34 @@ namespace Vydejna.Projections.NaradiNaPracovistiReadModel
             return data;
         }
 
-        public Task Handle(CislovaneNaradiVydanoDoVyrobyEvent message)
+        public Task Handle(DefinovanoPracovisteEvent message)
         {
-            new UpravitNaradiNaPracovisti(this, message.KodPracoviste, message.OnCompleted, message.OnError, message.NaradiId, message.CisloNaradi, 1, message.Datum).Execute();
+            return _cachePracovist.Get(message.Kod,
+                load => _repository.NacistPracoviste(message.Kod, load.OldVersion).Transform(data => RozsiritData(message.Kod, data))
+                ).ContinueWith(task => ZpracovatDefiniciPracoviste(message, task.Result.Version, task.Result.Value));
         }
 
-        public Task Handle(CislovaneNaradiPrijatoZVyrobyEvent message)
+        private void ZpracovatDefiniciPracoviste(DefinovanoPracovisteEvent message, int verze, NaradiNaPracovistiDataPracoviste data)
         {
-            new UpravitNaradiNaPracovisti(this, message.KodPracoviste, message.OnCompleted, message.OnError, message.NaradiId, message.CisloNaradi, 0, null).Execute();
+            data.Pracoviste = new InformaceOPracovisti
+            {
+                Kod = message.Kod,
+                Nazev = message.Nazev,
+                Stredisko = message.Stredisko,
+                Aktivni = !message.Deaktivovano
+            };
+
+            _cachePracovist.Insert(message.Kod, verze, data, dirty: true);
         }
 
-        public Task Handle(NecislovaneNaradiVydanoDoVyrobyEvent message)
-        {
-            new UpravitNaradiNaPracovisti(this, message.KodPracoviste, message.OnCompleted, message.OnError, message.NaradiId, 0, message.PocetNaNovem, message.Datum).Execute();
-        }
-
-        public Task Handle(NecislovaneNaradiPrijatoZVyrobyEvent message)
-        {
-            new UpravitNaradiNaPracovisti(this, message.KodPracoviste, message.OnCompleted, message.OnError, message.NaradiId, 0, message.PocetNaPredchozim, null).Execute();
-        }
 
         public Task Handle(DefinovanoNaradiEvent message)
         {
-            _cacheNaradi.Get(
-                message.NaradiId.ToString(),
-                (verze, naradiInfo) => naradiInfo = ZpracovatDefiniciNaradi(message, verze, naradiInfo),
-                message.OnError,
-                load => _repository.NacistNaradi(message.NaradiId, load.SetLoadedValue, load.LoadingFailed));
+            return _cacheNaradi.Get(message.NaradiId.ToString(), load => _repository.NacistNaradi(message.NaradiId))
+                .ContinueWith(task => ZpracovatDefiniciNaradi(message, task.Result.Version, task.Result.Value));
         }
 
-        private InformaceONaradi ZpracovatDefiniciNaradi(CommandExecution<DefinovanoNaradiEvent> message, int verze, InformaceONaradi naradiInfo)
+        private void ZpracovatDefiniciNaradi(DefinovanoNaradiEvent message, int verze, InformaceONaradi naradiInfo)
         {
             naradiInfo = new InformaceONaradi();
             naradiInfo.NaradiId = message.NaradiId;
@@ -281,8 +145,81 @@ namespace Vydejna.Projections.NaradiNaPracovistiReadModel
             naradiInfo.Rozmer = message.Rozmer;
             naradiInfo.Druh = message.Druh;
             _cacheNaradi.Insert(naradiInfo.NaradiId.ToString(), verze, naradiInfo, dirty: true);
-            message.OnCompleted();
-            return naradiInfo;
+        }
+
+        private IEnumerable<Task> UpravitNaradiNaPracovisti(string kodPracoviste, Guid naradiId, int cisloNaradi, int novyPocet, DateTime? datumVydeje)
+        {
+            var taskPracoviste = _cachePracovist.Get(kodPracoviste, load => _repository.NacistPracoviste(kodPracoviste, load.OldVersion).Transform(data => RozsiritData(kodPracoviste, data)));
+            yield return taskPracoviste;
+            var verzePracoviste = taskPracoviste.Result.Version;
+            var dataPracoviste = taskPracoviste.Result.Value;
+
+            var taskNaradi = _cacheNaradi.Get(naradiId.ToString(), load => _repository.NacistNaradi(naradiId));
+            yield return taskNaradi;
+            var naradiInfo = taskNaradi.Result.Value;
+
+
+                NaradiNaPracovisti naradiNaPracovisti;
+                if (!dataPracoviste.IndexPodleIdNaradi.TryGetValue(naradiId, out naradiNaPracovisti))
+                {
+                    dataPracoviste.IndexPodleIdNaradi[naradiId] = naradiNaPracovisti = new NaradiNaPracovisti();
+                    naradiNaPracovisti.NaradiId = naradiId;
+                    naradiNaPracovisti.SeznamCislovanych = new List<int>();
+                    var naradiComparer = new NaradiIdComparer();
+                    var index = dataPracoviste.Seznam.BinarySearch(naradiNaPracovisti, naradiComparer);
+                    if (index < 0)
+                        index = ~index;
+                    dataPracoviste.Seznam.Insert(index, naradiNaPracovisti);
+                }
+                if (naradiInfo != null)
+                {
+                    naradiNaPracovisti.Vykres = naradiInfo.Vykres;
+                    naradiNaPracovisti.Rozmer = naradiInfo.Rozmer;
+                    naradiNaPracovisti.Druh = naradiInfo.Druh;
+                }
+
+                if (datumVydeje.HasValue)
+                    naradiNaPracovisti.DatumPoslednihoVydeje = datumVydeje.Value;
+                if (cisloNaradi == 0)
+                {
+                    naradiNaPracovisti.PocetNecislovanych = novyPocet;
+                }
+                else
+                {
+                    if (novyPocet == 1 && !naradiNaPracovisti.SeznamCislovanych.Contains(cisloNaradi))
+                        naradiNaPracovisti.SeznamCislovanych.Add(cisloNaradi);
+                    else if (novyPocet == 0)
+                        naradiNaPracovisti.SeznamCislovanych.Remove(cisloNaradi);
+                }
+                naradiNaPracovisti.PocetCelkem = naradiNaPracovisti.PocetNecislovanych + naradiNaPracovisti.SeznamCislovanych.Count;
+                if (naradiNaPracovisti.PocetCelkem == 0)
+                {
+                    dataPracoviste.Seznam.Remove(naradiNaPracovisti);
+                    dataPracoviste.IndexPodleIdNaradi.Remove(naradiNaPracovisti.NaradiId);
+                }
+                dataPracoviste.PocetCelkem = dataPracoviste.IndexPodleIdNaradi.Values.Sum(n => n.PocetCelkem);
+
+            _cachePracovist.Insert(kodPracoviste, verzePracoviste, dataPracoviste, dirty: true);
+        }
+
+        public Task Handle(CislovaneNaradiVydanoDoVyrobyEvent message)
+        {
+            return TaskUtils.FromEnumerable(UpravitNaradiNaPracovisti(message.KodPracoviste, message.NaradiId, message.CisloNaradi, 1, message.Datum)).GetTask();
+        }
+
+        public Task Handle(CislovaneNaradiPrijatoZVyrobyEvent message)
+        {
+            return TaskUtils.FromEnumerable(UpravitNaradiNaPracovisti(message.KodPracoviste, message.NaradiId, message.CisloNaradi, 0, null)).GetTask();
+        }
+
+        public Task Handle(NecislovaneNaradiVydanoDoVyrobyEvent message)
+        {
+            return TaskUtils.FromEnumerable(UpravitNaradiNaPracovisti(message.KodPracoviste, message.NaradiId, 0, message.PocetNaNovem, message.Datum)).GetTask();
+        }
+
+        public Task Handle(NecislovaneNaradiPrijatoZVyrobyEvent message)
+        {
+            return TaskUtils.FromEnumerable(UpravitNaradiNaPracovisti(message.KodPracoviste, message.NaradiId, 0, message.PocetNaPredchozim, null)).GetTask();
         }
     }
 
@@ -303,14 +240,9 @@ namespace Vydejna.Projections.NaradiNaPracovistiReadModel
             _folder = folder;
         }
 
-        public void NacistPracoviste(string kodPracoviste, int znamaVerze, Action<int, NaradiNaPracovistiDataPracoviste> onLoaded, Action onValid, Action<Exception> onError)
+        public Task<MemoryCacheItem<NaradiNaPracovistiDataPracoviste>> NacistPracoviste(string kodPracoviste, int znamaVerze)
         {
-            _folder.GetNewerDocument(
-                DokumentPracoviste(kodPracoviste), znamaVerze,
-                (verze, raw) => onLoaded(verze, string.IsNullOrEmpty(raw) ? null : JsonSerializer.DeserializeFromString<NaradiNaPracovistiDataPracoviste>(raw)),
-                () => onValid(),
-                () => onLoaded(0, null),
-                ex => onError(ex));
+            return _folder.GetNewerDocument(DokumentPracoviste(kodPracoviste), znamaVerze).ToMemoryCacheItem(JsonSerializer.DeserializeFromString<NaradiNaPracovistiDataPracoviste>);
         }
 
         private static string DokumentPracoviste(string kodPracoviste)
@@ -318,34 +250,19 @@ namespace Vydejna.Projections.NaradiNaPracovistiReadModel
             return "pracoviste-" + kodPracoviste;
         }
 
-        public void UlozitPracoviste(int verze, NaradiNaPracovistiDataPracoviste data, Action<int> onSaved, Action<Exception> onError)
+        public Task<int> UlozitPracoviste(int verze, NaradiNaPracovistiDataPracoviste data)
         {
-            _folder.SaveDocument(
-                "pracoviste-" + data.Pracoviste.Kod,
-                JsonSerializer.SerializeToString(data),
-                DocumentStoreVersion.At(verze), null,
-                () => onSaved(verze + 1),
-                () => onError(new ProjectorMessages.ConcurrencyException()),
-                ex => onError(ex));
+            return ProjectorUtils.Save(_folder, "pracoviste-" + data.Pracoviste.Kod, verze, JsonSerializer.SerializeToString(data), null);
         }
 
-        public void NacistNaradi(Guid naradiId, Action<int, InformaceONaradi> onLoaded, Action<Exception> onError)
+        public Task<MemoryCacheItem<InformaceONaradi>> NacistNaradi(Guid naradiId)
         {
-            _folder.GetDocument(
-                DokumentNaradi(naradiId),
-                (verze, raw) => onLoaded(verze, string.IsNullOrEmpty(raw) ? null : JsonSerializer.DeserializeFromString<InformaceONaradi>(raw)),
-                () => onLoaded(0, null), ex => onError(ex));
+            return _folder.GetDocument(DokumentNaradi(naradiId)).ToMemoryCacheItem(JsonSerializer.DeserializeFromString<InformaceONaradi>);
         }
 
-        public void UlozitNaradi(int verze, InformaceONaradi data, Action<int> onSaved, Action<Exception> onError)
+        public Task<int> UlozitNaradi(int verze, InformaceONaradi data)
         {
-            _folder.SaveDocument(
-                DokumentNaradi(data.NaradiId),
-                JsonSerializer.SerializeToString(data),
-                DocumentStoreVersion.At(verze), null,
-                () => onSaved(verze + 1),
-                () => onError(new ProjectorMessages.ConcurrencyException()),
-                ex => onError(ex));
+            return ProjectorUtils.Save(_folder, DokumentNaradi(data.NaradiId), verze, JsonSerializer.SerializeToString(data), null);
         }
 
         private static string DokumentNaradi(Guid naradiId)
@@ -353,9 +270,9 @@ namespace Vydejna.Projections.NaradiNaPracovistiReadModel
             return "naradi-" + naradiId.ToString("N");
         }
 
-        public void Reset(Action onCompleted, Action<Exception> onError)
+        public Task Reset()
         {
-            _folder.DeleteAll(onCompleted, onError);
+            return _folder.DeleteAll();
         }
     }
 
@@ -378,10 +295,10 @@ namespace Vydejna.Projections.NaradiNaPracovistiReadModel
 
         public Task<ZiskatNaradiNaPracovistiResponse> Handle(ZiskatNaradiNaPracovistiRequest message)
         {
-            _cache.Get(message.Request.KodPracoviste, (verze, data) => message.OnCompleted(data), message.OnError,
-                load => _repository.NacistPracoviste(message.Request.KodPracoviste, load.OldVersion,
-                    (verze, data) => load.SetLoadedValue(verze, VytvoritResponse(message.Request.KodPracoviste, data)),
-                    load.ValueIsStillValid, load.LoadingFailed));
+            return _cache.Get(message.KodPracoviste,
+                load => _repository.NacistPracoviste(message.KodPracoviste, load.OldVersion)
+                    .Transform(zaklad => VytvoritResponse(message.KodPracoviste, zaklad))
+                    ).ExtractValue();
         }
 
         private ZiskatNaradiNaPracovistiResponse VytvoritResponse(string kodPracoviste, NaradiNaPracovistiDataPracoviste zaklad)
