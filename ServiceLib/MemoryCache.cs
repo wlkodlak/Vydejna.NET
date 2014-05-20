@@ -26,7 +26,7 @@ namespace ServiceLib
     {
         public static MemoryCacheItem<T> Create<T>(int version, T value)
         {
-            return MemoryCacheItem.Create(version, value);
+            return new MemoryCacheItem<T>(version, value);
         }
 
         public static MemoryCacheItem<TOut> Transform<TIn, TOut>(this MemoryCacheItem<TIn> input, Func<TIn, TOut> tranformer)

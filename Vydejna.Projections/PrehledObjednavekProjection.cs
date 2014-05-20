@@ -246,7 +246,7 @@ namespace Vydejna.Projections.PrehledObjednavekReadModel
         {
             return new[]
             {
-                new DocumentIndexing("cisloObjednavky", data.Objednavka),
+                new DocumentIndexing("cisloObjednavky", string.Concat(data.Objednavka, "::", data.KodDodavatele)),
                 new DocumentIndexing("datumObjednavky", data.DatumObjednani.ToString("s"))
             };
         }
@@ -355,7 +355,7 @@ namespace Vydejna.Projections.PrehledObjednavekReadModel
                         return TaskUtils.FromResult<MemoryCacheItem<PrehledObjednavekResponse>>(null);
                     return _repository.NacistSeznamObjednavekPodleCisla(message.Stranka * 100 - 100, 100)
                         .ContinueWith(task => new MemoryCacheItem<PrehledObjednavekResponse>(verzeSeznamu, VytvoritResponse(message, task.Result.Item1, task.Result.Item2)));
-                });
+                }).ExtractValue();
                 yield return taskSeznam;
             }
             else
@@ -366,7 +366,7 @@ namespace Vydejna.Projections.PrehledObjednavekReadModel
                         return TaskUtils.FromResult<MemoryCacheItem<PrehledObjednavekResponse>>(null);
                     return _repository.NacistSeznamObjednavekPodleData(message.Stranka * 100 - 100, 100)
                         .ContinueWith(task => new MemoryCacheItem<PrehledObjednavekResponse>(verzeSeznamu, VytvoritResponse(message, task.Result.Item1, task.Result.Item2)));
-                });
+                }).ExtractValue();
                 yield return taskSeznam;
             }
         }

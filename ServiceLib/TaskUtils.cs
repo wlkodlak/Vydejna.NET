@@ -255,7 +255,7 @@ namespace ServiceLib
                     }
                     else
                     {
-                        if (_catchAll)
+                        if (_catchAll || previous == null)
                             return TaskUtils.FromResult(default(T));
                         else if (previous.IsCanceled)
                             return TaskUtils.CancelledTask<T>();
