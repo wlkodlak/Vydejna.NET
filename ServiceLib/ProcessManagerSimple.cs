@@ -26,6 +26,7 @@ namespace ServiceLib
         {
             _bus = bus;
             _primaryWorker = worker;
+            worker.Init(null, TaskScheduler.Default);
             bus.Subscribe<SystemEvents.SystemInit>(this);
             bus.Subscribe<SystemEvents.SystemShutdown>(this);
         }

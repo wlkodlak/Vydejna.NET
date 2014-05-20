@@ -32,7 +32,6 @@ namespace Vydejna.Server
         private ProcessManagerSimple _processes;
         private IHttpRouteCommonConfigurator _router;
         private EventStorePostgres _eventStore;
-        private IQueueExecution _executor;
         private ITime _time;
         private TypeMapper _typeMapper;
         private MetadataManager _metadataManager;
@@ -46,14 +45,11 @@ namespace Vydejna.Server
             _nodeId = ConfigurationManager.AppSettings.Get("node"); ;
             _httpPrefixes = new[] { ConfigurationManager.AppSettings.Get("prefix") };
 
-            _processes = new ProcessManagerSimple();
             _time = new RealTime();
+            _processes = new ProcessManagerSimple(_time);
             _disposables = new List<IDisposable>();
 
             var mainBus = new QueuedBus(new SubscriptionManager(), "MainBus");
-            var executor = new QueuedExecutionWorker(mainBus);
-            executor.Subscribe(mainBus);
-            _executor = executor;
             _processes.RegisterBus("MainBus", mainBus, new QueuedBusProcess(mainBus));
 
             var httpRouter = new HttpRouter();
@@ -64,15 +60,15 @@ namespace Vydejna.Server
             new ProjectionsRestInterface(mainBus).Register(_router);
             _router.Commit();
 
-            var postgres = new DatabasePostgres(_postgresConnectionString, _executor);
-            _eventStore = new EventStorePostgres(postgres, _executor);
+            var postgres = new DatabasePostgres(_postgresConnectionString, _time);
+            _eventStore = new EventStorePostgres(postgres, _time);
             _eventStore.Initialize();
-            var networkBus = new NetworkBusPostgres(_nodeId, _executor, postgres, _time);
+            var networkBus = new NetworkBusPostgres(_nodeId, postgres, _time);
             networkBus.Initialize();
-            var documentStore = new DocumentStorePostgres(postgres, _executor, "documents");
+            var documentStore = new DocumentStorePostgres(postgres, "documents");
             documentStore.Initialize();
             _metadataManager = new MetadataManager(documentStore.GetFolder("metadata"), new NodeLockManagerNull());
-            _eventStreaming = new EventStreaming(_eventStore, _executor, networkBus);
+            _eventStreaming = new EventStreaming(_eventStore, networkBus);
 
             _disposables.Add(postgres);
             _disposables.Add(documentStore);
@@ -93,33 +89,33 @@ namespace Vydejna.Server
             new ExterniCiselnikyService(new ExterniCiselnikyRepository(_eventStore, "externi", _eventSerializer)).Subscribe(mainBus);
             new UnikatnostNaradiService(new UnikatnostNaradiRepository(_eventStore, "unikatnost", _eventSerializer)).Subscribe(mainBus);
 
-            new DetailNaradiReader(new DetailNaradiRepository(documentStore.GetFolder("detailnaradi")), _executor, _time).Subscribe(mainBus);
-            new IndexObjednavekReader(new IndexObjednavekRepository(documentStore.GetFolder("indexobjednavek")), _executor, _time).Subscribe(mainBus);
-            new NaradiNaObjednavceReader(new NaradiNaObjednavceRepository(documentStore.GetFolder("naradiobjednavky")), _executor, _time).Subscribe(mainBus);
-            new NaradiNaPracovistiReader(new NaradiNaPracovistiRepository(documentStore.GetFolder("naradipracoviste")), _executor, _time).Subscribe(mainBus);
-            new NaradiNaVydejneReader(new NaradiNaVydejneRepository(documentStore.GetFolder("naradyvydejny")), _executor, _time).Subscribe(mainBus);
-            new PrehledAktivnihoNaradiReader(new PrehledAktivnihoNaradiRepository(documentStore.GetFolder("prehlednaradi")), _executor, _time).Subscribe(mainBus);
-            new PrehledCislovanehoNaradiReader(new PrehledCislovanehoNaradiRepository(documentStore.GetFolder("prehledcislovanych")), _executor, _time).Subscribe(mainBus);
-            new PrehledObjednavekReader(new PrehledObjednavekRepository(documentStore.GetFolder("prehledobjednavek")), _executor, _time).Subscribe(mainBus);
-            new SeznamDodavateluReader(new SeznamDodavateluRepository(documentStore.GetFolder("seznamdodavatelu")), _executor, _time).Subscribe(mainBus);
-            new SeznamNaradiReader(new SeznamNaradiRepository(documentStore.GetFolder("seznamnaradi")), _executor, _time).Subscribe(mainBus);
-            new SeznamPracovistReader(new SeznamPracovistRepository(documentStore.GetFolder("seznampracovist")), _executor, _time).Subscribe(mainBus);
-            new SeznamVadReader(new SeznamVadRepository(documentStore.GetFolder("seznamvad")), _executor, _time).Subscribe(mainBus);
+            new DetailNaradiReader(new DetailNaradiRepository(documentStore.GetFolder("detailnaradi")), _time).Subscribe(mainBus);
+            new IndexObjednavekReader(new IndexObjednavekRepository(documentStore.GetFolder("indexobjednavek")),  _time).Subscribe(mainBus);
+            new NaradiNaObjednavceReader(new NaradiNaObjednavceRepository(documentStore.GetFolder("naradiobjednavky")),  _time).Subscribe(mainBus);
+            new NaradiNaPracovistiReader(new NaradiNaPracovistiRepository(documentStore.GetFolder("naradipracoviste")),  _time).Subscribe(mainBus);
+            new NaradiNaVydejneReader(new NaradiNaVydejneRepository(documentStore.GetFolder("naradyvydejny")),  _time).Subscribe(mainBus);
+            new PrehledAktivnihoNaradiReader(new PrehledAktivnihoNaradiRepository(documentStore.GetFolder("prehlednaradi")),  _time).Subscribe(mainBus);
+            new PrehledCislovanehoNaradiReader(new PrehledCislovanehoNaradiRepository(documentStore.GetFolder("prehledcislovanych")),  _time).Subscribe(mainBus);
+            new PrehledObjednavekReader(new PrehledObjednavekRepository(documentStore.GetFolder("prehledobjednavek")),  _time).Subscribe(mainBus);
+            new SeznamDodavateluReader(new SeznamDodavateluRepository(documentStore.GetFolder("seznamdodavatelu")),  _time).Subscribe(mainBus);
+            new SeznamNaradiReader(new SeznamNaradiRepository(documentStore.GetFolder("seznamnaradi")),  _time).Subscribe(mainBus);
+            new SeznamPracovistReader(new SeznamPracovistRepository(documentStore.GetFolder("seznampracovist")),  _time).Subscribe(mainBus);
+            new SeznamVadReader(new SeznamVadRepository(documentStore.GetFolder("seznamvad")),  _time).Subscribe(mainBus);
 
             BuildEventProcessor(new ProcesDefiniceNaradi(mainBus), "ProcesDefiniceNaradi");
 
-            BuildProjection(new DetailNaradiProjection(new DetailNaradiRepository(documentStore.GetFolder("detailnaradi")), _executor, _time), "DetailNaradi");
-            BuildProjection(new IndexObjednavekProjection(new IndexObjednavekRepository(documentStore.GetFolder("indexobjednavek")), _executor, _time), "IndexObjednavek");
-            BuildProjection(new NaradiNaObjednavceProjection(new NaradiNaObjednavceRepository(documentStore.GetFolder("naradiobjednavky")), _executor, _time), "NaradiNaObjednavce");
-            BuildProjection(new NaradiNaPracovistiProjection(new NaradiNaPracovistiRepository(documentStore.GetFolder("naradipracoviste")), _executor, _time), "NaradiNaPracovisti");
-            BuildProjection(new NaradiNaVydejneProjection(new NaradiNaVydejneRepository(documentStore.GetFolder("naradyvydejny")), _executor, _time), "NaradiNaVydejne");
-            BuildProjection(new PrehledAktivnihoNaradiProjection(new PrehledAktivnihoNaradiRepository(documentStore.GetFolder("prehlednaradi")), _executor, _time), "PrehledAktivnihoNaradi");
-            BuildProjection(new PrehledCislovanehoNaradiProjection(new PrehledCislovanehoNaradiRepository(documentStore.GetFolder("prehledcislovanych")), _executor, _time), "PrehledCislovanehoNaradi");
-            BuildProjection(new PrehledObjednavekProjection(new PrehledObjednavekRepository(documentStore.GetFolder("prehledobjednavek")), _executor, _time), "PrehledObjednavek");
-            BuildProjection(new SeznamDodavateluProjection(new SeznamDodavateluRepository(documentStore.GetFolder("seznamdodavatelu")), _executor, _time), "SeznamDodavatelu");
-            BuildProjection(new SeznamNaradiProjection(new SeznamNaradiRepository(documentStore.GetFolder("seznamnaradi")), _executor, _time), "SeznamNaradi");
-            BuildProjection(new SeznamPracovistProjection(new SeznamPracovistRepository(documentStore.GetFolder("seznampracovist")), _executor, _time), "SeznamPracovist");
-            BuildProjection(new SeznamVadProjection(new SeznamVadRepository(documentStore.GetFolder("seznamvad")), _executor, _time), "SeznamVad");
+            BuildProjection(new DetailNaradiProjection(new DetailNaradiRepository(documentStore.GetFolder("detailnaradi")),  _time), "DetailNaradi");
+            BuildProjection(new IndexObjednavekProjection(new IndexObjednavekRepository(documentStore.GetFolder("indexobjednavek")), _time), "IndexObjednavek");
+            BuildProjection(new NaradiNaObjednavceProjection(new NaradiNaObjednavceRepository(documentStore.GetFolder("naradiobjednavky")), _time), "NaradiNaObjednavce");
+            BuildProjection(new NaradiNaPracovistiProjection(new NaradiNaPracovistiRepository(documentStore.GetFolder("naradipracoviste")), _time), "NaradiNaPracovisti");
+            BuildProjection(new NaradiNaVydejneProjection(new NaradiNaVydejneRepository(documentStore.GetFolder("naradyvydejny")), _time), "NaradiNaVydejne");
+            BuildProjection(new PrehledAktivnihoNaradiProjection(new PrehledAktivnihoNaradiRepository(documentStore.GetFolder("prehlednaradi")), _time), "PrehledAktivnihoNaradi");
+            BuildProjection(new PrehledCislovanehoNaradiProjection(new PrehledCislovanehoNaradiRepository(documentStore.GetFolder("prehledcislovanych")), _time), "PrehledCislovanehoNaradi");
+            BuildProjection(new PrehledObjednavekProjection(new PrehledObjednavekRepository(documentStore.GetFolder("prehledobjednavek")), _time), "PrehledObjednavek");
+            BuildProjection(new SeznamDodavateluProjection(new SeznamDodavateluRepository(documentStore.GetFolder("seznamdodavatelu")), _time), "SeznamDodavatelu");
+            BuildProjection(new SeznamNaradiProjection(new SeznamNaradiRepository(documentStore.GetFolder("seznamnaradi")), _time), "SeznamNaradi");
+            BuildProjection(new SeznamPracovistProjection(new SeznamPracovistRepository(documentStore.GetFolder("seznampracovist")), _time), "SeznamPracovist");
+            BuildProjection(new SeznamVadProjection(new SeznamVadRepository(documentStore.GetFolder("seznamvad")), _time), "SeznamVad");
         }
 
         private void BuildEventProcessor<T>(T processor, string processorName)

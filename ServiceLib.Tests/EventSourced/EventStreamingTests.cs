@@ -104,7 +104,15 @@ namespace ServiceLib.Tests.EventSourced
         [TestMethod]
         public void WaitingCallReturnsNullOnDispose()
         {
+            _store.AddToStream("aaa", new[] { 
+                Create("Type1", "58472"),
+                Create("Type2", "5475"),
+                Create("Type2", "5475"),
+                Create("Type2", "00000"),
+            });
             var streamer = _streaming.GetStreamer(EventStoreToken.Initial, "TestProcess");
+            for (int i = 0; i < 5; i++)
+                _scheduler.Run(() => streamer.GetNextEvent(true), true).Wait();
             var task = _scheduler.Run(() => streamer.GetNextEvent(false), false);
             streamer.Dispose();
             _scheduler.Process();

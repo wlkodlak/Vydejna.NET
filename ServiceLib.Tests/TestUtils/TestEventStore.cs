@@ -225,7 +225,7 @@ namespace ServiceLib.Tests.TestUtils
             private void Dispose()
             {
                 _isDisposed = true;
-                _task.TrySetCanceled();
+                _task.TrySetResult(new EventStoreCollection(new EventStoreEvent[0], _token));
             }
         }
 

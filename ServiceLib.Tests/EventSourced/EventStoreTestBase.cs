@@ -229,7 +229,8 @@ namespace ServiceLib.Tests.EventSourced
 
             AddToStream("stream-01", newEvents, EventStoreVersion.Any);
             events = GetAwaitedEvents();
-            Assert.IsNull(events, "No events should be retrieved as waiting was cancelled");
+            Assert.IsNotNull(events, "Event list must be present");
+            Assert.AreEqual(0, events.Events.Count, "Event list must be empty");
         }
 
         [TestMethod]

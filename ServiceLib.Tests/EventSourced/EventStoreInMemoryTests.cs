@@ -17,6 +17,15 @@ namespace ServiceLib.Tests.EventSourced
     }
 
     [TestClass]
+    public class EventStoreInTestStoreTests : EventStoreTestBase
+    {
+        protected override IEventStoreWaitable GetEventStore()
+        {
+            return new TestEventStore();
+        }
+    }
+
+    [TestClass]
     public class EventStorePostgresTests : EventStoreTestBase
     {
         private DatabasePostgres _db;

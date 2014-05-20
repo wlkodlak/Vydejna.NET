@@ -600,7 +600,7 @@ namespace ServiceLib
             WaitForEventsContext waiter = (WaitForEventsContext)param;
             WaitForEventsContext removedWaiter;
             _waiters.TryRemove(waiter.WaiterId, out removedWaiter);
-            waiter.Task.TrySetResult(null);
+            waiter.Task.TrySetResult(new EventStoreCollection(new EventStoreEvent[0], TokenFromId(waiter.EventId)));
         }
 
         private void WaitForEvents_Timer(Task task)

@@ -250,6 +250,7 @@ namespace ServiceLib
                 {
                     _parent._lock.ExitWriteLock();
                 }
+                _task.TrySetResult(new EventStoreCollection(new EventStoreEvent[0], _token));
             }
 
             public bool Prepare()
