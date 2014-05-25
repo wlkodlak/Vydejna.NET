@@ -23,6 +23,7 @@ namespace ServiceLib
         Running,
         Pausing,
         Stopping,
+        Conflicted,
         Faulted
     }
 

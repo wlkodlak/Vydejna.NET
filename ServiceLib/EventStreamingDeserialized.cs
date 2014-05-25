@@ -6,11 +6,12 @@ using System.Threading.Tasks;
 
 namespace ServiceLib
 {
-    public interface IEventStreamingDeserialized : IDisposable
+    public interface IEventStreamingDeserialized
     {
         void Setup(EventStoreToken firstToken, IEnumerable<Type> types, string processName);
         Task<EventStreamingDeserializedEvent> GetNextEvent(bool nowait);
         Task MarkAsDeadLetter();
+        void Close();
     }
 
     public class EventStreamingDeserializedEvent
@@ -100,7 +101,7 @@ namespace ServiceLib
             return _streamer.MarkAsDeadLetter();
         }
 
-        public void Dispose()
+        public void Close()
         {
             _isDisposed = true;
             if (_streamer != null)

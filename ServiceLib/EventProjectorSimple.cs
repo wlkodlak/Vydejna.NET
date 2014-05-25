@@ -56,10 +56,6 @@ namespace ServiceLib
             _metadata = metadata;
             _streaming = streaming;
             _subscriptions = subscriptions;
-            _cancelPause = new CancellationTokenSource();
-            _cancelPauseToken = _cancelPause.Token;
-            _cancelStop = new CancellationTokenSource();
-            _cancelStopToken = _cancelStop.Token;
         }
 
         public void Register<T>(IProcess<T> handler)
@@ -109,36 +105,54 @@ namespace ServiceLib
 
         public void Start()
         {
+            _cancelPause = new CancellationTokenSource();
+            _cancelPauseToken = _cancelPause.Token;
+            _cancelStop = new CancellationTokenSource();
+            _cancelStopToken = _cancelStop.Token;
             SetProcessState(ProcessState.Starting);
             TaskUtils.FromEnumerable(ProjectorCore()).UseScheduler(_scheduler).GetTask().ContinueWith(Finish, _scheduler);
         }
 
         private void Finish(Task task)
         {
-            SetProcessState((task.Exception == null || task.IsCanceled) ? ProcessState.Inactive : ProcessState.Faulted);
+            ProcessState newState;
+            if (task.Exception == null || task.IsCanceled)
+                newState = ProcessState.Inactive;
+            else if (task.Exception.InnerException is ProjectorMessages.ConcurrencyException)
+                newState = ProcessState.Conflicted;
+            else
+                newState = ProcessState.Faulted;
+            SetProcessState(newState);
         }
 
         public void Pause()
         {
             SetProcessState(ProcessState.Pausing);
-            _cancelPause.Cancel();
-            _streaming.Dispose();
+            if (_cancelPause != null)
+                _cancelPause.Cancel();
+            _streaming.Close();
         }
 
         public void Stop()
         {
             SetProcessState(ProcessState.Stopping);
-            _cancelPause.Cancel();
-            _cancelStop.Cancel();
-            _streaming.Dispose();
+            if (_cancelPause != null)
+                _cancelPause.Cancel();
+            if (_cancelStop != null)
+                _cancelStop.Cancel();
+            _streaming.Close();
         }
 
         public void Dispose()
         {
-            _cancelPause.Cancel();
-            _cancelStop.Cancel();
-            _cancelPause.Dispose();
-            _cancelStop.Dispose();
+            if (_cancelPause != null)
+                _cancelPause.Cancel();
+            if (_cancelStop != null)
+                _cancelStop.Cancel();
+            if (_cancelPause != null)
+                _cancelPause.Dispose();
+            if (_cancelStop != null)
+                _cancelStop.Dispose();
             _processState = ProcessState.Uninitialized;
         }
 
@@ -257,7 +271,7 @@ namespace ServiceLib
             finally
             {
                 _metadata.Unlock();
-                _streaming.Dispose();
+                _streaming.Close();
             }
         }
 

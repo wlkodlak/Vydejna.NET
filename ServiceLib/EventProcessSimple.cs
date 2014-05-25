@@ -26,8 +26,6 @@ namespace ServiceLib
             _subscriptions = subscriptions;
             _processState = ProcessState.Uninitialized;
             _lock = new object();
-            _cancelPause = new CancellationTokenSource();
-            _cancelStop = new CancellationTokenSource();
         }
 
         public EventProcessSimple Register<T>(IProcess<T> handler)
@@ -60,6 +58,8 @@ namespace ServiceLib
 
         public void Start()
         {
+            _cancelPause = new CancellationTokenSource();
+            _cancelStop = new CancellationTokenSource();
             SetProcessState(ProcessState.Starting);
             TaskUtils.FromEnumerable(ProcessCore()).CatchAll().UseScheduler(_scheduler).GetTask()
                 .ContinueWith(t =>
@@ -74,24 +74,31 @@ namespace ServiceLib
         public void Pause()
         {
             SetProcessState(ProcessState.Pausing);
-            _cancelPause.Cancel();
-            _streaming.Dispose();
+            if (_cancelPause != null)
+                _cancelPause.Cancel();
+            _streaming.Close();
         }
 
         public void Stop()
         {
             SetProcessState(ProcessState.Stopping);
-            _cancelPause.Cancel();
-            _cancelStop.Cancel();
-            _streaming.Dispose();
+            if (_cancelPause != null)
+                _cancelPause.Cancel();
+            if (_cancelStop != null)
+                _cancelStop.Cancel();
+            _streaming.Close();
         }
 
         public void Dispose()
         {
-            _cancelPause.Cancel();
-            _cancelStop.Cancel();
-            _cancelPause.Dispose();
-            _cancelStop.Dispose();
+            if (_cancelPause != null)
+                _cancelPause.Cancel();
+            if (_cancelStop != null)
+                _cancelStop.Cancel();
+            if (_cancelPause != null)
+                _cancelPause.Dispose();
+            if (_cancelStop != null)
+                _cancelStop.Dispose();
             SetProcessState(ProcessState.Inactive);
         }
 

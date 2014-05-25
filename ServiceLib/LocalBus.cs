@@ -309,6 +309,8 @@ namespace ServiceLib
         public void Dispose()
         {
             State = ProcessState.Stopping;
+            if (_cancel != null)
+                _cancel.Cancel();
             Task.WaitAll(_tasks);
         }
 

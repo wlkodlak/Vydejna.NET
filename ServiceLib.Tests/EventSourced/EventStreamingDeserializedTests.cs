@@ -40,7 +40,7 @@ namespace ServiceLib.Tests.EventSourced
         public void DisposeDisposesStreamer()
         {
             _deserialized.Setup(new EventStoreToken("4493"), _types, "TestProcess");
-            _deserialized.Dispose();
+            _deserialized.Close();
             Assert.IsTrue(_streamer.Disposed);
         }
 

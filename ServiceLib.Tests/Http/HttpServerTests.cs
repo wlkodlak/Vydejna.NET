@@ -116,6 +116,7 @@ namespace ServiceLib.Tests.Http
                 case ProcessState.Running:
                 case ProcessState.Stopping:
                 case ProcessState.Inactive:
+                case ProcessState.Conflicted:
                     return true;
                 default:
                     return false;

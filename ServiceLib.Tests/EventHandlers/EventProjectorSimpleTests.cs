@@ -56,7 +56,7 @@ namespace ServiceLib.Tests.EventHandlers
             _metadata.Token = new EventStoreToken("333");
             _process.Start();
             _scheduler.Process();
-            
+
             _metadata.SendLock();
             _scheduler.Process();
 
@@ -204,6 +204,61 @@ namespace ServiceLib.Tests.EventHandlers
             Assert.IsFalse(_metadata.IsLocked, "IsLocked");
             Assert.IsFalse(_streaming.IsReading, "IsReading");
             Assert.IsTrue(_streaming.IsDisposed, "Streaming IsDisposed");
+            Assert.AreEqual(ProcessState.Faulted, _process.State, "Process state");
+        }
+
+        [TestMethod]
+        public void StopOnConcurrencyError()
+        {
+            _process.Start();
+            _scheduler.Process();
+            _metadata.SendLock();
+            _scheduler.Process();
+            _projection.SendConcurrencyError = true;
+            _streaming.AddEvent("1", new TestEvent1 { Data = "47" });
+            _streaming.AddEvent("2", new TestEvent3 { Data = "32" });
+            _streaming.AddEvent("3", new TestEvent2 { Data = "75" });
+            _streaming.MarkEndOfStream();
+            _scheduler.Process();
+
+            Assert.IsFalse(_metadata.IsLocked, "IsLocked");
+            Assert.IsFalse(_streaming.IsReading, "IsReading");
+            Assert.IsTrue(_streaming.IsDisposed, "Streaming IsDisposed");
+            Assert.AreEqual(ProcessState.Conflicted, _process.State, "Process state");
+        }
+
+        [TestMethod]
+        public void IsRestartable()
+        {
+            _process.Start();
+            _scheduler.Process();
+            _metadata.SendLock();
+            _scheduler.Process();
+            _process.Pause();
+            _scheduler.Process();
+            Assert.AreEqual(ProcessState.Inactive, _process.State, "Process state after pause");
+            _projection.LogEntries.Clear();
+
+            _process.Start();
+            _scheduler.Process();
+            _metadata.SendLock();
+            _scheduler.Process();
+            _streaming.AddEvent("1", new TestEvent1 { Data = "47" });
+            _streaming.AddEvent("2", new TestEvent2 { Data = "75" });
+            _streaming.MarkEndOfStream();
+            _scheduler.Process();
+            _streaming.AddEvent("3", new TestEvent2 { Data = "32" });
+            _streaming.AddEvent("4", new TestEvent1 { Data = "14" });
+            _streaming.MarkEndOfStream();
+            _scheduler.Process();
+            _process.Pause();
+            _scheduler.Process();
+
+            Assert.AreEqual(
+                "TestEvent1: 47\r\nTestEvent2: 75\r\nFlush\r\n" +
+                "TestEvent2: 32\r\nTestEvent1: 14\r\nFlush",
+                _projection.LogText);
+            Assert.AreEqual(ProcessState.Inactive, _process.State, "Process state at the end");
         }
 
         [TestMethod]
@@ -226,7 +281,33 @@ namespace ServiceLib.Tests.EventHandlers
 
             Assert.AreEqual(
                 "Reset\r\nTestEvent1: 47\r\nTestEvent2: 75\r\nRebuildFinished\r\nFlush\r\n" +
-                "TestEvent2: 32\r\nTestEvent1: 14\r\nFlush", 
+                "TestEvent2: 32\r\nTestEvent1: 14\r\nFlush",
+                _projection.LogText);
+            Assert.AreEqual(ProcessState.Inactive, _process.State, "Process state");
+        }
+
+        [TestMethod]
+        public void RetriesOnTransientError()
+        {
+            _process.Start();
+            _scheduler.Process();
+            _metadata.SendLock();
+            _scheduler.Process();
+            _projection.SendTransientError = true;
+            _streaming.AddEvent("1", new TestEvent1 { Data = "47" });
+            _streaming.AddEvent("2", new TestEvent2 { Data = "75" });
+            _streaming.MarkEndOfStream();
+            _scheduler.Process();
+            _streaming.AddEvent("3", new TestEvent2 { Data = "32" });
+            _streaming.AddEvent("4", new TestEvent1 { Data = "14" });
+            _streaming.MarkEndOfStream();
+            _scheduler.Process();
+            _process.Pause();
+            _scheduler.Process();
+
+            Assert.AreEqual(
+                "Reset\r\nTestEvent1: 47!\r\nTestEvent1: 47\r\nTestEvent2: 75\r\nRebuildFinished\r\nFlush\r\n" +
+                "TestEvent2: 32\r\nTestEvent1: 14\r\nFlush",
                 _projection.LogText);
             Assert.AreEqual(ProcessState.Inactive, _process.State, "Process state");
         }
@@ -248,6 +329,7 @@ namespace ServiceLib.Tests.EventHandlers
             public string Mode = "normal";
             public List<string> LogEntries = new List<string>();
             public string OriginalVersion;
+            public bool SendTransientError, SendConcurrencyError;
 
             private Task ProcessCommand<T>(T message)
             {
@@ -258,8 +340,23 @@ namespace ServiceLib.Tests.EventHandlers
             private Task ProcessEvent<T>(T message)
                 where T : TestEvent
             {
-                LogEntries.Add(string.Concat(typeof(T).Name, ": " + message.Data));
-                return TaskUtils.CompletedTask();
+                if (SendTransientError)
+                {
+                    LogEntries.Add(string.Concat(typeof(T).Name, ": ", message.Data, "!"));
+                    SendTransientError = false;
+                    return TaskUtils.FromError<object>(new TransientErrorException("TEST", "Test error"));
+                }
+                else if (SendConcurrencyError)
+                {
+                    LogEntries.Add(string.Concat(typeof(T).Name, ": ", message.Data, "!"));
+                    SendTransientError = false;
+                    return TaskUtils.FromError<object>(new ProjectorMessages.ConcurrencyException());
+                }
+                else
+                {
+                    LogEntries.Add(string.Concat(typeof(T).Name, ": ", message.Data));
+                    return TaskUtils.CompletedTask();
+                }
             }
 
             public string GetVersion()

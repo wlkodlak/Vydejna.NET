@@ -103,7 +103,7 @@ namespace ServiceLib
             public void OnStateChanged(ProcessState newState)
             {
                 System.Diagnostics.Debug.WriteLine(string.Format("Process {0}: {1}", Name, newState.ToString()));
-                if (newState == ProcessState.Inactive || newState == ProcessState.Faulted)
+                if (newState == ProcessState.Inactive || newState == ProcessState.Faulted || newState == ProcessState.Conflicted)
                     StopEvent.Set();
             }
         }
@@ -115,7 +115,7 @@ namespace ServiceLib
             foreach (var process in _processes.Values)
             {
                 var state = process.Worker.State;
-                if (state == ProcessState.Uninitialized || state == ProcessState.Inactive || state == ProcessState.Faulted)
+                if (state == ProcessState.Uninitialized || state == ProcessState.Inactive || state == ProcessState.Faulted || state == ProcessState.Conflicted)
                     continue;
                 var waitMs = Math.Max(1, (int)(endTime - _time.GetUtcTime()).TotalMilliseconds);
                 allStopped = allStopped | process.StopEvent.Wait(waitMs);

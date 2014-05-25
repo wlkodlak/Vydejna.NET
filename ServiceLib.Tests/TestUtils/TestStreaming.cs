@@ -51,6 +51,7 @@ namespace ServiceLib.Tests.TestUtils
 
         public void Setup(EventStoreToken firstToken, IEnumerable<Type> types, string processName)
         {
+            IsDisposed = false;
             ProcessName = processName;
             CurrentToken = firstToken;
             _types = new HashSet<Type>(types);
@@ -104,7 +105,7 @@ namespace ServiceLib.Tests.TestUtils
             }
         }
 
-        public void Dispose()
+        public void Close()
         {
             IsDisposed = true;
             if (IsReading)
