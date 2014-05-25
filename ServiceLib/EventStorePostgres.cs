@@ -23,8 +23,9 @@ namespace ServiceLib
         private int _canStartNotifications;
         private CancellationTokenSource _cancelListening;
         private Task _notificationTask;
+        private string _partition;
 
-        public EventStorePostgres(DatabasePostgres db, ITime time)
+        public EventStorePostgres(DatabasePostgres db, ITime time, string partition = "eventstore")
         {
             _db = db;
             _time = time;
@@ -32,13 +33,14 @@ namespace ServiceLib
             _notified = new AutoResetEventAsync();
             _canStartNotifications = 1;
             _cancelListening = new CancellationTokenSource();
+            _partition = partition;
         }
 
         private void StartNotifications()
         {
             if (Interlocked.Exchange(ref _canStartNotifications, 0) == 1)
             {
-                _db.Listen("eventstore", s => _notified.Set(), _cancelListening.Token);
+                _db.Listen(_partition, s => _notified.Set(), _cancelListening.Token);
                 _notificationTask = TaskUtils.FromEnumerable(WaitForEvents_CoreInternal()).CatchAll().GetTask();
             }
         }
@@ -64,7 +66,7 @@ namespace ServiceLib
             using (var cmd = conn.CreateCommand())
             {
                 cmd.CommandText =
-                    "CREATE TABLE IF NOT EXISTS eventstore_streams (" +
+                    "CREATE TABLE IF NOT EXISTS " + _partition + "_streams (" +
                     "streamname varchar PRIMARY KEY, " +
                     "version integer NOT NULL" +
                     ")";
@@ -73,7 +75,7 @@ namespace ServiceLib
             using (var cmd = conn.CreateCommand())
             {
                 cmd.CommandText =
-                    "CREATE TABLE IF NOT EXISTS eventstore_events (" +
+                    "CREATE TABLE IF NOT EXISTS " + _partition + "_events (" +
                     "id bigserial PRIMARY KEY, " +
                     "streamname varchar NOT NULL, " +
                     "version integer NOT NULL, " +
@@ -85,7 +87,7 @@ namespace ServiceLib
             using (var cmd = conn.CreateCommand())
             {
                 cmd.CommandText =
-                    "CREATE TABLE IF NOT EXISTS eventstore_snapshots (" +
+                    "CREATE TABLE IF NOT EXISTS " + _partition + "_snapshots (" +
                     "streamname varchar PRIMARY KEY, " +
                     "format varchar, snapshottype varchar, contents text" +
                     ")";
@@ -140,11 +142,11 @@ namespace ServiceLib
             }
         }
 
-        private static int GetStreamVersion(NpgsqlConnection conn, string stream)
+        private int GetStreamVersion(NpgsqlConnection conn, string stream)
         {
             using (var cmd = conn.CreateCommand())
             {
-                cmd.CommandText = "SELECT version FROM eventstore_streams WHERE streamname = :streamname FOR UPDATE";
+                cmd.CommandText = "SELECT version FROM " + _partition + "_streams WHERE streamname = :streamname FOR UPDATE";
                 cmd.Parameters.AddWithValue("streamname", stream);
                 using (var reader = cmd.ExecuteReader())
                 {
@@ -156,14 +158,14 @@ namespace ServiceLib
             }
         }
 
-        private static bool CreateStream(NpgsqlConnection conn, NpgsqlTransaction tran, string stream)
+        private bool CreateStream(NpgsqlConnection conn, NpgsqlTransaction tran, string stream)
         {
             tran.Save("createstream");
             try
             {
                 using (var cmd = conn.CreateCommand())
                 {
-                    cmd.CommandText = "INSERT INTO eventstore_streams (streamname, version) VALUES (:streamname, 0)";
+                    cmd.CommandText = "INSERT INTO " + _partition + "_streams (streamname, version) VALUES (:streamname, 0)";
                     cmd.Parameters.AddWithValue("streamname", stream);
                     cmd.ExecuteNonQuery();
                     return false;
@@ -181,12 +183,12 @@ namespace ServiceLib
             }
         }
 
-        private static void InsertNewEvents(NpgsqlConnection conn, string stream, int initialVersion, IEnumerable<EventStoreEvent> events)
+        private void InsertNewEvents(NpgsqlConnection conn, string stream, int initialVersion, IEnumerable<EventStoreEvent> events)
         {
             using (var cmd = conn.CreateCommand())
             {
                 cmd.CommandText =
-                    "INSERT INTO eventstore_events (streamname, version, format, eventtype, contents) " +
+                    "INSERT INTO " + _partition + "_events (streamname, version, format, eventtype, contents) " +
                     "VALUES (:streamname, :version, :format, :eventtype, :contents) RETURNING id";
                 var paramStream = cmd.Parameters.Add("streamname", NpgsqlDbType.Varchar);
                 var paramVersion = cmd.Parameters.Add("version", NpgsqlDbType.Integer);
@@ -208,22 +210,22 @@ namespace ServiceLib
             }
         }
 
-        private static void UpdateStreamVersion(NpgsqlConnection conn, string stream, int version)
+        private void UpdateStreamVersion(NpgsqlConnection conn, string stream, int version)
         {
             using (var cmd = conn.CreateCommand())
             {
-                cmd.CommandText = "UPDATE eventstore_streams SET version = :version WHERE streamname = :streamname";
+                cmd.CommandText = "UPDATE " + _partition + "_streams SET version = :version WHERE streamname = :streamname";
                 cmd.Parameters.AddWithValue("streamname", stream);
                 cmd.Parameters.AddWithValue("version", version);
                 cmd.ExecuteNonQuery();
             }
         }
 
-        private static void NotifyChanges(NpgsqlConnection conn)
+        private void NotifyChanges(NpgsqlConnection conn)
         {
             using (var cmd = conn.CreateCommand())
             {
-                cmd.CommandText = "NOTIFY eventstore";
+                cmd.CommandText = "NOTIFY " + _partition;
                 cmd.ExecuteNonQuery();
             }
         }
@@ -272,13 +274,13 @@ namespace ServiceLib
             }
         }
 
-        private static List<EventStoreEvent> LoadEvents(NpgsqlConnection conn, string stream, int minVersion, int maxVersion)
+        private List<EventStoreEvent> LoadEvents(NpgsqlConnection conn, string stream, int minVersion, int maxVersion)
         {
             var expectedCount = maxVersion - minVersion + 1;
             using (var cmd = conn.CreateCommand())
             {
                 cmd.CommandText =
-                    "SELECT id, streamname, version, format, eventtype, contents FROM eventstore_events " +
+                    "SELECT id, streamname, version, format, eventtype, contents FROM " + _partition + "_events " +
                     "WHERE streamname = :streamname AND version >= :minversion AND version <= :maxversion " +
                     "ORDER BY version";
                 cmd.Parameters.AddWithValue("streamname", stream);
@@ -328,7 +330,7 @@ namespace ServiceLib
             var ids = (Dictionary<long, EventStoreEvent>)objContext;
             using (var cmd = conn.CreateCommand())
             {
-                cmd.CommandText = "SELECT id, contents FROM eventstore_events WHERE id = ANY (:id)";
+                cmd.CommandText = "SELECT id, contents FROM " + _partition + "_events WHERE id = ANY (:id)";
                 var paramId = cmd.Parameters.Add("id", NpgsqlDbType.Bigint | NpgsqlDbType.Array);
                 paramId.Value = ids;
                 using (var reader = cmd.ExecuteReader())
@@ -356,7 +358,7 @@ namespace ServiceLib
             EventStoreSnapshot snapshot = null;
             using (var cmd = conn.CreateCommand())
             {
-                cmd.CommandText = "SELECT format, snapshottype, contents FROM eventstore_snapshots WHERE streamname = :streamname";
+                cmd.CommandText = "SELECT format, snapshottype, contents FROM " + _partition + "_snapshots WHERE streamname = :streamname";
                 cmd.Parameters.AddWithValue("streamname", stream);
                 using (var reader = cmd.ExecuteReader())
                 {
@@ -426,12 +428,12 @@ namespace ServiceLib
             }
         }
 
-        private static bool FindSnapshot(NpgsqlConnection conn, EventStoreSnapshot snapshot)
+        private bool FindSnapshot(NpgsqlConnection conn, EventStoreSnapshot snapshot)
         {
             var snapshotExists = false;
             using (var cmd = conn.CreateCommand())
             {
-                cmd.CommandText = "SELECT 1 FROM eventstore_snapshots WHERE streamname = :streamname FOR UPDATE";
+                cmd.CommandText = "SELECT 1 FROM " + _partition + "_snapshots WHERE streamname = :streamname FOR UPDATE";
                 cmd.Parameters.Add("streamname", NpgsqlDbType.Varchar).Value = snapshot.StreamName;
                 using (var reader = cmd.ExecuteReader())
                     snapshotExists = reader.Read();
@@ -439,11 +441,11 @@ namespace ServiceLib
             return snapshotExists;
         }
 
-        private static void TryInsertSnapshot(NpgsqlConnection conn, EventStoreSnapshot snapshot)
+        private void TryInsertSnapshot(NpgsqlConnection conn, EventStoreSnapshot snapshot)
         {
             using (var cmd = conn.CreateCommand())
             {
-                cmd.CommandText = "INSERT INTO eventstore_snapshots (streamname, format, snapshottype, contents) VALUES (:streamname, :format, :snapshottype, :contents)";
+                cmd.CommandText = "INSERT INTO " + _partition + "_snapshots (streamname, format, snapshottype, contents) VALUES (:streamname, :format, :snapshottype, :contents)";
                 cmd.Parameters.Add("streamname", NpgsqlDbType.Varchar).Value = snapshot.StreamName;
                 cmd.Parameters.Add("format", NpgsqlDbType.Varchar).Value = snapshot.Format;
                 cmd.Parameters.Add("snapshottype", NpgsqlDbType.Varchar).Value = snapshot.Type;
@@ -452,11 +454,11 @@ namespace ServiceLib
             }
         }
 
-        private static void UpdateSnapshot(NpgsqlConnection conn, EventStoreSnapshot snapshot)
+        private void UpdateSnapshot(NpgsqlConnection conn, EventStoreSnapshot snapshot)
         {
             using (var cmd = conn.CreateCommand())
             {
-                cmd.CommandText = "UPDATE eventstore_snapshots SET format = :format, snapshottype = :snapshottype, contents = :contents WHERE streamname = :streamname";
+                cmd.CommandText = "UPDATE " + _partition + "_snapshots SET format = :format, snapshottype = :snapshottype, contents = :contents WHERE streamname = :streamname";
                 cmd.Parameters.Add("streamname", NpgsqlDbType.Varchar).Value = snapshot.StreamName;
                 cmd.Parameters.Add("format", NpgsqlDbType.Varchar).Value = snapshot.Format;
                 cmd.Parameters.Add("snapshottype", NpgsqlDbType.Varchar).Value = snapshot.Type;
@@ -666,11 +668,11 @@ namespace ServiceLib
             }
         }
 
-        private static long GetLastEventId(NpgsqlConnection conn)
+        private long GetLastEventId(NpgsqlConnection conn)
         {
             using (var cmd = conn.CreateCommand())
             {
-                cmd.CommandText = "SELECT id FROM eventstore_events ORDER BY id DESC LIMIT 1";
+                cmd.CommandText = "SELECT id FROM " + _partition + "_events ORDER BY id DESC LIMIT 1";
                 using (var reader = cmd.ExecuteReader())
                 {
                     if (reader.Read())
@@ -681,12 +683,12 @@ namespace ServiceLib
             }
         }
 
-        private static List<GetAllEventsEvent> GetEvents(NpgsqlConnection conn, long startingId, int maxCount)
+        private List<GetAllEventsEvent> GetEvents(NpgsqlConnection conn, long startingId, int maxCount)
         {
             using (var cmd = conn.CreateCommand())
             {
                 cmd.CommandText = string.Concat(
-                    "SELECT id, streamname, version, format, eventtype, contents FROM eventstore_events WHERE id > ",
+                    "SELECT id, streamname, version, format, eventtype, contents FROM " + _partition + "_events WHERE id > ",
                     startingId.ToString(), " ORDER BY id LIMIT ", maxCount.ToString());
                 using (var reader = cmd.ExecuteReader())
                 {
