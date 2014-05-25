@@ -93,6 +93,7 @@
     <Compile Include="NetworkBusInMemory.cs" />
     <Compile Include="NetworkBusPostgres.cs" />
     <Compile Include="ParametrizedUrl.cs" />
+    <Compile Include="PreserveExceptionStackTrace.cs" />
     <Compile Include="ProcessingErrors.cs" />
     <Compile Include="ProcessManager.cs" />
     <Compile Include="ProcessManagerSimple.cs" />

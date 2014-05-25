@@ -39,10 +39,9 @@ namespace Vydejna.Web
         private EventStreaming _eventStreaming;
         private EventSourcedJsonSerializer _eventSerializer;
         private List<IDisposable> _disposables;
-        private HttpApplication _host;
         private HttpHandler _handler;
 
-        public void Initialize(HttpApplication host)
+        public void Initialize()
         {
             _postgresConnectionString = ConfigurationManager.AppSettings.Get("database");
             _nodeId = ConfigurationManager.AppSettings.Get("node"); ;
@@ -58,8 +57,6 @@ namespace Vydejna.Web
             _router = new HttpRouterCommon(httpRouter);
             _router.WithSerializer(new HttpSerializerJson()).WithSerializer(new HttpSerializerXml()).WithPicker(new HttpSerializerPicker());
             _handler = new HttpHandler(new HttpServerDispatcher(httpRouter));
-            _host = host;
-            _host.BeginRequest += OnBeginRequest;
 
             new DomainRestInterface(mainBus).Register(_router);
             new ProjectionsRestInterface(mainBus).Register(_router);
@@ -123,9 +120,9 @@ namespace Vydejna.Web
             BuildProjection(new SeznamVadProjection(new SeznamVadRepository(documentStore.GetFolder("seznamvad")), _time), "SeznamVad");
         }
 
-        private void OnBeginRequest(object sender, EventArgs e)
+        public void OnBeginRequest(HttpContext nativeContext)
         {
-            _host.Context.RemapHandler(_handler);
+            nativeContext.RemapHandler(_handler);
         }
 
         private void BuildEventProcessor<T>(T processor, string processorName)

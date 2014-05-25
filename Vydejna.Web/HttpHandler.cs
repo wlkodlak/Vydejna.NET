@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 
 namespace Vydejna.Web
 {
-    public class HttpHandler : IHttpAsyncHandler
+    public class HttpHandler : IHttpHandler
     {
         private IHttpServerDispatcher _dispatcher;
 
@@ -50,20 +50,32 @@ namespace Vydejna.Web
         public void EndProcessRequest(IAsyncResult result)
         {
             var task = (Task)result;
-            if (task.IsFaulted)
-                throw task.Exception.InnerException;
+            try
+            {
+                task.Wait();
+            }
+            catch (AggregateException exception)
+            {
+                throw exception.InnerException.PreserveStackTrace();
+            }
         }
 
         private class AspNetContext : IHttpServerRawContext
         {
-            private HttpContext _nativeContext;
             private List<RequestParameter> _routeParameters;
             private RequestHeaders _requestHeaders;
             private ResponseHeaders _responseHeaders;
+            private string _url, _method, _clientAddress;
+            private System.IO.Stream _inputStream;
+            private HttpResponse _response;
 
             public AspNetContext(HttpContext nativeContext)
             {
-                _nativeContext = nativeContext;
+                _method = nativeContext.Request.HttpMethod;
+                _url = nativeContext.Request.Url.OriginalString;
+                _clientAddress = nativeContext.Request.UserHostAddress;
+                _inputStream = nativeContext.Request.InputStream;
+                _response = nativeContext.Response;
                 _routeParameters = new List<RequestParameter>();
                 _requestHeaders = new RequestHeaders(nativeContext.Request);
                 _responseHeaders = new ResponseHeaders(nativeContext.Response);
@@ -71,33 +83,33 @@ namespace Vydejna.Web
 
             public string Method
             {
-                get { return _nativeContext.Request.HttpMethod; }
+                get { return _method; }
             }
 
             public string Url
             {
-                get { return _nativeContext.Request.RawUrl; }
+                get { return _url; }
             }
 
             public string ClientAddress
             {
-                get { return _nativeContext.Request.UserHostAddress; }
+                get { return _clientAddress; }
             }
 
             public int StatusCode
             {
-                get { return _nativeContext.Response.StatusCode; }
-                set { _nativeContext.Response.StatusCode = value; }
+                get { return _response.StatusCode; }
+                set { _response.StatusCode = value; }
             }
 
             public System.IO.Stream InputStream
             {
-                get { return _nativeContext.Request.InputStream; }
+                get { return _inputStream; }
             }
 
             public System.IO.Stream OutputStream
             {
-                get { return _nativeContext.Response.OutputStream; }
+                get { return _response.OutputStream; }
             }
 
             public IList<RequestParameter> RouteParameters
@@ -112,7 +124,7 @@ namespace Vydejna.Web
 
             public IHttpServerRawHeaders OutputHeaders
             {
-                get { throw new NotImplementedException(); }
+                get { return _responseHeaders; }
             }
         }
 
@@ -168,7 +180,7 @@ namespace Vydejna.Web
 
             public void Clear()
             {
-                _response.Headers.Clear();
+                _response.ClearHeaders();
             }
 
             public IEnumerator<KeyValuePair<string, string>> GetEnumerator()

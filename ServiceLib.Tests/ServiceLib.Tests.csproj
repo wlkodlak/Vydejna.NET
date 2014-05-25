@@ -103,7 +103,6 @@
     <Compile Include="Messaging\SubscriptionManagerTests.cs" />
     <Compile Include="Messaging\TypeMapperTests.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="TestUtils\PreserveExceptionStackTrace.cs" />
     <Compile Include="TestUtils\ReadModelTestBase.cs" />
     <Compile Include="TestUtils\TestDocumentFolder.cs" />
     <Compile Include="TestUtils\TestEventStore.cs" />
