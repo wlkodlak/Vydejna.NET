@@ -16,6 +16,7 @@ namespace ServiceLib.Tests.EventHandlers
         private ICommandSubscriptionManager _subscriptions;
         private EventProcessSimple _process;
         private TestHandler _handler;
+        private VirtualTime _time;
 
         [TestInitialize]
         public void Initialize()
@@ -25,7 +26,8 @@ namespace ServiceLib.Tests.EventHandlers
             _streaming = new TestStreaming();
             _subscriptions = new CommandSubscriptionManager();
             _handler = new TestHandler();
-            _process = new EventProcessSimple(_metadata, _streaming, _subscriptions).WithTokenFlushing(5);
+            _time = new VirtualTime();
+            _process = new EventProcessSimple(_metadata, _streaming, _subscriptions, _time).WithTokenFlushing(5);
             _process.Register<TestEvent1>(_handler);
             _process.Register<TestEvent2>(_handler);
             _process.Register<TestEvent3>(_handler);

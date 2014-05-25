@@ -124,7 +124,7 @@ namespace Vydejna.Server
             var subscriptions = new CommandSubscriptionManager();
             processor.Subscribe(subscriptions);
             var process = new EventProcessSimple(_metadataManager.GetConsumer(processorName),
-                new EventStreamingDeserialized(_eventStreaming, _eventSerializer), subscriptions);
+                new EventStreamingDeserialized(_eventStreaming, _eventSerializer), subscriptions, _time);
             _processes.RegisterGlobal("ProcesDefiniceNaradi", process, 0, 0);
         }
 
@@ -134,7 +134,7 @@ namespace Vydejna.Server
             var subscriptions = new CommandSubscriptionManager();
             projection.Subscribe(subscriptions);
             var projector = new EventProjectorSimple(projection, _metadataManager.GetConsumer(projectionName),
-                new EventStreamingDeserialized(_eventStreaming, _eventSerializer), subscriptions);
+                new EventStreamingDeserialized(_eventStreaming, _eventSerializer), subscriptions, _time);
             _processes.RegisterGlobal(projectionName, projector, 0, 0);
         }
 

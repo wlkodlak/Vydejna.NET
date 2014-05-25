@@ -41,6 +41,7 @@ namespace ServiceLib
         private readonly IEventStreamingDeserialized _streaming;
         private readonly ICommandSubscriptionManager _subscriptions;
         private readonly IEventProjection _projectionInfo;
+        private readonly ITime _time;
         private ProcessState _processState;
         private Action<ProcessState> _onStateChanged;
         private CancellationTokenSource _cancelPause, _cancelStop;
@@ -49,13 +50,14 @@ namespace ServiceLib
         private CancellationToken _cancelStopToken;
         private TaskScheduler _scheduler;
 
-        public EventProjectorSimple(IEventProjection projection, IMetadataInstance metadata, IEventStreamingDeserialized streaming, ICommandSubscriptionManager subscriptions)
+        public EventProjectorSimple(IEventProjection projection, IMetadataInstance metadata, IEventStreamingDeserialized streaming, ICommandSubscriptionManager subscriptions, ITime time)
         {
             _lock = new object();
             _projectionInfo = projection;
             _metadata = metadata;
             _streaming = streaming;
             _subscriptions = subscriptions;
+            _time = time;
         }
 
         public void Register<T>(IProcess<T> handler)
@@ -158,14 +160,14 @@ namespace ServiceLib
 
         private IEnumerable<Task> ProjectorCore()
         {
-            yield return TaskUtils.Retry(() => _metadata.Lock(_cancelPauseToken));
+            yield return TaskUtils.Retry(() => _metadata.Lock(_cancelPauseToken), _time);
             try
             {
-                var taskGetToken = TaskUtils.Retry(() => _metadata.GetToken(), _cancelPauseToken);
+                var taskGetToken = TaskUtils.Retry(() => _metadata.GetToken(), _time, _cancelPauseToken);
                 yield return taskGetToken;
                 var token = taskGetToken.Result;
 
-                var taskGetVersion = TaskUtils.Retry(() => _metadata.GetVersion(), _cancelPauseToken);
+                var taskGetVersion = TaskUtils.Retry(() => _metadata.GetVersion(), _time, _cancelPauseToken);
                 yield return taskGetVersion;
                 var savedVersion = taskGetVersion.Result;
 
@@ -178,11 +180,11 @@ namespace ServiceLib
 
                 if (rebuildMode == EventProjectionUpgradeMode.Upgrade)
                 {
-                    var taskUpgrade = TaskUtils.Retry(() => _projectionInfo.Handle(new ProjectorMessages.UpgradeFrom(savedVersion)), _cancelStopToken);
+                    var taskUpgrade = TaskUtils.Retry(() => _projectionInfo.Handle(new ProjectorMessages.UpgradeFrom(savedVersion)), _time, _cancelStopToken);
                     yield return taskUpgrade;
                     taskUpgrade.Wait();
 
-                    var taskSetVersion = TaskUtils.Retry(() => _metadata.SetVersion(_projectionInfo.GetVersion()), _cancelStopToken);
+                    var taskSetVersion = TaskUtils.Retry(() => _metadata.SetVersion(_projectionInfo.GetVersion()), _time, _cancelStopToken);
                     yield return taskSetVersion;
                     taskSetVersion.Wait();
 
@@ -190,16 +192,16 @@ namespace ServiceLib
                 }
                 else if (rebuildMode == EventProjectionUpgradeMode.Rebuild)
                 {
-                    var taskReset = TaskUtils.Retry(() => _projectionInfo.Handle(new ProjectorMessages.Reset()), _cancelStopToken);
+                    var taskReset = TaskUtils.Retry(() => _projectionInfo.Handle(new ProjectorMessages.Reset()), _time, _cancelStopToken);
                     yield return taskReset;
                     taskReset.Wait();
 
-                    var taskSetToken = TaskUtils.Retry(() => _metadata.SetToken(EventStoreToken.Initial), _cancelStopToken);
+                    var taskSetToken = TaskUtils.Retry(() => _metadata.SetToken(EventStoreToken.Initial), _time, _cancelStopToken);
                     yield return taskSetToken;
                     taskSetToken.Wait();
                     token = EventStoreToken.Initial;
 
-                    var taskSetVersion = TaskUtils.Retry(() => _metadata.SetVersion(_projectionInfo.GetVersion()), _cancelStopToken);
+                    var taskSetVersion = TaskUtils.Retry(() => _metadata.SetVersion(_projectionInfo.GetVersion()), _time, _cancelStopToken);
                     yield return taskSetVersion;
                     taskSetVersion.Wait();
                 }
@@ -210,7 +212,7 @@ namespace ServiceLib
                 {
                     var nowait = firstIteration || lastToken != null || rebuildMode == EventProjectionUpgradeMode.Rebuild;
                     firstIteration = false;
-                    var taskNextEvent = TaskUtils.Retry(() => _streaming.GetNextEvent(nowait), _cancelPauseToken);
+                    var taskNextEvent = TaskUtils.Retry(() => _streaming.GetNextEvent(nowait), _time, _cancelPauseToken);
                     yield return taskNextEvent;
                     var nextEvent = taskNextEvent.Result;
 

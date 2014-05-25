@@ -18,13 +18,15 @@ namespace ServiceLib
         private Action<ProcessState> _onProcessStateChanged;
         private int _flushAfter;
         private TaskScheduler _scheduler;
+        private ITime _time;
 
-        public EventProcessSimple(IMetadataInstance metadata, IEventStreamingDeserialized streaming, ICommandSubscriptionManager subscriptions)
+        public EventProcessSimple(IMetadataInstance metadata, IEventStreamingDeserialized streaming, ICommandSubscriptionManager subscriptions, ITime time)
         {
             _metadata = metadata;
             _streaming = streaming;
             _subscriptions = subscriptions;
             _processState = ProcessState.Uninitialized;
+            _time = time;
             _lock = new object();
         }
 
@@ -126,10 +128,10 @@ namespace ServiceLib
 
         private IEnumerable<Task> ProcessCore()
         {
-            yield return TaskUtils.Retry(() => _metadata.Lock(_cancelPause.Token));
+            yield return TaskUtils.Retry(() => _metadata.Lock(_cancelPause.Token), _time);
             try
             {
-                var taskGetToken = TaskUtils.Retry(() => _metadata.GetToken(), _cancelPause.Token);
+                var taskGetToken = TaskUtils.Retry(() => _metadata.GetToken(), _time, _cancelPause.Token);
                 yield return taskGetToken;
                 var token = taskGetToken.Result;
 
@@ -143,7 +145,7 @@ namespace ServiceLib
                 {
                     var nowait = firstIteration || lastToken != null;
                     firstIteration = false;
-                    var taskNextEvent = TaskUtils.Retry(() => _streaming.GetNextEvent(nowait), _cancelPause.Token);
+                    var taskNextEvent = TaskUtils.Retry(() => _streaming.GetNextEvent(nowait), _time, _cancelPause.Token);
                     yield return taskNextEvent;
                     if (_cancelPause.IsCancellationRequested)
                         break;
@@ -159,7 +161,7 @@ namespace ServiceLib
                     {
                         lastToken = nextEvent.Token;
                         var handler = _subscriptions.FindHandler(nextEvent.Event.GetType());
-                        var taskHandler = TaskUtils.Retry(() => handler.Handle(nextEvent.Event), _cancelStop.Token, 3);
+                        var taskHandler = TaskUtils.Retry(() => handler.Handle(nextEvent.Event), _time, _cancelStop.Token, 3);
                         yield return taskHandler;
                         tokenToSave = lastToken;
                         if (taskHandler.Exception != null && !taskHandler.IsCanceled)

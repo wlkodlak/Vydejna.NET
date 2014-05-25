@@ -1,15 +1,5 @@
 ﻿ZPRACOVANI TRANSIENTNICH CHYB:
-* EventProcessSimple:
-  - transientni chyba z EventStreaming zpusobuje opakovani pokusu ziskat eventy, casovy odstup roste, neomezene opakovani
-  - trvala chyba z EventStreaming ukoncuje cely proces
-  - transientni chyba v handleru zpusobi opakovani pokusu vykonat handler, casovy odstup roste, maximalne 5 opakovani
-  - trvala chyba nebo dlouhodova transientni chyba davaji zpravu do dead letter
-  - chyba zapisu dead letter ma nekonecne opakovani (pokud neni mozne zapsat chybu, nema smysl pokracovat)
 * EventProjectorSimple:
-  - transientni chyba z EventStreaming zpusobuje opakovani pokusu ziskat eventy, casovy odstup roste, neomezene opakovani
-  - trvala chyba z EventStreaming ukoncuje cely proces
-  - transientni chyba v handleru zpusobi opakovani pokusu vykonat handler, casovy odstup roste, neomezene opakovani
-  - ProjectorMessages.ConcurrencyException restartuje cely proces projekce
   - trvala chyba zavola detekci (jedna metoda pro celou projekci - exception + message), jak se pri teto chybe zachovat:
     a) ukoncit projekci, zalogovat chybu - tj. rychle selhani
 	b) vadnou zpravu vlozit do dead letter, zalogovat chybu a pokracovat; neschopnost zapsat do dead letter ma neomezene opakovani
@@ -17,7 +7,6 @@
 
 PODPORA VICE UZLU:
 * Zrusit INodeLockManager, jeho praci zastane ProcessManager
-* vsechny IProcessWorker musi umoznovat opetovny start
 
 INTEGRACE DO IIS:
 * Volani HTTP requestu z IIS (prikazy + query, je zde zahrnuta podpora readeru a command handleru)

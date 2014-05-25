@@ -17,6 +17,7 @@ namespace ServiceLib.Tests.EventHandlers
         private TestStreaming _streaming;
         private CommandSubscriptionManager _subscriptions;
         private EventProjectorSimple _process;
+        private VirtualTime _time;
 
         [TestInitialize]
         public void Initialize()
@@ -26,7 +27,7 @@ namespace ServiceLib.Tests.EventHandlers
             _metadata = new TestMetadataInstance();
             _streaming = new TestStreaming();
             _subscriptions = new CommandSubscriptionManager();
-            _process = new EventProjectorSimple(_projection, _metadata, _streaming, _subscriptions);
+            _process = new EventProjectorSimple(_projection, _metadata, _streaming, _subscriptions, _time);
             _process.Init(null, _scheduler);
             _process.Register<ProjectorMessages.Reset>(_projection);
             _process.Register<ProjectorMessages.UpgradeFrom>(_projection);
