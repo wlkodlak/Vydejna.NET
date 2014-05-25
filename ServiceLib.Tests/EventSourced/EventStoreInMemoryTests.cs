@@ -4,6 +4,8 @@ using System;
 using System.Linq;
 using System.Collections.Generic;
 using Npgsql;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace ServiceLib.Tests.EventSourced
 {
@@ -31,15 +33,19 @@ namespace ServiceLib.Tests.EventSourced
         private DatabasePostgres _db;
         private List<IDisposable> _disposables;
         private VirtualTime _time;
+        private Timer _timer;
 
         protected override void InitializeCore()
         {
             base.InitializeCore();
-            Scheduler.AllowWaiting(2, 50);
+            Scheduler.AllowWaiting(2, 75);
             _time = new VirtualTime();
             _disposables = new List<IDisposable>();
             _db = new DatabasePostgres(GetConnectionString(), _time);
             _db.ExecuteSync(Drop);
+            _timer = new Timer(o => _time.SetTime(_time.GetUtcTime().AddSeconds(5)), null, 500, 500);
+            _disposables.Add(_db);
+            _disposables.Add(_timer);
         }
 
         private string GetConnectionString()

@@ -16,11 +16,13 @@ namespace ServiceLib
         private NotificationWatcher _notifications;
         private int _listenerKey;
         private ITime _time;
+        private CircuitBreaker _breaker;
 
         public DatabasePostgres(string connectionString, ITime time)
         {
             _connectionString = connectionString;
             _time = time;
+            _breaker = new CircuitBreaker(time).StartHalfOpen();
             _notifications = new NotificationWatcher(this);
             _notifications.Start();
         }
@@ -46,7 +48,7 @@ namespace ServiceLib
             using (var conn = new NpgsqlConnection())
             {
                 conn.ConnectionString = _connectionString;
-                OpenConnection(conn);
+                _breaker.Execute(OpenConnection, conn);
                 ExecuteHandler(parameters.Item1, conn, parameters.Item2);
             }
         }
@@ -57,12 +59,12 @@ namespace ServiceLib
             using (var conn = new NpgsqlConnection())
             {
                 conn.ConnectionString = _connectionString;
-                OpenConnection(conn);
+                _breaker.Execute(OpenConnection, conn);
                 return ExecuteHandler(parameters.Item1, conn, parameters.Item2);
             }
         }
 
-        private static void OpenConnection(NpgsqlConnection conn)
+        private void OpenConnection(NpgsqlConnection conn)
         {
             try
             {
@@ -105,11 +107,6 @@ namespace ServiceLib
                 else
                     throw;
             }
-        }
-
-        public void ReleaseConnection(NpgsqlConnection conn)
-        {
-            conn.Close();
         }
 
         public void Listen(string listenName, Action<string> onNotify, CancellationToken cancel)

@@ -414,4 +414,109 @@ namespace ServiceLib
             }
         }
     }
+
+    public class CircuitBreaker
+    {
+        private object _lock;
+        private int _failures, _failureLimit, _retryTime;
+        private DateTime _nextAttempt;
+        private ITime _time;
+        private CircuitBreakerState _state;
+        private enum CircuitBreakerState
+        {
+            Failing, Working, SingleAttemptIdle, SingleAttemptBusy
+        }
+
+        public CircuitBreaker(ITime time)
+        {
+            _lock = new object();
+            _state = CircuitBreakerState.Working;
+            _nextAttempt = DateTime.MinValue;
+            _time = time;
+            SetupLimit(4, 15000);
+        }
+
+        public CircuitBreaker StartHalfOpen()
+        {
+            lock (_lock)
+            {
+                if (_state == CircuitBreakerState.Working)
+                    _state = CircuitBreakerState.SingleAttemptIdle;
+            }
+            return this;
+        }
+
+        public CircuitBreaker SetupLimit(int failureLimit, int retryTime)
+        {
+            lock (_lock)
+            {
+                _failureLimit = Math.Max(1, failureLimit);
+                _retryTime = Math.Max(5, Math.Min(60000, retryTime));
+            }
+            return this;
+        }
+
+        public void Execute<T>(Action<T> action, T arg)
+        {
+            lock (_lock)
+            {
+                var retry = true;
+                while (retry)
+                {
+                    retry = false;
+                    if (_state == CircuitBreakerState.Failing)
+                    {
+                        if (_time.GetUtcTime() < _nextAttempt)
+                            throw new TransientErrorException("BREAKER", "There is lasting transient error, failing quickly");
+                        else
+                            _state = CircuitBreakerState.SingleAttemptBusy;
+                    }
+                    else if (_state == CircuitBreakerState.SingleAttemptBusy)
+                    {
+                        Monitor.Wait(_lock);
+                        retry = true;
+                    }
+                    else if (_state == CircuitBreakerState.SingleAttemptIdle)
+                    {
+                        _state = CircuitBreakerState.SingleAttemptBusy;
+                    }
+                }
+            }
+            try
+            {
+                action(arg);
+                lock (_lock)
+                {
+                    _failures = 0;
+                    if (_state == CircuitBreakerState.SingleAttemptBusy)
+                    {
+                        _state = CircuitBreakerState.Working;
+                        Monitor.PulseAll(_lock);
+                    }
+                }
+            }
+            catch
+            {
+                lock (_lock)
+                {
+                    if (_state == CircuitBreakerState.Working)
+                    {
+                        _failures++;
+                        if (_failures > _failureLimit)
+                        {
+                            _state = CircuitBreakerState.Failing;
+                            _nextAttempt = _time.GetUtcTime().AddMilliseconds(_retryTime);
+                        }
+                    }
+                    else if (_state == CircuitBreakerState.SingleAttemptBusy)
+                    {
+                        _state = CircuitBreakerState.Failing;
+                        _nextAttempt = _time.GetUtcTime().AddMilliseconds(_retryTime);
+                        Monitor.PulseAll(_lock);
+                    }
+                }
+                throw;
+            }
+        }
+    }
 }

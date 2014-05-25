@@ -1,11 +1,4 @@
-﻿ZPRACOVANI TRANSIENTNICH CHYB:
-* EventProjectorSimple:
-  - trvala chyba zavola detekci (jedna metoda pro celou projekci - exception + message), jak se pri teto chybe zachovat:
-    a) ukoncit projekci, zalogovat chybu - tj. rychle selhani
-	b) vadnou zpravu vlozit do dead letter, zalogovat chybu a pokracovat; neschopnost zapsat do dead letter ma neomezene opakovani
-* DatabasePostgres by mela implementovat Circuit Breaker - pri chybe pripojeni (vadny connection string nebo neodpovidajici server) by se nemely posilat dalsi zadosti o spojeni, dokud nebude jedno z nich opet uspesne otevreno. Chyba prihlasovacich udaju se zkousi znovu az po restartu celeho programu (jinak hrozi zamceni).
-
-PODPORA VICE UZLU:
+﻿PODPORA VICE UZLU:
 * ProcessManagerSimple bude podporovat restarty procesu po selhani, je urcen pro jediny node
 * Vytvorit ProcessManagerPostgres, urceny pro multi-node
 
