@@ -12,7 +12,6 @@ namespace ServiceLib.Tests.Documents
     {
         private TestScheduler _scheduler;
         private TestDocumentFolder _folder;
-        private Mock<INodeLockManager> _locking;
         private MetadataManager _mgr;
         private IMetadataInstance _inst;
         
@@ -21,8 +20,7 @@ namespace ServiceLib.Tests.Documents
         {
             _scheduler = new TestScheduler();
             _folder = new TestDocumentFolder();
-            _locking = new Mock<INodeLockManager>();
-            _mgr = new MetadataManager(_folder, _locking.Object);
+            _mgr = new MetadataManager(_folder);
             _inst = _mgr.GetConsumer("consumer");
         }
 
@@ -62,29 +60,6 @@ namespace ServiceLib.Tests.Documents
             Assert.IsTrue(taskVersion.IsCompleted, "Complete");
             var version = taskVersion.Result;
             Assert.AreEqual("1.12", version);
-        }
-
-        [TestMethod]
-        public void LockMetadata()
-        {
-            var tcs = new TaskCompletionSource<object>();
-            _locking
-                .Setup(l => l.Lock("consumer", CancellationToken.None, false))
-                .Returns(tcs.Task)
-                .Verifiable();
-            var taskLock = _scheduler.Run(() => _inst.Lock(CancellationToken.None), false);
-            tcs.SetResult(null);
-            _scheduler.Process();
-            Assert.IsTrue(taskLock.IsCompleted, "Completed");
-            Assert.IsNull(taskLock.Exception, "Exception");
-        }
-
-        [TestMethod]
-        public void UnlockMetadata()
-        {
-            _locking.Setup(l => l.Unlock("consumer")).Verifiable();
-            _inst.Unlock();
-            _locking.Verify();
         }
     }
 }

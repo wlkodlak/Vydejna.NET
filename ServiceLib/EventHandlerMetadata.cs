@@ -19,24 +19,20 @@ namespace ServiceLib
         Task SetToken(EventStoreToken token);
         Task<string> GetVersion();
         Task SetVersion(string version);
-        Task Lock(CancellationToken cancel);
-        void Unlock();
     }
 
     public class MetadataManager : IMetadataManager
     {
         private IDocumentFolder _store;
-        private INodeLockManager _locking;
 
-        public MetadataManager(IDocumentFolder store, INodeLockManager locking)
+        public MetadataManager(IDocumentFolder store)
         {
             _store = store;
-            _locking = locking;
         }
 
         public IMetadataInstance GetConsumer(string consumerName)
         {
-            return new MetadataInstance(consumerName, consumerName + "_ver", consumerName + "_tok", _store, _locking);
+            return new MetadataInstance(consumerName, consumerName + "_ver", consumerName + "_tok", _store);
         }
     }
 
@@ -46,11 +42,10 @@ namespace ServiceLib
         private string _versionDoc;
         private string _tokenDoc;
         private IDocumentFolder _store;
-        private INodeLockManager _locking;
         private int _versionVer;
         private int _tokenVer;
 
-        public MetadataInstance(string lockName, string versionDoc, string tokenDoc, IDocumentFolder store, INodeLockManager locking)
+        public MetadataInstance(string lockName, string versionDoc, string tokenDoc, IDocumentFolder store)
         {
             this._lockName = lockName;
             this._versionDoc = versionDoc;
@@ -58,7 +53,6 @@ namespace ServiceLib
             this._versionVer = 0;
             this._tokenVer = 0;
             this._store = store;
-            this._locking = locking;
         }
 
         public string ProcessName
@@ -122,16 +116,6 @@ namespace ServiceLib
                 if (!task.Result)
                     throw new MetadataInstanceConcurrencyException();
             });
-        }
-
-        public Task Lock(CancellationToken cancel)
-        {
-            return _locking.Lock(_lockName, cancel, false);
-        }
-
-        public void Unlock()
-        {
-            _locking.Unlock(_lockName);
         }
     }
 

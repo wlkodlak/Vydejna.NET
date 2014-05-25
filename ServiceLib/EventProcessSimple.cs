@@ -63,7 +63,7 @@ namespace ServiceLib
             _cancelPause = new CancellationTokenSource();
             _cancelStop = new CancellationTokenSource();
             SetProcessState(ProcessState.Starting);
-            TaskUtils.FromEnumerable(ProcessCore()).CatchAll().UseScheduler(_scheduler).GetTask()
+            TaskUtils.FromEnumerable(ProcessCore()).UseScheduler(_scheduler).GetTask()
                 .ContinueWith(t =>
                 {
                     if (t.Exception == null || t.IsCanceled)
@@ -128,7 +128,6 @@ namespace ServiceLib
 
         private IEnumerable<Task> ProcessCore()
         {
-            yield return TaskUtils.Retry(() => _metadata.Lock(_cancelPause.Token), _time);
             try
             {
                 var taskGetToken = TaskUtils.Retry(() => _metadata.GetToken(), _time, _cancelPause.Token);
@@ -192,7 +191,7 @@ namespace ServiceLib
             }
             finally
             {
-                _metadata.Unlock();
+                _streaming.Close();
             }
         }
     }

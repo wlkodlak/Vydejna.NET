@@ -8,11 +8,7 @@ namespace ServiceLib.Tests.TestUtils
     {
         public EventStoreToken Token;
         public string Version;
-        public bool WaitsForLock;
-        public bool IsLocked;
         public bool FailMode;
-        private TaskCompletionSource<object> _taskLock;
-        private CancellationTokenRegistration _taskCancel;
         public string ProcessName { get; set; }
 
         public TestMetadataInstance()
@@ -57,34 +53,6 @@ namespace ServiceLib.Tests.TestUtils
                 Version = version;
                 return TaskUtils.CompletedTask();
             }
-        }
-
-        public void SendLock()
-        {
-            if (WaitsForLock)
-            {
-                IsLocked = true;
-                WaitsForLock = false;
-                _taskCancel.Dispose();
-                _taskLock.TrySetResult(null);
-            }
-        }
-
-        public Task Lock(CancellationToken cancel)
-        {
-            WaitsForLock = true;
-            _taskLock = new TaskCompletionSource<object>();
-            _taskCancel = cancel.Register(() =>
-            {
-                _taskLock.TrySetCanceled(); 
-                WaitsForLock = false;
-            });
-            return _taskLock.Task;
-        }
-
-        public void Unlock()
-        {
-            IsLocked = false;
         }
     }
 }

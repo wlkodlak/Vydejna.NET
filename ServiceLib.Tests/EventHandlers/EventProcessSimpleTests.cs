@@ -36,28 +36,13 @@ namespace ServiceLib.Tests.EventHandlers
         }
 
         [TestMethod]
-        public void LockNotAvailable()
-        {
-            _process.Start();
-            _scheduler.Process();
-            Assert.IsTrue(_metadata.WaitsForLock, "Waits for lock");
-            _process.Pause();
-            _scheduler.Process();
-            Assert.AreEqual(ProcessState.Inactive, _process.State, "Process state");
-            Assert.IsFalse(_metadata.WaitsForLock, "Does not wait for lock anymore");
-        }
-
-        [TestMethod]
         public void LockedWhenShuttingDown()
         {
             _process.Start();
             _scheduler.Process();
-            _metadata.SendLock();
-            _scheduler.Process();
             _process.Pause();
             _scheduler.Process();
             Assert.AreEqual(ProcessState.Inactive, _process.State, "Process state");
-            Assert.IsFalse(_metadata.IsLocked, "Lock released");
         }
 
         [TestMethod]
@@ -66,17 +51,13 @@ namespace ServiceLib.Tests.EventHandlers
             _metadata.FailMode = true;
             _process.Start();
             _scheduler.Process();
-            _metadata.SendLock();
-            _scheduler.Process();
-            Assert.IsFalse(_metadata.IsLocked, "Lock released");
+            Assert.AreEqual(ProcessState.Faulted, _process.State, "Process state");
         }
 
         [TestMethod]
         public void StartReadingStreamFromStart()
         {
             _process.Start();
-            _scheduler.Process();
-            _metadata.SendLock();
             _scheduler.Process();
             Assert.IsTrue(_streaming.IsReading, "Reading");
             Assert.AreEqual(EventStoreToken.Initial, _streaming.CurrentToken);
@@ -86,9 +67,7 @@ namespace ServiceLib.Tests.EventHandlers
         public void StartReadingStreamFromToken()
         {
             _process.Start();
-            _scheduler.Process();
             _metadata.Token = new EventStoreToken("10");
-            _metadata.SendLock();
             _scheduler.Process();
             Assert.IsTrue(_streaming.IsReading, "Reading");
             Assert.AreEqual(new EventStoreToken("10"), _streaming.CurrentToken);
@@ -99,7 +78,6 @@ namespace ServiceLib.Tests.EventHandlers
         {
             _process.Start();
             _scheduler.Process();
-            _metadata.SendLock();
             _streaming.AddEvent("1", new TestEvent1());
             _streaming.MarkEndOfStream();
             _scheduler.Process();
@@ -115,7 +93,6 @@ namespace ServiceLib.Tests.EventHandlers
         {
             _process.Start();
             _scheduler.Process();
-            _metadata.SendLock();
             _streaming.AddEvent("1", new TestEvent1());
             _streaming.AddEvent("2", new TestEvent3());
             _streaming.AddEvent("3", new TestEvent2());
@@ -133,7 +110,6 @@ namespace ServiceLib.Tests.EventHandlers
         {
             _process.Start();
             _scheduler.Process();
-            _metadata.SendLock();
             _streaming.AddEvent("1", new TestEvent1());
             _streaming.AddEvent("2", new TestEvent3());
             _streaming.AddEvent("3", new TestEvent2());
@@ -147,7 +123,6 @@ namespace ServiceLib.Tests.EventHandlers
             Assert.AreEqual("132", _handler.Output, "Output");
             Assert.IsFalse(_streaming.IsReading, "Reading");
             Assert.IsFalse(_streaming.IsWaiting, "Waiting");
-            Assert.IsFalse(_metadata.IsLocked, "IsLocked");
             Assert.AreEqual(new EventStoreToken("3"), _metadata.Token, "Metadata token");
             Assert.AreEqual(ProcessState.Inactive, _process.State, "Process state");
         }
@@ -157,7 +132,6 @@ namespace ServiceLib.Tests.EventHandlers
         {
             _process.Start();
             _scheduler.Process();
-            _metadata.SendLock();
             _streaming.AddEvent("1", new TestEvent1());
             _streaming.AddEvent("2", new TestEvent3());
             _streaming.AddEvent("3", new TestEvent4());
@@ -177,7 +151,6 @@ namespace ServiceLib.Tests.EventHandlers
             _handler.ErrorMode = "Fatal";
             _process.Start();
             _scheduler.Process();
-            _metadata.SendLock();
             _streaming.AddEvent("1", new TestEvent1());
             _streaming.AddEvent("2", new TestEvent3());
             _streaming.AddEvent("3", new TestEvent4());
@@ -197,7 +170,6 @@ namespace ServiceLib.Tests.EventHandlers
             _handler.ErrorMode = "Transient";
             _process.Start();
             _scheduler.Process();
-            _metadata.SendLock();
             _streaming.AddEvent("1", new TestEvent1());
             _streaming.AddEvent("2", new TestEvent3());
             _streaming.AddEvent("3", new TestEvent4());

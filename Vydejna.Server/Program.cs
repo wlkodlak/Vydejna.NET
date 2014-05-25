@@ -67,7 +67,7 @@ namespace Vydejna.Server
             networkBus.Initialize();
             var documentStore = new DocumentStorePostgres(postgres, "documents");
             documentStore.Initialize();
-            _metadataManager = new MetadataManager(documentStore.GetFolder("metadata"), new NodeLockManagerNull());
+            _metadataManager = new MetadataManager(documentStore.GetFolder("metadata"));
             _eventStreaming = new EventStreaming(_eventStore, networkBus);
 
             _disposables.Add(postgres);

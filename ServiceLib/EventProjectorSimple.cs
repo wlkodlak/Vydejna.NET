@@ -160,7 +160,6 @@ namespace ServiceLib
 
         private IEnumerable<Task> ProjectorCore()
         {
-            yield return TaskUtils.Retry(() => _metadata.Lock(_cancelPauseToken), _time);
             try
             {
                 var taskGetToken = TaskUtils.Retry(() => _metadata.GetToken(), _time, _cancelPauseToken);
@@ -272,7 +271,6 @@ namespace ServiceLib
             }
             finally
             {
-                _metadata.Unlock();
                 _streaming.Close();
             }
         }
