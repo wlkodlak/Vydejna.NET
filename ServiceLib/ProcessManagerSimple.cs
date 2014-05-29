@@ -7,7 +7,10 @@ using System.Threading.Tasks;
 
 namespace ServiceLib
 {
-    public class ProcessManagerSimple : IProcessManager, IHandle<SystemEvents.SystemInit>, IHandle<SystemEvents.SystemShutdown>
+    public class ProcessManagerSimple 
+        : IProcessManager
+        , IHandle<SystemEvents.SystemInit>
+        , IHandle<SystemEvents.SystemShutdown>
     {
         private object _lock;
         private Dictionary<string, ProcessInfo> _processes;

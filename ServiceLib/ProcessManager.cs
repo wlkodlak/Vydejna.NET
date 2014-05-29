@@ -13,6 +13,7 @@ namespace ServiceLib
         void RegisterBus(string name, IBus bus, IProcessWorker worker);
         void Start();
         void Stop();
+        void WaitForStop();
     }
 
     public enum ProcessState

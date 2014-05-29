@@ -2,10 +2,6 @@
 * ProcessManagerSimple bude podporovat restarty procesu po selhani, je urcen pro jediny node
 * Vytvorit ProcessManagerPostgres, urceny pro multi-node
 
-INTEGRACE DO IIS:
-* Volani HTTP requestu z IIS (prikazy + query, je zde zahrnuta podpora readeru a command handleru)
-* Zpracovani na pozadi pri hostovani v IIS (nutno vyuzit prostredky IIS hosta pro zabraneni recyklace pri aktivni praci hlavni sbernice)
-
 JMETER PERFORMANCE TESTING:
 * zakladem je CSV soubor, ktery obsahuje:
   - relativni URL

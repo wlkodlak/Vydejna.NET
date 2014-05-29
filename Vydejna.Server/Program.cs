@@ -29,7 +29,7 @@ namespace Vydejna.Server
     {
         private string _postgresConnectionString, _nodeId;
         private IList<string> _httpPrefixes;
-        private ProcessManagerSimple _processes;
+        private IProcessManager _processes;
         private IHttpRouteCommonConfigurator _router;
         private EventStorePostgres _eventStore;
         private ITime _time;
