@@ -282,6 +282,12 @@ namespace ServiceLib
             _workerCount = Environment.ProcessorCount * 2;
         }
 
+        public QueuedBusProcess WithWorkers(int workers)
+        {
+            _workerCount = Math.Min(Math.Max(workers, 1), 32);
+            return this;
+        }
+
         public void Start()
         {
             State = ProcessState.Running;
@@ -338,6 +344,7 @@ namespace ServiceLib
         {
             _onStateChanged = onStateChanged;
             _scheduler = scheduler;
+            State = ProcessState.Inactive;
         }
 
     }

@@ -84,6 +84,7 @@ namespace ServiceLib
         {
             _onStateChanged = onStateChanged;
             _scheduler = scheduler;
+            SetProcessState(ProcessState.Inactive);
         }
 
         private void SetProcessState(ProcessState state)

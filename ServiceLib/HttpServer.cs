@@ -147,6 +147,7 @@ namespace ServiceLib
         {
             _onStateChanged = onStateChanged;
             _scheduler = scheduler;
+            SetProcessState(ProcessState.Inactive);
         }
 
         public void Pause()

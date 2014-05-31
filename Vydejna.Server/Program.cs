@@ -1,5 +1,6 @@
 ﻿using ServiceLib;
 using System;
+using System.Linq;
 using System.Collections.Generic;
 using System.Configuration;
 using Vydejna.Contracts;
@@ -29,7 +30,7 @@ namespace Vydejna.Server
     {
         private string _postgresConnectionString, _nodeId;
         private IList<string> _httpPrefixes;
-        private IProcessManager _processes;
+        private ProcessManagerCluster _processes;
         private IHttpRouteCommonConfigurator _router;
         private EventStorePostgres _eventStore;
         private ITime _time;
@@ -38,6 +39,92 @@ namespace Vydejna.Server
         private EventStreaming _eventStreaming;
         private EventSourcedJsonSerializer _eventSerializer;
         private List<IDisposable> _disposables;
+        private bool _running;
+        private Dictionary<string, CommandInfo> _consoleCommands;
+
+        public Program()
+        {
+            _running = true;
+            _consoleCommands = new Dictionary<string, CommandInfo>();
+        }
+
+        private class CommandInfo
+        {
+            public string Name { get; private set; }
+            public string Help { get; private set; }
+            private int _parameters;
+            private Action<string[]> _handler;
+
+            public CommandInfo(string name, string help, int parameters, Action<string[]> handler)
+            {
+                Name = name;
+                Help = help;
+                _parameters = parameters;
+                _handler = handler;
+            }
+            protected CommandInfo(string name, string help)
+            {
+                Name = name;
+                Help = help;
+            }
+            public virtual void Execute(string[] commandLine)
+            {
+                if (_handler == null)
+                    Console.WriteLine("Command has no handler");
+                else if (_parameters == -1 || _parameters + 1 == commandLine.Length)
+                {
+                    try
+                    {
+                        _handler(commandLine);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine("Command failed: {0}", ex.ToString());
+                    }
+                }
+                else
+                    Console.WriteLine("Command {0} requires {1} parameters", Name, _parameters);
+            }
+        }
+
+        private class CommandInfoList : CommandInfo
+        {
+            private Program _parent;
+            public CommandInfoList(Program parent)
+                : base("list", "List processes")
+            {
+                _parent = parent;
+            }
+            public override void Execute(string[] commandLine)
+            {
+                if (commandLine.Length != 2)
+                    Console.WriteLine("Command list requires parameter: local | global | leader");
+                else if (commandLine[1] == "local")
+                {
+                    var processes = _parent._processes.GetLocalProcesses();
+                    Console.WriteLine("{0,-25} {1,-15}", "Process name", "Status");
+                    foreach (var process in processes)
+                        Console.WriteLine("{0,-25} {1,-15}", process.ProcessName, process.ProcessStatus);
+                }
+                else if (commandLine[1] == "leader")
+                {
+                    var processes = _parent._processes.GetLeaderProcesses();
+                    Console.WriteLine("{0,-25} {1,-15} {2,-36}", "Process name", "Status", "Assigned node");
+                    foreach (var process in processes)
+                        Console.WriteLine("{0,-25} {1,-15} {2,-36}", process.ProcessName, process.ProcessStatus, process.AssignedNode);
+                }
+                else if (commandLine[1] == "global")
+                {
+                    var processes = _parent._processes.GetGlobalInfo();
+                    Console.WriteLine("Node ID  : {0}", processes.NodeName);
+                    Console.WriteLine("Leader   : {0}", processes.LeaderName);
+                    Console.WriteLine("Connected: {0}", processes.IsConnected ? "yes" : "no");
+                    Console.WriteLine("{0,-25} {1,-15}", "Process name", "Status");
+                    foreach (var process in processes.RunningProcesses)
+                        Console.WriteLine("{0,-25} {1,-15}", process.ProcessName, process.ProcessStatus);
+                }
+            }
+        }
 
         private void Initialize()
         {
@@ -157,14 +244,45 @@ namespace Vydejna.Server
             _processes.WaitForStop();
         }
 
+        private void RegisterCommands()
+        {
+            _consoleCommands["list"] = new CommandInfoList(this);
+            _consoleCommands["exit"] = new CommandInfo("exit", "Stop whole server process", 0, cmd => _running = false);
+            _consoleCommands["start"] = new CommandInfo("start", "Start process", 1,
+                cmd => _processes.Handle(new ProcessManagerMessages.ProcessRequest { ProcessName = cmd[1], ShouldBeOnline = true }));
+            _consoleCommands["stop"] = new CommandInfo("stop", "Stop process", 1,
+                cmd => _processes.Handle(new ProcessManagerMessages.ProcessRequest { ProcessName = cmd[1], ShouldBeOnline = false }));
+            _consoleCommands["help"] = new CommandInfo("help", "Show this help", 0, cmd =>
+            {
+                foreach (var command in _consoleCommands.Values)
+                    Console.WriteLine("{0}: {1}", command.Name, command.Help);
+            });
+        }
+
+        private void ExecuteCommand(string[] commandLine)
+        {
+            if (commandLine.Length == 0)
+                return;
+            CommandInfo command;
+            if (!_consoleCommands.TryGetValue(commandLine[0].ToLowerInvariant(), out command))
+                Console.WriteLine("Unknown command {0}", commandLine[0]);
+            else
+                command.Execute(commandLine);
+        }
+
         public static void Main(string[] args)
         {
             var program = new Program();
             Console.WriteLine("Starting...");
             program.Initialize();
+            program.RegisterCommands();
             program.Start();
-            Console.WriteLine("Running... Press enter for exit.");
-            Console.ReadLine();
+            while (program._running)
+            {
+                Console.Write("> ");
+                var commandLine = Console.ReadLine().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                program.ExecuteCommand(commandLine);
+            }
             Console.WriteLine("Stopping...");
             program.Stop();
             Console.WriteLine("Waiting for exit...");

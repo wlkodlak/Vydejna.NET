@@ -1,8 +1,4 @@
-﻿PODPORA VICE UZLU:
-* ProcessManagerSimple bude podporovat restarty procesu po selhani, je urcen pro jediny node
-* Vytvorit ProcessManagerPostgres, urceny pro multi-node
-
-JMETER PERFORMANCE TESTING:
+﻿JMETER PERFORMANCE TESTING:
 * zakladem je CSV soubor, ktery obsahuje:
   - relativni URL
   - payload (v jednom radku)
@@ -23,3 +19,28 @@ LOGOVANI:
   - externi ciselniky
   - kazda projekce samostatne
   - kazdy event handler samostatne
+
+ADMIN KONZOLE:
+* sprava bezicich procesu:
+	- vypis stavu aktualniho uzlu:
+		> list local
+		lokalni procesy (nazev, stav)
+		> list global
+		nazev mistniho uzlu, nazev leadera, stav komunikace (je pripojen?), lokalne bezici globalni procesy (nazev, stav)
+	- vypis stavu globalnich procesu:
+		> list leader
+		nazev procesu, prideleny uzel, stav
+	- spusteni (restart) a ukonceni procesu (lokalnich i globalnich)
+		> start processName
+		> stop processName
+* informace o dead-letterech
+	- vypis zprav v dead-letter
+	- presun zprav z dead-letter zpet do fronty
+* ukonceni serveru
+	> exit
+* informace o zmenach procesu (async)
+	- lokalni proces spusten (Running), ukoncen (Inactive), selhal (Faulted)
+	- globalni proces spusten lokalne (Running), ukoncen (Inactive), selhal (Faulted)
+	- presun zpravy do dead-letter
+	- logovane ERROR (tzn. ty co obvykle ukoncuji proces nebo zpusobuji dead-letter)
+

@@ -181,10 +181,6 @@ namespace ServiceLib
             bus.Subscribe<ProcessManagerCluster.HeartbeatTimer>(this);
             bus.Subscribe<ProcessManagerCluster.ProcessDelayed>(this);
             bus.Subscribe<ProcessManagerCluster.ProcessSchedule>(this);
-        }
-
-        public void SubscribeGlobals(IBus bus)
-        {
             bus.Subscribe<ProcessManagerMessages.ConnectionRestored>(this);
             bus.Subscribe<ProcessManagerMessages.ElectionsInquiry>(this);
             bus.Subscribe<ProcessManagerMessages.ElectionsCandidate>(this);
@@ -249,7 +245,7 @@ namespace ServiceLib
         private NodeInfo GetNode(string nodeId)
         {
             NodeInfo nodeInfo;
-            if (_nodes.TryGetValue(nodeId, out nodeInfo))
+            if (!_nodes.TryGetValue(nodeId, out nodeInfo))
             {
                 nodeInfo = new NodeInfo();
                 nodeInfo.NodeId = nodeId;
@@ -323,9 +319,9 @@ namespace ServiceLib
         {
             if (_isShutingDown)
                 return;
+            UpdateNode(message.SenderId);
             if (string.Equals(message.SenderId, _nodeId, StringComparison.Ordinal))
                 return;
-            UpdateNode(message.SenderId);
             var nodeIdComparison = message.ForfitCandidature ? 1 : string.CompareOrdinal(_nodeId, message.SenderId);
             if (_isLeader)
             {
@@ -351,9 +347,9 @@ namespace ServiceLib
         {
             if (_isShutingDown)
                 return;
+            UpdateNode(message.SenderId);
             if (string.Equals(message.SenderId, _nodeId, StringComparison.Ordinal))
                 return;
-            UpdateNode(message.SenderId);
             var nodeIdComparison = string.CompareOrdinal(_nodeId, message.SenderId);
             if (nodeIdComparison < 0)
             {
@@ -365,9 +361,9 @@ namespace ServiceLib
         {
             if (_isShutingDown)
                 return;
+            var sender = UpdateNode(message.SenderId);
             if (string.Equals(message.SenderId, _nodeId, StringComparison.Ordinal))
                 return;
-            var sender = UpdateNode(message.SenderId);
             var nodeIdComparison = string.CompareOrdinal(_nodeId, message.SenderId);
             if (nodeIdComparison > 0)
             {
@@ -461,7 +457,10 @@ namespace ServiceLib
 
         public void Handle(ProcessManagerMessages.ProcessStart message)
         {
-            if (_isShutingDown || _leader == null || !string.Equals(_leader.NodeId, message.SenderId) || !string.Equals(_nodeId, message.AssignedNode))
+            if (_isShutingDown)
+                return;
+            UpdateNode(message.SenderId);
+            if (_leader == null || !string.Equals(_leader.NodeId, message.SenderId) || !string.Equals(_nodeId, message.AssignedNode))
                 return;
             ProcessInfo process;
             if (!_processes.TryGetValue(message.ProcessName, out process) || process.IsLocal)
@@ -489,7 +488,10 @@ namespace ServiceLib
 
         public void Handle(ProcessManagerMessages.ProcessStop message)
         {
-            if (_isShutingDown || _leader == null || !string.Equals(_leader.NodeId, message.SenderId))
+            if (_isShutingDown)
+                return;
+            UpdateNode(message.SenderId);
+            if (_leader == null || !string.Equals(_leader.NodeId, message.SenderId))
                 return;
             ProcessInfo process;
             if (!_processes.TryGetValue(message.ProcessName, out process) || process.IsLocal)
@@ -520,10 +522,11 @@ namespace ServiceLib
 
         public void Handle(ProcessManagerMessages.ProcessChange message)
         {
-            if (!_isLeader || _isShutingDown)
+            if (_isShutingDown)
                 return;
+            UpdateNode(message.SenderId);
             ProcessInfo process;
-            if (!_processes.TryGetValue(message.ProcessName, out process))
+            if (!_isLeader || !_processes.TryGetValue(message.ProcessName, out process))
                 return;
             switch (message.NewState)
             {
@@ -647,7 +650,7 @@ namespace ServiceLib
 
             foreach (var process in _processes.Values)
             {
-                if (process.IsLocal || process.State != GlobalProcessState.Offline)
+                if (process.IsLocal || process.State != GlobalProcessState.Offline || !process.RequestedState)
                     continue;
                 var foundNode = FindNodeForProcess(process, true, int.MaxValue);
                 if (foundNode == null)
@@ -661,21 +664,34 @@ namespace ServiceLib
             {
                 if (process.IsLocal || process.State != GlobalProcessState.Online || process.AssignedNode == null)
                     continue;
-                var foundNode = FindNodeForProcess(process, false, process.AssignedNode.ProcessCount - 2);
-                if (foundNode == null)
-                    continue;
-                process.AssignedNode.ProcessCount--;
-                process.AssignedNode = foundNode;
-                foundNode.ProcessCount++;
-                process.State = GlobalProcessState.ToBeStopped;
+                if (process.RequestedState)
+                {
+                    var foundNode = FindNodeForProcess(process, false, process.AssignedNode.ProcessCount - 2);
+                    if (foundNode == null)
+                        continue;
+                    foundNode.ProcessCount++;
+                    process.AssignedNode.ProcessCount--;
+                    process.State = GlobalProcessState.ToBeStopped;
+                }
+                else
+                {
+                    process.AssignedNode.ProcessCount--;
+                    process.State = GlobalProcessState.ToBeStopped;
+                }
             }
 
             foreach (var process in _processes.Values)
             {
                 if (process.State == GlobalProcessState.ToBeStarted)
+                {
+                    process.State = GlobalProcessState.Starting;
                     Broadcast(new ProcessManagerMessages.ProcessStart { ProcessName = process.Name, AssignedNode = process.AssignedNode.NodeId });
+                }
                 else if (process.State == GlobalProcessState.ToBeStopped)
+                {
+                    process.State = GlobalProcessState.Stopping;
                     Broadcast(new ProcessManagerMessages.ProcessStop { ProcessName = process.Name, AssignedNode = process.AssignedNode.NodeId });
+                }
             }
         }
 
@@ -703,6 +719,61 @@ namespace ServiceLib
                 return anyNode;
             else
                 return null;
+        }
+
+        public class InfoProcess
+        {
+            public string ProcessName, ProcessStatus, AssignedNode;
+        }
+        public class InfoGlobal
+        {
+            public string NodeName, LeaderName;
+            public bool IsConnected;
+            public List<InfoProcess> RunningProcesses;
+        }
+
+        public List<InfoProcess> GetLocalProcesses()
+        {
+            return _processes.Values
+                .Where(p => p.IsLocal && p.Worker != null)
+                .Select(p => new InfoProcess
+                {
+                    ProcessName = p.Name,
+                    ProcessStatus = p.Worker.State.ToString()
+                })
+                .ToList();
+        }
+
+        public InfoGlobal GetGlobalInfo()
+        {
+            return new InfoGlobal
+            {
+                NodeName = _nodeId,
+                LeaderName = _leader == null ? "(none)" : _leader.NodeId,
+                IsConnected = _nodes.Values.Any(n => n.IsOnline && n.NodeId == _nodeId),
+                RunningProcesses = _processes.Values
+                    .Where(p => !p.IsLocal && p.IsAssignedHere && p.Worker != null)
+                    .Select(p => new InfoProcess
+                    {
+                        ProcessName = p.Name,
+                        AssignedNode = _nodeId,
+                        ProcessStatus = p.Worker.State.ToString()
+                    })
+                    .ToList()
+            };
+        }
+
+        public List<InfoProcess> GetLeaderProcesses()
+        {
+            return _processes.Values
+                .Where(p => !p.IsLocal)
+                .Select(p => new InfoProcess
+                {
+                    ProcessName = p.Name,
+                    AssignedNode = p.AssignedNode == null ? "(none)" : p.AssignedNode.NodeId,
+                    ProcessStatus = p.State.ToString()
+                })
+                .ToList();
         }
     }
 }

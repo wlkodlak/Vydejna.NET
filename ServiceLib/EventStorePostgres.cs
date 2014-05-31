@@ -578,7 +578,11 @@ namespace ServiceLib
             }
             else
             {
-                if (waiter.Cancel.CanBeCanceled)
+                if (waiter.Cancel.IsCancellationRequested)
+                {
+                    WaitForEvents_RemoveWaiter(waiter);
+                }
+                else if (waiter.Cancel.CanBeCanceled)
                 {
                     waiter.CancelRegistration = waiter.Cancel.Register(WaitForEvents_RemoveWaiter, waiter);
                 }
