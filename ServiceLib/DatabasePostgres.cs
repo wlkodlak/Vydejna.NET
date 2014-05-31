@@ -18,6 +18,8 @@ namespace ServiceLib
         private ITime _time;
         private CircuitBreaker _breaker;
 
+        public const string ConnectionNotification = "__CONNECTION__";
+
         public DatabasePostgres(string connectionString, ITime time)
         {
             _connectionString = connectionString;
@@ -233,12 +235,17 @@ namespace ServiceLib
 
             private void OnNotified(object sender, NpgsqlNotificationEventArgs e)
             {
+                OnNotified(e.Condition, e.AdditionalInformation);
+            }
+
+            private void OnNotified(string condition, string payload)
+            {
                 lock (_lock)
                 {
                     foreach (var listener in _listeners)
                     {
-                        if (listener.Name == e.Condition)
-                            listener.Notify(e.AdditionalInformation);
+                        if (listener.Name == condition)
+                            listener.Notify(payload);
                     }
                 }
             }
@@ -320,7 +327,10 @@ namespace ServiceLib
                             catch (NpgsqlException ex)
                             {
                                 if (ex.Message.Contains("Connection is broken."))
+                                {
+                                    OnNotified(ConnectionNotification, "DISCONNECTED");
                                     continue;
+                                }
                                 throw;
                             }
                         }
@@ -368,6 +378,7 @@ namespace ServiceLib
                         cmd.ExecuteNonQuery();
                     }
                 }
+                OnNotified(ConnectionNotification, "CONNECTED");
             }
 
             private void SendChanges(NpgsqlConnection conn, CancellationToken cancel)

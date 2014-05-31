@@ -96,8 +96,8 @@
     <Compile Include="PreserveExceptionStackTrace.cs" />
     <Compile Include="ProcessingErrors.cs" />
     <Compile Include="ProcessManager.cs" />
-    <Compile Include="ProcessManagerPostgres.cs" />
-    <Compile Include="ProcessManagerSimple.cs" />
+    <Compile Include="ProcessManagerCluster.cs" />
+    <Compile Include="ProcessManagerPublisher.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="RestClient.cs" />
     <Compile Include="RestServerParameters.cs" />

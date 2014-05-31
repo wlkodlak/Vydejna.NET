@@ -25,7 +25,8 @@ namespace ServiceLib
         Pausing,
         Stopping,
         Conflicted,
-        Faulted
+        Faulted,
+        Unsupported
     }
 
     public interface IProcessWorker : IDisposable

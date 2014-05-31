@@ -46,10 +46,13 @@ namespace Vydejna.Server
             _httpPrefixes = new[] { ConfigurationManager.AppSettings.Get("prefix") };
 
             _time = new RealTime();
-            _processes = new ProcessManagerSimple(_time);
             _disposables = new List<IDisposable>();
 
             var mainBus = new QueuedBus(new SubscriptionManager(), "MainBus");
+            var postgres = new DatabasePostgres(_postgresConnectionString, _time);
+
+            var internodeMessaging = new ProcessManagerPublisher(postgres, mainBus);
+            _processes = new ProcessManagerCluster(_time, internodeMessaging);
             _processes.RegisterBus("MainBus", mainBus, new QueuedBusProcess(mainBus));
 
             var httpRouter = new HttpRouter();
@@ -60,7 +63,6 @@ namespace Vydejna.Server
             new ProjectionsRestInterface(mainBus).Register(_router);
             _router.Commit();
 
-            var postgres = new DatabasePostgres(_postgresConnectionString, _time);
             _eventStore = new EventStorePostgres(postgres, _time);
             _eventStore.Initialize();
             var networkBus = new NetworkBusPostgres(_nodeId, postgres, _time);
@@ -73,6 +75,7 @@ namespace Vydejna.Server
             _disposables.Add(postgres);
             _disposables.Add(documentStore);
             _disposables.Add(_eventStore);
+            _disposables.Add(internodeMessaging);
 
             _typeMapper = new TypeMapper();
             _typeMapper.Register(new CislovaneNaradiTypeMapping());
