@@ -23,6 +23,7 @@ using Vydejna.Projections.SeznamDodavateluReadModel;
 using Vydejna.Projections.SeznamNaradiReadModel;
 using Vydejna.Projections.SeznamPracovistReadModel;
 using Vydejna.Projections.SeznamVadReadModel;
+using System.Threading;
 
 namespace Vydejna.Server
 {
@@ -140,12 +141,12 @@ namespace Vydejna.Server
 
             var internodeMessaging = new ProcessManagerPublisher(postgres, mainBus);
             _processes = new ProcessManagerCluster(_time, internodeMessaging);
-            _processes.RegisterBus("MainBus", mainBus, new QueuedBusProcess(mainBus));
+            _processes.RegisterBus("MainBus", mainBus, new QueuedBusProcess(mainBus).WithWorkers(1));
 
             var httpRouter = new HttpRouter();
             _router = new HttpRouterCommon(httpRouter);
             _router.WithSerializer(new HttpSerializerJson()).WithSerializer(new HttpSerializerXml()).WithPicker(new HttpSerializerPicker());
-            _processes.RegisterLocal("HttpServer", new HttpServer(_httpPrefixes, new HttpServerDispatcher(httpRouter)));
+            _processes.RegisterLocal("HttpServer", new HttpServer(_httpPrefixes, new HttpServerDispatcher(httpRouter)).SetupWorkerCount(1));
             new DomainRestInterface(mainBus).Register(_router);
             new ProjectionsRestInterface(mainBus).Register(_router);
             _router.Commit();
@@ -277,11 +278,23 @@ namespace Vydejna.Server
             program.Initialize();
             program.RegisterCommands();
             program.Start();
+            var consoleThread = Thread.CurrentThread;
+            Console.CancelKeyPress += (s, e) => { e.Cancel = true; program._running = false; consoleThread.Interrupt(); };
             while (program._running)
             {
-                Console.Write("> ");
-                var commandLine = Console.ReadLine().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-                program.ExecuteCommand(commandLine);
+                try
+                {
+                    Console.Write("> ");
+                    var commandLine = Console.ReadLine();
+                    if (string.IsNullOrEmpty(commandLine))
+                        continue;
+                    var parsedCommand = commandLine.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                    program.ExecuteCommand(parsedCommand);
+                }
+                catch (ThreadInterruptedException)
+                {
+                    program._running = false;
+                }
             }
             Console.WriteLine("Stopping...");
             program.Stop();

@@ -122,6 +122,7 @@ namespace ServiceLib
             public GlobalProcessState State = GlobalProcessState.Offline;
             public ProcessManagerCluster Parent;
             public bool RequestedState;
+            public DateTime ChangeRequested;
 
             public void OnStateChanged(ProcessState state)
             {
@@ -431,6 +432,15 @@ namespace ServiceLib
                         _scheduleNeeded = true;
                     }
                 }
+                foreach (var process in _processes.Values)
+                {
+                    var stateIncomplete = process.State == GlobalProcessState.Starting || process.State == GlobalProcessState.Stopping;
+                    if (stateIncomplete && process.ChangeRequested < minOnlineTime)
+                    {
+                        process.State = GlobalProcessState.Offline;
+                        _scheduleNeeded = true;
+                    }
+                }
                 if (_scheduleNeeded)
                 {
                     _scheduleNeeded = false;
@@ -680,16 +690,19 @@ namespace ServiceLib
                 }
             }
 
+            var now = _time.GetUtcTime();
             foreach (var process in _processes.Values)
             {
                 if (process.State == GlobalProcessState.ToBeStarted)
                 {
                     process.State = GlobalProcessState.Starting;
+                    process.ChangeRequested = now;
                     Broadcast(new ProcessManagerMessages.ProcessStart { ProcessName = process.Name, AssignedNode = process.AssignedNode.NodeId });
                 }
                 else if (process.State == GlobalProcessState.ToBeStopped)
                 {
                     process.State = GlobalProcessState.Stopping;
+                    process.ChangeRequested = now;
                     Broadcast(new ProcessManagerMessages.ProcessStop { ProcessName = process.Name, AssignedNode = process.AssignedNode.NodeId });
                 }
             }
