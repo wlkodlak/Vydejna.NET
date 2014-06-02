@@ -8,7 +8,6 @@ namespace ServiceLib
 {
     public class HttpServerDispatcher : IHttpServerDispatcher
     {
-        private log4net.ILog _log = log4net.LogManager.GetLogger(typeof(HttpServerDispatcher));
         private IHttpRouter _router;
         public HttpServerDispatcher(IHttpRouter router)
         {
@@ -22,7 +21,6 @@ namespace ServiceLib
                 var route = _router.FindRoute(context.Url);
                 if (route == null)
                 {
-                    _log.DebugFormat("Raw HTTP request {0}: 404 Not found", context.Url);
                     context.StatusCode = 404;
                     return TaskUtils.CompletedTask();
                 }
@@ -31,7 +29,6 @@ namespace ServiceLib
             }
             catch (Exception ex)
             {
-                _log.WarnFormat("Request {0} threw exception: {1}", context.Url, ex.ToString());
                 context.StatusCode = 500;
                 return TaskUtils.CompletedTask();
             }

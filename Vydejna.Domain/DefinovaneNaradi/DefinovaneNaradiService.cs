@@ -10,12 +10,10 @@ namespace Vydejna.Domain.DefinovaneNaradi
         , IProcess<DeaktivovatNaradiCommand>
         , IProcess<DefinovatNaradiInternalCommand>
     {
-        private log4net.ILog _log;
         private IDefinovaneNaradiRepository _repoNaradi;
 
         public DefinovaneNaradiService(IDefinovaneNaradiRepository repoNaradi)
         {
-            _log = log4net.LogManager.GetLogger(typeof(DefinovaneNaradiService));
             _repoNaradi = repoNaradi;
         }
 

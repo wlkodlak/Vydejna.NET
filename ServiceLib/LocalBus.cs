@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Text;
@@ -137,13 +138,11 @@ namespace ServiceLib
     {
         private string _name;
         private ISubscriptionManager _subscriptions;
-        private log4net.ILog _log;
 
         public AbstractBus(ISubscriptionManager subscribtions, string name)
         {
             _name = name ?? "Bus";
             _subscriptions = subscribtions;
-            _log = log4net.LogManager.GetLogger(name);
         }
 
         public void Publish<T>(T message)
@@ -161,7 +160,7 @@ namespace ServiceLib
 
         protected virtual void OnError(QueuedMessage message, Exception exception)
         {
-            _log.WarnFormat("When handling {0} exception occurred: {1}", message.Message.GetType().Name, exception);
+            Trace.TraceError("When handling {0} exception occurred: {1}", message.Message.GetType().Name, exception);
         }
 
         protected class QueuedMessage
