@@ -7,56 +7,6 @@ using System.Threading.Tasks;
 
 namespace ServiceLib
 {
-    public static class ProcessManagerMessages
-    {
-        public class GenericMessage
-        {
-            public string SenderId { get; set; }
-        }
-
-        public class ElectionsInquiry : GenericMessage
-        {
-            public string ElectionsId { get; set; }
-            public bool ForfitCandidature { get; set; }
-        }
-        public class ElectionsCandidate : GenericMessage
-        {
-            public string ElectionsId { get; set; }
-        }
-        public class ElectionsLeader : GenericMessage
-        {
-            public string ElectionsId { get; set; }
-        }
-
-        public class Heartbeat : GenericMessage { }
-        public class HeartStopped : GenericMessage { }
-
-        public class ProcessMessage : GenericMessage
-        {
-            public string AssignedNode { get; set; }
-            public string ProcessName { get; set; }
-        }
-        public class ProcessStart : ProcessMessage { }
-        public class ProcessStop : ProcessMessage { }
-        public class ProcessChange : GenericMessage
-        {
-            public string ProcessName { get; set; }
-            public ProcessState NewState { get; set; }
-        }
-
-        public class ConnectionRestored { }
-        public class ProcessRequest
-        {
-            public string ProcessName { get; set; }
-            public bool ShouldBeOnline { get; set; }
-        }
-    }
-
-    public enum GlobalProcessState
-    {
-        Offline, Starting, Online, Stopping, ToBeStarted, ToBeStopped, Unsupported
-    }
-
     public class ProcessManagerCluster
         : IProcessManager
         , IHandle<SystemEvents.SystemInit>
@@ -135,11 +85,10 @@ namespace ServiceLib
             None, Losing, Winning
         }
 
-        public ProcessManagerCluster(ITime time, IPublisher globalPublisher)
+        public ProcessManagerCluster(ITime time, string nodeId, IPublisher globalPublisher)
         {
-            _nodeId = Guid.NewGuid().ToString();
+            _nodeId = nodeId;
             _nodes = new Dictionary<string, NodeInfo>();
-            _processes = new Dictionary<string, ProcessInfo>();
             _processes = new Dictionary<string, ProcessInfo>();
             _lastSentTime = DateTime.MinValue;
             _time = time;
@@ -734,22 +683,11 @@ namespace ServiceLib
                 return null;
         }
 
-        public class InfoProcess
-        {
-            public string ProcessName, ProcessStatus, AssignedNode;
-        }
-        public class InfoGlobal
-        {
-            public string NodeName, LeaderName;
-            public bool IsConnected;
-            public List<InfoProcess> RunningProcesses;
-        }
-
-        public List<InfoProcess> GetLocalProcesses()
+        public List<ProcessManagerMessages.InfoProcess> GetLocalProcesses()
         {
             return _processes.Values
                 .Where(p => p.IsLocal && p.Worker != null)
-                .Select(p => new InfoProcess
+                .Select(p => new ProcessManagerMessages.InfoProcess
                 {
                     ProcessName = p.Name,
                     ProcessStatus = p.Worker.State.ToString()
@@ -757,16 +695,16 @@ namespace ServiceLib
                 .ToList();
         }
 
-        public InfoGlobal GetGlobalInfo()
+        public ProcessManagerMessages.InfoGlobal GetGlobalInfo()
         {
-            return new InfoGlobal
+            return new ProcessManagerMessages.InfoGlobal
             {
                 NodeName = _nodeId,
                 LeaderName = _leader == null ? "(none)" : _leader.NodeId,
                 IsConnected = _nodes.Values.Any(n => n.IsOnline && n.NodeId == _nodeId),
                 RunningProcesses = _processes.Values
                     .Where(p => !p.IsLocal && p.IsAssignedHere && p.Worker != null)
-                    .Select(p => new InfoProcess
+                    .Select(p => new ProcessManagerMessages.InfoProcess
                     {
                         ProcessName = p.Name,
                         AssignedNode = _nodeId,
@@ -776,11 +714,11 @@ namespace ServiceLib
             };
         }
 
-        public List<InfoProcess> GetLeaderProcesses()
+        public List<ProcessManagerMessages.InfoProcess> GetLeaderProcesses()
         {
             return _processes.Values
                 .Where(p => !p.IsLocal)
-                .Select(p => new InfoProcess
+                .Select(p => new ProcessManagerMessages.InfoProcess
                 {
                     ProcessName = p.Name,
                     AssignedNode = p.AssignedNode == null ? "(none)" : p.AssignedNode.NodeId,

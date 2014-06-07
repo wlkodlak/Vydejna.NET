@@ -14,6 +14,9 @@ namespace ServiceLib
         void Start();
         void Stop();
         void WaitForStop();
+        List<ProcessManagerMessages.InfoProcess> GetLocalProcesses();
+        ProcessManagerMessages.InfoGlobal GetGlobalInfo();
+        List<ProcessManagerMessages.InfoProcess> GetLeaderProcesses();
     }
 
     public enum ProcessState
@@ -36,5 +39,66 @@ namespace ServiceLib
         void Start();
         void Pause();
         void Stop();
+    }
+
+    public static class ProcessManagerMessages
+    {
+        public class GenericMessage
+        {
+            public string SenderId { get; set; }
+        }
+
+        public class ElectionsInquiry : GenericMessage
+        {
+            public string ElectionsId { get; set; }
+            public bool ForfitCandidature { get; set; }
+        }
+        public class ElectionsCandidate : GenericMessage
+        {
+            public string ElectionsId { get; set; }
+        }
+        public class ElectionsLeader : GenericMessage
+        {
+            public string ElectionsId { get; set; }
+        }
+
+        public class Heartbeat : GenericMessage { }
+        public class HeartStopped : GenericMessage { }
+
+        public class ProcessMessage : GenericMessage
+        {
+            public string AssignedNode { get; set; }
+            public string ProcessName { get; set; }
+        }
+        public class ProcessStart : ProcessMessage { }
+        public class ProcessStop : ProcessMessage { }
+        public class ProcessChange : GenericMessage
+        {
+            public string ProcessName { get; set; }
+            public ProcessState NewState { get; set; }
+        }
+
+        public class ConnectionRestored { }
+        public class ProcessRequest
+        {
+            public string ProcessName { get; set; }
+            public bool ShouldBeOnline { get; set; }
+        }
+
+        public class InfoProcess
+        {
+            public string ProcessName, ProcessStatus, AssignedNode;
+        }
+        public class InfoGlobal
+        {
+            public string NodeName, LeaderName;
+            public bool IsConnected;
+            public List<InfoProcess> RunningProcesses;
+        }
+    }
+
+    public enum GlobalProcessState
+    {
+        Offline, Starting, Online, Stopping, ToBeStarted, ToBeStopped, Unsupported
     }
 }
