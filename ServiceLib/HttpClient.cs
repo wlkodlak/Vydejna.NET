@@ -59,7 +59,7 @@ namespace ServiceLib
 
             var response = new HttpClientResponse();
 
-            if (request.Body != null)
+            if (request.Body != null && request.Body.Length > 0)
             {
                 var taskGetRequestStream = Task.Factory.FromAsync<Stream>(webRequest.BeginGetRequestStream(null, null), webRequest.EndGetRequestStream);
                 yield return taskGetRequestStream;

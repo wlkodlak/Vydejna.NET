@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Configuration;
 using System.Web;
+using System.Web.Routing;
 using Vydejna.Contracts;
 using Vydejna.Domain;
 using Vydejna.Domain.CislovaneNaradi;
@@ -40,14 +41,16 @@ namespace Vydejna.Web
         private List<IDisposable> _disposables;
         private HttpHandler _handler;
         private QueuedBus _mainBus;
+        private string _urlFolder;
 
-        public void Initialize()
+        public void Initialize(string uriFolder)
         {
             _postgresConnectionString = ConfigurationManager.AppSettings.Get("database");
             _multiNode = ConfigurationManager.AppSettings.Get("multinode"); ;
             _nodeId = ConfigurationManager.AppSettings.Get("node"); ;
             if (string.IsNullOrEmpty(_nodeId))
                 _nodeId = Guid.NewGuid().ToString();
+            _urlFolder = uriFolder;
 
             _time = new RealTime();
             _disposables = new List<IDisposable>();
@@ -67,6 +70,8 @@ namespace Vydejna.Web
             var httpRouter = new HttpRouter();
             _router = new HttpRouterCommon(httpRouter);
             _router.WithSerializer(new HttpSerializerJson()).WithSerializer(new HttpSerializerXml()).WithPicker(new HttpSerializerPicker());
+            if (!string.IsNullOrEmpty(_urlFolder))
+                _router.ForFolder(_urlFolder);
             _handler = new HttpHandler(new HttpServerDispatcher(httpRouter));
 
             new DomainRestInterface(_mainBus).Register(_router);
@@ -134,7 +139,17 @@ namespace Vydejna.Web
 
         public void OnBeginRequest(HttpContext nativeContext)
         {
-            nativeContext.RemapHandler(_handler);
+            if (string.IsNullOrEmpty(_urlFolder))
+                nativeContext.RemapHandler(_handler);
+            else if (nativeContext.Request.Url.AbsolutePath.StartsWith(_urlFolder))
+                nativeContext.RemapHandler(_handler);
+        }
+
+        public void AddWebRoute(RouteCollection routes)
+        {
+            var routeUrl = string.IsNullOrEmpty(_urlFolder) ? "{*path}" : _urlFolder + "/{*path}";
+            var route = new Route(routeUrl, null, null, new RouteValueDictionary(new { area = "Api" }), _handler);
+            routes.Add("Api", route);
         }
 
         private void BuildEventProcessor<T>(T processor, string processorName)

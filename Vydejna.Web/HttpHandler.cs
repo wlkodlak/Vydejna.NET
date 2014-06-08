@@ -6,10 +6,11 @@ using System.Text;
 using System.Web;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Web.Routing;
 
 namespace Vydejna.Web
 {
-    public class HttpHandler : IHttpHandler
+    public class HttpHandler : IHttpHandler, IRouteHandler
     {
         private IHttpServerDispatcher _dispatcher;
 
@@ -26,6 +27,11 @@ namespace Vydejna.Web
         public void ProcessRequest(HttpContext context)
         {
             EndProcessRequest(BeginProcessRequest(context, null, null));
+        }
+
+        public IHttpHandler GetHttpHandler(RequestContext requestContext)
+        {
+            return this;
         }
 
         public IAsyncResult BeginProcessRequest(HttpContext nativeContext, AsyncCallback callback, object state)
@@ -175,7 +181,7 @@ namespace Vydejna.Web
 
             public void Add(string name, string value)
             {
-                _response.Headers.Add(name, value);
+                _response.AppendHeader(name, value);
             }
 
             public void Clear()

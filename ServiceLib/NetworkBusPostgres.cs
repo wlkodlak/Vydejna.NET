@@ -237,7 +237,7 @@ namespace ServiceLib
 
         private void Receive_Timer(Task task)
         {
-            if (task.Exception == null)
+            if (task.Exception == null && !task.IsCanceled)
             {
                 List<ReceiveWaiter> waiters;
                 lock (_waiters)

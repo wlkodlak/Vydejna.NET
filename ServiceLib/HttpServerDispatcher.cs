@@ -27,7 +27,7 @@ namespace ServiceLib
                 else
                     return route.Handler.Handle(context);
             }
-            catch (Exception ex)
+            catch
             {
                 context.StatusCode = 500;
                 return TaskUtils.CompletedTask();

@@ -37,13 +37,90 @@ namespace Vydejna.Projections
             config.Route("vady/seznam").To(SeznamVad);
         }
 
+        public Task SeznamNaradi(IHttpServerStagedContext ctx)
+        {
+            try
+            {
+                // seznamnaradi/vsechno
+                var request = new ZiskatSeznamNaradiRequest();
+                request.Stranka = ctx.Parameter("stranka").AsInteger().Default(1).Get();
+                return _bus.SendQuery<ZiskatSeznamNaradiRequest, ZiskatSeznamNaradiResponse>(request).ContinueWith(task => Finish(task, ctx));
+            }
+            catch (Exception ex)
+            {
+                return TaskUtils.FromError<object>(ex);
+            }
+        }
+
         public Task DetailNaradi(IHttpServerStagedContext ctx)
         {
             try
             {
+                // seznamnaradi/detail
                 var request = new DetailNaradiRequest();
                 request.NaradiId = ctx.Parameter("naradiid").AsGuid().Mandatory().Get();
                 return _bus.SendQuery<DetailNaradiRequest, DetailNaradiResponse>(request).ContinueWith(task => Finish(task, ctx));
+            }
+            catch (Exception ex)
+            {
+                return TaskUtils.FromError<object>(ex);
+            }
+        }
+
+        public Task PrehledNaradi(IHttpServerStagedContext ctx)
+        {
+            try
+            {
+                // seznamnaradi/prehled
+                var request = new PrehledNaradiRequest();
+                request.Stranka = ctx.Parameter("stranka").AsInteger().Default(1).Get();
+                return _bus.SendQuery<PrehledNaradiRequest, PrehledNaradiResponse>(request).ContinueWith(task => Finish(task, ctx));
+            }
+            catch (Exception ex)
+            {
+                return TaskUtils.FromError<object>(ex);
+            }
+        }
+
+        public Task NaradiNaVydejne(IHttpServerStagedContext ctx)
+        {
+            try
+            {
+                // seznamnaradi/navydejne
+                var request = new ZiskatNaradiNaVydejneRequest();
+                request.Stranka = ctx.Parameter("stranka").AsInteger().Default(1).Get();
+                return _bus.SendQuery<ZiskatNaradiNaVydejneRequest, ZiskatNaradiNaVydejneResponse>(request).ContinueWith(task => Finish(task, ctx));
+            }
+            catch (Exception ex)
+            {
+                return TaskUtils.FromError<object>(ex);
+            }
+        }
+
+        public Task OveritUnikatnost(IHttpServerStagedContext ctx)
+        {
+            try
+            {
+                // seznamnaradi/overitunikatnost
+                var request = new OvereniUnikatnostiRequest();
+                request.Vykres = ctx.Parameter("vykres").AsString().Mandatory().Get();
+                request.Rozmer = ctx.Parameter("rozmer").AsString().Mandatory().Get();
+                return _bus.SendQuery<OvereniUnikatnostiRequest, OvereniUnikatnostiResponse>(request).ContinueWith(task => Finish(task, ctx));
+            }
+            catch (Exception ex)
+            {
+                return TaskUtils.FromError<object>(ex);
+            }
+        }
+
+        public Task PrehledCislovaneho(IHttpServerStagedContext ctx)
+        {
+            try
+            {
+                // cislovane/prehled
+                var request = new PrehledCislovanehoNaradiRequest();
+                request.Stranka = ctx.Parameter("stranka").AsInteger().Default(1).Get();
+                return _bus.SendQuery<PrehledCislovanehoNaradiRequest, PrehledCislovanehoNaradiResponse>(request).ContinueWith(task => Finish(task, ctx));
             }
             catch (Exception ex)
             {
@@ -55,6 +132,7 @@ namespace Vydejna.Projections
         {
             try
             {
+                // objednavky/najit
                 var request = new NajitObjednavkuRequest();
                 request.Objednavka = ctx.Parameter("objednavka").AsString().Mandatory().Get();
                 return _bus.SendQuery<NajitObjednavkuRequest, NajitObjednavkuResponse>(request).ContinueWith(task => Finish(task, ctx));
@@ -69,6 +147,7 @@ namespace Vydejna.Projections
         {
             try
             {
+                // objednavky/dodacilist
                 var request = new NajitDodaciListRequest();
                 request.DodaciList = ctx.Parameter("dodacilist").AsString().Mandatory().Get();
                 return _bus.SendQuery<NajitDodaciListRequest, NajitDodaciListResponse>(request).ContinueWith(task => Finish(task, ctx));
@@ -83,6 +162,7 @@ namespace Vydejna.Projections
         {
             try
             {
+                // objednavky/naradi
                 var request = new ZiskatNaradiNaObjednavceRequest();
                 request.Objednavka = ctx.Parameter("objednavka").AsString().Mandatory().Get();
                 request.KodDodavatele = ctx.Parameter("dodavatel").AsString().Mandatory().Get();
@@ -94,66 +174,11 @@ namespace Vydejna.Projections
             }
         }
 
-        public Task NaradiNaPracovisti(IHttpServerStagedContext ctx)
-        {
-            try
-            {
-                var request = new ZiskatNaradiNaPracovistiRequest();
-                request.KodPracoviste = ctx.Parameter("pracoviste").AsString().Mandatory().Get();
-                return _bus.SendQuery<ZiskatNaradiNaPracovistiRequest, ZiskatNaradiNaPracovistiResponse>(request).ContinueWith(task => Finish(task, ctx));
-            }
-            catch (Exception ex)
-            {
-                return TaskUtils.FromError<object>(ex);
-            }
-        }
-
-        public Task NaradiNaVydejne(IHttpServerStagedContext ctx)
-        {
-            try
-            {
-                var request = new ZiskatNaradiNaVydejneRequest();
-                request.Stranka = ctx.Parameter("stranka").AsInteger().Default(1).Get();
-                return _bus.SendQuery<ZiskatNaradiNaVydejneRequest, ZiskatNaradiNaVydejneResponse>(request).ContinueWith(task => Finish(task, ctx));
-            }
-            catch (Exception ex)
-            {
-                return TaskUtils.FromError<object>(ex);
-            }
-        }
-
-        public Task PrehledNaradi(IHttpServerStagedContext ctx)
-        {
-            try
-            {
-                var request = new PrehledNaradiRequest();
-                request.Stranka = ctx.Parameter("stranka").AsInteger().Default(1).Get();
-                return _bus.SendQuery<PrehledNaradiRequest, PrehledNaradiResponse>(request).ContinueWith(task => Finish(task, ctx));
-            }
-            catch (Exception ex)
-            {
-                return TaskUtils.FromError<object>(ex);
-            }
-        }
-
-        public Task PrehledCislovaneho(IHttpServerStagedContext ctx)
-        {
-            try
-            {
-                var request = new PrehledCislovanehoNaradiRequest();
-                request.Stranka = ctx.Parameter("stranka").AsInteger().Default(1).Get();
-                return _bus.SendQuery<PrehledCislovanehoNaradiRequest, PrehledCislovanehoNaradiResponse>(request).ContinueWith(task => Finish(task, ctx));
-            }
-            catch (Exception ex)
-            {
-                return TaskUtils.FromError<object>(ex);
-            }
-        }
-
         public Task PrehledObjednavek(IHttpServerStagedContext ctx)
         {
             try
             {
+                // objednavky/prehled
                 var request = new PrehledObjednavekRequest();
                 request.Stranka = ctx.Parameter("stranka").AsInteger().Default(1).Get();
                 request.Razeni = ctx.Parameter("razeni").AsEnum<PrehledObjednavekRazeni>().Default(PrehledObjednavekRazeni.PodleCislaObjednavky).Get();
@@ -165,14 +190,29 @@ namespace Vydejna.Projections
             }
         }
 
-        public Task OveritUnikatnost(IHttpServerStagedContext ctx)
+        public Task SeznamPracovist(IHttpServerStagedContext ctx)
         {
             try
             {
-                var request = new OvereniUnikatnostiRequest();
-                request.Vykres = ctx.Parameter("vykres").AsString().Mandatory().Get();
-                request.Rozmer = ctx.Parameter("rozmer").AsString().Mandatory().Get();
-                return _bus.SendQuery<OvereniUnikatnostiRequest, OvereniUnikatnostiResponse>(request).ContinueWith(task => Finish(task, ctx));
+                // pracoviste/seznam
+                var request = new ZiskatSeznamPracovistRequest();
+                request.Stranka = ctx.Parameter("stranka").AsInteger().Default(1).Get();
+                return _bus.SendQuery<ZiskatSeznamPracovistRequest, ZiskatSeznamPracovistResponse>(request).ContinueWith(task => Finish(task, ctx));
+            }
+            catch (Exception ex)
+            {
+                return TaskUtils.FromError<object>(ex);
+            }
+        }
+
+        public Task NaradiNaPracovisti(IHttpServerStagedContext ctx)
+        {
+            try
+            {
+                // pracoviste/naradi
+                var request = new ZiskatNaradiNaPracovistiRequest();
+                request.KodPracoviste = ctx.Parameter("pracoviste").AsString().Mandatory().Get();
+                return _bus.SendQuery<ZiskatNaradiNaPracovistiRequest, ZiskatNaradiNaPracovistiResponse>(request).ContinueWith(task => Finish(task, ctx));
             }
             catch (Exception ex)
             {
@@ -184,36 +224,9 @@ namespace Vydejna.Projections
         {
             try
             {
+                // dodavatele/seznam
                 var request = new ZiskatSeznamDodavateluRequest();
                 return _bus.SendQuery<ZiskatSeznamDodavateluRequest, ZiskatSeznamDodavateluResponse>(request).ContinueWith(task => Finish(task, ctx));
-            }
-            catch (Exception ex)
-            {
-                return TaskUtils.FromError<object>(ex);
-            }
-        }
-
-        public Task SeznamNaradi(IHttpServerStagedContext ctx)
-        {
-            try
-            {
-                var request = new ZiskatSeznamNaradiRequest();
-                request.Stranka = ctx.Parameter("stranka").AsInteger().Default(1).Get();
-                return _bus.SendQuery<ZiskatSeznamNaradiRequest, ZiskatSeznamNaradiResponse>(request).ContinueWith(task => Finish(task, ctx));
-            }
-            catch (Exception ex)
-            {
-                return TaskUtils.FromError<object>(ex);
-            }
-        }
-
-        public Task SeznamPracovist(IHttpServerStagedContext ctx)
-        {
-            try
-            {
-                var request = new ZiskatSeznamPracovistRequest();
-                request.Stranka = ctx.Parameter("stranka").AsInteger().Default(1).Get();
-                return _bus.SendQuery<ZiskatSeznamPracovistRequest, ZiskatSeznamPracovistResponse>(request).ContinueWith(task => Finish(task, ctx));
             }
             catch (Exception ex)
             {
@@ -225,6 +238,7 @@ namespace Vydejna.Projections
         {
             try
             {
+                // vady/seznam
                 var request = new ZiskatSeznamVadRequest();
                 return _bus.SendQuery<ZiskatSeznamVadRequest, ZiskatSeznamVadResponse>(request).ContinueWith(task => Finish(task, ctx));
             }

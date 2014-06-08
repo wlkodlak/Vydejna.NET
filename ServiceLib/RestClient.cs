@@ -88,9 +88,9 @@ namespace ServiceLib
 
     public abstract class RestClientResult
     {
-        private int _statusCode;
-        private byte[] _rawData;
-        private RestClientHeaders _headers;
+        private readonly int _statusCode;
+        private readonly byte[] _rawData;
+        private readonly RestClientHeaders _headers;
 
         protected RestClientResult(HttpClientResponse response)
         {
@@ -191,7 +191,10 @@ namespace ServiceLib
 
         public override T GetPayload<T>()
         {
-            return JsonSerializer.DeserializeFromString<T>(Encoding.UTF8.GetString(RawData));
+            var stringData = Encoding.UTF8.GetString(RawData);
+            if (typeof(T) == typeof(string))
+                return (T)(object)stringData;
+            return JsonSerializer.DeserializeFromString<T>(stringData);
         }
     }
 

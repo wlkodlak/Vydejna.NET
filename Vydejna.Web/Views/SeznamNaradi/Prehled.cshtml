@@ -1,0 +1,51 @@
+﻿@model Vydejna.Contracts.PrehledNaradiResponse
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewBag.Title = "Přehled nářadí";
+}
+<table style="width:100%">
+    <tr>
+        <th>Výkres</th>
+        <th>Rozměr</th>
+        <th>Druh</th>
+        <th>Na skladě</th>
+        <th>V pořádku</th>
+        <th>Ve výrobě</th>
+        <th>Poškozené</th>
+        <th>Zničené</th>
+        <th>Opravované</th>
+    </tr>
+    @if (Model.Naradi.Count == 0)
+    {
+        <tr><td colspan="9" style="text-align: center">Není dostupné žádné nářadí</td></tr>
+    }
+    else
+    {
+        foreach (var naradi in Model.Naradi)
+        {
+            <tr>
+                <td>@naradi.Vykres</td>
+                <td>@naradi.Rozmer</td>
+                <td>@naradi.Druh</td>
+                <td>@naradi.NaSklade</td>
+                <td>@naradi.VPoradku</td>
+                <td>@naradi.VeVyrobe</td>
+                <td>@naradi.Poskozene</td>
+                <td>@naradi.Znicene</td>
+                <td>@naradi.Opravovane</td>
+            </tr>
+        }
+    }
+</table>
+<table style="width: 100%">
+    <tr>
+        <td>@Html.ActionLink("První", "Index", "PrehledNaradi", new { stranka = 1 }, null)</td>
+        <td>@Html.ActionLink("Předchozí", "Index", "PrehledNaradi", new { stranka = Math.Max(1, Math.Min(Model.PocetStranek, Model.Stranka - 1)) }, null)</td>
+        <td>@Model.Stranka / @Math.Max(1, Model.PocetStranek)</td>
+        <td>@Html.ActionLink("Další", "Index", "PrehledNaradi", new { stranka = Math.Max(1, Math.Min(Model.PocetStranek, Model.Stranka + 1)) }, null)</td>
+        <td>@Html.ActionLink("Poslední", "Index", "PrehledNaradi", new { stranka = Math.Max(1, Model.PocetStranek) }, null)</td>
+    </tr>
+</table>
+<div>
+    @Html.ActionLink("Správa číselníků", "Index", "SpravaCiselniku")
+</div>

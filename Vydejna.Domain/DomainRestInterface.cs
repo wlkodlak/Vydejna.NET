@@ -28,13 +28,17 @@ namespace Vydejna.Domain
 
             try
             {
-                cmd = ctx.InputSerializer.Deserialize<T>(ctx.InputString);
+                if (ctx.InputSerializer != null && !string.IsNullOrEmpty(ctx.InputString))
+                    cmd = ctx.InputSerializer.Deserialize<T>(ctx.InputString);
             }
             catch (Exception exception)
             {
                 ctx.StatusCode = 400;
                 ctx.OutputHeaders.ContentType = "text/plain";
-                ctx.OutputString = exception.InnerException.Message;
+                if (exception.InnerException != null)
+                    ctx.OutputString = exception.InnerException.Message;
+                else
+                    ctx.OutputString = exception.Message;
             }
             if (cmd != null)
             {
@@ -51,6 +55,12 @@ namespace Vydejna.Domain
                     ctx.OutputHeaders.ContentType = "text/plain";
                     ctx.OutputString = task.Exception.InnerException.Message;
                 }
+            }
+            else
+            {
+                ctx.StatusCode = 400;
+                ctx.OutputHeaders.ContentType = "text/plain";
+                ctx.OutputString = "Command data required";
             }
 
             yield return TaskUtils.CompletedTask();
