@@ -1,4 +1,5 @@
-﻿using System;
+﻿using log4net;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -39,17 +40,20 @@ namespace ServiceLib
 
         private class DocumentFolder : IDocumentFolder
         {
-            private string _folderName;
-            private ConcurrentDictionary<string, Document> _documents = new ConcurrentDictionary<string, Document>();
-            private ConcurrentDictionary<string, Index> _indexes = new ConcurrentDictionary<string, Index>();
+            private readonly string _folderName;
+            private readonly ConcurrentDictionary<string, Document> _documents = new ConcurrentDictionary<string, Document>();
+            private readonly ConcurrentDictionary<string, Index> _indexes = new ConcurrentDictionary<string, Index>();
+            private readonly ILog _logger;
 
             public DocumentFolder(string folderName)
             {
                 _folderName = folderName;
+                _logger = LogManager.GetLogger("ServiceLib.DocumentStore");
             }
 
             public Task DeleteAll()
             {
+                _logger.DebugFormat("Deleting folder {0}", _folderName);
                 List<string> documentNames = _documents.Keys.ToList();
                 _documents.Clear();
                 _indexes.Clear();
@@ -58,6 +62,7 @@ namespace ServiceLib
 
             public Task<DocumentStoreFoundDocument> GetDocument(string name)
             {
+                _logger.DebugFormat("Entering GetDocument({0}/{1})", _folderName, name);
                 var tcs = new TaskCompletionSource<DocumentStoreFoundDocument>();
                 try
                 {
@@ -69,11 +74,20 @@ namespace ServiceLib
                     {
                         Document document;
                         if (!_documents.TryGetValue(name, out document))
+                        {
+                            _logger.DebugFormat("Document {0}/{1} not found", _folderName, name);
                             tcs.SetResult(null);
+                        }
                         else if (document.Version == 0)
+                        {
+                            _logger.DebugFormat("Document {0}/{1} not found", _folderName, name);
                             tcs.SetResult(null);
+                        }
                         else
+                        {
+                            _logger.DebugFormat("Document {0}/{1} returned at version {2}", _folderName, name, document.Version);
                             tcs.SetResult(new DocumentStoreFoundDocument(name, document.Version, true, document.Value));
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -85,6 +99,7 @@ namespace ServiceLib
 
             public Task<DocumentStoreFoundDocument> GetNewerDocument(string name, int knownVersion)
             {
+                _logger.DebugFormat("Entering GetNewerDocument({0}/{1}, {2})", _folderName, name, knownVersion);
                 var tcs = new TaskCompletionSource<DocumentStoreFoundDocument>();
                 try
                 {
@@ -96,13 +111,25 @@ namespace ServiceLib
                     {
                         Document document;
                         if (!_documents.TryGetValue(name, out document))
+                        {
+                            _logger.DebugFormat("Document {0}/{1} not found", _folderName, name);
                             tcs.SetResult(null);
+                        }
                         else if (document.Version == 0)
+                        {
+                            _logger.DebugFormat("Document {0}/{1} not found", _folderName, name);
                             tcs.SetResult(null);
+                        }
                         else if (document.Version == knownVersion)
+                        {
+                            _logger.DebugFormat("Document {0}/{1} is up to date at version {2}", _folderName, name, document.Version);
                             tcs.SetResult(new DocumentStoreFoundDocument(name, document.Version, false, null));
+                        }
                         else
+                        {
+                            _logger.DebugFormat("Document {0}/{1} returned at version {2}", _folderName, name, document.Version);
                             tcs.SetResult(new DocumentStoreFoundDocument(name, document.Version, true, document.Value));
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -114,6 +141,7 @@ namespace ServiceLib
 
             public Task<bool> SaveDocument(string name, string value, DocumentStoreVersion expectedVersion, IList<DocumentIndexing> indexes)
             {
+                _logger.DebugFormat("Entering SaveDocument({0}/{1}, ...)", _folderName, name);
                 bool wasSaved = false;
                 int newVersion = 0;
                 try
@@ -132,6 +160,7 @@ namespace ServiceLib
                             existingDocument.Version++;
                             existingDocument.Value = value;
                             newVersion = existingDocument.Version;
+                            _logger.DebugFormat("Document {0}/{1} saved at version {2}", _folderName, name, existingDocument.Version);
                         }
                     }
                     if (indexes != null)
@@ -143,6 +172,7 @@ namespace ServiceLib
                                 index = _indexes.GetOrAdd(indexChange.IndexName, new Index(indexChange.IndexName));
                             lock (index)
                             {
+                                _logger.DebugFormat("Updating index {0}/{1}", _folderName, indexChange.IndexName);
                                 HashSet<string> existingValues, valueDocuments;
                                 if (!index.ByDocument.TryGetValue(name, out existingValues))
                                 {
@@ -186,6 +216,7 @@ namespace ServiceLib
 
             public Task<IList<string>> FindDocumentKeys(string indexName, string minValue, string maxValue)
             {
+                _logger.DebugFormat("Entering FindDocumentKeys({0}/{1}, {2}, {3})", _folderName, indexName, minValue, maxValue);
                 Index index;
                 if (!_indexes.TryGetValue(indexName, out index))
                 {
@@ -213,11 +244,16 @@ namespace ServiceLib
                             foundKeys.Add(doc);
                     }
                 }
+                if (_logger.IsDebugEnabled)
+                {
+                    _logger.DebugFormat("Found {0} keys: {1}", foundKeys.Count, string.Join(", ", foundKeys.Take(5)));
+                }
                 return TaskUtils.FromResult<IList<string>>(foundKeys.ToList());
             }
 
             public Task<DocumentStoreFoundDocuments> FindDocuments(string indexName, string minValue, string maxValue, int skip, int maxCount, bool ascending)
             {
+                _logger.DebugFormat("Entering FindDocuments({0}/{1}, {2}, {3}, {4}, {5}, {6})", _folderName, indexName, minValue, maxValue, skip, maxCount, ascending);
                 try
                 {
                     Index index;
@@ -252,6 +288,10 @@ namespace ServiceLib
                             }
                         }
                         result.TotalFound = allKeys.Count;
+                        if (_logger.IsDebugEnabled)
+                        {
+                            _logger.DebugFormat("Found {0} documents: {1}", result.TotalFound, string.Join(", ", result.Take(5).Select(d => d.Name)));
+                        }
                     }
                     return TaskUtils.FromResult(result);
                 }

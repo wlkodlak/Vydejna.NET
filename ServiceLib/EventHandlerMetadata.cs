@@ -1,4 +1,5 @@
-﻿using System;
+﻿using log4net;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -38,16 +39,17 @@ namespace ServiceLib
 
     public class MetadataInstance : IMetadataInstance
     {
-        private string _lockName;
+        private string _baseName;
         private string _versionDoc;
         private string _tokenDoc;
         private IDocumentFolder _store;
         private int _versionVer;
         private int _tokenVer;
+        private static readonly ILog Logger = LogManager.GetLogger("ServiceLib.EventHandlerMetadata");
 
-        public MetadataInstance(string lockName, string versionDoc, string tokenDoc, IDocumentFolder store)
+        public MetadataInstance(string baseName, string versionDoc, string tokenDoc, IDocumentFolder store)
         {
-            this._lockName = lockName;
+            this._baseName = baseName;
             this._versionDoc = versionDoc;
             this._tokenDoc = tokenDoc;
             this._versionVer = 0;
@@ -57,7 +59,7 @@ namespace ServiceLib
 
         public string ProcessName
         {
-            get { return _lockName; }
+            get { return _baseName; }
         }
 
         public Task<EventStoreToken> GetToken()

@@ -1,4 +1,5 @@
-﻿using System;
+﻿using log4net;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -13,14 +14,15 @@ namespace ServiceLib
         , IHandle<SystemEvents.SystemShutdown>
         , IHandle<ProcessManagerMessages.ProcessRequest>
     {
-        private ITime _time;
-        private Dictionary<string, ProcessInfo> _processes;
+        private readonly ITime _time;
+        private readonly Dictionary<string, ProcessInfo> _processes;
         private IBus _localBus;
         private ManualResetEventSlim _waitForStop;
         private CancellationTokenSource _cancelSource;
         private CancellationToken _cancelToken;
         private IProcessWorker _mainWorker;
         private bool _isShutingDown;
+        private readonly ILog _logger;
         
         private class ProcessInfo
         {
@@ -41,10 +43,12 @@ namespace ServiceLib
             _processes = new Dictionary<string, ProcessInfo>();
             _waitForStop = new ManualResetEventSlim();
             _waitForStop.Set();
+            _logger = LogManager.GetLogger("ServiceLib.ProcessManager");
         }
 
         public void RegisterLocal(string name, IProcessWorker worker)
         {
+            _logger.DebugFormat("Adding local service {0}", name);
             var process = new ProcessInfo();
             process.Parent = this;
             process.Name = name;
@@ -57,6 +61,7 @@ namespace ServiceLib
 
         public void RegisterGlobal(string name, IProcessWorker worker, int processingCost, int transitionCost)
         {
+            _logger.DebugFormat("Adding global service {0}", name);
             var process = new ProcessInfo();
             process.Parent = this;
             process.Name = name;
@@ -165,6 +170,7 @@ namespace ServiceLib
             {
                 if (process.RequestedState)
                 {
+                    _logger.InfoFormat("Starting service {0}", process.Name);
                     process.Worker.Start();
                 }
             }
@@ -182,6 +188,7 @@ namespace ServiceLib
 
             foreach (var process in _processes.Values)
             {
+                _logger.InfoFormat("Stopping service {0}", process.Name);
                 process.RequestedState = false;
                 process.Worker.Pause();
             }
@@ -201,6 +208,7 @@ namespace ServiceLib
                     case ProcessState.Inactive:
                     case ProcessState.Faulted:
                     case ProcessState.Conflicted:
+                    _logger.InfoFormat("Starting service {0}", process.Name);
                         process.Worker.Start();
                         break;
                 }
@@ -209,9 +217,15 @@ namespace ServiceLib
             {
                 var state = process.Worker.State;
                 if (state == ProcessState.Starting || state == ProcessState.Pausing)
+                {
+                    _logger.InfoFormat("Stopping service {0}", process.Name);
                     process.Worker.Stop();
+                }
                 else if (state == ProcessState.Running)
+                {
+                    _logger.InfoFormat("Stopping service {0}", process.Name);
                     process.Worker.Pause();
+                }
             }
         }
     }

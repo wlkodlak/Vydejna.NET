@@ -1,4 +1,5 @@
-﻿using System;
+﻿using log4net;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -32,15 +33,16 @@ namespace ServiceLib
         private string _electionsId;
         private DateTime _lastSentTime;
         private ElectionsState _electionsState;
-        private Dictionary<string, NodeInfo> _nodes;
-        private Dictionary<string, ProcessInfo> _processes;
+        private readonly Dictionary<string, NodeInfo> _nodes;
+        private readonly Dictionary<string, ProcessInfo> _processes;
         private IBus _localBus;
         private IProcessWorker _mainWorker;
         private IPublisher _globalPublisher;
-        private ITime _time;
+        private readonly ITime _time;
         private ManualResetEventSlim _waitForStop;
         private CancellationTokenSource _cancelSource;
         private CancellationToken _cancelToken;
+        private readonly ILog _logger;
 
         public class ProcessSchedule { }
         public class ProcessDelayed
@@ -87,6 +89,7 @@ namespace ServiceLib
 
         public ProcessManagerCluster(ITime time, string nodeId, IPublisher globalPublisher)
         {
+            _logger = LogManager.GetLogger("ServiceLib.ProcessManager");
             _nodeId = nodeId;
             _nodes = new Dictionary<string, NodeInfo>();
             _processes = new Dictionary<string, ProcessInfo>();
@@ -99,6 +102,7 @@ namespace ServiceLib
 
         public void RegisterLocal(string name, IProcessWorker worker)
         {
+            _logger.DebugFormat("Adding local service {0}", name);
             var process = new ProcessInfo();
             process.Parent = this;
             process.Name = name;
@@ -111,6 +115,7 @@ namespace ServiceLib
 
         public void RegisterGlobal(string name, IProcessWorker worker, int processingCost, int transitionCost)
         {
+            _logger.DebugFormat("Adding global service {0}", name);
             var process = new ProcessInfo();
             process.Parent = this;
             process.Name = name;
@@ -184,6 +189,7 @@ namespace ServiceLib
                 _electionsState = ElectionsState.Winning;
                 ScheduleSelfMessage(5000, new ProcessManagerCluster.ElectionsTimer { ElectionsId = _electionsId });
             }
+            _logger.DebugFormat("Starting new elections {0}{1}", _electionsId, forfitCandidature ? " without participating" : "");
             Broadcast(new ProcessManagerMessages.ElectionsInquiry { ElectionsId = _electionsId, ForfitCandidature = forfitCandidature });
         }
 
@@ -210,6 +216,7 @@ namespace ServiceLib
             nodeInfo.LastHeartbeat = _time.GetUtcTime();
             if (!nodeInfo.IsOnline)
             {
+                _logger.DebugFormat("Node {0} went online", nodeId);
                 nodeInfo.IsOnline = true;
                 _scheduleNeeded = true;
             }
@@ -222,6 +229,7 @@ namespace ServiceLib
             {
                 if (process.IsLocal)
                 {
+                    _logger.InfoFormat("Starting local service {0}", process.Name);
                     process.Worker.Start();
                 }
             }
@@ -245,9 +253,15 @@ namespace ServiceLib
             {
                 process.RequestedState = false;
                 if (process.IsLocal)
+                {
+                    _logger.InfoFormat("Stopping local service {0}", process.Name);
                     process.Worker.Pause();
+                }
                 else if (process.Worker.State == ProcessState.Running || process.Worker.State == ProcessState.Starting)
+                {
+                    _logger.InfoFormat("Stopping global service {0}", process.Name);
                     process.Worker.Pause();
+                }
             }
 
             Broadcast(new ProcessManagerMessages.HeartStopped());
@@ -277,6 +291,7 @@ namespace ServiceLib
             {
                 if (nodeIdComparison >= 0)
                 {
+                    _logger.DebugFormat("Node is still leader (elections {0})", _electionsId);
                     Broadcast(new ProcessManagerMessages.ElectionsLeader { ElectionsId = message.ElectionsId });
                 }
             }
@@ -286,6 +301,7 @@ namespace ServiceLib
                 {
                     _electionsId = message.ElectionsId;
                     _electionsState = ElectionsState.Winning;
+                    _logger.DebugFormat("Participating in elections {0}", _electionsId);
                     Broadcast(new ProcessManagerMessages.ElectionsCandidate { ElectionsId = _electionsId });
 
                     ScheduleSelfMessage(5000, new ProcessManagerCluster.ElectionsTimer { ElectionsId = _electionsId });
@@ -303,6 +319,7 @@ namespace ServiceLib
             var nodeIdComparison = string.CompareOrdinal(_nodeId, message.SenderId);
             if (nodeIdComparison < 0)
             {
+                _logger.Debug("Node will not be leader");
                 _electionsState = ElectionsState.Losing;
             }
         }
@@ -317,10 +334,12 @@ namespace ServiceLib
             var nodeIdComparison = string.CompareOrdinal(_nodeId, message.SenderId);
             if (nodeIdComparison > 0)
             {
+                _logger.DebugFormat("Other node {0} wrongly claimed leadership", message.SenderId);
                 StartNewElections();
             }
             else
             {
+                _logger.DebugFormat("Other node {0} became leader", message.SenderId);
                 _electionsState = ElectionsState.None;
                 _isLeader = false;
                 _leader = sender;
@@ -343,6 +362,7 @@ namespace ServiceLib
                 process.PenalizedNodes.Clear();
                 process.UnsupportedNodes.Clear();
             }
+            _logger.Debug("Node is taking leadership");
             Broadcast(new ProcessManagerMessages.ElectionsLeader { ElectionsId = _electionsId });
             RequestRescheduling();
         }
@@ -356,6 +376,7 @@ namespace ServiceLib
 
         public void Handle(ProcessManagerMessages.HeartStopped message)
         {
+            _logger.DebugFormat("Node {0} stopped", message.SenderId);
             var sender = GetNode(message.SenderId);
             sender.IsOnline = false;
             if (_isLeader)
@@ -377,6 +398,7 @@ namespace ServiceLib
                 {
                     if (node.IsOnline && node.LastHeartbeat < minOnlineTime)
                     {
+                        _logger.DebugFormat("Node {0} seems offline", node.NodeId);
                         node.IsOnline = false;
                         _scheduleNeeded = true;
                     }
@@ -402,6 +424,7 @@ namespace ServiceLib
                 {
                     if (node.IsOnline && node.LastHeartbeat < minOnlineTime)
                     {
+                        _logger.DebugFormat("Node {0} seems offline", node.NodeId);
                         node.IsOnline = false;
                     }
                 }
@@ -424,6 +447,7 @@ namespace ServiceLib
             ProcessInfo process;
             if (!_processes.TryGetValue(message.ProcessName, out process) || process.IsLocal)
             {
+                _logger.DebugFormat("Node was assigned unknown task {0}", message.ProcessName);
                 Broadcast(new ProcessManagerMessages.ProcessChange { ProcessName = message.ProcessName, NewState = ProcessState.Unsupported });
             }
             else
@@ -434,11 +458,13 @@ namespace ServiceLib
                     case ProcessState.Inactive:
                     case ProcessState.Faulted:
                     case ProcessState.Conflicted:
+                        _logger.InfoFormat("Starting global service {0}", process.Name);
                         process.IsAssignedHere = true;
                         process.Worker.Start();
                         break;
                     case ProcessState.Starting:
                     case ProcessState.Running:
+                        _logger.DebugFormat("Reporting that global service {0} is already running", process.Name);
                         Broadcast(new ProcessManagerMessages.ProcessChange { ProcessName = message.ProcessName, NewState = ProcessState.Running });
                         break;
                 }
@@ -455,6 +481,7 @@ namespace ServiceLib
             ProcessInfo process;
             if (!_processes.TryGetValue(message.ProcessName, out process) || process.IsLocal)
             {
+                _logger.DebugFormat("Node was deassigned unknown task {0}", message.ProcessName);
                 Broadcast(new ProcessManagerMessages.ProcessChange { ProcessName = message.ProcessName, NewState = ProcessState.Inactive });
             }
             else
@@ -465,13 +492,16 @@ namespace ServiceLib
                     case ProcessState.Inactive:
                     case ProcessState.Faulted:
                     case ProcessState.Conflicted:
+                        _logger.DebugFormat("Reporting that global service {0} is already inactive", process.Name);
                         Broadcast(new ProcessManagerMessages.ProcessChange { ProcessName = message.ProcessName, NewState = ProcessState.Inactive });
                         break;
                     case ProcessState.Starting:
+                        _logger.InfoFormat("Stopping global service {0}", process.Name);
                         process.IsAssignedHere = false;
                         process.Worker.Stop();
                         break;
                     case ProcessState.Running:
+                        _logger.InfoFormat("Stopping global service {0}", process.Name);
                         process.IsAssignedHere = false;
                         process.Worker.Pause();
                         break;
@@ -487,6 +517,8 @@ namespace ServiceLib
             ProcessInfo process;
             if (!_isLeader || !_processes.TryGetValue(message.ProcessName, out process))
                 return;
+            _logger.DebugFormat("Received process change from {0} that process {1} is {2}", 
+                message.SenderId, message.ProcessName, message.NewState);
             switch (message.NewState)
             {
                 case ProcessState.Unsupported:
@@ -522,6 +554,7 @@ namespace ServiceLib
             if (_isShutingDown)
                 return;
             var process = message.Process as ProcessInfo;
+            _logger.InfoFormat("Starting local process {0} after delay", process.Name);
             process.Worker.Start();
         }
 
@@ -539,6 +572,7 @@ namespace ServiceLib
                         case ProcessState.Inactive:
                         case ProcessState.Faulted:
                         case ProcessState.Conflicted:
+                            _logger.InfoFormat("Starting local service {0}", process.Name);
                             process.Worker.Start();
                             break;
                     }
@@ -547,13 +581,21 @@ namespace ServiceLib
                 {
                     var state = process.Worker.State;
                     if (state == ProcessState.Starting || state == ProcessState.Pausing)
+                    {
+                        _logger.InfoFormat("Stopping local service {0}", process.Name);
                         process.Worker.Stop();
+                    }
                     else if (state == ProcessState.Running)
+                    {
+                        _logger.InfoFormat("Stopping local service {0}", process.Name);
                         process.Worker.Pause();
+                    }
                 }
             }
             else
             {
+                _logger.DebugFormat("Requesting process {0} to be {1}", 
+                    message.ProcessName, message.ShouldBeOnline ? "online" : "offline");
                 _scheduleNeeded = true;
                 process.RequestedState = message.ShouldBeOnline;
             }
@@ -566,12 +608,19 @@ namespace ServiceLib
                 if (_isShutingDown)
                     return;
                 if (state == ProcessState.Conflicted)
+                {
+                    _logger.InfoFormat("Restarting local service {0}", process.Name);
                     process.Worker.Start();
+                }
                 else if (state == ProcessState.Faulted)
+                {
+                    _logger.WarnFormat("Local service {0} failed, scheduling restart in 10 seconds", process.Name);
                     ScheduleSelfMessage(10000, new ProcessManagerCluster.ProcessDelayed { Process = process });
+                }
             }
             else
             {
+                _logger.DebugFormat("Global process {0} changed it's state to {1}", process.Name, state);
                 switch (state)
                 {
                     case ProcessState.Starting:
@@ -589,6 +638,7 @@ namespace ServiceLib
         {
             if (!_isLeader || _leader == null)
                 return;
+            _logger.Debug("Rescheduling global tasks");
 
             foreach (var process in _processes.Values)
             {
@@ -614,6 +664,7 @@ namespace ServiceLib
                 var foundNode = FindNodeForProcess(process, true, int.MaxValue);
                 if (foundNode == null)
                     continue;
+                _logger.DebugFormat("Process {0} will start at {1}", process.Name, foundNode.NodeId);
                 process.AssignedNode = foundNode;
                 foundNode.ProcessCount++;
                 process.State = GlobalProcessState.ToBeStarted;
@@ -628,12 +679,14 @@ namespace ServiceLib
                     var foundNode = FindNodeForProcess(process, false, process.AssignedNode.ProcessCount - 2);
                     if (foundNode == null)
                         continue;
+                    _logger.DebugFormat("Process {0} will move from {1} to {2}", process.Name, process.AssignedNode.NodeId, foundNode.NodeId);
                     foundNode.ProcessCount++;
                     process.AssignedNode.ProcessCount--;
                     process.State = GlobalProcessState.ToBeStopped;
                 }
                 else
                 {
+                    _logger.DebugFormat("Process {0} will stop at {1}", process.Name, process.AssignedNode.NodeId);
                     process.AssignedNode.ProcessCount--;
                     process.State = GlobalProcessState.ToBeStopped;
                 }
