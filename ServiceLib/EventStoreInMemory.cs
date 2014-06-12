@@ -1,4 +1,5 @@
-﻿using System;
+﻿using log4net;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -14,6 +15,7 @@ namespace ServiceLib
         private Dictionary<string, int> _versions;
         private Dictionary<string, EventStoreSnapshot> _snapshots;
         private List<Waiter> _waiters;
+        private static readonly ILog Logger = LogManager.GetLogger("ServiceLib.EventStore");
 
         public EventStoreInMemory()
         {
@@ -58,6 +60,7 @@ namespace ServiceLib
                             _lock.EnterWriteLock();
                             _versions[stream] = streamVersion;
                             _events.AddRange(newEvents);
+                            Logger.DebugFormat("AddToStream({0}, {1} events): saved", stream, newEvents.Count);
                         }
                         finally
                         {
@@ -75,6 +78,7 @@ namespace ServiceLib
             }
             catch (Exception ex)
             {
+                Logger.DebugFormat("AddToStream({0}, ...): failed", stream);
                 return TaskUtils.FromError<bool>(ex);
             }
         }
@@ -91,6 +95,8 @@ namespace ServiceLib
                     _versions.TryGetValue(stream, out streamVersion);
                     var list = _events.Where(e => e.StreamName == stream && e.StreamVersion >= minVersion).Take(maxCount).ToList();
                     result = new EventStoreStream(list, streamVersion, 0);
+                    Logger.DebugFormat("ReadStream({0}, {1}, {2}): returning {3} events",
+                        stream, minVersion, maxCount, list.Count);
                 }
                 finally
                 {
@@ -100,6 +106,8 @@ namespace ServiceLib
             }
             catch (Exception ex)
             {
+                Logger.DebugFormat("ReadStream({0}, {1}, {2}): failed",
+                    stream, minVersion, maxCount);
                 return TaskUtils.FromError<IEventStoreStream>(ex);
             }
         }
@@ -125,6 +133,9 @@ namespace ServiceLib
             }
             catch (Exception exception)
             {
+                Logger.DebugFormat("GetAllEvents({0}, {1}): failed",
+                    token == null ? "null" : token.IsInitial ? "Initial" : token.ToString(),
+                    maxCount);
                 return TaskUtils.FromError<IEventStoreCollection>(exception);
             }
         }
@@ -168,6 +179,9 @@ namespace ServiceLib
             }
             catch (Exception exception)
             {
+                Logger.DebugFormat("GetAllEvents({0}, {1}): failed",
+                     token == null ? "null" : token.IsInitial ? "Initial" : token.ToString(),
+                     maxCount);
                 return TaskUtils.FromError<IEventStoreCollection>(exception);
             }
         }
@@ -286,6 +300,10 @@ namespace ServiceLib
 
             public void Complete()
             {
+                Logger.DebugFormat("GetAllEvents({0}, {1}): returned {2} events with next token {3}",
+                    _token == null ? "null" : _token.IsInitial ? "Initial" : _token.ToString(),
+                    _maxCount, _readyEvents.Count,
+                    _nextToken == null ? "null" : _nextToken.IsInitial ? "Initial" : _nextToken.ToString());
                 _task.TrySetResult(new EventStoreCollection(_readyEvents, _nextToken));
             }
         }
@@ -294,6 +312,7 @@ namespace ServiceLib
         {
             EventStoreSnapshot snapshot;
             _snapshots.TryGetValue(stream, out snapshot);
+            Logger.DebugFormat("LoadSnapshot({0}): {1}found", stream, snapshot == null ? "not " : "");
             return TaskUtils.FromResult(snapshot);
         }
 
@@ -301,6 +320,7 @@ namespace ServiceLib
         {
             snapshot.StreamName = stream;
             _snapshots[stream] = snapshot;
+            Logger.DebugFormat("SaveSnapshot({0})", stream);
             return TaskUtils.CompletedTask();
         }
     }

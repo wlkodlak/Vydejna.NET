@@ -8,6 +8,7 @@ using NpgsqlTypes;
 using System.Data;
 using System.Threading;
 using System.Collections.Concurrent;
+using log4net;
 
 namespace ServiceLib
 {
@@ -24,6 +25,7 @@ namespace ServiceLib
         private CancellationTokenSource _cancelListening;
         private Task _notificationTask;
         private string _partition;
+        private static readonly ILog Logger = LogManager.GetLogger("ServiceLib.EventStore");
 
         public EventStorePostgres(DatabasePostgres db, ITime time, string partition = "eventstore")
         {
@@ -63,35 +65,41 @@ namespace ServiceLib
 
         private void InitializeDatabase(NpgsqlConnection conn)
         {
-            using (var cmd = conn.CreateCommand())
+            using (new LogMethod(Logger, "InitializeDatabase"))
             {
-                cmd.CommandText =
-                    "CREATE TABLE IF NOT EXISTS " + _partition + "_streams (" +
-                    "streamname varchar PRIMARY KEY, " +
-                    "version integer NOT NULL" +
-                    ")";
-                cmd.ExecuteNonQuery();
-            }
-            using (var cmd = conn.CreateCommand())
-            {
-                cmd.CommandText =
-                    "CREATE TABLE IF NOT EXISTS " + _partition + "_events (" +
-                    "id bigserial PRIMARY KEY, " +
-                    "streamname varchar NOT NULL, " +
-                    "version integer NOT NULL, " +
-                    "format varchar, eventtype varchar, contents text, " +
-                    "UNIQUE (streamname, version)" +
-                    ")";
-                cmd.ExecuteNonQuery();
-            }
-            using (var cmd = conn.CreateCommand())
-            {
-                cmd.CommandText =
-                    "CREATE TABLE IF NOT EXISTS " + _partition + "_snapshots (" +
-                    "streamname varchar PRIMARY KEY, " +
-                    "format varchar, snapshottype varchar, contents text" +
-                    ")";
-                cmd.ExecuteNonQuery();
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText =
+                        "CREATE TABLE IF NOT EXISTS " + _partition + "_streams (" +
+                        "streamname varchar PRIMARY KEY, " +
+                        "version integer NOT NULL" +
+                        ")";
+                    Logger.TraceSql(cmd);
+                    cmd.ExecuteNonQuery();
+                }
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText =
+                        "CREATE TABLE IF NOT EXISTS " + _partition + "_events (" +
+                        "id bigserial PRIMARY KEY, " +
+                        "streamname varchar NOT NULL, " +
+                        "version integer NOT NULL, " +
+                        "format varchar, eventtype varchar, contents text, " +
+                        "UNIQUE (streamname, version)" +
+                        ")";
+                    Logger.TraceSql(cmd);
+                    cmd.ExecuteNonQuery();
+                }
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText =
+                        "CREATE TABLE IF NOT EXISTS " + _partition + "_snapshots (" +
+                        "streamname varchar PRIMARY KEY, " +
+                        "format varchar, snapshottype varchar, contents text" +
+                        ")";
+                    Logger.TraceSql(cmd);
+                    cmd.ExecuteNonQuery();
+                }
             }
         }
 
@@ -116,29 +124,33 @@ namespace ServiceLib
 
         private bool AddToStreamWorker(NpgsqlConnection conn, object objContext)
         {
-            var context = (AddToStreamParameters)objContext;
-            using (var tran = conn.BeginTransaction())
+            using (new LogMethod(Logger, "AddToStream"))
             {
-                var rawVersion = GetStreamVersion(conn, context.Stream);
-                var realVersion = rawVersion == -1 ? 0 : rawVersion;
-                if (!context.ExpectedVersion.VerifyVersion(realVersion))
-                    return false;
-                if (rawVersion == -1)
+                var context = (AddToStreamParameters)objContext;
+                using (var tran = conn.BeginTransaction())
                 {
-                    if (CreateStream(conn, tran, context.Stream))
+                    var rawVersion = GetStreamVersion(conn, context.Stream);
+                    var realVersion = rawVersion == -1 ? 0 : rawVersion;
+                    if (!context.ExpectedVersion.VerifyVersion(realVersion))
+                        return false;
+                    if (rawVersion == -1)
                     {
-                        rawVersion = GetStreamVersion(conn, context.Stream);
-                        realVersion = rawVersion == -1 ? 0 : rawVersion;
-                        if (!context.ExpectedVersion.VerifyVersion(realVersion))
-                            return false;
+                        if (CreateStream(conn, tran, context.Stream))
+                        {
+                            rawVersion = GetStreamVersion(conn, context.Stream);
+                            realVersion = rawVersion == -1 ? 0 : rawVersion;
+                            if (!context.ExpectedVersion.VerifyVersion(realVersion))
+                                return false;
+                        }
                     }
+                    var events = context.Events.ToList();
+                    InsertNewEvents(conn, context.Stream, realVersion, events);
+                    UpdateStreamVersion(conn, context.Stream, realVersion + events.Count);
+                    NotifyChanges(conn);
+                    tran.Commit();
+                    Logger.DebugFormat("AddToStream({0}, {1} events): saved", context.Stream, events.Count);
+                    return true;
                 }
-                var events = context.Events.ToList();
-                InsertNewEvents(conn, context.Stream, realVersion, events);
-                UpdateStreamVersion(conn, context.Stream, realVersion + events.Count);
-                NotifyChanges(conn);
-                tran.Commit();
-                return true;
             }
         }
 
@@ -148,6 +160,7 @@ namespace ServiceLib
             {
                 cmd.CommandText = "SELECT version FROM " + _partition + "_streams WHERE streamname = :streamname FOR UPDATE";
                 cmd.Parameters.AddWithValue("streamname", stream);
+                Logger.TraceSql(cmd);
                 using (var reader = cmd.ExecuteReader())
                 {
                     if (reader.Read())
@@ -167,6 +180,7 @@ namespace ServiceLib
                 {
                     cmd.CommandText = "INSERT INTO " + _partition + "_streams (streamname, version) VALUES (:streamname, 0)";
                     cmd.Parameters.AddWithValue("streamname", stream);
+                    Logger.TraceSql(cmd);
                     cmd.ExecuteNonQuery();
                     return false;
                 }
@@ -204,6 +218,7 @@ namespace ServiceLib
                     paramFormat.Value = evnt.Format;
                     paramType.Value = evnt.Type;
                     paramBody.Value = evnt.Body;
+                    Logger.TraceSql(cmd);
                     var id = (long)cmd.ExecuteScalar();
                     evnt.Token = TokenFromId(id);
                 }
@@ -217,6 +232,7 @@ namespace ServiceLib
                 cmd.CommandText = "UPDATE " + _partition + "_streams SET version = :version WHERE streamname = :streamname";
                 cmd.Parameters.AddWithValue("streamname", stream);
                 cmd.Parameters.AddWithValue("version", version);
+                Logger.TraceSql(cmd);
                 cmd.ExecuteNonQuery();
             }
         }
@@ -226,6 +242,7 @@ namespace ServiceLib
             using (var cmd = conn.CreateCommand())
             {
                 cmd.CommandText = "NOTIFY " + _partition;
+                Logger.TraceSql(cmd);
                 cmd.ExecuteNonQuery();
             }
         }
@@ -257,20 +274,29 @@ namespace ServiceLib
 
         private IEventStoreStream ReadStreamWorker(NpgsqlConnection conn, object objContext)
         {
-            var context = (ReadStreamParameters)objContext;
-            var version = Math.Max(0, GetStreamVersion(conn, context.Stream));
-            if (version < context.MinVersion)
+            using (new LogMethod(Logger, "ReadStream"))
             {
-                return new EventStoreStream(EmptyList, version, version);
-            }
-            else if (context.MaxCount <= 0)
-            {
-                return new EventStoreStream(EmptyList, version, context.MinVersion);
-            }
-            else
-            {
-                var events = LoadEvents(conn, context.Stream, context.MinVersion, Math.Min(version, context.MaxVersion));
-                return new EventStoreStream(events, version, context.MinVersion);
+                var context = (ReadStreamParameters)objContext;
+                var version = Math.Max(0, GetStreamVersion(conn, context.Stream));
+                if (version < context.MinVersion)
+                {
+                    Logger.DebugFormat("ReadStream({0}, {1}, {2}): returning {3} events",
+                        context.Stream, context.MinVersion, context.MaxCount, 0);
+                    return new EventStoreStream(EmptyList, version, version);
+                }
+                else if (context.MaxCount <= 0)
+                {
+                    Logger.DebugFormat("ReadStream({0}, {1}, {2}): returning {3} events",
+                        context.Stream, context.MinVersion, context.MaxCount, 0);
+                    return new EventStoreStream(EmptyList, version, context.MinVersion);
+                }
+                else
+                {
+                    var events = LoadEvents(conn, context.Stream, context.MinVersion, Math.Min(version, context.MaxVersion));
+                    Logger.DebugFormat("ReadStream({0}, {1}, {2}): returning {3} events",
+                        context.Stream, context.MinVersion, context.MaxCount, events.Count);
+                    return new EventStoreStream(events, version, context.MinVersion);
+                }
             }
         }
 
@@ -286,6 +312,7 @@ namespace ServiceLib
                 cmd.Parameters.AddWithValue("streamname", stream);
                 cmd.Parameters.AddWithValue("minversion", minVersion);
                 cmd.Parameters.AddWithValue("maxversion", maxVersion);
+                Logger.TraceSql(cmd);
                 using (var reader = cmd.ExecuteReader())
                 {
                     var list = new List<EventStoreEvent>(expectedCount);
@@ -327,23 +354,28 @@ namespace ServiceLib
 
         private void LoadBodiesWorker(NpgsqlConnection conn, object objContext)
         {
-            var ids = (Dictionary<long, EventStoreEvent>)objContext;
-            using (var cmd = conn.CreateCommand())
+            using (new LogMethod(Logger, "LoadBodies"))
             {
-                cmd.CommandText = "SELECT id, contents FROM " + _partition + "_events WHERE id = ANY (:id)";
-                var paramId = cmd.Parameters.Add("id", NpgsqlDbType.Bigint | NpgsqlDbType.Array);
-                paramId.Value = ids;
-                using (var reader = cmd.ExecuteReader())
+                var ids = (Dictionary<long, EventStoreEvent>)objContext;
+                using (var cmd = conn.CreateCommand())
                 {
-                    while (reader.Read())
+                    cmd.CommandText = "SELECT id, contents FROM " + _partition + "_events WHERE id = ANY (:id)";
+                    var paramId = cmd.Parameters.Add("id", NpgsqlDbType.Bigint | NpgsqlDbType.Array);
+                    paramId.Value = ids;
+                    Logger.TraceSql(cmd);
+                    using (var reader = cmd.ExecuteReader())
                     {
-                        var id = reader.GetInt64(0);
-                        var body = reader.IsDBNull(1) ? "" : reader.GetString(1);
-                        EventStoreEvent evnt;
-                        if (ids.TryGetValue(id, out evnt))
-                            evnt.Body = body;
+                        while (reader.Read())
+                        {
+                            var id = reader.GetInt64(0);
+                            var body = reader.IsDBNull(1) ? "" : reader.GetString(1);
+                            EventStoreEvent evnt;
+                            if (ids.TryGetValue(id, out evnt))
+                                evnt.Body = body;
+                        }
                     }
                 }
+                Logger.DebugFormat("LoadBodies({0} events)", ids.Count);
             }
         }
 
@@ -354,25 +386,30 @@ namespace ServiceLib
 
         private EventStoreSnapshot LoadSnapshotWorker(NpgsqlConnection conn, object objContext)
         {
-            var stream = (string)objContext;
-            EventStoreSnapshot snapshot = null;
-            using (var cmd = conn.CreateCommand())
+            using (new LogMethod(Logger, "LoadSnapshot"))
             {
-                cmd.CommandText = "SELECT format, snapshottype, contents FROM " + _partition + "_snapshots WHERE streamname = :streamname";
-                cmd.Parameters.AddWithValue("streamname", stream);
-                using (var reader = cmd.ExecuteReader())
+                var stream = (string)objContext;
+                EventStoreSnapshot snapshot = null;
+                using (var cmd = conn.CreateCommand())
                 {
-                    if (reader.Read())
+                    cmd.CommandText = "SELECT format, snapshottype, contents FROM " + _partition + "_snapshots WHERE streamname = :streamname";
+                    cmd.Parameters.AddWithValue("streamname", stream);
+                    Logger.TraceSql(cmd);
+                    using (var reader = cmd.ExecuteReader())
                     {
-                        snapshot = new EventStoreSnapshot();
-                        snapshot.StreamName = stream;
-                        snapshot.Format = reader.GetString(0);
-                        snapshot.Type = reader.GetString(1);
-                        snapshot.Body = reader.GetString(2);
+                        if (reader.Read())
+                        {
+                            snapshot = new EventStoreSnapshot();
+                            snapshot.StreamName = stream;
+                            snapshot.Format = reader.GetString(0);
+                            snapshot.Type = reader.GetString(1);
+                            snapshot.Body = reader.GetString(2);
+                        }
                     }
                 }
+                Logger.DebugFormat("LoadSnapshot({0}): {1}found", stream, snapshot == null ? "not " : "");
+                return snapshot;
             }
-            return snapshot;
         }
 
         public Task SaveSnapshot(string stream, EventStoreSnapshot snapshot)
@@ -394,37 +431,41 @@ namespace ServiceLib
 
         private void SaveSnapshotWorker(NpgsqlConnection conn, object objContext)
         {
-            var context = (SaveSnapshotParameters)objContext;
-            context.Snapshot.StreamName = context.Stream;
-
-            using (var tran = conn.BeginTransaction())
+            using (new LogMethod(Logger, "SaveSnapshot"))
             {
-                var snapshotExists = FindSnapshot(conn, context.Snapshot);
-                if (snapshotExists)
+                var context = (SaveSnapshotParameters)objContext;
+                context.Snapshot.StreamName = context.Stream;
+
+                using (var tran = conn.BeginTransaction())
                 {
-                    UpdateSnapshot(conn, context.Snapshot);
-                }
-                else
-                {
-                    tran.Save("insertsnapshot");
-                    try
+                    var snapshotExists = FindSnapshot(conn, context.Snapshot);
+                    if (snapshotExists)
                     {
-                        TryInsertSnapshot(conn, context.Snapshot);
+                        UpdateSnapshot(conn, context.Snapshot);
                     }
-                    catch (NpgsqlException ex)
+                    else
                     {
-                        if (ex.Code == "23505")
+                        tran.Save("insertsnapshot");
+                        try
                         {
-                            tran.Rollback("insertsnapshot");
-                            UpdateSnapshot(conn, context.Snapshot);
+                            TryInsertSnapshot(conn, context.Snapshot);
                         }
-                        else
+                        catch (NpgsqlException ex)
                         {
-                            throw;
+                            if (ex.Code == "23505")
+                            {
+                                tran.Rollback("insertsnapshot");
+                                UpdateSnapshot(conn, context.Snapshot);
+                            }
+                            else
+                            {
+                                throw;
+                            }
                         }
                     }
+                    tran.Commit();
                 }
-                tran.Commit();
+                Logger.DebugFormat("SaveSnapshot({0})", context.Stream);
             }
         }
 
@@ -435,6 +476,7 @@ namespace ServiceLib
             {
                 cmd.CommandText = "SELECT 1 FROM " + _partition + "_snapshots WHERE streamname = :streamname FOR UPDATE";
                 cmd.Parameters.Add("streamname", NpgsqlDbType.Varchar).Value = snapshot.StreamName;
+                Logger.TraceSql(cmd);
                 using (var reader = cmd.ExecuteReader())
                     snapshotExists = reader.Read();
             }
@@ -450,6 +492,7 @@ namespace ServiceLib
                 cmd.Parameters.Add("format", NpgsqlDbType.Varchar).Value = snapshot.Format;
                 cmd.Parameters.Add("snapshottype", NpgsqlDbType.Varchar).Value = snapshot.Type;
                 cmd.Parameters.Add("contents", NpgsqlDbType.Varchar).Value = snapshot.Body;
+                Logger.TraceSql(cmd);
                 cmd.ExecuteNonQuery();
             }
         }
@@ -463,6 +506,7 @@ namespace ServiceLib
                 cmd.Parameters.Add("format", NpgsqlDbType.Varchar).Value = snapshot.Format;
                 cmd.Parameters.Add("snapshottype", NpgsqlDbType.Varchar).Value = snapshot.Type;
                 cmd.Parameters.Add("contents", NpgsqlDbType.Varchar).Value = snapshot.Body;
+                Logger.TraceSql(cmd);
                 cmd.ExecuteNonQuery();
             }
         }
@@ -475,18 +519,33 @@ namespace ServiceLib
 
         private GetAllEventsResponse GetAllEventsWorker(NpgsqlConnection conn, object objContext)
         {
-            var context = (WaitForEventsContext)objContext;
-            var eventId = GetLastEventId(conn);
-            if (context.EventId == -1)
-                return new GetAllEventsResponse(null, eventId);
-            var count = (int)Math.Min(context.MaxCount, eventId - context.EventId);
-            if (count == 0)
-                return new GetAllEventsResponse(null, Math.Min(context.EventId, eventId));
-            var events = GetEvents(conn, context.EventId, count);
-            if (events.Count == 0)
-                return new GetAllEventsResponse(null, Math.Min(context.EventId, eventId));
-            else
-                return new GetAllEventsResponse(events, events[events.Count - 1].Token);
+            using (new LogMethod(Logger, "GetAllEvents"))
+            {
+                var context = (WaitForEventsContext)objContext;
+                var eventId = GetLastEventId(conn);
+                if (context.EventId == -1)
+                {
+                    Logger.DebugFormat("GetAllEvents(eventId: {0}): token was Current", context.EventId);
+                    return new GetAllEventsResponse(null, eventId);
+                }
+                var count = (int)Math.Min(context.MaxCount, eventId - context.EventId);
+                if (count == 0)
+                {
+                    Logger.DebugFormat("GetAllEvents(eventId: {0}): zero MaxCount", context.EventId);
+                    return new GetAllEventsResponse(null, Math.Min(context.EventId, eventId));
+                }
+                var events = GetEvents(conn, context.EventId, count);
+                if (events.Count == 0)
+                {
+                    Logger.DebugFormat("GetAllEvents(eventId: {0}): no events available", context.EventId);
+                    return new GetAllEventsResponse(null, Math.Min(context.EventId, eventId));
+                }
+                else
+                {
+                    Logger.DebugFormat("GetAllEvents(eventId: {0}): returning {1} events", context.EventId, events.Count);
+                    return new GetAllEventsResponse(events, events[events.Count - 1].Token);
+                }
+            }
         }
 
         private IEventStoreCollection GetAllEventsConvert(Task<GetAllEventsResponse> task)
@@ -566,21 +625,27 @@ namespace ServiceLib
             var waiter = (WaitForEventsContext)objContext;
             if (taskImmediate.Exception != null)
             {
+                Logger.DebugFormat("WaitForEvents(eventId: {0}): failed", waiter.EventId);
                 waiter.Task.TrySetException(taskImmediate.Exception.InnerExceptions);
             }
             else if (waiter.Nowait)
             {
-                waiter.Task.TrySetResult(taskImmediate.Result.BuildFinal());
+                var finalResult = taskImmediate.Result.BuildFinal();
+                Logger.DebugFormat("WaitForEvents(eventId: {0}): returning {1} events", waiter.EventId, finalResult.Events.Count);
+                waiter.Task.TrySetResult(finalResult);
             }
             else if (taskImmediate.Result.Events != null && taskImmediate.Result.Events.Count > 0)
             {
-                waiter.Task.TrySetResult(taskImmediate.Result.BuildFinal());
+                var finalResult = taskImmediate.Result.BuildFinal();
+                Logger.DebugFormat("WaitForEvents(eventId: {0}): returning {1} events", waiter.EventId, finalResult.Events.Count);
+                waiter.Task.TrySetResult(finalResult);
             }
             else
             {
                 if (waiter.Cancel.IsCancellationRequested)
                 {
                     WaitForEvents_RemoveWaiter(waiter);
+                    return;
                 }
                 else if (waiter.Cancel.CanBeCanceled)
                 {
@@ -677,6 +742,7 @@ namespace ServiceLib
             using (var cmd = conn.CreateCommand())
             {
                 cmd.CommandText = "SELECT id FROM " + _partition + "_events ORDER BY id DESC LIMIT 1";
+                Logger.TraceSql(cmd);
                 using (var reader = cmd.ExecuteReader())
                 {
                     if (reader.Read())
@@ -694,6 +760,7 @@ namespace ServiceLib
                 cmd.CommandText = string.Concat(
                     "SELECT id, streamname, version, format, eventtype, contents FROM " + _partition + "_events WHERE id > ",
                     startingId.ToString(), " ORDER BY id LIMIT ", maxCount.ToString());
+                Logger.TraceSql(cmd);
                 using (var reader = cmd.ExecuteReader())
                 {
                     var list = new List<GetAllEventsEvent>(maxCount);

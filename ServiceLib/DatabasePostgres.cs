@@ -18,14 +18,13 @@ namespace ServiceLib
         private int _listenerKey;
         private readonly ITime _time;
         private readonly CircuitBreaker _breaker;
-        private readonly ILog _logger;
         private readonly string _logName;
+        private static readonly ILog Logger = LogManager.GetLogger("ServiceLib.Database");
 
         public const string ConnectionNotification = "__CONNECTION__";
 
         public DatabasePostgres(string connectionString, ITime time)
         {
-            _logger = LogManager.GetLogger("ServiceLib.Database");
             _connectionString = connectionString;
             var connectionElements = new NpgsqlConnectionStringBuilder(connectionString);
             _logName = string.Concat(connectionElements.UserName, "@", connectionElements.Host, ":", connectionElements.Port, "/", connectionElements.Database);
@@ -76,7 +75,7 @@ namespace ServiceLib
         {
             try
             {
-                _logger.DebugFormat("Getting connection to {0}", _logName);
+                Logger.DebugFormat("Getting connection to {0}", _logName);
                 conn.Open();
             }
             catch (Exception ex)
@@ -225,7 +224,6 @@ namespace ServiceLib
             private readonly List<ListeningChange> _changes;
             private readonly string _connectionString;
             private readonly CancellationTokenSource _cancel;
-            private readonly ILog _logger;
             private Task _task;
 
             public NotificationWatcher(DatabasePostgres parent)
@@ -239,12 +237,11 @@ namespace ServiceLib
                 connString.SyncNotification = true;
                 _connectionString = connString.ToString();
                 _cancel = new CancellationTokenSource();
-                _logger = _parent._logger;
             }
 
             private void OnNotified(object sender, NpgsqlNotificationEventArgs e)
             {
-                _logger.DebugFormat("Received notification {0}, payload {1}", e.Condition, e.AdditionalInformation);
+                Logger.DebugFormat("Received notification {0}, payload {1}", e.Condition, e.AdditionalInformation);
                 OnNotified(e.Condition, e.AdditionalInformation);
             }
 
@@ -268,7 +265,7 @@ namespace ServiceLib
                     _listeners.Add(listener);
                     if (add)
                     {
-                        _logger.DebugFormat("Adding listener for {0}", listener.Name);
+                        Logger.DebugFormat("Adding listener for {0}", listener.Name);
                         _changes.Add(new ListeningChange { Add = true, Name = listener.Name });
                         Monitor.Pulse(_lock);
                     }
@@ -282,7 +279,7 @@ namespace ServiceLib
                     _listeners.Remove(listener);
                     if (!_listeners.Any(l => l.Name == listener.Name))
                     {
-                        _logger.DebugFormat("Removing listener for {0}", listener.Name);
+                        Logger.DebugFormat("Removing listener for {0}", listener.Name);
                         _changes.Add(new ListeningChange { Add = true, Name = listener.Name });
                         Monitor.Pulse(_lock);
                     }
@@ -293,7 +290,7 @@ namespace ServiceLib
             {
                 lock (_lock)
                 {
-                    _logger.DebugFormat("Scheduling notification for {0}", name);
+                    Logger.DebugFormat("Scheduling notification for {0}", name);
                     _notifications.Add(new Notification { Name = name, Payload = payload });
                     Monitor.Pulse(_lock);
                 }
@@ -319,7 +316,7 @@ namespace ServiceLib
                 {
                     var cancel = _cancel.Token;
                     var attemptNumber = 0;
-                    _logger.Debug("Starting notification service");
+                    Logger.Debug("Starting notification service");
                     while (!cancel.IsCancellationRequested)
                     {
                         attemptNumber++;
@@ -360,13 +357,13 @@ namespace ServiceLib
                 var attemptStart = _parent._time.GetUtcTime();
                 try
                 {
-                    _logger.DebugFormat("Opening connection for notifications to {0}", _parent._logName);
+                    Logger.DebugFormat("Opening connection for notifications to {0}", _parent._logName);
                     conn.Open();
                     return true;
                 }
                 catch (IOException)
                 {
-                    _logger.DebugFormat("Connection could not be established to {0}", _parent._logName);
+                    Logger.DebugFormat("Connection could not be established to {0}", _parent._logName);
                     var attemptLength = (int)(_parent._time.GetUtcTime() - attemptStart).TotalMilliseconds;
                     var timeout = Math.Max(0, (attemptNumber == 0 ? 0 : 20000) - attemptLength);
                     if (timeout > 0)
@@ -388,7 +385,7 @@ namespace ServiceLib
                 }
                 if (commands.Length > 0)
                 {
-                    _logger.DebugFormat("Sending LISTEN after restoring connection - {0}", commands);
+                    Logger.DebugFormat("Sending LISTEN after restoring connection - {0}", commands);
                     using (var cmd = conn.CreateCommand())
                     {
                         cmd.CommandText = commands.ToString();
@@ -420,7 +417,7 @@ namespace ServiceLib
                 }
                 if (commands.Length > 0)
                 {
-                    _logger.DebugFormat("Sending additional LISTENing changes - {0}", commands);
+                    Logger.DebugFormat("Sending additional LISTENing changes - {0}", commands);
                     using (var cmd = conn.CreateCommand())
                     {
                         cmd.CommandText = commands.ToString();
@@ -436,7 +433,7 @@ namespace ServiceLib
                         var paramPayload = cmd.Parameters.Add("payload", NpgsqlTypes.NpgsqlDbType.Text);
                         foreach (var notification in notifications)
                         {
-                            _logger.DebugFormat("Sending notification {0}, payload {1}", notification.Name, notification.Payload);
+                            Logger.DebugFormat("Sending notification {0}, payload {1}", notification.Name, notification.Payload);
                             paramName.Value = notification.Name;
                             paramPayload.Value = notification.Payload;
                             cmd.ExecuteNonQuery();

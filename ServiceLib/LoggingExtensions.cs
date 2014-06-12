@@ -67,10 +67,18 @@ namespace ServiceLib
             foreach (NpgsqlParameter dbParam in dbCommand.Parameters)
             {
                 sb.Append(", :").Append(dbParam.ParameterName).Append("=");
-                if ((dbParam.NpgsqlDbType & NpgsqlDbType.Array) == 0)
-                    sb.Append(dbParam.Value);
-                else if (dbParam.Value == null)
+                if (dbParam.Value == null)
+                {
                     sb.Append("NULL");
+                }
+                else if ((dbParam.NpgsqlDbType & NpgsqlDbType.Array) == 0)
+                {
+                    var value = dbParam.Value.ToString();
+                    if (value.Length <= 200)
+                        sb.Append(value);
+                    else
+                        sb.Append(value.Substring(0, 200));
+                }
                 else
                 {
                     var array = dbParam.Value as Array;
