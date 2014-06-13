@@ -39,7 +39,7 @@ namespace ServiceLib
         private IProcessWorker _mainWorker;
         private IPublisher _globalPublisher;
         private readonly ITime _time;
-        private ManualResetEventSlim _waitForStop;
+        private object _waitForStop;
         private CancellationTokenSource _cancelSource;
         private CancellationToken _cancelToken;
         private readonly ILog _logger;
@@ -96,8 +96,13 @@ namespace ServiceLib
             _lastSentTime = DateTime.MinValue;
             _time = time;
             _globalPublisher = globalPublisher;
-            _waitForStop = new ManualResetEventSlim();
-            _waitForStop.Set();
+            _waitForStop = new object();
+        }
+
+        public ProcessManagerCluster UseNodeId(string nodeId)
+        {
+            _nodeId = nodeId;
+            return this;
         }
 
         public void RegisterLocal(string name, IProcessWorker worker)
@@ -165,7 +170,33 @@ namespace ServiceLib
 
         public void WaitForStop()
         {
-            _waitForStop.Wait(5000);
+            lock (_waitForStop)
+            {
+                var waitUntil = _time.GetUtcTime().AddSeconds(5);
+                while (true)
+                {
+                    var anythingRunning = _processes.Values.Any(p => p.Worker != null && ProcessIsNotStopped(p.Worker.State));
+                    if (!anythingRunning)
+                        break;
+                    if (!Monitor.Wait(_waitForStop, (int)(waitUntil - _time.GetUtcTime()).TotalMilliseconds))
+                        break;
+                }
+            }
+        }
+
+        private bool ProcessIsNotStopped(ProcessState processState)
+        {
+            switch (processState)
+            {
+                case ProcessState.Conflicted:
+                case ProcessState.Faulted:
+                case ProcessState.Inactive:
+                case ProcessState.Unsupported:
+                case ProcessState.Uninitialized:
+                    return false;
+                default:
+                    return true;
+            }
         }
 
         private void Broadcast<T>(T message)
@@ -329,13 +360,28 @@ namespace ServiceLib
             if (_isShutingDown)
                 return;
             var sender = UpdateNode(message.SenderId);
-            if (string.Equals(message.SenderId, _nodeId, StringComparison.Ordinal))
-                return;
             var nodeIdComparison = string.CompareOrdinal(_nodeId, message.SenderId);
             if (nodeIdComparison > 0)
             {
                 _logger.DebugFormat("Other node {0} wrongly claimed leadership", message.SenderId);
                 StartNewElections();
+            }
+            else if (nodeIdComparison == 0)
+            {
+                _electionsState = ElectionsState.None;
+                _isLeader = true;
+                _leader = sender;
+
+                foreach (var process in _processes.Values)
+                {
+                    if (process.IsLocal)
+                        continue;
+                    process.State = GlobalProcessState.Offline;
+                    process.AssignedNode = null;
+                    process.PenalizedNodes.Clear();
+                    process.UnsupportedNodes.Clear();
+                }
+                RequestRescheduling();
             }
             else
             {
@@ -350,21 +396,8 @@ namespace ServiceLib
         {
             if (_isShutingDown || _electionsState != ElectionsState.Winning || _electionsId != message.ElectionsId)
                 return;
-            _electionsState = ElectionsState.None;
-            _isLeader = true;
-            _leader = GetNode(_nodeId);
-            foreach (var process in _processes.Values)
-            {
-                if (process.IsLocal)
-                    continue;
-                process.State = GlobalProcessState.Offline;
-                process.AssignedNode = null;
-                process.PenalizedNodes.Clear();
-                process.UnsupportedNodes.Clear();
-            }
             _logger.Debug("Node is taking leadership");
             Broadcast(new ProcessManagerMessages.ElectionsLeader { ElectionsId = _electionsId });
-            RequestRescheduling();
         }
 
         public void Handle(ProcessManagerMessages.Heartbeat message)
@@ -442,16 +475,21 @@ namespace ServiceLib
             if (_isShutingDown)
                 return;
             UpdateNode(message.SenderId);
-            if (_leader == null || !string.Equals(_leader.NodeId, message.SenderId) || !string.Equals(_nodeId, message.AssignedNode))
+            if (_leader == null || !string.Equals(_leader.NodeId, message.SenderId))
                 return;
+            var nodeIsTarget = string.Equals(_nodeId, message.AssignedNode);
+            var targetNode = GetNode(message.AssignedNode);
             ProcessInfo process;
             if (!_processes.TryGetValue(message.ProcessName, out process) || process.IsLocal)
             {
                 _logger.DebugFormat("Node was assigned unknown task {0}", message.ProcessName);
-                Broadcast(new ProcessManagerMessages.ProcessChange { ProcessName = message.ProcessName, NewState = ProcessState.Unsupported });
+                if (nodeIsTarget)
+                    Broadcast(new ProcessManagerMessages.ProcessChange { ProcessName = message.ProcessName, NewState = ProcessState.Unsupported });
             }
-            else
+            else if (nodeIsTarget)
             {
+                if (!_isLeader)
+                    process.AssignedNode = targetNode;
                 var state = process.Worker.State;
                 switch (state)
                 {
@@ -466,6 +504,21 @@ namespace ServiceLib
                     case ProcessState.Running:
                         _logger.DebugFormat("Reporting that global service {0} is already running", process.Name);
                         Broadcast(new ProcessManagerMessages.ProcessChange { ProcessName = message.ProcessName, NewState = ProcessState.Running });
+                        break;
+                }
+            }
+            else
+            {
+                if (!_isLeader)
+                    process.AssignedNode = targetNode;
+                var state = process.Worker.State;
+                switch (state)
+                {
+                    case ProcessState.Running:
+                    case ProcessState.Starting:
+                    case ProcessState.Pausing:
+                        process.IsAssignedHere = false;
+                        process.Worker.Stop();
                         break;
                 }
             }
@@ -515,7 +568,7 @@ namespace ServiceLib
                 return;
             UpdateNode(message.SenderId);
             ProcessInfo process;
-            if (!_isLeader || !_processes.TryGetValue(message.ProcessName, out process))
+            if (!_processes.TryGetValue(message.ProcessName, out process))
                 return;
             _logger.DebugFormat("Received process change from {0} that process {1} is {2}", 
                 message.SenderId, message.ProcessName, message.NewState);
@@ -544,7 +597,8 @@ namespace ServiceLib
                 case ProcessState.Conflicted:
                 case ProcessState.Inactive:
                     process.State = GlobalProcessState.Offline;
-                    RequestRescheduling();
+                    if (_isLeader)
+                        RequestRescheduling();
                     break;
             }
         }
@@ -603,6 +657,8 @@ namespace ServiceLib
 
         private void OnStateChanged(ProcessInfo process, ProcessState state)
         {
+            lock (_waitForStop)
+                Monitor.PulseAll(_waitForStop);
             if (process.IsLocal)
             {
                 if (_isShutingDown)

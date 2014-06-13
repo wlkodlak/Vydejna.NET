@@ -21,23 +21,9 @@ LOGOVANI:
   - kazdy event handler samostatne
 
 ADMIN KONZOLE:
-* sprava bezicich procesu:
-	- vypis stavu aktualniho uzlu:
-		> list local
-		lokalni procesy (nazev, stav)
-		> list global
-		nazev mistniho uzlu, nazev leadera, stav komunikace (je pripojen?), lokalne bezici globalni procesy (nazev, stav)
-	- vypis stavu globalnich procesu:
-		> list leader
-		nazev procesu, prideleny uzel, stav
-	- spusteni (restart) a ukonceni procesu (lokalnich i globalnich)
-		> start processName
-		> stop processName
 * informace o dead-letterech
 	- vypis zprav v dead-letter
 	- presun zprav z dead-letter zpet do fronty
-* ukonceni serveru
-	> exit
 * informace o zmenach procesu (async)
 	- lokalni proces spusten (Running), ukoncen (Inactive), selhal (Faulted)
 	- globalni proces spusten lokalne (Running), ukoncen (Inactive), selhal (Faulted)

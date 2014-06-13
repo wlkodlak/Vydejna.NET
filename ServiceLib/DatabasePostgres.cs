@@ -225,6 +225,7 @@ namespace ServiceLib
             private readonly string _connectionString;
             private readonly CancellationTokenSource _cancel;
             private Task _task;
+            private bool _useSynchronousNotifications = false;
 
             public NotificationWatcher(DatabasePostgres parent)
             {
@@ -234,7 +235,7 @@ namespace ServiceLib
                 _notifications = new List<Notification>();
                 _changes = new List<ListeningChange>();
                 var connString = new NpgsqlConnectionStringBuilder(parent._connectionString);
-                connString.SyncNotification = true;
+                connString.SyncNotification = _useSynchronousNotifications;
                 _connectionString = connString.ToString();
                 _cancel = new CancellationTokenSource();
             }
@@ -347,8 +348,9 @@ namespace ServiceLib
                         }
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
+                    Console.WriteLine("Fatal error in NOTIFY task: " + ex.ToString());
                 }
             }
 
@@ -399,6 +401,7 @@ namespace ServiceLib
             {
                 var commands = new StringBuilder();
                 List<Notification> notifications;
+                bool notificationsCheck;
                 lock (_lock)
                 {
                     foreach (var change in _changes)
@@ -406,18 +409,20 @@ namespace ServiceLib
                         commands.Append(change.Add ? "LISTEN " : "UNLISTEN ").Append(change.Name).Append("; ");
                     }
                     _changes.Clear();
-                    
+
                     notifications = _notifications.ToList();
                     _notifications.Clear();
 
                     if (commands.Length == 0 && notifications.Count == 0)
                     {
-                        Monitor.Wait(_lock, 5000);
+                        Monitor.Wait(_lock, _useSynchronousNotifications ? 5000 : 50);
                     }
+                    notificationsCheck = !_useSynchronousNotifications;
                 }
                 if (commands.Length > 0)
                 {
                     Logger.DebugFormat("Sending additional LISTENing changes - {0}", commands);
+                    notificationsCheck = false;
                     using (var cmd = conn.CreateCommand())
                     {
                         cmd.CommandText = commands.ToString();
@@ -426,6 +431,7 @@ namespace ServiceLib
                 }
                 if (notifications.Count > 0)
                 {
+                    notificationsCheck = false;
                     using (var cmd = conn.CreateCommand())
                     {
                         cmd.CommandText = "SELECT pg_notify(:name, :payload)";
@@ -438,6 +444,14 @@ namespace ServiceLib
                             paramPayload.Value = notification.Payload;
                             cmd.ExecuteNonQuery();
                         }
+                    }
+                }
+                if (notificationsCheck)
+                {
+                    using (var cmd = conn.CreateCommand())
+                    {
+                        cmd.CommandText = "";
+                        cmd.ExecuteNonQuery();
                     }
                 }
             }
