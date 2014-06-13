@@ -1,4 +1,5 @@
-﻿using System;
+﻿using log4net;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -25,6 +26,7 @@ namespace ServiceLib
         private ProcessState _processState;
         private Action<ProcessState> _onStateChanged;
         private TaskScheduler _scheduler;
+        private static readonly ILog Logger = LogManager.GetLogger("ServiceLib.HttpServer");
 
         public HttpServer(IEnumerable<string> prefixes, IHttpServerDispatcher dispatcher)
         {
@@ -44,6 +46,7 @@ namespace ServiceLib
             try
             {
                 _prefixes.ForEach(_listener.Prefixes.Add);
+                Logger.DebugFormat("Starting with prefixes: {0}", string.Join(", ", _prefixes));
                 _listener.Start();
                 SetProcessState(ProcessState.Running);
                 _workers = Enumerable.Range(0, _workerCount)
@@ -59,6 +62,7 @@ namespace ServiceLib
 
         public void Stop(bool immediatelly)
         {
+            Logger.Debug("Stopping");
             if (_processState == ProcessState.Running || _processState == ProcessState.Starting)
             {
                 SetProcessState(immediatelly ? ProcessState.Stopping : ProcessState.Pausing);
@@ -102,39 +106,7 @@ namespace ServiceLib
             {
                 context.Response.Close();
                 stopwatch.Stop();
-                Debug.WriteLine(string.Format("Request took {0} ms", stopwatch.ElapsedMilliseconds));
-            }
-        }
-
-        private class RequestHandler
-        {
-            private HttpServer _parent;
-            private HttpListenerContext _context;
-            private HttpServerListenerContext _rawContext;
-            private Stopwatch _stopwatch;
-
-            public RequestHandler(HttpServer parent, HttpListenerContext context)
-            {
-                _parent = parent;
-                _context = context;
-            }
-
-            public void Run()
-            {
-                Task.Factory.StartNew(Phase1);
-            }
-
-            private void Phase1()
-            {
-                _stopwatch = new Stopwatch();
-                _stopwatch.Start();
-                _rawContext = new HttpServerListenerContext(_context, OnCompleted);
-                _parent._dispatcher.DispatchRequest(_rawContext);
-            }
-            private void OnCompleted()
-            {
-                _stopwatch.Stop();
-                Debug.WriteLine(string.Format("Request took {0} ms", _stopwatch.ElapsedMilliseconds));
+                Logger.DebugFormat("Request {0} took {1} ms", context.Request.Url, stopwatch.ElapsedMilliseconds);
             }
         }
 
