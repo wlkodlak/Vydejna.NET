@@ -19,6 +19,10 @@ LOGOVANI:
   - externi ciselniky
   - kazda projekce samostatne
   - kazdy event handler samostatne
+* ServiceLib:
+  - MemoryCache
+  - EventProcessSimple
+  - EventProjectorSimple
 
 ADMIN KONZOLE:
 * informace o dead-letterech

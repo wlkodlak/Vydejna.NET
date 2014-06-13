@@ -1,4 +1,5 @@
-﻿using Npgsql;
+﻿using log4net;
+using Npgsql;
 using System;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
@@ -21,6 +22,7 @@ namespace ServiceLib
         private int _canStartListening;
         private CancellationTokenSource _cancelListening;
         private List<ReceiveWaiter> _waiters;
+        private static readonly ILog Logger = LogManager.GetLogger("ServiceLib.NetworkBus");
 
         public NetworkBusPostgres(string nodeId, DatabasePostgres database, ITime timeService)
         {
@@ -47,69 +49,77 @@ namespace ServiceLib
 
         private void InitializeDatabase(NpgsqlConnection conn)
         {
-            bool tableMessagesExists = false;
-            bool tableSubscriptionsExists = false;
-            using (var cmd = conn.CreateCommand())
+            using (new LogMethod(Logger, "InitializeDatabase"))
             {
-                cmd.CommandText = string.Concat(
-                    "SELECT relname FROM pg_catalog.pg_class WHERE relkind = 'r' AND relname IN ('",
-                    _tableMessages, "', '", _tableSubscriptions, "')");
-                using (var reader = cmd.ExecuteReader())
+                bool tableMessagesExists = false;
+                bool tableSubscriptionsExists = false;
+                using (var cmd = conn.CreateCommand())
                 {
-                    while (reader.Read())
+                    cmd.CommandText = string.Concat(
+                        "SELECT relname FROM pg_catalog.pg_class WHERE relkind = 'r' AND relname IN ('",
+                        _tableMessages, "', '", _tableSubscriptions, "')");
+                    Logger.TraceSql(cmd);
+                    using (var reader = cmd.ExecuteReader())
                     {
-                        var tableName = reader.GetString(0);
-                        if (tableName == _tableMessages)
-                            tableMessagesExists = true;
-                        else if (tableName == _tableSubscriptions)
-                            tableSubscriptionsExists = true;
+                        while (reader.Read())
+                        {
+                            var tableName = reader.GetString(0);
+                            if (tableName == _tableMessages)
+                                tableMessagesExists = true;
+                            else if (tableName == _tableSubscriptions)
+                                tableSubscriptionsExists = true;
+                        }
                     }
                 }
-            }
 
-            if (!tableMessagesExists)
-            {
-                using (var cmd = conn.CreateCommand())
+                if (!tableMessagesExists)
                 {
-                    cmd.CommandText =
-                        "CREATE TABLE IF NOT EXISTS " + _tableMessages + " (" +
-                        "id serial PRIMARY KEY, " +
-                        "messageid varchar NOT NULL, " +
-                        "corellationid varchar, " +
-                        "createdon timestamp NOT NULL, " +
-                        "source varchar, " +
-                        "node varchar NOT NULL, " +
-                        "destination varchar NOT NULL, " +
-                        "original varchar, " +
-                        "type varchar NOT NULL, " +
-                        "format varchar NOT NULL, " +
-                        "body text NOT NULL, " +
-                        "processing timestamp)";
-                    cmd.ExecuteNonQuery();
+                    using (var cmd = conn.CreateCommand())
+                    {
+                        cmd.CommandText =
+                            "CREATE TABLE IF NOT EXISTS " + _tableMessages + " (" +
+                            "id serial PRIMARY KEY, " +
+                            "messageid varchar NOT NULL, " +
+                            "corellationid varchar, " +
+                            "createdon timestamp NOT NULL, " +
+                            "source varchar, " +
+                            "node varchar NOT NULL, " +
+                            "destination varchar NOT NULL, " +
+                            "original varchar, " +
+                            "type varchar NOT NULL, " +
+                            "format varchar NOT NULL, " +
+                            "body text NOT NULL, " +
+                            "processing timestamp)";
+                        Logger.TraceSql(cmd);
+                        cmd.ExecuteNonQuery();
+                    }
+                    using (var cmd = conn.CreateCommand())
+                    {
+                        cmd.CommandText = "CREATE UNIQUE INDEX ON " + _tableMessages + " (node, destination, id)";
+                        Logger.TraceSql(cmd);
+                        cmd.ExecuteNonQuery();
+                    }
+                    using (var cmd = conn.CreateCommand())
+                    {
+                        cmd.CommandText = "CREATE UNIQUE INDEX ON " + _tableMessages + " (messageid)";
+                        Logger.TraceSql(cmd);
+                        cmd.ExecuteNonQuery();
+                    }
                 }
-                using (var cmd = conn.CreateCommand())
-                {
-                    cmd.CommandText = "CREATE UNIQUE INDEX ON " + _tableMessages + " (node, destination, id)";
-                    cmd.ExecuteNonQuery();
-                }
-                using (var cmd = conn.CreateCommand())
-                {
-                    cmd.CommandText = "CREATE UNIQUE INDEX ON " + _tableMessages + " (messageid)";
-                    cmd.ExecuteNonQuery();
-                }
-            }
 
-            if (!tableSubscriptionsExists)
-            {
-                using (var cmd = conn.CreateCommand())
+                if (!tableSubscriptionsExists)
                 {
-                    cmd.CommandText =
-                        "CREATE TABLE IF NOT EXISTS " + _tableSubscriptions + " (" +
-                        "type varchar NOT NULL, " +
-                        "node varchar NOT NULL, " +
-                        "destination varchar NOT NULL, " +
-                        "PRIMARY KEY (type, node, destination))";
-                    cmd.ExecuteNonQuery();
+                    using (var cmd = conn.CreateCommand())
+                    {
+                        cmd.CommandText =
+                            "CREATE TABLE IF NOT EXISTS " + _tableSubscriptions + " (" +
+                            "type varchar NOT NULL, " +
+                            "node varchar NOT NULL, " +
+                            "destination varchar NOT NULL, " +
+                            "PRIMARY KEY (type, node, destination))";
+                        Logger.TraceSql(cmd);
+                        cmd.ExecuteNonQuery();
+                    }
                 }
             }
         }
@@ -142,20 +152,25 @@ namespace ServiceLib
 
         private void SendWorker(NpgsqlConnection conn, object objContext)
         {
-            var context = (SendParameters)objContext;
-            if (context.Destination == MessageDestination.Subscribers)
+            using (new LogMethod(Logger, "Send"))
             {
-                var destinations = FindDestinations(conn, context.Message.Type);
-                if (destinations.Count == 0)
-                    return;
-                foreach (var destination in destinations)
-                    InsertMessage(conn, Guid.NewGuid().ToString("N"), destination, context.Message);
-                SendNotification(conn);
-            }
-            else
-            {
-                InsertMessage(conn, context.Message.MessageId, context.Destination, context.Message);
-                SendNotification(conn);
+                var context = (SendParameters)objContext;
+                if (context.Destination == MessageDestination.Subscribers)
+                {
+                    Logger.DebugFormat("Broadcasting message {0}", context.Message.MessageId);
+                    var destinations = FindDestinations(conn, context.Message.Type);
+                    if (destinations.Count == 0)
+                        return;
+                    foreach (var destination in destinations)
+                        InsertMessage(conn, Guid.NewGuid().ToString("N"), destination, context.Message);
+                    SendNotification(conn);
+                }
+                else
+                {
+                    Logger.DebugFormat("Sending message {0} to {1}", context.Message.MessageId, context.Destination.ProcessName);
+                    InsertMessage(conn, context.Message.MessageId, context.Destination, context.Message);
+                    SendNotification(conn);
+                }
             }
         }
 
@@ -166,6 +181,7 @@ namespace ServiceLib
             {
                 cmd.CommandText = "SELECT destination, node FROM " + _tableSubscriptions + " WHERE type = :type";
                 cmd.Parameters.AddWithValue("type", type);
+                Logger.TraceSql(cmd);
                 using (var reader = cmd.ExecuteReader())
                 {
                     while (reader.Read())
@@ -190,6 +206,7 @@ namespace ServiceLib
                 cmd.Parameters.AddWithValue("type", message.Type);
                 cmd.Parameters.AddWithValue("format", message.Format);
                 cmd.Parameters.AddWithValue("body", message.Body);
+                Logger.TraceSql(cmd);
                 cmd.ExecuteNonQuery();
             }
         }
@@ -199,6 +216,7 @@ namespace ServiceLib
             using (var cmd = conn.CreateCommand())
             {
                 cmd.CommandText = "NOTIFY " + _notificationName;
+                Logger.TraceSql(cmd);
                 cmd.ExecuteNonQuery();
             }
         }
@@ -265,39 +283,72 @@ namespace ServiceLib
 
         private IEnumerable<Task> ReceiveInternal(ReceiveWaiter waiter)
         {
-            var taskGetMessage = _database.Query(Receive_GetMessage, waiter.Destination);
-            yield return taskGetMessage;
-            if (taskGetMessage.Exception != null || taskGetMessage.IsCanceled || taskGetMessage.Result != null || waiter.Nowait)
-                yield break;
-            if (waiter.Cancel.CanBeCanceled)
+            using (new LogMethod(Logger, "Receive"))
             {
-                waiter.CancelRegistration = waiter.Cancel.Register(Receive_Cancelled, waiter);
-            }
-
-            lock (_waiters)
-                _waiters.Add(waiter);
-            while (true)
-            {
-                var taskWait = waiter.Event.Wait();
-                yield return taskWait;
-
-                if (waiter.Cancel.IsCancellationRequested)
+                var taskGetMessage = _database.Query(Receive_GetMessage, waiter.Destination);
+                yield return taskGetMessage;
+                if (taskGetMessage.Exception != null || taskGetMessage.IsCanceled || taskGetMessage.Result != null || waiter.Nowait)
                 {
-                    lock (_waiters)
-                        _waiters.Remove(waiter);
-                    yield return TaskUtils.FromResult<Message>(null);
+                    if (Logger.IsDebugEnabled)
+                    {
+                        if (taskGetMessage.Exception != null)
+                            Logger.DebugFormat("{0}: returning error", waiter.Destination.ProcessName);
+                        else if (taskGetMessage.IsCanceled)
+                            Logger.DebugFormat("{0}: cancelled", waiter.Destination.ProcessName);
+                        else if (taskGetMessage.Result == null)
+                            Logger.DebugFormat("{0}: returning null", waiter.Destination.ProcessName);
+                        else
+                        {
+                            var message = taskGetMessage.Result;
+                            Logger.DebugFormat("{0}: returning message {1} (type {2})",
+                                waiter.Destination.ProcessName, message.MessageId, message.Type);
+                        }
+                    }
                     yield break;
                 }
-
-                taskGetMessage = _database.Query(Receive_GetMessage, waiter.Destination);
-                yield return taskGetMessage;
-
-                if (taskGetMessage.Exception != null || taskGetMessage.IsCanceled || taskGetMessage.Result != null)
+                if (waiter.Cancel.CanBeCanceled)
                 {
-                    waiter.CancelRegistration.Dispose();
-                    lock (_waiters)
-                        _waiters.Remove(waiter);
-                    yield break;
+                    waiter.CancelRegistration = waiter.Cancel.Register(Receive_Cancelled, waiter);
+                }
+
+                lock (_waiters)
+                    _waiters.Add(waiter);
+                while (true)
+                {
+                    var taskWait = waiter.Event.Wait();
+                    yield return taskWait;
+
+                    if (waiter.Cancel.IsCancellationRequested)
+                    {
+                        lock (_waiters)
+                            _waiters.Remove(waiter);
+                        yield return TaskUtils.FromResult<Message>(null);
+                        yield break;
+                    }
+
+                    taskGetMessage = _database.Query(Receive_GetMessage, waiter.Destination);
+                    yield return taskGetMessage;
+
+                    if (taskGetMessage.Exception != null || taskGetMessage.IsCanceled || taskGetMessage.Result != null)
+                    {
+                        waiter.CancelRegistration.Dispose();
+                        lock (_waiters)
+                            _waiters.Remove(waiter);
+                        if (Logger.IsDebugEnabled)
+                        {
+                            if (taskGetMessage.Exception != null)
+                                Logger.DebugFormat("{0}: returning error", waiter.Destination.ProcessName);
+                            else if (taskGetMessage.IsCanceled)
+                                Logger.DebugFormat("{0}: cancelled", waiter.Destination.ProcessName);
+                            else if (taskGetMessage.Result != null)
+                            {
+                                var message = taskGetMessage.Result;
+                                Logger.DebugFormat("{0}: returning message {1} (type {2})", 
+                                    waiter.Destination.ProcessName, message.MessageId, message.Type);
+                            }
+                        }
+                        yield break;
+                    }
                 }
             }
         }
@@ -317,6 +368,7 @@ namespace ServiceLib
                     cmd.Parameters.AddWithValue("node", destination.NodeId);
                     cmd.Parameters.AddWithValue("destination", destination.ProcessName);
                     cmd.Parameters.AddWithValue("since", _timeService.GetUtcTime().AddSeconds(-_deliveryTimeout));
+                    Logger.TraceSql(cmd);
                     using (var reader = cmd.ExecuteReader())
                     {
                         if (!reader.Read())
@@ -340,7 +392,8 @@ namespace ServiceLib
                     cmd.CommandText = "UPDATE " + _tableMessages + " SET processing = :now WHERE messageid = :messageid";
                     cmd.Parameters.AddWithValue("now", _timeService.GetUtcTime());
                     cmd.Parameters.AddWithValue("messageid", message.MessageId);
-                    cmd.ExecuteReader();
+                    Logger.TraceSql(cmd);
+                    cmd.ExecuteNonQuery();
                 }
                 tran.Commit();
                 return message;
@@ -368,35 +421,42 @@ namespace ServiceLib
 
         public void SubscribeWorker(NpgsqlConnection conn, object objContext)
         {
-            var context = (SubscribeParameters)objContext;
-            if (context.Unsubscribe)
+            using (new LogMethod(Logger, "Subscribe"))
             {
-                using (var cmd = conn.CreateCommand())
+                var context = (SubscribeParameters)objContext;
+                if (context.Unsubscribe)
                 {
-                    cmd.CommandText = "DELETE FROM " + _tableSubscriptions + " WHERE type = :type AND node = :node AND destination = :destination";
-                    cmd.Parameters.AddWithValue("type", context.Type);
-                    cmd.Parameters.AddWithValue("node", context.Destination.NodeId);
-                    cmd.Parameters.AddWithValue("destination", context.Destination.ProcessName);
-                    cmd.ExecuteNonQuery();
-                }
-            }
-            else
-            {
-                try
-                {
+                    Logger.DebugFormat("{0}: Unsubscribing from {1}", context.Destination.ProcessName, context.Type);
                     using (var cmd = conn.CreateCommand())
                     {
-                        cmd.CommandText = "INSERT INTO " + _tableSubscriptions + " (type, node, destination) VALUES (:type, :node, :destination)";
+                        cmd.CommandText = "DELETE FROM " + _tableSubscriptions + " WHERE type = :type AND node = :node AND destination = :destination";
                         cmd.Parameters.AddWithValue("type", context.Type);
                         cmd.Parameters.AddWithValue("node", context.Destination.NodeId);
                         cmd.Parameters.AddWithValue("destination", context.Destination.ProcessName);
+                        Logger.TraceSql(cmd);
                         cmd.ExecuteNonQuery();
                     }
                 }
-                catch (NpgsqlException dbex)
+                else
                 {
-                    if (dbex.Code != "23505")
-                        throw;
+                    try
+                    {
+                        Logger.DebugFormat("{0}: Subscribing to {1}", context.Destination.ProcessName, context.Type);
+                        using (var cmd = conn.CreateCommand())
+                        {
+                            cmd.CommandText = "INSERT INTO " + _tableSubscriptions + " (type, node, destination) VALUES (:type, :node, :destination)";
+                            cmd.Parameters.AddWithValue("type", context.Type);
+                            cmd.Parameters.AddWithValue("node", context.Destination.NodeId);
+                            cmd.Parameters.AddWithValue("destination", context.Destination.ProcessName);
+                            Logger.TraceSql(cmd);
+                            cmd.ExecuteNonQuery();
+                        }
+                    }
+                    catch (NpgsqlException dbex)
+                    {
+                        if (dbex.Code != "23505")
+                            throw;
+                    }
                 }
             }
         }
@@ -421,38 +481,49 @@ namespace ServiceLib
 
         private void MarkProcessedWorker(NpgsqlConnection conn, object objContext)
         {
-            var context = (MarkProcessedParameters)objContext;
-            if (context.NewDestination == MessageDestination.Processed)
+            using (new LogMethod(Logger, "MarkProcessed"))
             {
-                using (var cmd = conn.CreateCommand())
+                var context = (MarkProcessedParameters)objContext;
+                if (context.NewDestination == MessageDestination.Processed)
                 {
-                    cmd.CommandText = "DELETE FROM " + _tableMessages + " WHERE messageid = :messageid";
-                    cmd.Parameters.AddWithValue("messageid", context.Message.MessageId);
-                    cmd.ExecuteNonQuery();
+                    using (var cmd = conn.CreateCommand())
+                    {
+                        cmd.CommandText = "DELETE FROM " + _tableMessages + " WHERE messageid = :messageid";
+                        cmd.Parameters.AddWithValue("messageid", context.Message.MessageId);
+                        Logger.TraceSql(cmd);
+                        cmd.ExecuteNonQuery();
+                    }
+                    Logger.DebugFormat("{0}: Marked message {1} as processed", context.Message.Destination.ProcessName, context.Message.MessageId);
                 }
-            }
-            else if (context.NewDestination == MessageDestination.DeadLetters)
-            {
-                using (var cmd = conn.CreateCommand())
+                else if (context.NewDestination == MessageDestination.DeadLetters)
                 {
-                    cmd.CommandText =
-                        "UPDATE " + _tableMessages + " SET original = destination, node = '__SPECIAL__', " +
-                        "destination = 'deadletters', processing = NULL WHERE messageid = :messageid";
-                    cmd.Parameters.AddWithValue("messageid", context.Message.MessageId);
-                    cmd.Parameters.AddWithValue("node", context.NewDestination.NodeId);
-                    cmd.Parameters.AddWithValue("destination", context.NewDestination.ProcessName);
-                    cmd.ExecuteNonQuery();
+                    using (var cmd = conn.CreateCommand())
+                    {
+                        cmd.CommandText =
+                            "UPDATE " + _tableMessages + " SET original = destination, node = '__SPECIAL__', " +
+                            "destination = 'deadletters', processing = NULL WHERE messageid = :messageid";
+                        cmd.Parameters.AddWithValue("messageid", context.Message.MessageId);
+                        cmd.Parameters.AddWithValue("node", context.NewDestination.NodeId);
+                        cmd.Parameters.AddWithValue("destination", context.NewDestination.ProcessName);
+                        Logger.TraceSql(cmd);
+                        cmd.ExecuteNonQuery();
+                    }
+                    Logger.DebugFormat("{0}: Marked message {1} as dead-letter", context.Message.Destination.ProcessName, context.Message.MessageId);
                 }
-            }
-            else
-            {
-                using (var cmd = conn.CreateCommand())
+                else
                 {
-                    cmd.CommandText = "UPDATE " + _tableMessages + " SET node = :node, destination = :destination, processing = NULL WHERE messageid = :messageid";
-                    cmd.Parameters.AddWithValue("messageid", context.Message.MessageId);
-                    cmd.Parameters.AddWithValue("node", context.NewDestination.NodeId);
-                    cmd.Parameters.AddWithValue("destination", context.NewDestination.ProcessName);
-                    cmd.ExecuteNonQuery();
+                    using (var cmd = conn.CreateCommand())
+                    {
+                        cmd.CommandText = "UPDATE " + _tableMessages + " SET node = :node, destination = :destination, processing = NULL WHERE messageid = :messageid";
+                        cmd.Parameters.AddWithValue("messageid", context.Message.MessageId);
+                        cmd.Parameters.AddWithValue("node", context.NewDestination.NodeId);
+                        cmd.Parameters.AddWithValue("destination", context.NewDestination.ProcessName);
+                        Logger.TraceSql(cmd);
+                        cmd.ExecuteNonQuery();
+                    }
+                    Logger.DebugFormat("{0}: Message {1} moved to {2}",
+                        context.Message.Destination.ProcessName, context.Message.MessageId,
+                        context.NewDestination.ProcessName);
                 }
             }
         }
@@ -464,13 +535,18 @@ namespace ServiceLib
 
         private void DeleteAllWorker(NpgsqlConnection conn, object objContext)
         {
-            var destination = (MessageDestination)objContext;
-            using (var cmd = conn.CreateCommand())
+            using (new LogMethod(Logger, "DeleteAll"))
             {
-                cmd.CommandText = "DELETE FROM " + _tableMessages + " WHERE node = :node AND destination = :destination";
-                cmd.Parameters.AddWithValue("node", destination.NodeId);
-                cmd.Parameters.AddWithValue("destination", destination.ProcessName);
-                cmd.ExecuteNonQuery();
+                var destination = (MessageDestination)objContext;
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText = "DELETE FROM " + _tableMessages + " WHERE node = :node AND destination = :destination";
+                    cmd.Parameters.AddWithValue("node", destination.NodeId);
+                    cmd.Parameters.AddWithValue("destination", destination.ProcessName);
+                    Logger.TraceSql(cmd);
+                    cmd.ExecuteNonQuery();
+                }
+                Logger.DebugFormat("{0}: Deleted all messages", destination.ProcessName);
             }
         }
     }

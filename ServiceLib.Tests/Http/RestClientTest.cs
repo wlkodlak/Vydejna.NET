@@ -16,7 +16,7 @@ namespace ServiceLib.Tests.Http
         private class RestClientTestClass : RestClient
         {
             public RestClientTestClass(string url, IHttpClient client)
-                : base(url, client)
+                : base(url, client, null)
             {
 
             }

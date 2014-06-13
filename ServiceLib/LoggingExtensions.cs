@@ -35,6 +35,10 @@ namespace ServiceLib
 
     public static class LogExtensions
     {
+        public static bool IsTraceEnabled(this ILog log)
+        {
+            return log.Logger.IsEnabledFor(_traceLevel);
+        }
         public static void Trace(this ILog log, string message)
         {
             var logger = log.Logger;

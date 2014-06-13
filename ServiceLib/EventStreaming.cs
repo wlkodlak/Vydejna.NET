@@ -1,4 +1,5 @@
-﻿using System;
+﻿using log4net;
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -87,6 +88,7 @@ namespace ServiceLib
             private MessageDestination _inputMessagingQueue;
             private AutoResetEventAsync _waitForSignal;
             private AggregateException _pendingError;
+            private static readonly ILog Logger = LogManager.GetLogger("ServiceLib.EventStreaming");
 
             public EventsStream(EventStreaming parent, EventStoreToken token, string processName)
             {
@@ -114,6 +116,7 @@ namespace ServiceLib
             {
                 if (_currentMessage != null)
                 {
+                    Logger.DebugFormat("{0}: Marking previous message (id {1}) as processed", _processName, _currentMessage.MessageId);
                     var taskMarkProcessed = _parent._messaging.MarkProcessed(_currentMessage, MessageDestination.Processed);
                     _currentMessage = null;
                     yield return taskMarkProcessed;
@@ -121,6 +124,7 @@ namespace ServiceLib
                 }
                 EventStoreEvent readyEvent = null;
                 var cancelToken = _cancel.Token;
+                Exception error = null;
                 while (readyEvent == null && !cancelToken.IsCancellationRequested)
                 {
                     bool startWaitingForEvents = false;
@@ -131,20 +135,23 @@ namespace ServiceLib
                     {
                         if (_pendingError != null)
                         {
-                            var error = _pendingError;
+                            error = _pendingError;
                             _pendingError = null;
-                            yield return TaskUtils.FromError<EventStoreEvent>(error);
-                            yield break;
+                            Logger.DebugFormat("{0}: failed", _processName);
                         }
-                        if (_prefetchedMessage != null)
+                        else if (_prefetchedMessage != null)
                         {
                             _currentMessage = _prefetchedMessage;
                             _prefetchedMessage = null;
                             readyEvent = EventFromMessage(_currentMessage);
+                            Logger.DebugFormat("{0}: returning prefetched message {1} (type {2})", 
+                                _processName, _currentMessage.MessageId, _currentMessage.Type);
                         }
                         else if (_prefetchedEvents.Count > 0)
                         {
                             readyEvent = _currentEvent = _prefetchedEvents.Dequeue();
+                            Logger.DebugFormat("{0}: returning prefetched event '{1}' (type {2})", 
+                                _processName, readyEvent.Token, readyEvent.Type);
                         }
                         else if (nowait)
                         {
@@ -158,6 +165,11 @@ namespace ServiceLib
                             _isWaitingForMessages = _isWaitingForEvents = true;
                         }
                     }
+                    if (error != null)
+                    {
+                        yield return TaskUtils.FromError<EventStoreEvent>(error);
+                        yield break;
+                    }
                     if (nowaitGetMessage && readyEvent == null)
                     {
                         var taskReceive = _parent._messaging.Receive(_inputMessagingQueue, true, cancelToken);
@@ -166,6 +178,8 @@ namespace ServiceLib
                         if (_currentMessage != null)
                         {
                             readyEvent = EventFromMessage(_currentMessage);
+                            Logger.DebugFormat("{0}: returning fresh message {1} (type {2})",
+                                _processName, _currentMessage.MessageId, _currentMessage.Type);
                         }
                     }
                     if (nowaitGetEvents && readyEvent == null)
@@ -179,14 +193,18 @@ namespace ServiceLib
                         if (loadedEvents.Events.Count != 0)
                         {
                             readyEvent = _currentEvent = _prefetchedEvents.Dequeue();
+                            Logger.DebugFormat("{0}: returning fresh event '{1}' (type {2})",
+                                _processName, readyEvent.Token, readyEvent.Type);
                         }
                     }
                     if (startWaitingForMessages)
                     {
+                        Logger.DebugFormat("{0}: starting waiting for messages", _processName);
                         _parent._messaging.Receive(_inputMessagingQueue, false, cancelToken).ContinueWith(GetNextEvent_FromMessaging);
                     }
                     if (startWaitingForEvents)
                     {
+                        Logger.DebugFormat("{0}: starting waiting for events", _processName);
                         _parent.GetEvents(_token, false, cancelToken).ContinueWith(GetNextEvent_FromEventStore);
                     }
                     if (nowait || readyEvent != null)
@@ -198,6 +216,10 @@ namespace ServiceLib
                         var taskWait = _waitForSignal.Wait();
                         yield return taskWait;
                     }
+                }
+                if (readyEvent == null)
+                {
+                    Logger.DebugFormat("{0}: returning null", _processName);
                 }
                 yield return TaskUtils.FromResult(readyEvent);
             }

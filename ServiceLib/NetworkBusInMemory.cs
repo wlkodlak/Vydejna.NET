@@ -1,4 +1,5 @@
-﻿using System;
+﻿using log4net;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -15,6 +16,7 @@ namespace ServiceLib
         private ITime _timeService;
         private int _collectInterval, _collectTimeout;
         private CancellationTokenSource _cancel;
+        private static readonly ILog Logger = LogManager.GetLogger("ServiceLib.NetworkBus");
 
         public NetworkBusInMemory(ITime timeService)
         {
@@ -38,23 +40,24 @@ namespace ServiceLib
         {
             if (task.Exception != null || task.IsCanceled)
                 return;
-
-            DateTime removedDateTime;
-            Message removedMessage;
-            var limit = _timeService.GetUtcTime().AddSeconds(-_collectTimeout);
-            foreach (var destination in _destinations.Values)
+            using (new LogMethod(Logger, "DoCollect"))
             {
-                var old = destination.DeliveredOn.Where(p => p.Value <= limit).Select(p => p.Key).ToList();
-                foreach (var oldKey in old)
+                DateTime removedDateTime;
+                Message removedMessage;
+                var limit = _timeService.GetUtcTime().AddSeconds(-_collectTimeout);
+                foreach (var destination in _destinations.Values)
                 {
-                    destination.DeliveredOn.TryRemove(oldKey, out removedDateTime);
-                    if (destination.InProgress.TryRemove(oldKey, out removedMessage))
-                        destination.Incoming.Enqueue(removedMessage);
+                    var old = destination.DeliveredOn.Where(p => p.Value <= limit).Select(p => p.Key).ToList();
+                    foreach (var oldKey in old)
+                    {
+                        destination.DeliveredOn.TryRemove(oldKey, out removedDateTime);
+                        if (destination.InProgress.TryRemove(oldKey, out removedMessage))
+                            destination.Incoming.Enqueue(removedMessage);
+                    }
                 }
+                _timeService.Delay(1000 * _collectInterval, _cancel.Token)
+                    .ContinueWith(DoCollect, _cancel.Token);
             }
-            _timeService.Delay(1000 * _collectInterval, _cancel.Token)
-                .ContinueWith(DoCollect, _cancel.Token);
-
         }
 
         public void Dispose()
@@ -70,9 +73,9 @@ namespace ServiceLib
             public readonly MessageDestination Destination;
             public ConcurrentQueue<Message> Incoming;
             public ConcurrentDictionary<string, Message> InProgress;
-            public ConcurrentDictionary<string, DateTime> DeliveredOn;
-            public ConcurrentDictionary<string, bool> Subscriptions;
-            public ConcurrentBag<Waiter> Waiters;
+            public readonly ConcurrentDictionary<string, DateTime> DeliveredOn;
+            public readonly ConcurrentDictionary<string, bool> Subscriptions;
+            public readonly ConcurrentBag<Waiter> Waiters;
 
             public DestinationContents(NetworkBusInMemory parent, MessageDestination destination)
             {
@@ -106,6 +109,7 @@ namespace ServiceLib
             var toBeCancelled = new List<TaskCompletionSource<Message>>();
             var toBeReceived = new List<Tuple<TaskCompletionSource<Message>, Message>>();
             var needsAnotherTry = true;
+            var processName = contents.Destination.ProcessName;
             while (needsAnotherTry)
             {
                 needsAnotherTry = false;
@@ -133,12 +137,17 @@ namespace ServiceLib
                         }
                     }
                 }
-                foreach (var waiter in toBeCancelled)
+                if (toBeCancelled.Count > 0)
                 {
-                    waiter.TrySetCanceled();
+                    Logger.DebugFormat("{0}: Cancelling {1} receives", processName, toBeCancelled.Count);
+                    foreach (var waiter in toBeCancelled)
+                    {
+                        waiter.TrySetCanceled();
+                    }
                 }
                 foreach (var pair in toBeReceived)
                 {
+                    Logger.DebugFormat("{0}: Returning message {1}", processName, pair.Item2.MessageId);
                     if (!pair.Item1.TrySetResult(pair.Item2))
                     {
                         contents.Incoming.Enqueue(pair.Item2);
@@ -170,6 +179,7 @@ namespace ServiceLib
             }
             else if (destination == MessageDestination.Subscribers)
             {
+                Logger.DebugFormat("Broadcasting message {0}", message.MessageId);
                 foreach (var target in _destinations.Values)
                 {
                     if (target.Subscriptions.GetOrAdd(message.Type, false))
@@ -184,6 +194,7 @@ namespace ServiceLib
                 DestinationContents contents;
                 if (!_destinations.TryGetValue(destination, out contents))
                     contents = _destinations.GetOrAdd(destination, new DestinationContents(this, destination));
+                Logger.DebugFormat("Sending message {0} to {1}", message.MessageId, destination.ProcessName);
                 contents.Incoming.Enqueue(message);
                 Notify(contents);
             }
@@ -203,10 +214,13 @@ namespace ServiceLib
             {
                 contents.InProgress[message.MessageId] = message;
                 contents.DeliveredOn[message.MessageId] = _timeService.GetUtcTime();
+                Logger.DebugFormat("{0}: Returning message {1} (type {2})", 
+                    destination.ProcessName, message.MessageId, message.Type);
                 return TaskUtils.FromResult(message);
             }
             else if (nowait)
             {
+                Logger.DebugFormat("{0}: Returning null", destination.ProcessName);
                 return TaskUtils.FromResult<Message>(null);
             }
             else
@@ -227,6 +241,9 @@ namespace ServiceLib
             DestinationContents contents;
             if (!_destinations.TryGetValue(destination, out contents))
                 contents = _destinations.GetOrAdd(destination, new DestinationContents(this, destination));
+            Logger.DebugFormat(
+                unsubscribe ? "{0}: Unsubscribing from {1}" : "{0}: Subscribing to {1}", 
+                destination.ProcessName, type);
             contents.Subscriptions[type] = !unsubscribe;
             return TaskUtils.CompletedTask();
         }
@@ -242,7 +259,12 @@ namespace ServiceLib
             {
                 if (!_destinations.TryGetValue(newDestination, out contents))
                     contents = _destinations.GetOrAdd(newDestination, new DestinationContents(this, newDestination));
+                Logger.DebugFormat("{0}: Marked message {1} as dead letter", message.Destination.ProcessName, message.MessageId);
                 contents.Incoming.Enqueue(removed);
+            }
+            else if (newDestination == MessageDestination.Processed)
+            {
+                Logger.DebugFormat("{0}: Marked message {1} as processed", message.Destination.ProcessName, message.MessageId);
             }
             return TaskUtils.CompletedTask();
         }
@@ -252,6 +274,7 @@ namespace ServiceLib
             DestinationContents contents;
             if (!_destinations.TryGetValue(destination, out contents))
                 contents = _destinations.GetOrAdd(destination, new DestinationContents(this, destination));
+            Logger.DebugFormat("{0}: Deleted all messages", destination.ProcessName);
             contents.InProgress = new ConcurrentDictionary<string, Message>();
             contents.Incoming = new ConcurrentQueue<Message>();
             return TaskUtils.CompletedTask();

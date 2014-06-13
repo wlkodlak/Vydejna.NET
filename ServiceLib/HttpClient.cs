@@ -1,4 +1,5 @@
-﻿using System;
+﻿using log4net;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -45,6 +46,8 @@ namespace ServiceLib
 
     public class HttpClient : IHttpClient
     {
+        private static readonly ILog Logger = LogManager.GetLogger("ServiceLib.HttpClient");
+
         public Task<HttpClientResponse> Execute(HttpClientRequest request)
         {
             return TaskUtils.FromEnumerable<HttpClientResponse>(ExecuteInternal(request)).GetTask();
@@ -52,60 +55,63 @@ namespace ServiceLib
 
         private IEnumerable<Task> ExecuteInternal(HttpClientRequest request)
         {
-            var webRequest = (HttpWebRequest)HttpWebRequest.Create(request.Url);
-            webRequest.AllowAutoRedirect = false;
-            webRequest.Method = request.Method;
-            CopyHeadersToRequest(request, webRequest);
-
-            var response = new HttpClientResponse();
-
-            if (request.Body != null && request.Body.Length > 0)
+            using (new LogMethod(Logger, "Execute"))
             {
-                var taskGetRequestStream = Task.Factory.FromAsync<Stream>(webRequest.BeginGetRequestStream(null, null), webRequest.EndGetRequestStream);
-                yield return taskGetRequestStream;
-                var requestStream = taskGetRequestStream.Result;
+                var webRequest = (HttpWebRequest)HttpWebRequest.Create(request.Url);
+                webRequest.AllowAutoRedirect = false;
+                webRequest.Method = request.Method;
+                CopyHeadersToRequest(request, webRequest);
 
-                var taskWrite = Task.Factory.FromAsync(requestStream.BeginWrite(request.Body, 0, request.Body.Length, null, null), requestStream.EndWrite);
-                yield return taskWrite;
-                taskWrite.Wait();
+                var response = new HttpClientResponse();
 
-                requestStream.Dispose();
-            }
-
-            var taskGetResponse = Task.Factory.FromAsync<WebResponse>(webRequest.BeginGetResponse(null, null), webRequest.EndGetResponse);
-            yield return taskGetResponse;
-
-            HttpWebResponse webResponse;
-            if (taskGetResponse.Exception != null)
-            {
-                var exception = taskGetResponse.Exception.InnerException as WebException;
-                if (exception != null)
-                    webResponse = (HttpWebResponse)exception.Response;
-                else
-                    throw taskGetResponse.Exception;
-            }
-            else
-            {
-                webResponse = (HttpWebResponse)taskGetResponse.Result;
-            }
-
-            response.StatusCode = (int)webResponse.StatusCode;
-            CopyHeadersToResponse(response, webResponse);
-            var memoryStream = new MemoryStream();
-            var copyBuffer = new byte[32 * 1024];
-            using (var responseStream = webResponse.GetResponseStream())
-            {
-                while (true)
+                if (request.Body != null && request.Body.Length > 0)
                 {
-                    var taskRead = Task.Factory.FromAsync<int>(responseStream.BeginRead(copyBuffer, 0, copyBuffer.Length, null, null), responseStream.EndRead);
-                    yield return taskRead;
-                    if (taskRead.Result == 0)
-                        break;
-                    memoryStream.Write(copyBuffer, 0, taskRead.Result);
+                    var taskGetRequestStream = Task.Factory.FromAsync<Stream>(webRequest.BeginGetRequestStream(null, null), webRequest.EndGetRequestStream);
+                    yield return taskGetRequestStream;
+                    var requestStream = taskGetRequestStream.Result;
+
+                    var taskWrite = Task.Factory.FromAsync(requestStream.BeginWrite(request.Body, 0, request.Body.Length, null, null), requestStream.EndWrite);
+                    yield return taskWrite;
+                    taskWrite.Wait();
+
+                    requestStream.Dispose();
                 }
+
+                var taskGetResponse = Task.Factory.FromAsync<WebResponse>(webRequest.BeginGetResponse(null, null), webRequest.EndGetResponse);
+                yield return taskGetResponse;
+
+                HttpWebResponse webResponse;
+                if (taskGetResponse.Exception != null)
+                {
+                    var exception = taskGetResponse.Exception.InnerException as WebException;
+                    if (exception != null)
+                        webResponse = (HttpWebResponse)exception.Response;
+                    else
+                        throw taskGetResponse.Exception;
+                }
+                else
+                {
+                    webResponse = (HttpWebResponse)taskGetResponse.Result;
+                }
+
+                response.StatusCode = (int)webResponse.StatusCode;
+                CopyHeadersToResponse(response, webResponse);
+                var memoryStream = new MemoryStream();
+                var copyBuffer = new byte[32 * 1024];
+                using (var responseStream = webResponse.GetResponseStream())
+                {
+                    while (true)
+                    {
+                        var taskRead = Task.Factory.FromAsync<int>(responseStream.BeginRead(copyBuffer, 0, copyBuffer.Length, null, null), responseStream.EndRead);
+                        yield return taskRead;
+                        if (taskRead.Result == 0)
+                            break;
+                        memoryStream.Write(copyBuffer, 0, taskRead.Result);
+                    }
+                }
+                response.Body = memoryStream.ToArray();
+                yield return TaskUtils.FromResult(response);
             }
-            response.Body = memoryStream.ToArray();
-            yield return TaskUtils.FromResult(response);
         }
 
         private static DateTime ParseDateHeader(string headerValue)
