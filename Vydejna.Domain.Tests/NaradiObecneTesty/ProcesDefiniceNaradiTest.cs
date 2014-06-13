@@ -66,11 +66,11 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
         public void ZahajeniDefinice()
         {
             var naradiId = Guid.NewGuid();
-            DefinovatNaradiCommand cmd = null;
-            _bus.SetHandler<DefinovatNaradiCommand>(c => cmd = c);
+            DefinovatNaradiInternalCommand cmd = null;
+            _bus.SetHandler<DefinovatNaradiInternalCommand>(c => cmd = c);
             VytvoritProces();
             Vykonat(new ZahajenaDefiniceNaradiEvent { NaradiId = naradiId, Vykres = "884-55558", Rozmer = "50x5x3", Druh = "" });
-            Assert.IsNotNull(cmd, "Ocekavan DefinovatNaradiCommand");
+            Assert.IsNotNull(cmd, "Ocekavan DefinovatNaradiInternalCommand");
             Assert.AreEqual(naradiId, cmd.NaradiId, "NaradiId");
             Assert.AreEqual("884-55558", cmd.Vykres, "Vykres");
             Assert.AreEqual("50x5x3", cmd.Rozmer, "Rozmer");

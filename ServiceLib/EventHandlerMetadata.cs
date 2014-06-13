@@ -86,6 +86,7 @@ namespace ServiceLib
             {
                 if (!task.Result)
                     throw new MetadataInstanceConcurrencyException();
+                _tokenVer++;
             });
         }
 

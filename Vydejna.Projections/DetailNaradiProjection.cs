@@ -162,7 +162,8 @@ namespace Vydejna.Projections.DetailNaradiReadModel
 
         private Task ZpracovatHoleNaradi(Guid naradiId, Action<DetailNaradiDataDetail> updateAction)
         {
-            return _cacheDetail.Get(naradiId.ToString("N"), load => _repository.NacistDetail(naradiId, load.OldVersion).Transform(RozsiritData)).ContinueWith(task =>
+            return _cacheDetail.Get(naradiId.ToString("N"), load => _repository.NacistDetail(naradiId, load.OldVersion)
+                .Transform(RozsiritData)).ContinueWith(task =>
             {
                 var data = task.Result.Value;
                 var verze = task.Result.Version;
@@ -209,7 +210,8 @@ namespace Vydejna.Projections.DetailNaradiReadModel
 
         public Task Handle(DefinovanDodavatelEvent message)
         {
-            return _cacheDodavatele.Get("dodavatele", load => _repository.NacistDodavatele().Transform(RozsiritData)).ContinueWith(task =>
+            return _cacheDodavatele.Get("dodavatele", load => _repository.NacistDodavatele()
+                .Transform(RozsiritData)).ContinueWith(task =>
             {
                 var ciselnik = task.Result.Value;
                 var verze = task.Result.Version;
@@ -239,7 +241,8 @@ namespace Vydejna.Projections.DetailNaradiReadModel
 
         public Task Handle(DefinovanaVadaNaradiEvent message)
         {
-            return _cacheVady.Get("vady", load => _repository.NacistVady().Transform(RozsiritData)).ContinueWith(task =>
+            return _cacheVady.Get("vady", load => _repository.NacistVady()
+                .Transform(RozsiritData)).ContinueWith(task =>
             {
                 var verze = task.Result.Version;
                 var ciselnik = task.Result.Value;

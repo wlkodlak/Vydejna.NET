@@ -1,4 +1,5 @@
-﻿using System;
+﻿using log4net;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -100,6 +101,8 @@ namespace ServiceLib
         private int _evicting;
         private int _maxCacheSize, _cleanedCacheSize, _minScore, _minCacheSize;
 
+        private static readonly ILog Logger = LogManager.GetLogger("ServiceLib.MemoryCache<" + typeof(T).Name + ">");
+
         public MemoryCache(ITime timeService)
         {
             _contents = new ConcurrentDictionary<string, InternalItem>();
@@ -149,7 +152,10 @@ namespace ServiceLib
             {
                 item.NotifyUsage();
                 if (item.ShouldReturnImmediately(onLoading == null, currentTime))
+                {
+                    Logger.DebugFormat("Get({0}): valid at version {1}", key, item.OldVersion);
                     resultTask = TaskUtils.FromResult(MemoryCacheItem.Create(item.OldVersion, item.OldValue));
+                }
                 else
                 {
                     resultTask = item.AddLoadingWaiter();
@@ -174,6 +180,7 @@ namespace ServiceLib
                 item = _contents.GetOrAdd(key, new InternalItem(this, key));
             lock (item)
             {
+                Logger.DebugFormat("Insert({0}, version: {1})", key, version);
                 item.NotifyUsage();
                 item.Insert(version, value, validity, expiration, dirty);
             }
@@ -182,6 +189,7 @@ namespace ServiceLib
         public void Evict(string key)
         {
             InternalItem item;
+            Logger.DebugFormat("Evict({0})", key);
             _contents.TryRemove(key, out item);
         }
 
@@ -190,6 +198,7 @@ namespace ServiceLib
             InternalItem item;
             if (!_contents.TryGetValue(key, out item))
                 return;
+            Logger.DebugFormat("Invalidate({0})", key);
             item.Invalidate();
         }
 
@@ -209,17 +218,26 @@ namespace ServiceLib
                     _lastEvictTime = currentTime;
                     _nextEvictTime = currentTime + _ticksPerRound;
                 }
+                int evictedCount = 0;
                 foreach (var item in _contents.Values)
                 {
                     if (item.Eviction(currentTime, shift, minScore))
+                    {
                         _contents.TryRemove(item.Key, out removed);
+                        evictedCount++;
+                    }
                 }
                 if (_contents.Count > maxCount)
                 {
                     var keysToRemove = _contents.Values.OrderByDescending(c => c.Score).Skip(maxCount).Select(c => c.Key).ToList();
                     foreach (var key in keysToRemove)
+                    {
                         _contents.TryRemove(key, out removed);
+                        evictedCount++;
+                    }
                 }
+                if (evictedCount > 0)
+                    Logger.DebugFormat("Evicted {0} items", evictedCount);
             }
             finally
             {
@@ -275,6 +293,7 @@ namespace ServiceLib
                         waiters = _loadingWaiters.ToList();
                         _loadingWaiters.Clear();
                     }
+                    Logger.DebugFormat("Loading of {0} failed, sending errors to {1} waiters", _key, waiters.Count);
                     foreach (var waiter in waiters)
                         waiter.TrySetException(taskLoading.Exception.InnerExceptions);
                 }
@@ -305,6 +324,8 @@ namespace ServiceLib
                             result = MemoryCacheItem.Create(0, default(T));
                         }
                     }
+                    Logger.DebugFormat("Loading of {0} finished, sending result at version {1} to {2} waiters",
+                        _key, _version, waiters.Count);
                     foreach (var waiter in waiters)
                         waiter.TrySetResult(result);
                 }
@@ -323,6 +344,7 @@ namespace ServiceLib
                             waiters = _loadingWaiters.ToList();
                             _loadingWaiters.Clear();
                         }
+                        Logger.DebugFormat("Saving of {0} failed, sending errors to {1} waiters", _key, waiters.Count);
                         foreach (var waiter in waiters)
                             waiter.TrySetException(taskSave.Exception.InnerExceptions);
                     }
@@ -342,6 +364,8 @@ namespace ServiceLib
                         _version = taskSave.Result;
                         result = MemoryCacheItem.Create(_version, _value);
                     }
+                    Logger.DebugFormat("Saving of {0} finished, sending version {1} to {2} waiters",
+                        _key, _version, waiters.Count);
                     foreach (var waiter in waiters)
                         waiter.TrySetResult(result);
                 }

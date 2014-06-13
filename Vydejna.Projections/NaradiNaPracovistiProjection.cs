@@ -149,7 +149,8 @@ namespace Vydejna.Projections.NaradiNaPracovistiReadModel
 
         private IEnumerable<Task> UpravitNaradiNaPracovisti(string kodPracoviste, Guid naradiId, int cisloNaradi, int novyPocet, DateTime? datumVydeje)
         {
-            var taskPracoviste = _cachePracovist.Get(kodPracoviste, load => _repository.NacistPracoviste(kodPracoviste, load.OldVersion).Transform(data => RozsiritData(kodPracoviste, data)));
+            var taskPracoviste = _cachePracovist.Get(kodPracoviste, load => _repository.NacistPracoviste(kodPracoviste, load.OldVersion)
+                .Transform(data => RozsiritData(kodPracoviste, data)));
             yield return taskPracoviste;
             var verzePracoviste = taskPracoviste.Result.Version;
             var dataPracoviste = taskPracoviste.Result.Value;

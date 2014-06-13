@@ -27,7 +27,7 @@ namespace Vydejna.Domain.Procesy
 
         public Task Handle(ZahajenaDefiniceNaradiEvent evt)
         {
-            return _bus.SendCommand(new DefinovatNaradiCommand
+            return _bus.SendCommand(new DefinovatNaradiInternalCommand
             {
                 NaradiId = evt.NaradiId,
                 Vykres = evt.Vykres,

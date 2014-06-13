@@ -191,7 +191,8 @@ namespace Vydejna.Projections.IndexObjednavekReadModel
 
         public Task Handle(DefinovanDodavatelEvent message)
         {
-            return _cacheDodavatelu.Get("dodavatele", load => _repository.NacistDodavatele().Transform(RozsiritData)).ContinueWith(task =>
+            return _cacheDodavatelu.Get("dodavatele", load => _repository.NacistDodavatele()
+                .Transform(RozsiritData)).ContinueWith(task =>
             {
                 var data = task.Result.Value;
                

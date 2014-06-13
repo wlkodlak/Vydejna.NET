@@ -342,7 +342,8 @@ namespace Vydejna.Projections.NaradiNaObjednavceReadModel
         {
             return _cache.Get(
                 NaradiNaObjednavceRepository.DokumentObjednavky(message.KodDodavatele, message.Objednavka),
-                load => _repository.NacistObjednavku(message.KodDodavatele, message.Objednavka).Transform(data => VytvoritResponse(message.KodDodavatele, message.Objednavka, data)))
+                load => _repository.NacistObjednavku(message.KodDodavatele, message.Objednavka)
+                    .Transform(data => VytvoritResponse(message.KodDodavatele, message.Objednavka, data)))
                 .ExtractValue();
         }
 

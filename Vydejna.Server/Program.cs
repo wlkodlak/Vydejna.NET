@@ -228,7 +228,7 @@ namespace Vydejna.Server
             processor.Subscribe(subscriptions);
             var process = new EventProcessSimple(_metadataManager.GetConsumer(processorName),
                 new EventStreamingDeserialized(_eventStreaming, _eventSerializer), subscriptions, _time);
-            _processes.RegisterGlobal("ProcesDefiniceNaradi", process, 0, 0);
+            _processes.RegisterGlobal(processorName, process, 0, 0);
         }
 
         private void BuildProjection<T>(T projection, string projectionName)
@@ -285,6 +285,7 @@ namespace Vydejna.Server
 
         public static void Main(string[] args)
         {
+            log4net.Config.XmlConfigurator.Configure();
             var program = new Program();
             Console.WriteLine("Starting...");
             program.Initialize();
