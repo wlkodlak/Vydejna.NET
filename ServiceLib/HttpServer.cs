@@ -106,7 +106,8 @@ namespace ServiceLib
             {
                 context.Response.Close();
                 stopwatch.Stop();
-                Logger.DebugFormat("Request {0} took {1} ms", context.Request.Url, stopwatch.ElapsedMilliseconds);
+                Logger.InfoFormat("Request {0} {1} processed in {2} ms", 
+                    context.Request.HttpMethod, context.Request.Url, stopwatch.ElapsedMilliseconds);
             }
         }
 

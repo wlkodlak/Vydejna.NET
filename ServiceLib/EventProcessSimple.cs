@@ -1,5 +1,7 @@
-﻿using System;
+﻿using log4net;
+using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -13,20 +15,27 @@ namespace ServiceLib
         private readonly IEventStreamingDeserialized _streaming;
         private readonly ICommandSubscriptionManager _subscriptions;
         private readonly object _lock;
+        private readonly Stopwatch _stopwatch;
+        private readonly string _logName;
         private CancellationTokenSource _cancelPause, _cancelStop;
         private ProcessState _processState;
         private Action<ProcessState> _onProcessStateChanged;
         private int _flushAfter;
         private TaskScheduler _scheduler;
         private ITime _time;
+        private static readonly ILog Logger = LogManager.GetLogger("ServiceLib.EventProcessSimple");
 
-        public EventProcessSimple(IMetadataInstance metadata, IEventStreamingDeserialized streaming, ICommandSubscriptionManager subscriptions, ITime time)
+        public EventProcessSimple(
+            IMetadataInstance metadata, IEventStreamingDeserialized streaming,
+            ICommandSubscriptionManager subscriptions, ITime time)
         {
             _metadata = metadata;
             _streaming = streaming;
             _subscriptions = subscriptions;
             _processState = ProcessState.Uninitialized;
             _time = time;
+            _logName = _metadata.ProcessName;
+            _stopwatch = new Stopwatch();
             _lock = new object();
         }
 
@@ -130,12 +139,23 @@ namespace ServiceLib
         {
             try
             {
+                _stopwatch.Start();
                 var taskGetToken = TaskUtils.Retry(() => _metadata.GetToken(), _time, _cancelPause.Token);
                 yield return taskGetToken;
                 var token = taskGetToken.Result;
+                Logger.DebugFormat("{0}: Starting processing at token {1}", _logName, token);
 
                 SetProcessState(ProcessState.Running);
-                _streaming.Setup(token, _subscriptions.GetHandledTypes(), _metadata.ProcessName);
+                var handledTypes = _subscriptions.GetHandledTypes();
+                _streaming.Setup(token, handledTypes, _metadata.ProcessName);
+                if (Logger.IsDebugEnabled)
+                {
+                    Logger.TraceFormat("{0}: Process will use these event types: {1}",
+                        _logName, string.Join(", ", handledTypes.Select(t => t.Name)));
+                }
+
+                Logger.TraceFormat("{0}: Initialization took {1} ms", _logName, _stopwatch.ElapsedMilliseconds);
+                _stopwatch.Restart();
 
                 var firstIteration = true;
                 var lastToken = (EventStoreToken)null;
@@ -155,11 +175,19 @@ namespace ServiceLib
                     {
                         tokenToSave = lastToken;
                         lastToken = null;
+                        Logger.TraceFormat("{0}: No events to process (attempt to get an event took {1} ms)",
+                            _logName, _stopwatch.ElapsedMilliseconds);
+                        _stopwatch.Restart();
                     }
                     else if (nextEvent.Event != null)
                     {
                         lastToken = nextEvent.Token;
-                        var handler = _subscriptions.FindHandler(nextEvent.Event.GetType());
+                        var eventType = nextEvent.Event.GetType();
+                        var handler = _subscriptions.FindHandler(eventType);
+                        Logger.TraceFormat("{0}: Received event of type {1}, token {2} (getting the event took {3} ms)",
+                            _logName, eventType.Name, nextEvent.Token, _stopwatch.ElapsedMilliseconds);
+                        _stopwatch.Restart();
+
                         var taskHandler = TaskUtils.Retry(() => handler.Handle(nextEvent.Event), _time, _cancelStop.Token, 3);
                         yield return taskHandler;
                         tokenToSave = lastToken;
@@ -168,11 +196,24 @@ namespace ServiceLib
                             while (true)
                             {
                                 _cancelStop.Token.ThrowIfCancellationRequested();
+                                var processingTime = _stopwatch.ElapsedMilliseconds;
+                                _stopwatch.Restart();
                                 var taskDead = _streaming.MarkAsDeadLetter();
                                 yield return taskDead;
                                 if (taskDead.Exception == null)
+                                {
+                                    Logger.ErrorFormat("{0}: Event {1} (token {2}) failed in {3} ms, marked as dead-letter in {4} ms. {5}",
+                                        _logName, eventType.Name, nextEvent.Token, processingTime, _stopwatch.ElapsedMilliseconds, taskHandler.Exception.InnerException);
+                                    _stopwatch.Restart();
                                     break;
+                                }
                             }
+                        }
+                        else
+                        {
+                            Logger.DebugFormat("{0}: Event {1} (token {2}) processed in {3} ms",
+                               _logName, eventType.Name, nextEvent.Token, _stopwatch.ElapsedMilliseconds);
+                            _stopwatch.Restart();
                         }
                     }
 
@@ -183,7 +224,11 @@ namespace ServiceLib
                             var taskSaveToken = _metadata.SetToken(tokenToSave);
                             yield return taskSaveToken;
                             if (taskSaveToken.Exception == null)
+                            {
+                                Logger.TraceFormat("{0}: Saved token {1} ({2} ms)", _logName, tokenToSave, _stopwatch.ElapsedMilliseconds);
+                                _stopwatch.Restart();
                                 break;
+                            }
                         }
                     }
 
@@ -191,7 +236,9 @@ namespace ServiceLib
             }
             finally
             {
+                _stopwatch.Stop();
                 _streaming.Close();
+                Logger.DebugFormat("Processing ended");
             }
         }
     }

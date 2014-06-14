@@ -20,6 +20,7 @@ namespace ServiceLib
         private readonly CircuitBreaker _breaker;
         private readonly string _logName;
         private static readonly ILog Logger = LogManager.GetLogger("ServiceLib.Database");
+        private int _concurrentWorkers;
 
         public const string ConnectionNotification = "__CONNECTION__";
 
@@ -30,6 +31,7 @@ namespace ServiceLib
             _logName = string.Concat(connectionElements.UserName, "@", connectionElements.Host, ":", connectionElements.Port, "/", connectionElements.Database);
             _time = time;
             _breaker = new CircuitBreaker(time).StartHalfOpen();
+            _concurrentWorkers = 0;
             _notifications = new NotificationWatcher(this);
             _notifications.Start();
         }
@@ -54,9 +56,17 @@ namespace ServiceLib
             var parameters = (Tuple<Action<NpgsqlConnection, object>, object>)param;
             using (var conn = new NpgsqlConnection())
             {
-                conn.ConnectionString = _connectionString;
-                _breaker.Execute(OpenConnection, conn);
-                ExecuteHandler(parameters.Item1, conn, parameters.Item2);
+                try
+                {
+                    Interlocked.Increment(ref _concurrentWorkers);
+                    conn.ConnectionString = _connectionString;
+                    _breaker.Execute(OpenConnection, conn);
+                    ExecuteHandler(parameters.Item1, conn, parameters.Item2);
+                }
+                finally
+                {
+                    Interlocked.Decrement(ref _concurrentWorkers);
+                }
             }
         }
 
@@ -65,9 +75,17 @@ namespace ServiceLib
             var parameters = (Tuple<Func<NpgsqlConnection, object, T>, object>)param;
             using (var conn = new NpgsqlConnection())
             {
-                conn.ConnectionString = _connectionString;
-                _breaker.Execute(OpenConnection, conn);
-                return ExecuteHandler(parameters.Item1, conn, parameters.Item2);
+                try
+                {
+                    Interlocked.Increment(ref _concurrentWorkers);
+                    conn.ConnectionString = _connectionString;
+                    _breaker.Execute(OpenConnection, conn);
+                    return ExecuteHandler(parameters.Item1, conn, parameters.Item2);
+                }
+                finally
+                {
+                    Interlocked.Decrement(ref _concurrentWorkers);
+                }
             }
         }
 
@@ -75,7 +93,8 @@ namespace ServiceLib
         {
             try
             {
-                Logger.DebugFormat("Getting connection to {0}", _logName);
+                Logger.DebugFormat("Getting connection to {0} ({1} concurrent workers)", 
+                    _logName, Thread.VolatileRead(ref _concurrentWorkers));
                 conn.Open();
             }
             catch (Exception ex)

@@ -56,6 +56,7 @@ namespace ServiceLib
             process.RequestedState = true;
             process.IsLocal = true;
             worker.Init(process.OnStateChanged, TaskScheduler.Current);
+            _waitForStop.Reset();
             _processes.Add(name, process);
         }
 
@@ -69,6 +70,7 @@ namespace ServiceLib
             process.RequestedState = true;
             process.IsLocal = false;
             worker.Init(process.OnStateChanged, TaskScheduler.Current);
+            _waitForStop.Reset();
             _processes.Add(name, process);
         }
 
@@ -147,12 +149,36 @@ namespace ServiceLib
                 .ToList();
         }
 
+        private bool IsProcessStopped(ProcessState state)
+        {
+            switch (state)
+            {
+                case ProcessState.Conflicted:
+                case ProcessState.Faulted:
+                case ProcessState.Inactive:
+                case ProcessState.Uninitialized:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
         private void OnStateChanged(ProcessInfo process, ProcessState state)
         {
+            if (IsProcessStopped(state))
+            {
+                var allStopped = _processes.All(p => IsProcessStopped(p.Value.Worker.State));
+                if (allStopped)
+                    _waitForStop.Set();
+            }
+
             if (_isShutingDown || !process.RequestedState)
                 return;
             if (state == ProcessState.Conflicted)
+            {
+                _waitForStop.Reset();
                 process.Worker.Start();
+            }
             else if (state == ProcessState.Faulted)
             {
                 _time.Delay(10000, _cancelToken).ContinueWith(task =>

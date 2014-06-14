@@ -314,6 +314,7 @@ namespace Vydejna.Server
             Console.WriteLine("Waiting for exit...");
             program.WaitForExit();
             Console.WriteLine("Processes stopped.");
+            log4net.LogManager.Shutdown();
         }
     }
 }
