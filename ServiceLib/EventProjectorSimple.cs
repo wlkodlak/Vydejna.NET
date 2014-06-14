@@ -215,7 +215,7 @@ namespace ServiceLib
                     rebuildMode = EventProjectionUpgradeMode.NotNeeded;
                     _streaming.Setup(token, handledTypes, _metadata.ProcessName);
 
-                    Logger.DebugFormat("{0}: Upgraded from version {1} to version {2}. Process will continue from token {3}. Initialization took {4} ms.", 
+                    Logger.InfoFormat("{0}: Upgraded from version {1} to version {2}. Process will continue from token {3}. Initialization took {4} ms.", 
                         _logName, savedVersion, newVersion, token, _stopwatch.ElapsedMilliseconds);
                     _stopwatch.Restart();
                 }
@@ -240,7 +240,7 @@ namespace ServiceLib
 
                     _streaming.Setup(token, handledTypes, _metadata.ProcessName);
 
-                    Logger.DebugFormat("{0}: Starting rebuild at version {1} (original version {2}). Initialization took {3} ms.",
+                    Logger.InfoFormat("{0}: Starting rebuild at version {1} (original version {2}). Initialization took {3} ms.",
                         _logName, newVersion, savedVersion ?? "none", _stopwatch.ElapsedMilliseconds);
                     _stopwatch.Restart();
 
@@ -251,7 +251,7 @@ namespace ServiceLib
                 {
                     _streaming.Setup(token, handledTypes, _metadata.ProcessName);
 
-                    Logger.DebugFormat("{0}: Resuming normal processing at version {1}. Processing will continue from token {2}. Initialization took {3} ms.",
+                    Logger.InfoFormat("{0}: Resuming normal processing at version {1}. Processing will continue from token {2}. Initialization took {3} ms.",
                         _logName, savedVersion, token, _stopwatch.ElapsedMilliseconds);
                     _stopwatch.Restart();
                 }
@@ -279,7 +279,7 @@ namespace ServiceLib
                             rebuildMode = EventProjectionUpgradeMode.NotNeeded;
                             needsFlush = true;
                             rebuildStopwatch.Stop();
-                            Logger.DebugFormat("{0}: Rebuild finished ({1} events in {2} ms).", 
+                            Logger.InfoFormat("{0}: Rebuild finished ({1} events in {2} ms).", 
                                 _logName, _processedEventsCount, rebuildStopwatch.ElapsedMilliseconds);
                             rebuildStopwatch = null;
                         }
@@ -403,7 +403,7 @@ namespace ServiceLib
                 {
                     _stopwatch.Stop();
                     _parent._processedEventsCount++;
-                    Logger.DebugFormat("{0}: Event {1} (token {2}) processed in {3} ms.", 
+                    Logger.InfoFormat("{0}: Event {1} (token {2}) processed in {3} ms.", 
                         _parent._logName, _typeName, _token, _stopwatch.ElapsedMilliseconds);
                     return task;
                 }

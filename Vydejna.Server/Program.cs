@@ -286,6 +286,7 @@ namespace Vydejna.Server
         public static void Main(string[] args)
         {
             log4net.Config.XmlConfigurator.Configure();
+
             var program = new Program();
             Console.WriteLine("Starting...");
             program.Initialize();

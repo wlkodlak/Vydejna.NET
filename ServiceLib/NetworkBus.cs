@@ -77,4 +77,57 @@ namespace ServiceLib
             return !(x == y);
         }
     }
+
+    public class NetworkBusNull : INetworkBus
+    {
+        private List<TaskCompletionSource<Message>> _orphanTasks;
+
+        public NetworkBusNull()
+        {
+            _orphanTasks = new List<TaskCompletionSource<Message>>();
+        }
+
+        public Task Send(MessageDestination destination, Message message)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<Message> Receive(MessageDestination destination, bool nowait, CancellationToken cancel)
+        {
+            if (nowait)
+                return TaskUtils.FromResult<Message>(null);
+            else if (cancel.IsCancellationRequested)
+                return TaskUtils.CancelledTask<Message>();
+            else 
+            {
+                var tcs = new TaskCompletionSource<Message>();
+                if (cancel.CanBeCanceled)
+                    cancel.Register(() => tcs.TrySetCanceled());
+                else
+                    _orphanTasks.Add(tcs);
+                return tcs.Task;
+            }
+        }
+
+        public Task Subscribe(string type, MessageDestination destination, bool unsubscribe)
+        {
+            return TaskUtils.CompletedTask();
+        }
+
+        public Task MarkProcessed(Message message, MessageDestination newDestination)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task DeleteAll(MessageDestination destination)
+        {
+            return TaskUtils.CompletedTask();
+        }
+
+        public void Dispose()
+        {
+            foreach (var task in _orphanTasks)
+                task.TrySetCanceled();
+        }
+    }
 }

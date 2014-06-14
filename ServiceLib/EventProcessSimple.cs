@@ -211,7 +211,7 @@ namespace ServiceLib
                         }
                         else
                         {
-                            Logger.DebugFormat("{0}: Event {1} (token {2}) processed in {3} ms",
+                            Logger.InfoFormat("{0}: Event {1} (token {2}) processed in {3} ms",
                                _logName, eventType.Name, nextEvent.Token, _stopwatch.ElapsedMilliseconds);
                             _stopwatch.Restart();
                         }

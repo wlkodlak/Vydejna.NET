@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace ServiceLib
@@ -11,6 +12,7 @@ namespace ServiceLib
         private ISerializerPicker _picker;
         private IList<IHttpSerializer> _serializers;
         private IHttpProcessor _processor;
+        private int _requestId;
         private static readonly ILog Logger = LogManager.GetLogger("ServiceLib.HttpRouteStagedHandler");
 
         public HttpRouteStagedHandler(ISerializerPicker picker, IList<IHttpSerializer> serializers, IHttpProcessor processor)
@@ -27,6 +29,7 @@ namespace ServiceLib
 
         private IEnumerable<Task> HandleInternal(IHttpServerRawContext raw)
         {
+            var requestId = Interlocked.Increment(ref _requestId);
             HttpServerStagedContext staged;
             using (new LogMethod(Logger, "Handle_Input"))
             {
@@ -55,6 +58,8 @@ namespace ServiceLib
                 {
                     staged.InputString = string.Empty;
                 }
+                Logger.DebugFormat("[{0}] Received request {1} {2}, postdata: {2}",
+                    requestId, raw.Method, raw.Url, staged.InputString);
 
                 staged.InputSerializer = _picker.PickDeserializer(staged, _serializers, null);
                 staged.OutputSerializer = _picker.PickSerializer(staged, _serializers, null);
@@ -67,6 +72,9 @@ namespace ServiceLib
             }
             using (new LogMethod(Logger, "Handle_Output"))
             {
+                Logger.DebugFormat("[{0}] Sending response {1} to {2}: {3}",
+                    requestId, staged.StatusCode, raw.Url, staged.OutputString);
+
                 raw.StatusCode = staged.StatusCode;
                 raw.OutputHeaders.Clear();
                 foreach (var header in staged.OutputHeaders)

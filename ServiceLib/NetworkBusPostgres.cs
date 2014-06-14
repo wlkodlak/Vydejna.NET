@@ -257,11 +257,22 @@ namespace ServiceLib
         {
             if (task.Exception == null && !task.IsCanceled)
             {
-                List<ReceiveWaiter> waiters;
-                lock (_waiters)
-                    waiters = _waiters.ToList();
-                foreach (var waiter in waiters)
-                    waiter.Event.Set();
+                _database.Query<bool>(Receive_CheckAnyMessages, null).ContinueWith(Receive_VerifiedTimer);
+            }
+        }
+
+        private void Receive_VerifiedTimer(Task<bool> task)
+        {
+            if (task.Exception == null && !task.IsCanceled)
+            {
+                if (task.Result)
+                {
+                    List<ReceiveWaiter> waiters;
+                    lock (_waiters)
+                        waiters = _waiters.ToList();
+                    foreach (var waiter in waiters)
+                        waiter.Event.Set();
+                }
                 _timeService.Delay(5000, _cancelListening.Token).ContinueWith(Receive_Timer);
             }
         }
@@ -343,12 +354,32 @@ namespace ServiceLib
                             else if (taskGetMessage.Result != null)
                             {
                                 var message = taskGetMessage.Result;
-                                Logger.DebugFormat("{0}: returning message {1} (type {2})", 
+                                Logger.DebugFormat("{0}: returning message {1} (type {2})",
                                     waiter.Destination.ProcessName, message.MessageId, message.Type);
                             }
                         }
                         yield break;
                     }
+                    else
+                    {
+                        Logger.TraceFormat("{0}: nothing new", waiter.Destination.ProcessName);
+                    }
+                }
+            }
+        }
+
+        private bool Receive_CheckAnyMessages(NpgsqlConnection conn, object objContext)
+        {
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = string.Concat(
+                    "SELECT 1 FROM ", _tableMessages,
+                    " WHERE (processing IS NULL OR processing <= :since) LIMIT 1");
+                cmd.Parameters.AddWithValue("since", _timeService.GetUtcTime().AddSeconds(-_deliveryTimeout));
+                Logger.TraceSql(cmd);
+                using (var reader = cmd.ExecuteReader())
+                {
+                    return reader.Read();
                 }
             }
         }

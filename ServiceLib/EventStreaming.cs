@@ -25,7 +25,7 @@ namespace ServiceLib
         public EventStreaming(IEventStoreWaitable store, INetworkBus messaging)
         {
             _store = store;
-            _messaging = messaging;
+            _messaging = messaging ?? new NetworkBusNull();
         }
 
         public EventStreaming BatchSize(int batchSize)

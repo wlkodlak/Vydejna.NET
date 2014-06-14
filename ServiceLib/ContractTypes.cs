@@ -11,6 +11,7 @@ namespace ServiceLib
     {
         string GetName(Type type);
         Type GetType(string name);
+        IEnumerable<Type> GetAllTypes();
     }
 
     public interface IRegisterTypes
@@ -81,6 +82,11 @@ namespace ServiceLib
         public void Register(IRegisterTypes registrator)
         {
             registrator.Register(this);
+        }
+
+        public IEnumerable<Type> GetAllTypes()
+        {
+            return _byType.Keys.ToList();
         }
     }
 }
