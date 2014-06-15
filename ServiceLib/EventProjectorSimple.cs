@@ -11,11 +11,11 @@ namespace ServiceLib
 {
     public interface IEventProjector
     {
-        void Register<T>(IProcess<T> handler);
+        void Register<T>(IProcessEvent<T> handler);
     }
     public interface IEventProjection
-        : IProcess<ProjectorMessages.Reset>
-        , IProcess<ProjectorMessages.UpgradeFrom>
+        : IProcessEvent<ProjectorMessages.Reset>
+        , IProcessEvent<ProjectorMessages.UpgradeFrom>
     {
         string GetVersion();
         EventProjectionUpgradeMode UpgradeMode(string storedVersion);
@@ -41,7 +41,7 @@ namespace ServiceLib
         private readonly object _lock;
         private readonly IMetadataInstance _metadata;
         private readonly IEventStreamingDeserialized _streaming;
-        private readonly ICommandSubscriptionManager _subscriptions;
+        private readonly IEventSubscriptionManager _subscriptions;
         private readonly IEventProjection _projectionInfo;
         private readonly ITime _time;
         private readonly string _logName;
@@ -57,7 +57,7 @@ namespace ServiceLib
         private int _processedEventsCount;
         private bool _exceptionAlreadyLogged;
 
-        public EventProjectorSimple(IEventProjection projection, IMetadataInstance metadata, IEventStreamingDeserialized streaming, ICommandSubscriptionManager subscriptions, ITime time)
+        public EventProjectorSimple(IEventProjection projection, IMetadataInstance metadata, IEventStreamingDeserialized streaming, IEventSubscriptionManager subscriptions, ITime time)
         {
             _lock = new object();
             _projectionInfo = projection;
@@ -69,7 +69,7 @@ namespace ServiceLib
             _stopwatch = new Stopwatch();
         }
 
-        public void Register<T>(IProcess<T> handler)
+        public void Register<T>(IProcessEvent<T> handler)
         {
             _subscriptions.Register(handler);
         }
@@ -356,7 +356,7 @@ namespace ServiceLib
             private readonly object _message;
             private readonly Stopwatch _stopwatch;
             private readonly EventStoreToken _token;
-            private ICommandSubscription _handler;
+            private IEventSubscription _handler;
             private string _typeName;
 
             public CallHandlerContext(EventProjectorSimple parent, object message, EventStoreToken token)

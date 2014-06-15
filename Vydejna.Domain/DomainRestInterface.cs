@@ -1,6 +1,7 @@
 ﻿using ServiceLib;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Vydejna.Contracts;
 
@@ -25,6 +26,7 @@ namespace Vydejna.Domain
             where T : class
         {
             T cmd = null;
+            CommandResult result = null;
 
             try
             {
@@ -33,37 +35,41 @@ namespace Vydejna.Domain
             }
             catch (Exception exception)
             {
-                ctx.StatusCode = 400;
-                ctx.OutputHeaders.ContentType = "text/plain";
-                if (exception.InnerException != null)
-                    ctx.OutputString = exception.InnerException.Message;
-                else
-                    ctx.OutputString = exception.Message;
+                var message = exception.InnerException != null ? exception.InnerException.Message : exception.Message;
+                result = new CommandResult(CommandResultStatus.InvalidCommand, new[] { new CommandError("POSTDATA", "PARSE", message) });
             }
             if (cmd != null)
             {
                 var task = _publisher.SendCommand(cmd);
                 yield return task;
 
-                if (task.Exception == null)
+                if (task.Exception != null)
                 {
-                    ctx.StatusCode = 204;
+                    result = new CommandResult(CommandResultStatus.InternalError,
+                        task.Exception.InnerExceptions.Select(ex => new CommandError("", ex.GetType().Name, ex.Message)).ToList());
                 }
-                else
-                {
-                    ctx.StatusCode = 400;
-                    ctx.OutputHeaders.ContentType = "text/plain";
-                    ctx.OutputString = task.Exception.InnerException.Message;
-                }
+            }
+            else if (result == null)
+            {
+                result = new CommandResult(CommandResultStatus.InvalidCommand, new[] { new CommandError("POSTDATA", "REQUIRED", "Command data required") });
+            }
+            if (result == null)
+            {
+                ctx.StatusCode = 500;
+            }
+            else if (result.Status == CommandResultStatus.Success)
+            {
+                ctx.StatusCode = 204;
             }
             else
             {
-                ctx.StatusCode = 400;
-                ctx.OutputHeaders.ContentType = "text/plain";
-                ctx.OutputString = "Command data required";
+                ctx.StatusCode = result.Status == CommandResultStatus.InternalError ? 500 : 400;
+                if (ctx.OutputSerializer != null)
+                {
+                    ctx.OutputHeaders.ContentType = ctx.OutputSerializer.ContentType;
+                    ctx.OutputString = ctx.OutputSerializer.Serialize(result);
+                }
             }
-
-            yield return TaskUtils.CompletedTask();
         }
 
         public void Register(IHttpRouteCommonConfigurator config)

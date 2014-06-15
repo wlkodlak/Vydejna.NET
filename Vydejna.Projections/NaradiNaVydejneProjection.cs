@@ -9,21 +9,21 @@ namespace Vydejna.Projections.NaradiNaVydejneReadModel
 {
     public class NaradiNaVydejneProjection
         : IEventProjection
-        , ISubscribeToCommandManager
-        , IProcess<ProjectorMessages.Flush>
-        , IProcess<DefinovanoNaradiEvent>
-        , IProcess<CislovaneNaradiPrijatoNaVydejnuEvent>
-        , IProcess<CislovaneNaradiVydanoDoVyrobyEvent>
-        , IProcess<CislovaneNaradiPrijatoZVyrobyEvent>
-        , IProcess<CislovaneNaradiPredanoKOpraveEvent>
-        , IProcess<CislovaneNaradiPrijatoZOpravyEvent>
-        , IProcess<CislovaneNaradiPredanoKeSesrotovaniEvent>
-        , IProcess<NecislovaneNaradiPrijatoNaVydejnuEvent>
-        , IProcess<NecislovaneNaradiVydanoDoVyrobyEvent>
-        , IProcess<NecislovaneNaradiPrijatoZVyrobyEvent>
-        , IProcess<NecislovaneNaradiPredanoKOpraveEvent>
-        , IProcess<NecislovaneNaradiPrijatoZOpravyEvent>
-        , IProcess<NecislovaneNaradiPredanoKeSesrotovaniEvent>
+        , ISubscribeToEventManager
+        , IProcessEvent<ProjectorMessages.Flush>
+        , IProcessEvent<DefinovanoNaradiEvent>
+        , IProcessEvent<CislovaneNaradiPrijatoNaVydejnuEvent>
+        , IProcessEvent<CislovaneNaradiVydanoDoVyrobyEvent>
+        , IProcessEvent<CislovaneNaradiPrijatoZVyrobyEvent>
+        , IProcessEvent<CislovaneNaradiPredanoKOpraveEvent>
+        , IProcessEvent<CislovaneNaradiPrijatoZOpravyEvent>
+        , IProcessEvent<CislovaneNaradiPredanoKeSesrotovaniEvent>
+        , IProcessEvent<NecislovaneNaradiPrijatoNaVydejnuEvent>
+        , IProcessEvent<NecislovaneNaradiVydanoDoVyrobyEvent>
+        , IProcessEvent<NecislovaneNaradiPrijatoZVyrobyEvent>
+        , IProcessEvent<NecislovaneNaradiPredanoKOpraveEvent>
+        , IProcessEvent<NecislovaneNaradiPrijatoZOpravyEvent>
+        , IProcessEvent<NecislovaneNaradiPredanoKeSesrotovaniEvent>
     {
         private NaradiNaVydejneRepository _repository;
         private MemoryCache<InformaceONaradi> _cacheNaradi;
@@ -36,7 +36,7 @@ namespace Vydejna.Projections.NaradiNaVydejneReadModel
             _cacheVydejna = new MemoryCache<NaradiNaVydejne>(time);
         }
 
-        public void Subscribe(ICommandSubscriptionManager mgr)
+        public void Subscribe(IEventSubscriptionManager mgr)
         {
             mgr.Register<ProjectorMessages.Flush>(this);
             mgr.Register<DefinovanoNaradiEvent>(this);

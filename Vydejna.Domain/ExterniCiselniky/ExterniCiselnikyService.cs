@@ -1,4 +1,5 @@
-﻿using System;
+﻿using log4net;
+using System;
 using System.Collections.Generic;
 using ServiceLib;
 using Vydejna.Contracts;
@@ -7,13 +8,14 @@ using System.Threading.Tasks;
 namespace Vydejna.Domain.ExterniCiselniky
 {
     public class ExterniCiselnikyService
-        : IProcess<DefinovanDodavatelEvent>
-        , IProcess<DefinovanaVadaNaradiEvent>
-        , IProcess<DefinovanoPracovisteEvent>
+        : IProcessCommand<DefinovanDodavatelEvent>
+        , IProcessCommand<DefinovanaVadaNaradiEvent>
+        , IProcessCommand<DefinovanoPracovisteEvent>
     {
-        private IExterniCiselnikyRepository _repository;
+        private IExternalEventRepository _repository;
+        private static readonly ILog Logger = LogManager.GetLogger("Vydejna.Domain.ExterniCiselniky");
 
-        public ExterniCiselnikyService(IExterniCiselnikyRepository repository)
+        public ExterniCiselnikyService(IExternalEventRepository repository)
         {
             _repository = repository;
         }
@@ -25,57 +27,17 @@ namespace Vydejna.Domain.ExterniCiselniky
             bus.Subscribe<DefinovanoPracovisteEvent>(this);
         }
 
-        public Task Handle(DefinovanDodavatelEvent msg)
+        public Task<CommandResult> Handle(DefinovanDodavatelEvent msg)
         {
-            return _repository.UlozitDodavatele(msg);
+            return new ExternalEventServiceExecution(_repository, Logger, "dodavatele").AddEvent(msg).Execute();
         }
-        public Task Handle(DefinovanaVadaNaradiEvent msg)
+        public Task<CommandResult> Handle(DefinovanaVadaNaradiEvent msg)
         {
-            return _repository.UlozitVadu(msg);
+            return new ExternalEventServiceExecution(_repository, Logger, "vady").AddEvent(msg).Execute();
         }
-        public Task Handle(DefinovanoPracovisteEvent msg)
+        public Task<CommandResult> Handle(DefinovanoPracovisteEvent msg)
         {
-            return _repository.UlozitPracoviste(msg);
-        }
-    }
-
-    public interface IExterniCiselnikyRepository
-    {
-        Task UlozitDodavatele(DefinovanDodavatelEvent evnt);
-        Task UlozitVadu(DefinovanaVadaNaradiEvent evnt);
-        Task UlozitPracoviste(DefinovanoPracovisteEvent evnt);
-    }
-
-    public class ExterniCiselnikyRepository : IExterniCiselnikyRepository
-    {
-        private IEventStore _store;
-        private IEventSourcedSerializer _serializer;
-        private string _prefix;
-
-        public ExterniCiselnikyRepository(IEventStore store, string prefix, IEventSourcedSerializer serializer)
-        {
-            _store = store;
-            _prefix = prefix;
-            _serializer = serializer;
-        }
-
-        public Task UlozitDodavatele(DefinovanDodavatelEvent evnt)
-        {
-            var storedEvent = new EventStoreEvent();
-            _serializer.Serialize(evnt, storedEvent);
-            return _store.AddToStream(_prefix + "-dodavatele", new[] { storedEvent }, EventStoreVersion.Any);
-        }
-        public Task UlozitVadu(DefinovanaVadaNaradiEvent evnt)
-        {
-            var storedEvent = new EventStoreEvent();
-            _serializer.Serialize(evnt, storedEvent);
-            return _store.AddToStream(_prefix + "-vady", new[] { storedEvent }, EventStoreVersion.Any);
-        }
-        public Task UlozitPracoviste(DefinovanoPracovisteEvent evnt)
-        {
-            var storedEvent = new EventStoreEvent();
-            _serializer.Serialize(evnt, storedEvent);
-            return _store.AddToStream(_prefix + "-pracoviste", new[] { storedEvent }, EventStoreVersion.Any);
+            return new ExternalEventServiceExecution(_repository, Logger, "pracoviste").AddEvent(msg).Execute();
         }
     }
 }

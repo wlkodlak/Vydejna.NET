@@ -51,6 +51,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="DtoUtils.cs" />
+    <Compile Include="ExternalEventServiceExecution.cs" />
     <Compile Include="EventSourcedServiceExecution.cs" />
     <Compile Include="JsonSerializer.cs" />
     <Compile Include="LocalBus.cs" />

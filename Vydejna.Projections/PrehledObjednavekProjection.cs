@@ -9,13 +9,13 @@ namespace Vydejna.Projections.PrehledObjednavekReadModel
 {
     public class PrehledObjednavekProjection
         : IEventProjection
-        , ISubscribeToCommandManager
-        , IProcess<DefinovanDodavatelEvent>
-        , IProcess<ProjectorMessages.Flush>
-        , IProcess<CislovaneNaradiPredanoKOpraveEvent>
-        , IProcess<CislovaneNaradiPrijatoZOpravyEvent>
-        , IProcess<NecislovaneNaradiPredanoKOpraveEvent>
-        , IProcess<NecislovaneNaradiPrijatoZOpravyEvent>
+        , ISubscribeToEventManager
+        , IProcessEvent<DefinovanDodavatelEvent>
+        , IProcessEvent<ProjectorMessages.Flush>
+        , IProcessEvent<CislovaneNaradiPredanoKOpraveEvent>
+        , IProcessEvent<CislovaneNaradiPrijatoZOpravyEvent>
+        , IProcessEvent<NecislovaneNaradiPredanoKOpraveEvent>
+        , IProcessEvent<NecislovaneNaradiPrijatoZOpravyEvent>
     {
         private PrehledObjednavekRepository _repository;
         private MemoryCache<int> _cacheVerze;
@@ -30,7 +30,7 @@ namespace Vydejna.Projections.PrehledObjednavekReadModel
             _cacheDodavatelu = new MemoryCache<PrehledObjednavekDataSeznamDodavatelu>(time);
         }
 
-        public void Subscribe(ICommandSubscriptionManager mgr)
+        public void Subscribe(IEventSubscriptionManager mgr)
         {
             mgr.Register<DefinovanDodavatelEvent>(this);
             mgr.Register<ProjectorMessages.Flush>(this);

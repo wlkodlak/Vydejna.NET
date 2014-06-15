@@ -9,9 +9,9 @@ namespace Vydejna.Projections.SeznamPracovistReadModel
 {
     public class SeznamPracovistProjection
         : IEventProjection
-        , ISubscribeToCommandManager
-        , IProcess<ProjectorMessages.Flush>
-        , IProcess<DefinovanoPracovisteEvent>
+        , ISubscribeToEventManager
+        , IProcessEvent<ProjectorMessages.Flush>
+        , IProcessEvent<DefinovanoPracovisteEvent>
     {
         private SeznamPracovistRepository _repository;
         private MemoryCache<InformaceOPracovisti> _cachePracovist;
@@ -24,7 +24,7 @@ namespace Vydejna.Projections.SeznamPracovistReadModel
             _cachePracovist = new MemoryCache<InformaceOPracovisti>(time);
         }
 
-        public void Subscribe(ICommandSubscriptionManager mgr)
+        public void Subscribe(IEventSubscriptionManager mgr)
         {
             mgr.Register<ProjectorMessages.Flush>(this);
             mgr.Register<DefinovanoPracovisteEvent>(this);

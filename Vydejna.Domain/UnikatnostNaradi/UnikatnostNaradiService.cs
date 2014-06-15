@@ -1,4 +1,5 @@
-﻿using ServiceLib;
+﻿using log4net;
+using ServiceLib;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -10,10 +11,11 @@ using Vydejna.Domain.UnikatnostNaradi;
 namespace Vydejna.Domain.UnikatnostNaradi
 {
     public class UnikatnostNaradiService
-        : IProcess<DefinovatNaradiCommand>
-        , IProcess<DokoncitDefiniciNaradiInternalCommand>
+        : IProcessCommand<DefinovatNaradiCommand>
+        , IProcessCommand<DokoncitDefiniciNaradiInternalCommand>
     {
         private IEventSourcedRepository<UnikatnostNaradiAggregate> _repoUnikatnost;
+        private static readonly ILog Logger = LogManager.GetLogger("Vydejna.Domain.UnikatnostNaradi");
 
         public UnikatnostNaradiService(IUnikatnostNaradiRepository repoUnikatnost)
         {
@@ -26,16 +28,16 @@ namespace Vydejna.Domain.UnikatnostNaradi
             bus.Subscribe<DokoncitDefiniciNaradiInternalCommand>(this);
         }
 
-        public Task Handle(DefinovatNaradiCommand msg)
+        public Task<CommandResult> Handle(DefinovatNaradiCommand msg)
         {
-            return new EventSourcedServiceExecution<UnikatnostNaradiAggregate>(_repoUnikatnost, UnikatnostNaradiId.Value)
+            return new EventSourcedServiceExecution<UnikatnostNaradiAggregate>(_repoUnikatnost, UnikatnostNaradiId.Value, Logger)
                 .OnRequest(unikatnost => unikatnost.ZahajitDefinici(msg.NaradiId, msg.Vykres, msg.Rozmer, msg.Druh))
                 .Execute();
         }
 
-        public Task Handle(DokoncitDefiniciNaradiInternalCommand msg)
+        public Task<CommandResult> Handle(DokoncitDefiniciNaradiInternalCommand msg)
         {
-            return new EventSourcedServiceExecution<UnikatnostNaradiAggregate>(_repoUnikatnost, UnikatnostNaradiId.Value)
+            return new EventSourcedServiceExecution<UnikatnostNaradiAggregate>(_repoUnikatnost, UnikatnostNaradiId.Value, Logger)
                 .OnRequest(unikatnost => unikatnost.DokoncitDefinici(msg.NaradiId, msg.Vykres, msg.Rozmer, msg.Druh))
                 .Execute();
         }

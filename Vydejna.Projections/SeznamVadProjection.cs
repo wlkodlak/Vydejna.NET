@@ -9,9 +9,9 @@ namespace Vydejna.Projections.SeznamVadReadModel
 {
     public class SeznamVadProjection
         : IEventProjection
-        , ISubscribeToCommandManager
-        , IProcess<ProjectorMessages.Flush>
-        , IProcess<DefinovanaVadaNaradiEvent>
+        , ISubscribeToEventManager
+        , IProcessEvent<ProjectorMessages.Flush>
+        , IProcessEvent<DefinovanaVadaNaradiEvent>
     {
         private SeznamVadRepository _repository;
         private MemoryCache<SeznamVadData> _cache;
@@ -24,7 +24,7 @@ namespace Vydejna.Projections.SeznamVadReadModel
             _comparer = new SeznamVadKodComparer();
         }
 
-        public void Subscribe(ICommandSubscriptionManager mgr)
+        public void Subscribe(IEventSubscriptionManager mgr)
         {
             mgr.Register<ProjectorMessages.Flush>(this);
             mgr.Register<DefinovanaVadaNaradiEvent>(this);

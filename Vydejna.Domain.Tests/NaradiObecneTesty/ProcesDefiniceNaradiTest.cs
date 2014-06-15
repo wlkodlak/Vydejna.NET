@@ -28,11 +28,11 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
 
             public void SetHandler<T>(Action<T> action)
             {
-                _handlers[typeof(AsyncRpcMessage<T, object>)] = o =>
+                _handlers[typeof(AsyncRpcMessage<T, CommandResult>)] = o =>
                 {
-                    var msg = (AsyncRpcMessage<T, object>)o;
+                    var msg = (AsyncRpcMessage<T, CommandResult>)o;
                     action(msg.Query);
-                    msg.Response.TrySetResult(null);
+                    msg.Response.TrySetResult(CommandResult.Ok);
                 };
             }
 
@@ -57,7 +57,7 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
 
         private void Vykonat<T>(T evnt)
         {
-            var task = _scheduler.Run(() => ((IProcess<T>)_proces).Handle(evnt));
+            var task = _scheduler.Run(() => ((IProcessEvent<T>)_proces).Handle(evnt));
             if (task.Exception != null)
                 throw task.Exception.InnerException.PreserveStackTrace();
         }

@@ -7,6 +7,7 @@ using NpgsqlTypes;
 using log4net.Util;
 using System.Globalization;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace ServiceLib
 {

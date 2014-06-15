@@ -13,7 +13,7 @@ namespace ServiceLib
     {
         private readonly IMetadataInstance _metadata;
         private readonly IEventStreamingDeserialized _streaming;
-        private readonly ICommandSubscriptionManager _subscriptions;
+        private readonly IEventSubscriptionManager _subscriptions;
         private readonly object _lock;
         private readonly Stopwatch _stopwatch;
         private readonly string _logName;
@@ -27,7 +27,7 @@ namespace ServiceLib
 
         public EventProcessSimple(
             IMetadataInstance metadata, IEventStreamingDeserialized streaming,
-            ICommandSubscriptionManager subscriptions, ITime time)
+            IEventSubscriptionManager subscriptions, ITime time)
         {
             _metadata = metadata;
             _streaming = streaming;
@@ -39,7 +39,7 @@ namespace ServiceLib
             _lock = new object();
         }
 
-        public EventProcessSimple Register<T>(IProcess<T> handler)
+        public EventProcessSimple Register<T>(IProcessEvent<T> handler)
         {
             _subscriptions.Register(handler);
             return this;

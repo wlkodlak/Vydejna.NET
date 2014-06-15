@@ -15,7 +15,7 @@ namespace ServiceLib.Tests.EventHandlers
         private TestProjection _projection;
         private TestMetadataInstance _metadata;
         private TestStreaming _streaming;
-        private CommandSubscriptionManager _subscriptions;
+        private IEventSubscriptionManager _subscriptions;
         private EventProjectorSimple _process;
         private VirtualTime _time;
 
@@ -26,7 +26,7 @@ namespace ServiceLib.Tests.EventHandlers
             _projection = new TestProjection();
             _metadata = new TestMetadataInstance();
             _streaming = new TestStreaming();
-            _subscriptions = new CommandSubscriptionManager();
+            _subscriptions = new EventSubscriptionManager();
             _time = new VirtualTime();
             _process = new EventProjectorSimple(_projection, _metadata, _streaming, _subscriptions, _time);
             _process.Init(null, _scheduler);
@@ -289,11 +289,11 @@ namespace ServiceLib.Tests.EventHandlers
 
         private class TestProjection
             : IEventProjection
-            , IProcess<ProjectorMessages.Flush>
-            , IProcess<ProjectorMessages.RebuildFinished>
-            , IProcess<TestEvent1>
-            , IProcess<TestEvent2>
-            , IProcess<TestEvent3>
+            , IProcessEvent<ProjectorMessages.Flush>
+            , IProcessEvent<ProjectorMessages.RebuildFinished>
+            , IProcessEvent<TestEvent1>
+            , IProcessEvent<TestEvent2>
+            , IProcessEvent<TestEvent3>
         {
             public string Mode = "normal";
             public List<string> LogEntries = new List<string>();

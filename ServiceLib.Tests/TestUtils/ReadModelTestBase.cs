@@ -102,7 +102,7 @@ namespace ServiceLib.Tests.TestUtils
 
         private void SendEventInternal<T>(T evnt, bool mustImplement)
         {
-            var handler = _projection as IProcess<T>;
+            var handler = _projection as IProcessEvent<T>;
             if (handler == null)
             {
                 if (mustImplement)

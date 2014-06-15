@@ -10,9 +10,13 @@ namespace ServiceLib
     {
         void Handle(T message);
     }
-    public interface IProcess<TCommand>
+    public interface IProcessEvent<TEvent>
     {
-        Task Handle(TCommand command);
+        Task Handle(TEvent command);
+    }
+    public interface IProcessCommand<TCommand>
+    {
+        Task<CommandResult> Handle(TCommand command);
     }
     public interface IAnswer<TQuery, TAnswer>
     {
@@ -22,7 +26,10 @@ namespace ServiceLib
     public interface ISubscription : IHandle<object>
     {
     }
-    public interface ICommandSubscription : IProcess<object>
+    public interface ICommandSubscription : IProcessCommand<object>
+    {
+    }
+    public interface IEventSubscription : IProcessEvent<object>
     {
     }
 }

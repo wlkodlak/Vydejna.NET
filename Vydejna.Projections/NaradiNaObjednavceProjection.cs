@@ -9,14 +9,14 @@ namespace Vydejna.Projections.NaradiNaObjednavceReadModel
 {
     public class NaradiNaObjednavceProjection
         : IEventProjection
-        , ISubscribeToCommandManager
-        , IProcess<ProjectorMessages.Flush>
-        , IProcess<DefinovanDodavatelEvent>
-        , IProcess<DefinovanoNaradiEvent>
-        , IProcess<CislovaneNaradiPredanoKOpraveEvent>
-        , IProcess<CislovaneNaradiPrijatoZOpravyEvent>
-        , IProcess<NecislovaneNaradiPredanoKOpraveEvent>
-        , IProcess<NecislovaneNaradiPrijatoZOpravyEvent>
+        , ISubscribeToEventManager
+        , IProcessEvent<ProjectorMessages.Flush>
+        , IProcessEvent<DefinovanDodavatelEvent>
+        , IProcessEvent<DefinovanoNaradiEvent>
+        , IProcessEvent<CislovaneNaradiPredanoKOpraveEvent>
+        , IProcessEvent<CislovaneNaradiPrijatoZOpravyEvent>
+        , IProcessEvent<NecislovaneNaradiPredanoKOpraveEvent>
+        , IProcessEvent<NecislovaneNaradiPrijatoZOpravyEvent>
     {
         private NaradiNaObjednavceRepository _repository;
         private MemoryCache<NaradiNaObjednavceDataObjednavky> _cacheObjednavek;
@@ -31,7 +31,7 @@ namespace Vydejna.Projections.NaradiNaObjednavceReadModel
             _cacheDodavatele = new MemoryCache<NaradiNaObjednavceDataDodavatele>(time);
         }
 
-        public void Subscribe(ICommandSubscriptionManager mgr)
+        public void Subscribe(IEventSubscriptionManager mgr)
         {
             mgr.Register<ProjectorMessages.Flush>(this);
             mgr.Register<DefinovanDodavatelEvent>(this);

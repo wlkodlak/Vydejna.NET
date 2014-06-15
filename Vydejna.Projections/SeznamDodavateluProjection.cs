@@ -9,9 +9,9 @@ namespace Vydejna.Projections.SeznamDodavateluReadModel
 {
     public class SeznamDodavateluProjection
         : IEventProjection
-        , ISubscribeToCommandManager
-        , IProcess<ProjectorMessages.Flush>
-        , IProcess<DefinovanDodavatelEvent>
+        , ISubscribeToEventManager
+        , IProcessEvent<ProjectorMessages.Flush>
+        , IProcessEvent<DefinovanDodavatelEvent>
     {
         private SeznamDodavateluRepository _repository;
         private SeznamDodavateluNazevComparer _comparer;
@@ -24,7 +24,7 @@ namespace Vydejna.Projections.SeznamDodavateluReadModel
             _cache = new MemoryCache<SeznamDodavateluData>(time);
         }
 
-        public void Subscribe(ICommandSubscriptionManager mgr)
+        public void Subscribe(IEventSubscriptionManager mgr)
         {
             mgr.Register<ProjectorMessages.Flush>(this);
             mgr.Register<DefinovanDodavatelEvent>(this);

@@ -189,7 +189,7 @@ namespace Vydejna.Server
 
             new DefinovaneNaradiService(new DefinovaneNaradiRepository(_eventStore, "definovane", _eventSerializer)).Subscribe(_mainBus);
             new CislovaneNaradiService(new CislovaneNaradiRepository(_eventStore, "cislovane", _eventSerializer), _time).Subscribe(_mainBus);
-            new ExterniCiselnikyService(new ExterniCiselnikyRepository(_eventStore, "externi", _eventSerializer)).Subscribe(_mainBus);
+            new ExterniCiselnikyService(new ExternalEventRepository(_eventStore, "externi-", _eventSerializer)).Subscribe(_mainBus);
             new UnikatnostNaradiService(new UnikatnostNaradiRepository(_eventStore, "unikatnost", _eventSerializer)).Subscribe(_mainBus);
 
             new DetailNaradiReader(new DetailNaradiRepository(documentStore.GetFolder("detailnaradi")), _time).Subscribe(_mainBus);
@@ -222,9 +222,9 @@ namespace Vydejna.Server
         }
 
         private void BuildEventProcessor<T>(T processor, string processorName)
-            where T : ISubscribeToCommandManager
+            where T : ISubscribeToEventManager
         {
-            var subscriptions = new CommandSubscriptionManager();
+            var subscriptions = new EventSubscriptionManager();
             processor.Subscribe(subscriptions);
             var process = new EventProcessSimple(_metadataManager.GetConsumer(processorName),
                 new EventStreamingDeserialized(_eventStreaming, _eventSerializer), subscriptions, _time);
@@ -232,9 +232,9 @@ namespace Vydejna.Server
         }
 
         private void BuildProjection<T>(T projection, string projectionName)
-            where T : IEventProjection, ISubscribeToCommandManager
+            where T : IEventProjection, ISubscribeToEventManager
         {
-            var subscriptions = new CommandSubscriptionManager();
+            var subscriptions = new EventSubscriptionManager();
             projection.Subscribe(subscriptions);
             var projector = new EventProjectorSimple(projection, _metadataManager.GetConsumer(projectionName),
                 new EventStreamingDeserialized(_eventStreaming, _eventSerializer), subscriptions, _time);

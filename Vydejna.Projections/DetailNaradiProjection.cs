@@ -9,27 +9,27 @@ namespace Vydejna.Projections.DetailNaradiReadModel
 {
     public class DetailNaradiProjection
         : IEventProjection
-        , ISubscribeToCommandManager
-        , IProcess<ProjectorMessages.Flush>
-        , IProcess<DefinovanoNaradiEvent>
-        , IProcess<AktivovanoNaradiEvent>
-        , IProcess<DeaktivovanoNaradiEvent>
-        , IProcess<ZmenenStavNaSkladeEvent>
-        , IProcess<DefinovanDodavatelEvent>
-        , IProcess<DefinovanaVadaNaradiEvent>
-        , IProcess<DefinovanoPracovisteEvent>
-        , IProcess<CislovaneNaradiPrijatoNaVydejnuEvent>
-        , IProcess<CislovaneNaradiVydanoDoVyrobyEvent>
-        , IProcess<CislovaneNaradiPrijatoZVyrobyEvent>
-        , IProcess<CislovaneNaradiPredanoKOpraveEvent>
-        , IProcess<CislovaneNaradiPrijatoZOpravyEvent>
-        , IProcess<CislovaneNaradiPredanoKeSesrotovaniEvent>
-        , IProcess<NecislovaneNaradiPrijatoNaVydejnuEvent>
-        , IProcess<NecislovaneNaradiVydanoDoVyrobyEvent>
-        , IProcess<NecislovaneNaradiPrijatoZVyrobyEvent>
-        , IProcess<NecislovaneNaradiPredanoKOpraveEvent>
-        , IProcess<NecislovaneNaradiPrijatoZOpravyEvent>
-        , IProcess<NecislovaneNaradiPredanoKeSesrotovaniEvent>
+        , ISubscribeToEventManager
+        , IProcessEvent<ProjectorMessages.Flush>
+        , IProcessEvent<DefinovanoNaradiEvent>
+        , IProcessEvent<AktivovanoNaradiEvent>
+        , IProcessEvent<DeaktivovanoNaradiEvent>
+        , IProcessEvent<ZmenenStavNaSkladeEvent>
+        , IProcessEvent<DefinovanDodavatelEvent>
+        , IProcessEvent<DefinovanaVadaNaradiEvent>
+        , IProcessEvent<DefinovanoPracovisteEvent>
+        , IProcessEvent<CislovaneNaradiPrijatoNaVydejnuEvent>
+        , IProcessEvent<CislovaneNaradiVydanoDoVyrobyEvent>
+        , IProcessEvent<CislovaneNaradiPrijatoZVyrobyEvent>
+        , IProcessEvent<CislovaneNaradiPredanoKOpraveEvent>
+        , IProcessEvent<CislovaneNaradiPrijatoZOpravyEvent>
+        , IProcessEvent<CislovaneNaradiPredanoKeSesrotovaniEvent>
+        , IProcessEvent<NecislovaneNaradiPrijatoNaVydejnuEvent>
+        , IProcessEvent<NecislovaneNaradiVydanoDoVyrobyEvent>
+        , IProcessEvent<NecislovaneNaradiPrijatoZVyrobyEvent>
+        , IProcessEvent<NecislovaneNaradiPredanoKOpraveEvent>
+        , IProcessEvent<NecislovaneNaradiPrijatoZOpravyEvent>
+        , IProcessEvent<NecislovaneNaradiPredanoKeSesrotovaniEvent>
     {
         private const string _version = "0.01";
         private DetailNaradiRepository _repository;
@@ -47,7 +47,7 @@ namespace Vydejna.Projections.DetailNaradiReadModel
             _cacheVady = new MemoryCache<DetailNaradiDataVady>(time);
         }
 
-        public void Subscribe(ICommandSubscriptionManager mgr)
+        public void Subscribe(IEventSubscriptionManager mgr)
         {
             mgr.Register<ProjectorMessages.Flush>(this);
             mgr.Register<DefinovanoNaradiEvent>(this);

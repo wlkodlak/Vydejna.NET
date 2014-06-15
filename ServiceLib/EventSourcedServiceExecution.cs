@@ -1,5 +1,7 @@
-﻿using System;
+﻿using log4net;
+using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -14,13 +16,19 @@ namespace ServiceLib
         private Action<T> _existingAction;
         private Func<T> _newAction;
         private int _tryNumber = 0;
-        private Func<ValidationErrorException> _validation;
+        private Func<CommandError> _validation;
+        private Stopwatch _stopwatch;
+        private Dictionary<Type, Func<object, string>> _logConverters;
+        private ILog _logger;
 
-        public EventSourcedServiceExecution(IEventSourcedRepository<T> repository, IAggregateId aggregateId)
+        public EventSourcedServiceExecution(IEventSourcedRepository<T> repository, IAggregateId aggregateId, ILog logger)
         {
             _repository = repository;
             _aggregateId = aggregateId;
             _tryNumber = 0;
+            _stopwatch = new Stopwatch();
+            _logConverters = new Dictionary<Type, Func<object, string>>();
+            _logger = logger;
         }
 
         public EventSourcedServiceExecution<T> OnExisting(Action<T> action)
@@ -51,15 +59,16 @@ namespace ServiceLib
             return OnNew(action).OnExisting(action);
         }
 
-        public EventSourcedServiceExecution<T> Validate(Func<ValidationErrorException> validation)
+        public EventSourcedServiceExecution<T> Validate(Func<CommandError> validation)
         {
             _validation = validation;
             return this;
         }
 
-        public Task Execute()
+        public Task<CommandResult> Execute()
         {
-            return TaskUtils.FromEnumerable(ExecuteInternal()).GetTask();
+            _stopwatch.Start();
+            return TaskUtils.FromEnumerable<CommandResult>(ExecuteInternal()).GetTask();
         }
 
         public IEnumerable<Task> ExecuteInternal()
@@ -69,7 +78,7 @@ namespace ServiceLib
                 var validationResult = _validation();
                 if (validationResult != null)
                 {
-                    yield return TaskUtils.FromError<object>(validationResult);
+                    yield return TaskUtils.FromResult(CommandResult.From(validationResult));
                     yield break;
                 }
             }
@@ -77,23 +86,40 @@ namespace ServiceLib
             {
                 var loadTask = _repository.Load(_aggregateId);
                 yield return loadTask;
+                Task<CommandResult> result = null;
 
                 var aggregate = loadTask.Result;
-                if (aggregate == null)
+                try
                 {
-                    if (_newAction != null)
-                        aggregate = _newAction();
+                    if (aggregate == null)
+                    {
+                        if (_newAction != null)
+                            aggregate = _newAction();
+                        else
+                            aggregate = null;
+                    }
                     else
-                        aggregate = null;
+                    {
+                        if (_existingAction != null)
+                            _existingAction(aggregate);
+                    }
                 }
-                else
+                catch (DomainErrorException error)
                 {
-                    if (_existingAction != null)
-                        _existingAction(aggregate);
+                    result = TaskUtils.FromResult(CommandResult.From(error));
                 }
+                if (result != null)
+                {
+                    yield return result;
+                    yield break;
+                }
+
                 bool aggregateSaved;
                 if (aggregate != null)
                 {
+                    _stopwatch.Stop();
+                    var newEvents = aggregate.GetChanges();
+
                     var saveTask = _repository.Save(aggregate);
                     yield return saveTask;
 
@@ -103,11 +129,11 @@ namespace ServiceLib
                     aggregateSaved = true;
                 if (aggregateSaved)
                 {
-                    yield return TaskUtils.CompletedTask();
+                    yield return CommandResult.TaskOk;
                     yield break;
                 }
             }
-            yield return TaskUtils.FromError<object>(new TransientErrorException("CONCURRENCY", "Could not save aggregate", _tryNumber));
+            yield return TaskUtils.FromError<CommandResult>(new TransientErrorException("CONCURRENCY", "Could not save aggregate"));
         }
 
     }

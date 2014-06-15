@@ -91,6 +91,7 @@
     <Compile Include="Http\RestClientTest.cs" />
     <Compile Include="Messaging\BusTests.cs" />
     <Compile Include="Messaging\CommandSubscriptionManagerTests.cs" />
+    <Compile Include="Messaging\EventSubscriptionManagerTests.cs" />
     <Compile Include="Messaging\NetworkBusTests.cs" />
     <Compile Include="Messaging\ProcessManagerClusterTests.cs" />
     <Compile Include="Messaging\SubscriptionManagerTests.cs" />

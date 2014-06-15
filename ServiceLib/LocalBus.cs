@@ -58,21 +58,49 @@ namespace ServiceLib
             }
         }
 
-        public static void Subscribe<T>(this ISubscribable self, IProcess<T> handler)
+        public static void Subscribe<T>(this ISubscribable self, IProcessEvent<T> handler)
         {
-            self.Subscribe(new ProcessToHandleAdapter<T>(handler));
+            self.Subscribe(new ProcessEventToHandleAdapter<T>(handler));
         }
 
-        private class ProcessToHandleAdapter<T> : IHandle<AsyncRpcMessage<T, object>>
+        private class ProcessEventToHandleAdapter<T> : IHandle<AsyncRpcMessage<T, object>>
         {
-            private IProcess<T> _handler;
+            private IProcessEvent<T> _handler;
 
-            public ProcessToHandleAdapter(IProcess<T> handler)
+            public ProcessEventToHandleAdapter(IProcessEvent<T> handler)
             {
                 _handler = handler;
             }
 
             public void Handle(AsyncRpcMessage<T, object> message)
+            {
+                _handler.Handle(message.Query).ContinueWith(task =>
+                {
+                    if (task.Exception != null)
+                        message.Response.TrySetException(task.Exception.InnerExceptions);
+                    else if (task.IsCanceled)
+                        message.Response.TrySetCanceled();
+                    else
+                        message.Response.TrySetResult(null);
+                });
+            }
+        }
+
+        public static void Subscribe<T>(this ISubscribable self, IProcessCommand<T> handler)
+        {
+            self.Subscribe(new ProcessCommandToHandleAdapter<T>(handler));
+        }
+
+        private class ProcessCommandToHandleAdapter<T> : IHandle<AsyncRpcMessage<T, CommandResult>>
+        {
+            private IProcessCommand<T> _handler;
+
+            public ProcessCommandToHandleAdapter(IProcessCommand<T> handler)
+            {
+                _handler = handler;
+            }
+
+            public void Handle(AsyncRpcMessage<T, CommandResult> message)
             {
                 _handler.Handle(message.Query).ContinueWith(task =>
                 {
@@ -114,9 +142,14 @@ namespace ServiceLib
             }
         }
 
-        public static Task SendCommand<TCommand>(this IPublisher self, TCommand command)
+        public static Task<CommandResult> SendCommand<TCommand>(this IPublisher self, TCommand command)
         {
-            return SendQuery<TCommand, object>(self, command);
+            return SendQuery<TCommand, CommandResult>(self, command);
+        }
+
+        public static Task SendEvent<TEvent>(this IPublisher self, TEvent command)
+        {
+            return SendQuery<TEvent, object>(self, command);
         }
 
         public static Task<TAnswer> SendQuery<TQuery, TAnswer>(this IPublisher self, TQuery query)

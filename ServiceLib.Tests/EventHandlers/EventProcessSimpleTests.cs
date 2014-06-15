@@ -13,7 +13,7 @@ namespace ServiceLib.Tests.EventHandlers
         private TestScheduler _scheduler;
         private TestMetadataInstance _metadata;
         private TestStreaming _streaming;
-        private ICommandSubscriptionManager _subscriptions;
+        private IEventSubscriptionManager _subscriptions;
         private EventProcessSimple _process;
         private TestHandler _handler;
         private VirtualTime _time;
@@ -24,7 +24,7 @@ namespace ServiceLib.Tests.EventHandlers
             _scheduler = new TestScheduler();
             _metadata = new TestMetadataInstance();
             _streaming = new TestStreaming();
-            _subscriptions = new CommandSubscriptionManager();
+            _subscriptions = new EventSubscriptionManager();
             _handler = new TestHandler();
             _time = new VirtualTime();
             _process = new EventProcessSimple(_metadata, _streaming, _subscriptions, _time).WithTokenFlushing(5);
@@ -184,10 +184,10 @@ namespace ServiceLib.Tests.EventHandlers
         }
 
         private class TestHandler
-            : IProcess<TestEvent1>
-            , IProcess<TestEvent2>
-            , IProcess<TestEvent3>
-            , IProcess<TestEvent4>
+            : IProcessEvent<TestEvent1>
+            , IProcessEvent<TestEvent2>
+            , IProcessEvent<TestEvent3>
+            , IProcessEvent<TestEvent4>
         {
             private StringBuilder _sb = new StringBuilder();
 

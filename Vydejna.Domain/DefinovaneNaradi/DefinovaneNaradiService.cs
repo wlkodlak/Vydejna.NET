@@ -1,4 +1,5 @@
-﻿using ServiceLib;
+﻿using log4net;
+using ServiceLib;
 using System;
 using System.Threading.Tasks;
 using Vydejna.Contracts;
@@ -6,11 +7,12 @@ using Vydejna.Contracts;
 namespace Vydejna.Domain.DefinovaneNaradi
 {
     public class DefinovaneNaradiService
-        : IProcess<AktivovatNaradiCommand>
-        , IProcess<DeaktivovatNaradiCommand>
-        , IProcess<DefinovatNaradiInternalCommand>
+        : IProcessCommand<AktivovatNaradiCommand>
+        , IProcessCommand<DeaktivovatNaradiCommand>
+        , IProcessCommand<DefinovatNaradiInternalCommand>
     {
         private IDefinovaneNaradiRepository _repoNaradi;
+        private static readonly ILog Logger = LogManager.GetLogger("Vydejna.Domain.DefinovaneNaradi");
 
         public DefinovaneNaradiService(IDefinovaneNaradiRepository repoNaradi)
         {
@@ -24,22 +26,22 @@ namespace Vydejna.Domain.DefinovaneNaradi
             bus.Subscribe<DefinovatNaradiInternalCommand>(this);
         }
 
-        public Task Handle(AktivovatNaradiCommand msg)
+        public Task<CommandResult> Handle(AktivovatNaradiCommand msg)
         {
-            return new EventSourcedServiceExecution<DefinovaneNaradiAggregate>(_repoNaradi, msg.NaradiId.ToId())
+            return new EventSourcedServiceExecution<DefinovaneNaradiAggregate>(_repoNaradi, msg.NaradiId.ToId(), Logger)
                 .OnExisting(naradi => naradi.Aktivovat())
                 .Execute();
         }
-        public Task Handle(DeaktivovatNaradiCommand msg)
+        public Task<CommandResult> Handle(DeaktivovatNaradiCommand msg)
         {
-            return new EventSourcedServiceExecution<DefinovaneNaradiAggregate>(_repoNaradi, msg.NaradiId.ToId())
+            return new EventSourcedServiceExecution<DefinovaneNaradiAggregate>(_repoNaradi, msg.NaradiId.ToId(), Logger)
                 .OnExisting(naradi => naradi.Deaktivovat())
                 .Execute();
         }
 
-        public Task Handle(DefinovatNaradiInternalCommand msg)
+        public Task<CommandResult> Handle(DefinovatNaradiInternalCommand msg)
         {
-            return new EventSourcedServiceExecution<DefinovaneNaradiAggregate>(_repoNaradi, msg.NaradiId.ToId())
+            return new EventSourcedServiceExecution<DefinovaneNaradiAggregate>(_repoNaradi, msg.NaradiId.ToId(), Logger)
                 .OnNew(() => DefinovaneNaradiAggregate.Definovat(msg.NaradiId, msg.Vykres, msg.Rozmer, msg.Druh))
                 .Execute();
         }

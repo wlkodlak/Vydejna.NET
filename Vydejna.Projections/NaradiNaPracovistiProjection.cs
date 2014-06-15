@@ -9,14 +9,14 @@ namespace Vydejna.Projections.NaradiNaPracovistiReadModel
 {
     public class NaradiNaPracovistiProjection
         : IEventProjection
-        , ISubscribeToCommandManager
-        , IProcess<ProjectorMessages.Flush>
-        , IProcess<DefinovanoPracovisteEvent>
-        , IProcess<CislovaneNaradiVydanoDoVyrobyEvent>
-        , IProcess<CislovaneNaradiPrijatoZVyrobyEvent>
-        , IProcess<NecislovaneNaradiVydanoDoVyrobyEvent>
-        , IProcess<NecislovaneNaradiPrijatoZVyrobyEvent>
-        , IProcess<DefinovanoNaradiEvent>
+        , ISubscribeToEventManager
+        , IProcessEvent<ProjectorMessages.Flush>
+        , IProcessEvent<DefinovanoPracovisteEvent>
+        , IProcessEvent<CislovaneNaradiVydanoDoVyrobyEvent>
+        , IProcessEvent<CislovaneNaradiPrijatoZVyrobyEvent>
+        , IProcessEvent<NecislovaneNaradiVydanoDoVyrobyEvent>
+        , IProcessEvent<NecislovaneNaradiPrijatoZVyrobyEvent>
+        , IProcessEvent<DefinovanoNaradiEvent>
     {
         private NaradiNaPracovistiRepository _repository;
         private MemoryCache<NaradiNaPracovistiDataPracoviste> _cachePracovist;
@@ -29,7 +29,7 @@ namespace Vydejna.Projections.NaradiNaPracovistiReadModel
             _cacheNaradi = new MemoryCache<InformaceONaradi>(time);
         }
 
-        public void Subscribe(ICommandSubscriptionManager mgr)
+        public void Subscribe(IEventSubscriptionManager mgr)
         {
             mgr.Register<ProjectorMessages.Flush>(this);
             mgr.Register<DefinovanoPracovisteEvent>(this);

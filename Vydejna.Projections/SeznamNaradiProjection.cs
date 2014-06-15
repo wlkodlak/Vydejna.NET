@@ -9,11 +9,11 @@ namespace Vydejna.Projections.SeznamNaradiReadModel
 {
     public class SeznamNaradiProjection
         : IEventProjection
-        , ISubscribeToCommandManager
-        , IProcess<ProjectorMessages.Flush>
-        , IProcess<DefinovanoNaradiEvent>
-        , IProcess<AktivovanoNaradiEvent>
-        , IProcess<DeaktivovanoNaradiEvent>
+        , ISubscribeToEventManager
+        , IProcessEvent<ProjectorMessages.Flush>
+        , IProcessEvent<DefinovanoNaradiEvent>
+        , IProcessEvent<AktivovanoNaradiEvent>
+        , IProcessEvent<DeaktivovanoNaradiEvent>
     {
         private SeznamNaradiRepository _repository;
         private MemoryCache<TypNaradiDto> _cacheNaradi;
@@ -26,7 +26,7 @@ namespace Vydejna.Projections.SeznamNaradiReadModel
             _cacheTag = new MemoryCache<int>(time);
         }
 
-        public void Subscribe(ICommandSubscriptionManager mgr)
+        public void Subscribe(IEventSubscriptionManager mgr)
         {
             mgr.Register<ProjectorMessages.Flush>(this);
             mgr.Register<DefinovanoNaradiEvent>(this);

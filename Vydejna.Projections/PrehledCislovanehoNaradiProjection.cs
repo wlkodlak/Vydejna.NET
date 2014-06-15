@@ -10,15 +10,15 @@ namespace Vydejna.Projections.PrehledCislovanehoNaradiReadModel
 {
     public class PrehledCislovanehoNaradiProjection
         : IEventProjection
-        , ISubscribeToCommandManager
-        , IProcess<ProjectorMessages.Flush>
-        , IProcess<DefinovanoNaradiEvent>
-        , IProcess<CislovaneNaradiPrijatoNaVydejnuEvent>
-        , IProcess<CislovaneNaradiVydanoDoVyrobyEvent>
-        , IProcess<CislovaneNaradiPrijatoZVyrobyEvent>
-        , IProcess<CislovaneNaradiPredanoKOpraveEvent>
-        , IProcess<CislovaneNaradiPrijatoZOpravyEvent>
-        , IProcess<CislovaneNaradiPredanoKeSesrotovaniEvent>
+        , ISubscribeToEventManager
+        , IProcessEvent<ProjectorMessages.Flush>
+        , IProcessEvent<DefinovanoNaradiEvent>
+        , IProcessEvent<CislovaneNaradiPrijatoNaVydejnuEvent>
+        , IProcessEvent<CislovaneNaradiVydanoDoVyrobyEvent>
+        , IProcessEvent<CislovaneNaradiPrijatoZVyrobyEvent>
+        , IProcessEvent<CislovaneNaradiPredanoKOpraveEvent>
+        , IProcessEvent<CislovaneNaradiPrijatoZOpravyEvent>
+        , IProcessEvent<CislovaneNaradiPredanoKeSesrotovaniEvent>
     {
         private PrehledCislovanehoNaradiRepository _repository;
         private MemoryCache<CislovaneNaradiVPrehledu> _cacheCislovane;
@@ -31,7 +31,7 @@ namespace Vydejna.Projections.PrehledCislovanehoNaradiReadModel
             _cacheNaradi = new MemoryCache<InformaceONaradi>(time);
         }
 
-        public void Subscribe(ICommandSubscriptionManager mgr)
+        public void Subscribe(IEventSubscriptionManager mgr)
         {
             mgr.Register<ProjectorMessages.Flush>(this);
             mgr.Register<DefinovanoNaradiEvent>(this);

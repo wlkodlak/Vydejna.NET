@@ -36,7 +36,7 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
 
         private void ZpracovatPrikaz<T>(T cmd)
         {
-            var task = _scheduler.Run(() => ((IProcess<T>)_svc).Handle(cmd));
+            var task = _scheduler.Run(() => ((IProcessCommand<T>)_svc).Handle(cmd));
             if (task.Exception != null)
                 throw task.Exception.InnerException.PreserveStackTrace();
         }

@@ -14,7 +14,7 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
     {
         protected TestScheduler _scheduler;
         protected TService _svc;
-        protected Exception _caughtException;
+        protected CommandResult _commandResult;
         protected TestRepository<TAggregate> _repository;
         protected Dictionary<string, int> _newEventCounts;
         protected VirtualTime _time;
@@ -29,6 +29,7 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
             InitializeCore();
             _svc = CreateService();
             _newEventCounts = null;
+            _commandResult = null;
         }
 
         protected abstract TService CreateService();
@@ -36,44 +37,32 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
 
         protected virtual void Execute<T>(T cmd)
         {
-            var task = _scheduler.Run(() => ((IProcess<T>)_svc).Handle(cmd));
-            _caughtException = task.Exception != null ? task.Exception.InnerException : null;
+            var task = _scheduler.Run(() => ((IProcessCommand<T>)_svc).Handle(cmd));
+            _commandResult = task.Result;
+            Assert.IsNotNull(_commandResult, "CommandResult");
+            Assert.IsNotNull(_commandResult.Errors, "Errors");
         }
 
         protected void ChybaValidace(string kategorie, string polozka)
         {
-            Assert.IsNotNull(_caughtException, "Ocekavana chyba validace {0} {1}", kategorie, polozka);
-            var chybaValidace = _caughtException as ValidationErrorException;
-            var chybaStavu = _caughtException as DomainErrorException;
-            if (chybaValidace != null)
-            {
-                Assert.AreEqual(polozka, chybaValidace.Field, "Polozka chyby validace");
-                Assert.AreEqual(kategorie, chybaValidace.Category, "Kategorie chyby validace");
-                Assert.AreEqual("", string.Join(", ", NewEventsTypeNames()), "Udalosti");
-            }
-            else if (chybaStavu != null)
-                Assert.Fail("Ocekavana chyba validace {0} {1}, nalezena chyba stavu {2} {3}",
-                    kategorie, polozka, chybaStavu.Category, chybaStavu.Field);
-            else
-                throw _caughtException.PreserveStackTrace();
+            Assert.AreEqual(CommandResultStatus.InvalidCommand, _commandResult.Status, "Status");
+            var chybaValidace = _commandResult.Errors.FirstOrDefault(c => c.Field == polozka) ?? _commandResult.Errors.FirstOrDefault();
+
+            Assert.IsNotNull(chybaValidace, "Ocekavana chyba");
+            Assert.AreEqual(polozka, chybaValidace.Field, "Polozka chyby validace");
+            Assert.AreEqual(kategorie, chybaValidace.Category, "Kategorie chyby validace");
+            Assert.AreEqual("", string.Join(", ", NewEventsTypeNames()), "Udalosti");
         }
 
         protected void ChybaStavu(string kategorie, string polozka)
         {
-            Assert.IsNotNull(_caughtException, "Ocekavana chyba stavu {0} {1}", kategorie, polozka);
-            var chybaStavu = _caughtException as DomainErrorException;
-            var chybaValidace = _caughtException as ValidationErrorException;
-            if (chybaStavu != null)
-            {
-                Assert.AreEqual(polozka, chybaStavu.Field, "Polozka chyby stavu");
-                Assert.AreEqual(kategorie, chybaStavu.Category, "Kategorie chyby stavu");
-                Assert.AreEqual("", string.Join(", ", NewEventsTypeNames()), "Udalosti");
-            }
-            else if (chybaValidace != null)
-                Assert.Fail("Ocekavana chyba stavu {0} {1}, nalezena chyba validace {2} {3}",
-                    kategorie, polozka, chybaValidace.Category, chybaValidace.Field);
-            else
-                throw _caughtException.PreserveStackTrace();
+            Assert.AreEqual(CommandResultStatus.WrongState, _commandResult.Status, "Status");
+            var chybaStavu = _commandResult.Errors.FirstOrDefault(c => c.Field == polozka) ?? _commandResult.Errors.FirstOrDefault();
+            
+            Assert.IsNotNull(chybaStavu, "Ocekavana chyba");
+            Assert.AreEqual(polozka, chybaStavu.Field, "Polozka chyby stavu");
+            Assert.AreEqual(kategorie, chybaStavu.Category, "Kategorie chyby stavu");
+            Assert.AreEqual("", string.Join(", ", NewEventsTypeNames()), "Udalosti");
         }
 
         protected void Given(Guid naradiId, params object[] events)
@@ -88,10 +77,16 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
 
         protected T NewEventOfType<T>()
         {
-            Assert.AreEqual(null, _caughtException, "Necekana chyba");
+            ExpectNoErrors();
             var evnt = _repository.NewEvents().OfType<T>().FirstOrDefault();
             Assert.IsNotNull(evnt, "Expected event {0}", typeof(T).Name);
             return evnt;
+        }
+
+        protected void ExpectNoErrors()
+        {
+            Assert.AreEqual(CommandResultStatus.Success, _commandResult.Status, "Status");
+            Assert.AreEqual(0, _commandResult.Errors.Count, "Errors.Count");
         }
 
         protected DateTime GetUtcTime()
@@ -128,8 +123,7 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
 
         private void ComputeEventCounts()
         {
-            if (_caughtException != null)
-                throw _caughtException.PreserveStackTrace();
+            ExpectNoErrors();
             if (_newEventCounts == null)
             {
                 _newEventCounts = _repository.NewEvents()

@@ -14,13 +14,23 @@ namespace ServiceLib
     }
     public interface ICommandSubscriptionManager
     {
-        void Register<T>(IProcess<T> handler);
+        void Register<T>(IProcessCommand<T> handler);
         IEnumerable<Type> GetHandledTypes();
         ICommandSubscription FindHandler(Type type);
     }
     public interface ISubscribeToCommandManager
     {
         void Subscribe(ICommandSubscriptionManager mgr);
+    }
+    public interface IEventSubscriptionManager
+    {
+        void Register<T>(IProcessEvent<T> handler);
+        IEnumerable<Type> GetHandledTypes();
+        IEventSubscription FindHandler(Type type);
+    }
+    public interface ISubscribeToEventManager
+    {
+        void Subscribe(IEventSubscriptionManager mgr);
     }
 
     public class SubscriptionManager : ISubscriptionManager
@@ -111,14 +121,14 @@ namespace ServiceLib
 
         private class Subscription<T> : ICommandSubscription
         {
-            private IProcess<T> _handler;
+            private IProcessCommand<T> _handler;
 
-            public Subscription(IProcess<T> handler)
+            public Subscription(IProcessCommand<T> handler)
             {
                 _handler = handler;
             }
 
-            public Task Handle(object command)
+            public Task<CommandResult> Handle(object command)
             {
                 return _handler.Handle((T)command);
             }
@@ -130,7 +140,7 @@ namespace ServiceLib
             _handlers = new Dictionary<Type, ICommandSubscription>();
         }
 
-        public void Register<T>(IProcess<T> handler)
+        public void Register<T>(IProcessCommand<T> handler)
         {
             _lock.EnterWriteLock();
             try
@@ -152,6 +162,77 @@ namespace ServiceLib
             try
             {
                 ICommandSubscription found;
+                _handlers.TryGetValue(type, out found);
+                return found;
+            }
+            finally
+            {
+                _lock.ExitReadLock();
+            }
+        }
+
+        public IEnumerable<Type> GetHandledTypes()
+        {
+            _lock.EnterReadLock();
+            try
+            {
+                return _handlers.Keys.ToList();
+            }
+            finally
+            {
+                _lock.ExitReadLock();
+            }
+        }
+    }
+
+    public class EventSubscriptionManager : IEventSubscriptionManager
+    {
+        private ReaderWriterLockSlim _lock;
+        private Dictionary<Type, IEventSubscription> _handlers;
+
+        private class Subscription<T> : IEventSubscription
+        {
+            private IProcessEvent<T> _handler;
+
+            public Subscription(IProcessEvent<T> handler)
+            {
+                _handler = handler;
+            }
+
+            public Task Handle(object evnt)
+            {
+                return _handler.Handle((T)evnt);
+            }
+        }
+
+        public EventSubscriptionManager()
+        {
+            _lock = new ReaderWriterLockSlim();
+            _handlers = new Dictionary<Type, IEventSubscription>();
+        }
+
+        public void Register<T>(IProcessEvent<T> handler)
+        {
+            _lock.EnterWriteLock();
+            try
+            {
+                var type = typeof(T);
+                if (_handlers.ContainsKey(type))
+                    throw new InvalidOperationException(string.Format("Type {0} is already registered", type.Name));
+                _handlers.Add(type, new Subscription<T>(handler));
+            }
+            finally
+            {
+                _lock.ExitWriteLock();
+            }
+        }
+
+        public IEventSubscription FindHandler(Type type)
+        {
+            _lock.EnterReadLock();
+            try
+            {
+                IEventSubscription found;
                 _handlers.TryGetValue(type, out found);
                 return found;
             }
