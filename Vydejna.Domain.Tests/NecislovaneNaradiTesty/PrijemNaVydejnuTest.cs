@@ -11,10 +11,9 @@ namespace Vydejna.Domain.Tests.NecislovaneNaradiTesty
         [TestMethod]
         public void CenaNesmiBytZaporna()
         {
-            var naradiId = Guid.NewGuid();
             Execute(new NecislovaneNaradiPrijmoutNaVydejnuCommand
             {
-                NaradiId = naradiId,
+                NaradiId = _naradiId,
                 Pocet = 7,
                 CenaNova = -3m,
                 KodDodavatele = "D58",
@@ -26,10 +25,9 @@ namespace Vydejna.Domain.Tests.NecislovaneNaradiTesty
         [TestMethod]
         public void PocetMusiBytKladny()
         {
-            var naradiId = Guid.NewGuid();
             Execute(new NecislovaneNaradiPrijmoutNaVydejnuCommand
             {
-                NaradiId = naradiId,
+                NaradiId = _naradiId,
                 Pocet = 0,
                 CenaNova = 40m,
                 KodDodavatele = "D58",
@@ -41,10 +39,9 @@ namespace Vydejna.Domain.Tests.NecislovaneNaradiTesty
         [TestMethod]
         public void ZPrikazuSeKopirujiPole()
         {
-            var naradiId = Guid.NewGuid();
             var cmd = new NecislovaneNaradiPrijmoutNaVydejnuCommand
             {
-                NaradiId = naradiId,
+                NaradiId = _naradiId,
                 Pocet = 7,
                 CenaNova = 40m,
                 KodDodavatele = "D58",
@@ -62,10 +59,9 @@ namespace Vydejna.Domain.Tests.NecislovaneNaradiTesty
         [TestMethod]
         public void CelkovaCena()
         {
-            var naradiId = Guid.NewGuid();
             var cmd = new NecislovaneNaradiPrijmoutNaVydejnuCommand
             {
-                NaradiId = naradiId,
+                NaradiId = _naradiId,
                 Pocet = 7,
                 CenaNova = 40m,
                 KodDodavatele = "D58",
@@ -80,10 +76,9 @@ namespace Vydejna.Domain.Tests.NecislovaneNaradiTesty
         [TestMethod]
         public void ZakladniGenerovaneUdaje()
         {
-            var naradiId = Guid.NewGuid();
             var cmd = new NecislovaneNaradiPrijmoutNaVydejnuCommand
             {
-                NaradiId = naradiId,
+                NaradiId = _naradiId,
                 Pocet = 7,
                 CenaNova = 40m,
                 KodDodavatele = "D58",
@@ -101,11 +96,10 @@ namespace Vydejna.Domain.Tests.NecislovaneNaradiTesty
         [TestMethod]
         public void PocetKusuNaUmisteni()
         {
-            var naradiId = Guid.NewGuid();
-            Given(naradiId, Prijate(3));
+            Prijate(3);
             var cmd = new NecislovaneNaradiPrijmoutNaVydejnuCommand
             {
-                NaradiId = naradiId,
+                NaradiId = _naradiId,
                 Pocet = 7,
                 CenaNova = 40m,
                 KodDodavatele = "D58",
@@ -120,10 +114,9 @@ namespace Vydejna.Domain.Tests.NecislovaneNaradiTesty
         [TestMethod]
         public void SpecifikacePouzitychKusu()
         {
-            var naradiId = Guid.NewGuid();
             var cmd = new NecislovaneNaradiPrijmoutNaVydejnuCommand
             {
-                NaradiId = naradiId,
+                NaradiId = _naradiId,
                 Pocet = 7,
                 CenaNova = 40m,
                 KodDodavatele = "D58",
@@ -140,10 +133,9 @@ namespace Vydejna.Domain.Tests.NecislovaneNaradiTesty
         [TestMethod]
         public void PriPrijmuBezSkladuJenZakladniUdalost()
         {
-            var naradiId = Guid.NewGuid();
             var cmd = new NecislovaneNaradiPrijmoutNaVydejnuCommand
             {
-                NaradiId = naradiId,
+                NaradiId = _naradiId,
                 Pocet = 7,
                 CenaNova = 40m,
                 KodDodavatele = "D58",
@@ -157,10 +149,9 @@ namespace Vydejna.Domain.Tests.NecislovaneNaradiTesty
         [TestMethod]
         public void PriPrijmuZeSkladuNavicUdalost()
         {
-            var naradiId = Guid.NewGuid();
             var cmd = new NecislovaneNaradiPrijmoutNaVydejnuCommand
             {
-                NaradiId = naradiId,
+                NaradiId = _naradiId,
                 Pocet = 7,
                 CenaNova = 40m,
                 KodDodavatele = "D58",
@@ -175,10 +166,9 @@ namespace Vydejna.Domain.Tests.NecislovaneNaradiTesty
         [TestMethod]
         public void UdalostZmenyNaSklade()
         {
-            var naradiId = Guid.NewGuid();
             var cmd = new NecislovaneNaradiPrijmoutNaVydejnuCommand
             {
-                NaradiId = naradiId,
+                NaradiId = _naradiId,
                 Pocet = 7,
                 CenaNova = 40m,
                 KodDodavatele = "D58",
@@ -186,7 +176,7 @@ namespace Vydejna.Domain.Tests.NecislovaneNaradiTesty
             };
             Execute(cmd);
             var udalost = NewEventOfType<NastalaPotrebaUpravitStavNaSkladeEvent>();
-            Assert.AreEqual(naradiId, udalost.NaradiId, "NaradiId");
+            Assert.AreEqual(_naradiId, udalost.NaradiId, "NaradiId");
             Assert.AreEqual(TypZmenyNaSklade.SnizitStav, udalost.TypZmeny, "TypZmeny");
             Assert.AreEqual(7, udalost.Hodnota, "Hodnota");
             Assert.AreEqual(2, udalost.Verze, "Verze");

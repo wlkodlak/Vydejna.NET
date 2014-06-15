@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using Vydejna.Contracts;
+using Vydejna.Domain.CislovaneNaradi;
 
 namespace Vydejna.Domain.Tests.NaradiObecneTesty
 {
@@ -65,20 +66,15 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
             Assert.AreEqual("", string.Join(", ", NewEventsTypeNames()), "Udalosti");
         }
 
-        protected void Given(Guid naradiId, params object[] events)
-        {
-            _repository.AddEvents(naradiId.ToId(), events);
-        }
-
         protected IList<string> NewEventsTypeNames()
         {
-            return _repository.NewEvents().Select(e => e.GetType().Name).ToList();
+            return _repository.AllNewEvents().Select(e => e.GetType().Name).ToList();
         }
 
         protected T NewEventOfType<T>()
         {
             ExpectNoErrors();
-            var evnt = _repository.NewEvents().OfType<T>().FirstOrDefault();
+            var evnt = _repository.AllNewEvents().OfType<T>().FirstOrDefault();
             Assert.IsNotNull(evnt, "Expected event {0}", typeof(T).Name);
             return evnt;
         }
@@ -87,6 +83,16 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
         {
             Assert.AreEqual(CommandResultStatus.Success, _commandResult.Status, "Status");
             Assert.AreEqual(0, _commandResult.Errors.Count, "Errors.Count");
+        }
+
+        protected void AllowOnlySave(Guid naradiId)
+        {
+            foreach (var id in _repository.SavedAggregateIds())
+            {
+                Assert.IsInstanceOfType(id, typeof(AggregateIdGuid), "Aggregate ID type");
+                var guid = ((AggregateIdGuid)id).Guid;
+                Assert.AreEqual(naradiId, guid, "Saved aggregate ID");
+            }
         }
 
         protected DateTime GetUtcTime()
@@ -126,7 +132,7 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
             ExpectNoErrors();
             if (_newEventCounts == null)
             {
-                _newEventCounts = _repository.NewEvents()
+                _newEventCounts = _repository.AllNewEvents()
                     .Select(e => e.GetType().Name)
                     .GroupBy(s => s)
                     .Select(g => new { g.Key, Count = g.Count() })

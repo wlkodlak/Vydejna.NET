@@ -117,6 +117,13 @@ namespace ServiceLib
                 bool aggregateSaved;
                 if (aggregate != null)
                 {
+                    if (!_aggregateId.Equals(aggregate.Id))
+                    {
+                        throw new InvalidOperationException(string.Format(
+                            "Saved aggregate has different ID ({0}) than original ({1})",
+                            aggregate.Id, _aggregateId));
+                    }
+
                     _stopwatch.Stop();
                     var newEvents = aggregate.GetChanges();
 

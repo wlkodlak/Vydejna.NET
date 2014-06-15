@@ -58,7 +58,7 @@ namespace ServiceLib
                 {
                     staged.InputString = string.Empty;
                 }
-                Logger.DebugFormat("[{0}] Received request {1} {2}, postdata: {2}",
+                Logger.DebugFormat("[{0}] Received request {1} {2}, postdata: {3}",
                     requestId, raw.Method, raw.Url, staged.InputString);
 
                 staged.InputSerializer = _picker.PickDeserializer(staged, _serializers, null);

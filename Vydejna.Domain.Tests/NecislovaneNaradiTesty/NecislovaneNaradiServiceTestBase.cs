@@ -1,4 +1,5 @@
 ﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
+using ServiceLib;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -28,8 +29,9 @@ namespace Vydejna.Domain.Tests.NecislovaneNaradiTesty
 
         protected override void Execute<T>(T cmd)
         {
-            Given(_naradiId, _given.ToArray());
+            _repository.AddEvents(_naradiId.ToId(), _given.ToArray());
             base.Execute<T>(cmd);
+            AllowOnlySave(_naradiId);
         }
 
         protected SkupinaNecislovanehoNaradiDto Kus(DateTime datum, decimal cena, char cerstvost, int pocet)

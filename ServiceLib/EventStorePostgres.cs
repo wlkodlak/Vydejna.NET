@@ -531,13 +531,21 @@ namespace ServiceLib
                 var count = (int)Math.Min(context.MaxCount, eventId - context.EventId);
                 if (count == 0)
                 {
-                    Logger.DebugFormat("GetAllEvents(eventId: {0}): zero MaxCount", context.EventId);
+                    if (context.Nowait)
+                    {
+                        Logger.DebugFormat("GetAllEvents(eventId: {0}): {1}",
+                            context.EventId,
+                            context.MaxCount == 0 ? "zero MaxCount" : "no events available");
+                    }
                     return new GetAllEventsResponse(null, Math.Min(context.EventId, eventId));
                 }
                 var events = GetEvents(conn, context.EventId, count);
                 if (events.Count == 0)
                 {
-                    Logger.DebugFormat("GetAllEvents(eventId: {0}): no events available", context.EventId);
+                    if (context.Nowait)
+                    {
+                        Logger.DebugFormat("GetAllEvents(eventId: {0}): no events available", context.EventId);
+                    }
                     return new GetAllEventsResponse(null, Math.Min(context.EventId, eventId));
                 }
                 else
@@ -703,7 +711,7 @@ namespace ServiceLib
                 }
                 if (maxCount == 0)
                     continue;
-                var taskQuery = _db.Query(GetAllEventsWorker, new WaitForEventsContext(null, Math.Max(lastKnownEventId, minEventId), maxCount, CancellationToken.None, true));
+                var taskQuery = _db.Query(GetAllEventsWorker, new WaitForEventsContext(null, Math.Max(lastKnownEventId, minEventId), maxCount, CancellationToken.None, false));
                 yield return taskQuery;
                 try
                 {

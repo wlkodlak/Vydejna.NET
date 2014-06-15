@@ -23,7 +23,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
         public void NoveNaradiNelzePouzit()
         {
             var naradi = Id("8394bb2a");
-            Given(naradi, EvtPrijato(naradi, 4));
+            Given(naradi, 4, EvtPrijato(naradi, 4));
             Execute(new CislovaneNaradiPredatKeSesrotovaniCommand
             {
                 NaradiId = naradi,
@@ -36,7 +36,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
         public void NeopravitelneNaradiZOpravyLzePouzit()
         {
             var naradi = Id("8394bb2a");
-            Given(naradi, EvtPrijato(naradi, 4), EvtOpraveno(naradi, 4, opraveno: StavNaradiPoOprave.Neopravitelne));
+            Given(naradi, 4, EvtPrijato(naradi, 4), EvtOpraveno(naradi, 4, opraveno: StavNaradiPoOprave.Neopravitelne));
             Execute(new CislovaneNaradiPredatKeSesrotovaniCommand
             {
                 NaradiId = naradi,
@@ -50,7 +50,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
         public void NaradiVeSrotuNelzePouzit()
         {
             var naradi = Id("8394bb2a");
-            Given(naradi, EvtPrijato(naradi, 4), EvtSrotovano(naradi, 4));
+            Given(naradi, 4, EvtPrijato(naradi, 4), EvtSrotovano(naradi, 4));
             Execute(new CislovaneNaradiPredatKeSesrotovaniCommand
             {
                 NaradiId = naradi,
@@ -63,7 +63,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
         public void VUdalostiOdpovidajiHodnotyZPrikazu()
         {
             var naradi = Id("8394bb2a");
-            Given(naradi, EvtPrijato(naradi, 4), EvtVydano(naradi, 4), EvtVraceno(naradi, 4, stav: StavNaradi.Neopravitelne, vada: "9"));
+            Given(naradi, 4, EvtPrijato(naradi, 4), EvtVydano(naradi, 4), EvtVraceno(naradi, 4, stav: StavNaradi.Neopravitelne, vada: "9"));
             var cmd = new CislovaneNaradiPredatKeSesrotovaniCommand
             {
                 NaradiId = naradi,
@@ -80,7 +80,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
         public void VUdalostiSeGenerujiAutomatickeHodnoty()
         {
             var naradi = Id("8394bb2a");
-            Given(naradi, 
+            Given(naradi, 4, 
                 EvtPrijato(naradi, 4), 
                 EvtVydano(naradi, 4), 
                 EvtVraceno(naradi, 4, stav: StavNaradi.Neopravitelne, vada: "9", cenaPo: 300m));

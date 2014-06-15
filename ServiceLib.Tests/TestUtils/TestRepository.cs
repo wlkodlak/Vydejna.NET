@@ -10,13 +10,15 @@ namespace ServiceLib.Tests.TestUtils
         where T : class, IEventSourcedAggregate, new()
     {
         private Dictionary<IAggregateId, List<object>> _allEvents;
-        private List<object> _newEvents;
+        private Dictionary<IAggregateId, List<object>> _newEvents;
+        private List<object> _allNewEvents;
         private bool _throwConcurrency;
 
         public TestRepository()
         {
             _allEvents = new Dictionary<IAggregateId, List<object>>();
-            _newEvents = new List<object>();
+            _newEvents = new Dictionary<IAggregateId, List<object>>();
+            _allNewEvents = new List<object>();
         }
 
         public void AddEvents(IAggregateId id, params object[] events)
@@ -32,9 +34,23 @@ namespace ServiceLib.Tests.TestUtils
             _throwConcurrency = true;
         }
 
-        public IList<object> NewEvents()
+        public IList<object> AllNewEvents()
         {
-            return _newEvents;
+            return _allNewEvents;
+        }
+
+        public IList<object> NewEvents(IAggregateId id)
+        {
+            List<object> newEvents;
+            if (_newEvents.TryGetValue(id, out newEvents))
+                return newEvents;
+            else
+                return new object[0];
+        }
+
+        public IList<IAggregateId> SavedAggregateIds()
+        {
+            return _newEvents.Keys.ToList();
         }
 
         public Task<T> Load(IAggregateId id)
@@ -62,13 +78,19 @@ namespace ServiceLib.Tests.TestUtils
                     var events = aggregate.GetChanges();
                     var id = aggregate.Id;
 
-                    List<object> all;
-                    if (!_allEvents.TryGetValue(id, out all))
-                        _allEvents[id] = all = new List<object>();
-                    all.AddRange(events);
-                    _newEvents.AddRange(events);
+                    List<object> allEvents;
+                    if (!_allEvents.TryGetValue(id, out allEvents))
+                        _allEvents[id] = allEvents = new List<object>();
+                    allEvents.AddRange(events);
 
-                    aggregate.CommitChanges(all.Count);
+                    List<object> newEvents;
+                    if (!_newEvents.TryGetValue(id, out newEvents))
+                        _newEvents[id] = newEvents = new List<object>();
+                    newEvents.AddRange(events);
+                    
+                    _allNewEvents.AddRange(events);
+
+                    aggregate.CommitChanges(allEvents.Count);
                     return TaskUtils.FromResult(true);
                 }
             }

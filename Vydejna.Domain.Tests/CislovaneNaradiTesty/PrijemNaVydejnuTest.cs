@@ -2,6 +2,7 @@
 using System;
 using Vydejna.Contracts;
 using Vydejna.Domain;
+using Vydejna.Domain.CislovaneNaradi;
 using Vydejna.Domain.ObecneNaradi;
 
 namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
@@ -41,7 +42,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
         public void CisloNaradiNesmiBytObsazeno()
         {
             var naradiId = new Guid("87228724-1111-1111-1111-222233334444");
-            Given(naradiId,
+            Given(naradiId, 1,
                 new CislovaneNaradiPrijatoNaVydejnuEvent
                 {
                     NaradiId = naradiId,

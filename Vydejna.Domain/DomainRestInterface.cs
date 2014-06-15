@@ -48,6 +48,10 @@ namespace Vydejna.Domain
                     result = new CommandResult(CommandResultStatus.InternalError,
                         task.Exception.InnerExceptions.Select(ex => new CommandError("", ex.GetType().Name, ex.Message)).ToList());
                 }
+                else if (!task.IsCanceled)
+                {
+                    result = task.Result;
+                }
             }
             else if (result == null)
             {

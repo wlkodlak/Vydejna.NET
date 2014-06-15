@@ -30,7 +30,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
         public void CenaNesmiBytZaporna()
         {
             var naradi = Id("8394bb2a");
-            Given(naradi,
+            Given(naradi, 4,
                 EvtPrijato(naradi, 4),
                 EvtVydano(naradi, 4),
                 EvtVraceno(naradi, 4, stav: StavNaradi.NutnoOpravit, vada: "2"),
@@ -53,7 +53,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
         public void NutneZadatObjednavku()
         {
             var naradi = Id("8394bb2a");
-            Given(naradi,
+            Given(naradi, 4,
                 EvtPrijato(naradi, 4),
                 EvtVydano(naradi, 4),
                 EvtVraceno(naradi, 4, stav: StavNaradi.NutnoOpravit, vada: "2"),
@@ -76,7 +76,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
         public void NutneZadatDodaciList()
         {
             var naradi = Id("8394bb2a");
-            Given(naradi,
+            Given(naradi, 4,
                 EvtPrijato(naradi, 4),
                 EvtVydano(naradi, 4),
                 EvtVraceno(naradi, 4, stav: StavNaradi.NutnoOpravit, vada: "2"),
@@ -99,7 +99,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
         public void NutneZadatDodavatele()
         {
             var naradi = Id("8394bb2a");
-            Given(naradi,
+            Given(naradi, 4,
                 EvtPrijato(naradi, 4),
                 EvtVydano(naradi, 4),
                 EvtVraceno(naradi, 4, stav: StavNaradi.NutnoOpravit, vada: "2"),
@@ -122,7 +122,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
         public void NutneZadatTypOpravy()
         {
             var naradi = Id("8394bb2a");
-            Given(naradi,
+            Given(naradi, 4,
                 EvtPrijato(naradi, 4),
                 EvtVydano(naradi, 4),
                 EvtVraceno(naradi, 4, stav: StavNaradi.NutnoOpravit, vada: "2"),
@@ -144,7 +144,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
         public void NutneZadatVysledekOpravy()
         {
             var naradi = Id("8394bb2a");
-            Given(naradi,
+            Given(naradi, 4,
                 EvtPrijato(naradi, 4),
                 EvtVydano(naradi, 4),
                 EvtVraceno(naradi, 4, stav: StavNaradi.NutnoOpravit, vada: "2"),
@@ -166,7 +166,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
         public void NaradiNaStejneObjednavceLzePouzit()
         {
             var naradi = Id("8394bb2a");
-            Given(naradi,
+            Given(naradi, 4,
                 EvtPrijato(naradi, 4),
                 EvtVydano(naradi, 4),
                 EvtVraceno(naradi, 4, stav: StavNaradi.NutnoOpravit, vada: "2"),
@@ -191,7 +191,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
         public void NaradiNaJineObjednavceJeNepouzitelne()
         {
             var naradi = Id("8394bb2a");
-            Given(naradi,
+            Given(naradi, 4,
                 EvtPrijato(naradi, 4),
                 EvtVydano(naradi, 4),
                 EvtVraceno(naradi, 4, stav: StavNaradi.NutnoOpravit, vada: "2"),
@@ -215,7 +215,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
         public void NaradiNaVydejneJeNepouzitelne()
         {
             var naradi = Id("8394bb2a");
-            Given(naradi,
+            Given(naradi, 4,
                 EvtPrijato(naradi, 4),
                 EvtVydano(naradi, 4),
                 EvtVraceno(naradi, 4, stav: StavNaradi.NutnoOpravit, vada: "2"));
@@ -238,7 +238,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
         public void VUdalostiOdpovidajiHodnotyZPrikazu()
         {
             var naradi = Id("8394bb2a");
-            Given(naradi,
+            Given(naradi, 4,
                 EvtPrijato(naradi, 4),
                 EvtVydano(naradi, 4),
                 EvtVraceno(naradi, 4, stav: StavNaradi.NutnoOpravit, vada: "2"),
@@ -271,7 +271,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
         public void JeMozneZiskatZOpravyNeopravitelneNaradi()
         {
             var naradi = Id("8394bb2a");
-            Given(naradi,
+            Given(naradi, 4,
                 EvtPrijato(naradi, 4),
                 EvtVydano(naradi, 4),
                 EvtVraceno(naradi, 4, stav: StavNaradi.NutnoOpravit, vada: "2"),
@@ -298,7 +298,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
         public void VUdalostiSeGenerujiAutomatickeHodnoty()
         {
             var naradi = Id("8394bb2a");
-            Given(naradi,
+            Given(naradi, 4,
                 EvtPrijato(naradi, 4),
                 EvtVydano(naradi, 4),
                 EvtVraceno(naradi, 4, stav: StavNaradi.NutnoOpravit, vada: "2"),

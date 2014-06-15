@@ -126,7 +126,7 @@ namespace Vydejna.Projections.NaradiNaVydejneReadModel
             yield return taskNaradi;
             var definice = taskNaradi.Result.Value;
 
-            var taskVydejna = _cacheVydejna.Get(                        DokumentNaradiNaVydejne(naradiId, stavNaradi),load => _repository.NacistUmistene(naradiId, stavNaradi));
+            var taskVydejna = _cacheVydejna.Get(DokumentNaradiNaVydejne(naradiId, stavNaradi), load => _repository.NacistUmistene(naradiId, stavNaradi));
             yield return taskVydejna;
             var verze = taskVydejna.Result.Version;
             var umistene = taskVydejna.Result.Value;
@@ -160,9 +160,13 @@ namespace Vydejna.Projections.NaradiNaVydejneReadModel
             }
             else if (pocetCelkem > 0)
             {
+                umistene = new NaradiNaVydejne();
+                umistene.NaradiId = naradiId;
+                umistene.StavNaradi = stavNaradi;
                 umistene.Vykres = definice.Vykres;
                 umistene.Rozmer = definice.Rozmer;
                 umistene.Druh = definice.Druh;
+                umistene.SeznamCislovanych = new List<int>();
                 if (cisloNaradi == 0)
                     umistene.PocetNecislovanych = pocetCelkem;
                 else

@@ -58,6 +58,7 @@
   </Choose>
   <ItemGroup>
     <Compile Include="CislovaneNaradiTesty\CislovaneNaradiServiceTestBase.cs" />
+    <Compile Include="ExterniCiselnikyTesty\DodaniExternihoCiselnikuTest.cs" />
     <Compile Include="NaradiObecneTesty\ObecneNaradiServiceTestBase.cs" />
     <Compile Include="CislovaneNaradiTesty\VydejDoSrotuTest.cs" />
     <Compile Include="CislovaneNaradiTesty\VydejNaOpravuTest.cs" />

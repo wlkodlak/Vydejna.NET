@@ -433,6 +433,7 @@ namespace ServiceLib
                                     while (retryIndex)
                                     {
                                         tran.Save("saveindex");
+                                        retryIndex = false;
                                         try
                                         {
                                             using (var cmd = conn.CreateCommand())

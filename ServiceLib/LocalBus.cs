@@ -109,7 +109,7 @@ namespace ServiceLib
                     else if (task.IsCanceled)
                         message.Response.TrySetCanceled();
                     else
-                        message.Response.TrySetResult(null);
+                        message.Response.TrySetResult(task.Result);
                 });
             }
         }

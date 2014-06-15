@@ -22,7 +22,13 @@ namespace Vydejna.Domain.NecislovaneNaradi
         {
             return new NecislovaneNaradiSnapshot_v1
             {
-                Version = CurrentVersion
+                Version = CurrentVersion,
+                Rozlozeni = _obsahUmistneni.Select(umisteni => new NecislovaneNaradiSnapshot_v1_Rozlozeni
+                {
+                    PocetCelkem = umisteni.Value.PocetCelkem, 
+                    Umisteni = umisteni.Key.Dto(),
+                    Skupiny = umisteni.Value.Obsah().Select(skupina => skupina.Dto()).ToList()
+                }).ToList()
             };
         }
 
@@ -62,6 +68,7 @@ namespace Vydejna.Domain.NecislovaneNaradi
 
         public void Execute(NecislovaneNaradiPrijmoutNaVydejnuCommand cmd, ITime time)
         {
+            SetGuid(cmd.NaradiId);
             var predchoziUmisteni = UmisteniNaradi.VeSkladu();
             var noveUmisteni = UmisteniNaradi.NaVydejne(StavNaradi.VPoradku);
             var evnt = new NecislovaneNaradiPrijatoNaVydejnuEvent
@@ -114,6 +121,7 @@ namespace Vydejna.Domain.NecislovaneNaradi
 
         public void Execute(NecislovaneNaradiVydatDoVyrobyCommand cmd, ITime time)
         {
+            SetGuid(cmd.NaradiId);
             var predchoziUmisteni = UmisteniNaradi.NaVydejne(StavNaradi.VPoradku);
             var noveUmisteni = UmisteniNaradi.NaPracovisti(cmd.KodPracoviste);
             var evnt = new NecislovaneNaradiVydanoDoVyrobyEvent
@@ -154,6 +162,7 @@ namespace Vydejna.Domain.NecislovaneNaradi
 
         public void Execute(NecislovaneNaradiPrijmoutZVyrobyCommand cmd, ITime time)
         {
+            SetGuid(cmd.NaradiId);
             var predchoziUmisteni = UmisteniNaradi.NaPracovisti(cmd.KodPracoviste);
             var noveUmisteni = UmisteniNaradi.NaVydejne(cmd.StavNaradi);
             var evnt = new NecislovaneNaradiPrijatoZVyrobyEvent
@@ -195,6 +204,7 @@ namespace Vydejna.Domain.NecislovaneNaradi
 
         public void Execute(NecislovaneNaradiPredatKOpraveCommand cmd, ITime time)
         {
+            SetGuid(cmd.NaradiId);
             var predchoziUmisteni = UmisteniNaradi.NaVydejne(StavNaradi.NutnoOpravit);
             var noveUmisteni = UmisteniNaradi.NaOprave(cmd.TypOpravy, cmd.KodDodavatele, cmd.Objednavka);
             var evnt = new NecislovaneNaradiPredanoKOpraveEvent
@@ -238,6 +248,7 @@ namespace Vydejna.Domain.NecislovaneNaradi
 
         public void Execute(NecislovaneNaradiPrijmoutZOpravyCommand cmd, ITime time)
         {
+            SetGuid(cmd.NaradiId);
             var stavNaradi = cmd.Opraveno == StavNaradiPoOprave.Neopravitelne ? StavNaradi.Neopravitelne : StavNaradi.VPoradku;
             char? cerstvost = cmd.Opraveno == StavNaradiPoOprave.Opraveno ? 'O' : 'P';
             var predchoziUmisteni = UmisteniNaradi.NaOprave(cmd.TypOpravy, cmd.KodDodavatele, cmd.Objednavka);
@@ -285,6 +296,7 @@ namespace Vydejna.Domain.NecislovaneNaradi
 
         public void Execute(NecislovaneNaradiPredatKeSesrotovaniCommand cmd, ITime time)
         {
+            SetGuid(cmd.NaradiId);
             var predchoziUmisteni = UmisteniNaradi.NaVydejne(StavNaradi.Neopravitelne);
             var noveUmisteni = UmisteniNaradi.VeSrotu();
             var evnt = new NecislovaneNaradiPredanoKeSesrotovaniEvent

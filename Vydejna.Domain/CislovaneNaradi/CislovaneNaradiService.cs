@@ -41,7 +41,8 @@ namespace Vydejna.Domain.CislovaneNaradi
 
         public Task<CommandResult> Handle(CislovaneNaradiPrijmoutNaVydejnuCommand message)
         {
-            return new EventSourcedServiceExecution<CislovaneNaradiAggregate>(_repository, message.NaradiId.ToId(), Logger)
+            return new EventSourcedServiceExecution<CislovaneNaradiAggregate>(
+                _repository, new CislovaneNaradiId(message.NaradiId, message.CisloNaradi), Logger)
                 .Validate(() => _validator.Validace(message))
                 .OnRequest(agg => agg.Execute(message, _time))
                 .Execute();
@@ -49,7 +50,8 @@ namespace Vydejna.Domain.CislovaneNaradi
 
         public Task<CommandResult> Handle(CislovaneNaradiVydatDoVyrobyCommand message)
         {
-            return new EventSourcedServiceExecution<CislovaneNaradiAggregate>(_repository, message.NaradiId.ToId(), Logger)
+            return new EventSourcedServiceExecution<CislovaneNaradiAggregate>(
+                _repository, new CislovaneNaradiId(message.NaradiId, message.CisloNaradi), Logger)
                 .Validate(() => _validator.Validace(message))
                 .OnRequest(agg => agg.Execute(message, _time))
                 .Execute();
@@ -57,7 +59,8 @@ namespace Vydejna.Domain.CislovaneNaradi
 
         public Task<CommandResult> Handle(CislovaneNaradiPrijmoutZVyrobyCommand message)
         {
-            return new EventSourcedServiceExecution<CislovaneNaradiAggregate>(_repository, message.NaradiId.ToId(), Logger)
+            return new EventSourcedServiceExecution<CislovaneNaradiAggregate>(
+                _repository, new CislovaneNaradiId(message.NaradiId, message.CisloNaradi), Logger)
                 .Validate(() => _validator.Validace(message))
                 .OnRequest(agg => agg.Execute(message, _time))
                 .Execute();
@@ -65,7 +68,8 @@ namespace Vydejna.Domain.CislovaneNaradi
 
         public Task<CommandResult> Handle(CislovaneNaradiPredatKOpraveCommand message)
         {
-            return new EventSourcedServiceExecution<CislovaneNaradiAggregate>(_repository, message.NaradiId.ToId(), Logger)
+            return new EventSourcedServiceExecution<CislovaneNaradiAggregate>(
+                _repository, new CislovaneNaradiId(message.NaradiId, message.CisloNaradi), Logger)
                 .Validate(() => _validator.Validace(message, _time))
                 .OnRequest(agg => agg.Execute(message, _time))
                 .Execute();
@@ -73,7 +77,8 @@ namespace Vydejna.Domain.CislovaneNaradi
 
         public Task<CommandResult> Handle(CislovaneNaradiPrijmoutZOpravyCommand message)
         {
-            return new EventSourcedServiceExecution<CislovaneNaradiAggregate>(_repository, message.NaradiId.ToId(), Logger)
+            return new EventSourcedServiceExecution<CislovaneNaradiAggregate>(
+                _repository, new CislovaneNaradiId(message.NaradiId, message.CisloNaradi), Logger)
                 .Validate(() => _validator.Validace(message))
                 .OnRequest(agg => agg.Execute(message, _time))
                 .Execute();
@@ -81,7 +86,8 @@ namespace Vydejna.Domain.CislovaneNaradi
 
         public Task<CommandResult> Handle(CislovaneNaradiPredatKeSesrotovaniCommand message)
         {
-            return new EventSourcedServiceExecution<CislovaneNaradiAggregate>(_repository, message.NaradiId.ToId(), Logger)
+            return new EventSourcedServiceExecution<CislovaneNaradiAggregate>(
+                _repository, new CislovaneNaradiId(message.NaradiId, message.CisloNaradi), Logger)
                 .Validate(() => _validator.Validace(message))
                 .OnRequest(agg => agg.Execute(message, _time))
                 .Execute();

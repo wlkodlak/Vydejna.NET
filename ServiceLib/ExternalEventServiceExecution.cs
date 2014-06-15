@@ -77,6 +77,7 @@ namespace ServiceLib
                 _logger.InfoFormat("Events {0} saved in {1} ms", 
                     string.Join(", ", _events.Select(e => e.GetType().Name)), 
                     _stopwatch.ElapsedMilliseconds);
+                yield return CommandResult.TaskOk;
             }
             finally
             {

@@ -93,7 +93,7 @@ namespace ServiceLib
         {
             try
             {
-                Logger.DebugFormat("Getting connection to {0} ({1} concurrent workers)", 
+                Logger.TraceFormat("Getting connection to {0} ({1} concurrent workers)", 
                     _logName, Thread.VolatileRead(ref _concurrentWorkers));
                 conn.Open();
             }

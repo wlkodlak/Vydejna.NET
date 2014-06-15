@@ -13,6 +13,11 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
             return new CislovaneNaradiService(_repository, _time);
         }
 
+        protected void Given(Guid naradiId, int cisloNaradi, params object[] events)
+        {
+            _repository.AddEvents(new CislovaneNaradiId(naradiId, cisloNaradi), events);
+        }
+
         protected CislovaneNaradiPrijatoNaVydejnuEvent EvtPrijato(Guid naradi, int cisloNaradi,
            string kodDodavatele = "D43", decimal cena = 283m)
         {

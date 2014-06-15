@@ -24,6 +24,7 @@ using Vydejna.Projections.SeznamNaradiReadModel;
 using Vydejna.Projections.SeznamPracovistReadModel;
 using Vydejna.Projections.SeznamVadReadModel;
 using System.Threading;
+using Vydejna.Domain.NecislovaneNaradi;
 
 namespace Vydejna.Server
 {
@@ -189,6 +190,7 @@ namespace Vydejna.Server
 
             new DefinovaneNaradiService(new DefinovaneNaradiRepository(_eventStore, "definovane", _eventSerializer)).Subscribe(_mainBus);
             new CislovaneNaradiService(new CislovaneNaradiRepository(_eventStore, "cislovane", _eventSerializer), _time).Subscribe(_mainBus);
+            new NecislovaneNaradiService(new NecislovaneNaradiRepository(_eventStore, "necislovane", _eventSerializer), _time).Subscribe(_mainBus);
             new ExterniCiselnikyService(new ExternalEventRepository(_eventStore, "externi-", _eventSerializer)).Subscribe(_mainBus);
             new UnikatnostNaradiService(new UnikatnostNaradiRepository(_eventStore, "unikatnost", _eventSerializer)).Subscribe(_mainBus);
 

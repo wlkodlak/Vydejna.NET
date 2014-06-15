@@ -37,7 +37,14 @@ namespace ServiceLib
 
         public static Task<MemoryCacheItem<TOut>> Transform<TIn, TOut>(this Task<MemoryCacheItem<TIn>> inputTask, Func<TIn, TOut> tranformer)
         {
-            return inputTask.ContinueWith(task => new MemoryCacheItem<TOut>(inputTask.Result.Version, tranformer(inputTask.Result.Value)));
+            return inputTask.ContinueWith(task =>
+            {
+                var result = task.Result;
+                if (result != null)
+                    return new MemoryCacheItem<TOut>(result.Version, tranformer(result.Value));
+                else
+                    return null;
+            });
         }
 
         public static Task<MemoryCacheItem<TOut>> ToMemoryCacheItem<TOut>(this Task<DocumentStoreFoundDocument> inputTask, Func<string, TOut> deserializer)
@@ -58,7 +65,7 @@ namespace ServiceLib
 
         public static Task<T> ExtractValue<T>(this Task<MemoryCacheItem<T>> inputTask)
         {
-            return inputTask.ContinueWith(task => task.Result.Value);
+            return inputTask.ContinueWith(task => task.Result == null ? default(T) : task.Result.Value);
         }
     }
 

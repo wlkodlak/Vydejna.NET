@@ -28,7 +28,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
         public void CenaNesmiBytZaporna()
         {
             var naradi = Id("8394bb2a");
-            Given(naradi, EvtPrijato(naradi, 4), EvtVydano(naradi, 4), EvtVraceno(naradi, 4, stav: StavNaradi.NutnoOpravit, vada: "9"));
+            Given(naradi, 4, EvtPrijato(naradi, 4), EvtVydano(naradi, 4), EvtVraceno(naradi, 4, stav: StavNaradi.NutnoOpravit, vada: "9"));
             Execute(new CislovaneNaradiPredatKOpraveCommand
             {
                 NaradiId = Id("8394bb2a"),
@@ -46,7 +46,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
         public void NutneZadatObjednavku()
         {
             var naradi = Id("8394bb2a");
-            Given(naradi, EvtPrijato(naradi, 4), EvtVydano(naradi, 4), EvtVraceno(naradi, 4, stav: StavNaradi.NutnoOpravit, vada: "9"));
+            Given(naradi, 4, EvtPrijato(naradi, 4), EvtVydano(naradi, 4), EvtVraceno(naradi, 4, stav: StavNaradi.NutnoOpravit, vada: "9"));
             Execute(new CislovaneNaradiPredatKOpraveCommand
             {
                 NaradiId = Id("8394bb2a"),
@@ -64,7 +64,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
         public void NutneZadatDodavatele()
         {
             var naradi = Id("8394bb2a");
-            Given(naradi, EvtPrijato(naradi, 4), EvtVydano(naradi, 4), EvtVraceno(naradi, 4, stav: StavNaradi.NutnoOpravit, vada: "9"));
+            Given(naradi, 4, EvtPrijato(naradi, 4), EvtVydano(naradi, 4), EvtVraceno(naradi, 4, stav: StavNaradi.NutnoOpravit, vada: "9"));
             Execute(new CislovaneNaradiPredatKOpraveCommand
             {
                 NaradiId = Id("8394bb2a"),
@@ -82,7 +82,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
         public void TerminNesmiBytVMinulosti()
         {
             var naradi = Id("8394bb2a");
-            Given(naradi, EvtPrijato(naradi, 4), EvtVydano(naradi, 4), EvtVraceno(naradi, 4, stav: StavNaradi.NutnoOpravit, vada: "9"));
+            Given(naradi, 4, EvtPrijato(naradi, 4), EvtVydano(naradi, 4), EvtVraceno(naradi, 4, stav: StavNaradi.NutnoOpravit, vada: "9"));
             Execute(new CislovaneNaradiPredatKOpraveCommand
             {
                 NaradiId = Id("8394bb2a"),
@@ -100,7 +100,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
         public void NutneZadatTypOpravy()
         {
             var naradi = Id("8394bb2a");
-            Given(naradi, EvtPrijato(naradi, 4), EvtVydano(naradi, 4), EvtVraceno(naradi, 4, stav: StavNaradi.NutnoOpravit, vada: "9"));
+            Given(naradi, 4, EvtPrijato(naradi, 4), EvtVydano(naradi, 4), EvtVraceno(naradi, 4, stav: StavNaradi.NutnoOpravit, vada: "9"));
             Execute(new CislovaneNaradiPredatKOpraveCommand
             {
                 NaradiId = Id("8394bb2a"),
@@ -117,7 +117,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
         public void NaradiUrceneProOpravuLzePouzitProReklamaci()
         {
             var naradi = Id("8394bb2a");
-            Given(naradi, EvtPrijato(naradi, 4), EvtVydano(naradi, 4), EvtVraceno(naradi, 4, stav: StavNaradi.NutnoOpravit, vada: "9"));
+            Given(naradi, 4, EvtPrijato(naradi, 4), EvtVydano(naradi, 4), EvtVraceno(naradi, 4, stav: StavNaradi.NutnoOpravit, vada: "9"));
             Execute(new CislovaneNaradiPredatKOpraveCommand
             {
                 NaradiId = Id("8394bb2a"),
@@ -136,7 +136,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
         public void NaradiVPoradkuNelzePoslatNaOpravu()
         {
             var naradi = Id("8394bb2a");
-            Given(naradi, EvtPrijato(naradi, 4), EvtVydano(naradi, 4), EvtVraceno(naradi, 4, stav: StavNaradi.VPoradku, vada: null));
+            Given(naradi, 4, EvtPrijato(naradi, 4), EvtVydano(naradi, 4), EvtVraceno(naradi, 4, stav: StavNaradi.VPoradku, vada: null));
             Execute(new CislovaneNaradiPredatKOpraveCommand
             {
                 NaradiId = Id("8394bb2a"),
@@ -154,7 +154,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
         public void VUdalostiOdpovidajiHodnotyZPrikazu()
         {
             var naradi = Id("8394bb2a");
-            Given(naradi, EvtPrijato(naradi, 4), EvtVydano(naradi, 4), EvtVraceno(naradi, 4, stav: StavNaradi.NutnoOpravit, vada: "9"));
+            Given(naradi, 4, EvtPrijato(naradi, 4), EvtVydano(naradi, 4), EvtVraceno(naradi, 4, stav: StavNaradi.NutnoOpravit, vada: "9"));
             var cmd = new CislovaneNaradiPredatKOpraveCommand
             {
                 NaradiId = Id("8394bb2a"),
@@ -181,7 +181,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
         public void VUdalostiSeGenerujiAutomatickeHodnoty()
         {
             var naradi = Id("8394bb2a");
-            Given(naradi, EvtPrijato(naradi, 4), EvtVydano(naradi, 4), EvtVraceno(naradi, 4, stav: StavNaradi.NutnoOpravit, vada: "9", cenaPo: 240m));
+            Given(naradi, 4, EvtPrijato(naradi, 4), EvtVydano(naradi, 4), EvtVraceno(naradi, 4, stav: StavNaradi.NutnoOpravit, vada: "9", cenaPo: 240m));
             var cmd = new CislovaneNaradiPredatKOpraveCommand
             {
                 NaradiId = Id("8394bb2a"),

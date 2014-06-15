@@ -27,7 +27,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
         public void CenaNesmiBytZaporna()
         {
             var naradi = Id("8394bb2a");
-            Given(naradi, EvtPrijato(naradi, 4));
+            Given(naradi, 4, EvtPrijato(naradi, 4));
             Execute(new CislovaneNaradiPrijmoutZVyrobyCommand
             {
                 NaradiId = naradi,
@@ -44,7 +44,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
         public void KodPracovisteNesmiChybet()
         {
             var naradi = Id("8394bb2a");
-            Given(naradi, EvtPrijato(naradi, 4));
+            Given(naradi, 4, EvtPrijato(naradi, 4));
             Execute(new CislovaneNaradiPrijmoutZVyrobyCommand
             {
                 NaradiId = naradi,
@@ -61,7 +61,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
         public void UNaradiVPoradkuNesmiBytVada()
         {
             var naradi = Id("8394bb2a");
-            Given(naradi, EvtPrijato(naradi, 4));
+            Given(naradi, 4, EvtPrijato(naradi, 4));
             Execute(new CislovaneNaradiPrijmoutZVyrobyCommand
             {
                 NaradiId = naradi,
@@ -78,7 +78,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
         public void UPozkozenehoNaradiNesmiChybetVada()
         {
             var naradi = Id("8394bb2a");
-            Given(naradi, EvtPrijato(naradi, 4));
+            Given(naradi, 4, EvtPrijato(naradi, 4));
             Execute(new CislovaneNaradiPrijmoutZVyrobyCommand
             {
                 NaradiId = naradi,
@@ -95,7 +95,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
         public void MusiBytUvedenStavNaradiPriVraceni()
         {
             var naradi = Id("8394bb2a");
-            Given(naradi, EvtPrijato(naradi, 4));
+            Given(naradi, 4, EvtPrijato(naradi, 4));
             Execute(new CislovaneNaradiPrijmoutZVyrobyCommand
             {
                 NaradiId = naradi,
@@ -111,7 +111,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
         public void NaradiNaSpravnemPracovistiLzePouzit()
         {
             var naradi = Id("8394bb2a");
-            Given(naradi, EvtPrijato(naradi, 4), EvtVydano(naradi, 4, pracoviste: "09842333"));
+            Given(naradi, 4, EvtPrijato(naradi, 4), EvtVydano(naradi, 4, pracoviste: "09842333"));
             Execute(new CislovaneNaradiPrijmoutZVyrobyCommand
             {
                 NaradiId = naradi,
@@ -129,7 +129,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
         public void NaradiNaJinemPracovistiNelzePouzit()
         {
             var naradi = Id("8394bb2a");
-            Given(naradi, EvtPrijato(naradi, 4), EvtVydano(naradi, 4, "99999999"));
+            Given(naradi, 4, EvtPrijato(naradi, 4), EvtVydano(naradi, 4, "99999999"));
             Execute(new CislovaneNaradiPrijmoutZVyrobyCommand
             {
                 NaradiId = naradi,
@@ -146,7 +146,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
         public void NevydaneNaradiNelzePouzit()
         {
             var naradi = Id("8394bb2a");
-            Given(naradi, EvtPrijato(naradi, 4));
+            Given(naradi, 4, EvtPrijato(naradi, 4));
             Execute(new CislovaneNaradiPrijmoutZVyrobyCommand
             {
                 NaradiId = naradi,
@@ -163,7 +163,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
         public void VUdalostiOdpovidajiHodnotyZPrikazu()
         {
             var naradi = Id("8394bb2a");
-            Given(naradi, EvtPrijato(naradi, 4), EvtVydano(naradi, 4, pracoviste: "09842333"));
+            Given(naradi, 4, EvtPrijato(naradi, 4), EvtVydano(naradi, 4, pracoviste: "09842333"));
             var cmd = new CislovaneNaradiPrijmoutZVyrobyCommand
             {
                 NaradiId = naradi,
@@ -188,7 +188,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
         public void VUdalostiSeGenerujiAutomatickeHodnoty()
         {
             var naradi = Id("8394bb2a");
-            Given(naradi, EvtPrijato(naradi, 4), EvtVydano(naradi, 4, pracoviste: "09842333", cenaPo: 120m));
+            Given(naradi, 4, EvtPrijato(naradi, 4), EvtVydano(naradi, 4, pracoviste: "09842333", cenaPo: 120m));
             var cmd = new CislovaneNaradiPrijmoutZVyrobyCommand
             {
                 NaradiId = naradi,
