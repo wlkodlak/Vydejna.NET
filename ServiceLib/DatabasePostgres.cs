@@ -21,6 +21,7 @@ namespace ServiceLib
         private readonly string _logName;
         private static readonly ILog Logger = LogManager.GetLogger("ServiceLib.Database");
         private int _concurrentWorkers;
+        private TaskScheduler _scheduler;
 
         public const string ConnectionNotification = "__CONNECTION__";
 
@@ -36,14 +37,26 @@ namespace ServiceLib
             _notifications.Start();
         }
 
+        public DatabasePostgres UseScheduler(TaskScheduler scheduler)
+        {
+            _scheduler = scheduler;
+            return this;
+        }
+
         public Task Execute(Action<NpgsqlConnection, object> handler, object context)
         {
-            return Task.Factory.StartNew(ExecuteWorkerVoid, Tuple.Create(handler, context));
+            var task = new Task(ExecuteWorkerVoid, Tuple.Create(handler, context));
+            var scheduler = _scheduler ?? TaskScheduler.Current;
+            task.Start(scheduler);
+            return task;
         }
 
         public Task<T> Query<T>(Func<NpgsqlConnection, object, T> handler, object context)
         {
-            return Task.Factory.StartNew<T>(ExecuteWorkerFunc<T>, Tuple.Create(handler, context));
+            var task = new Task<T>(ExecuteWorkerFunc<T>, Tuple.Create(handler, context));
+            var scheduler = _scheduler ?? TaskScheduler.Current;
+            task.Start(scheduler);
+            return task;
         }
 
         public void ExecuteSync(Action<NpgsqlConnection> handler)

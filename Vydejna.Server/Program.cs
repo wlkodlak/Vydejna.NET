@@ -44,6 +44,7 @@ namespace Vydejna.Server
         private bool _running;
         private Dictionary<string, CommandInfo> _consoleCommands;
         private QueuedBus _mainBus;
+        private ThreadedTaskScheduler _scheduler;
 
         public Program()
         {
@@ -140,9 +141,11 @@ namespace Vydejna.Server
 
             _time = new RealTime();
             _disposables = new List<IDisposable>();
+            _scheduler = new ThreadedTaskScheduler();
 
             _mainBus = new QueuedBus(new SubscriptionManager(), "MainBus");
             var postgres = new DatabasePostgres(_postgresConnectionString, _time);
+            postgres.UseScheduler(_scheduler);
             _disposables.Add(postgres);
 
             if (_multiNode == "false")
