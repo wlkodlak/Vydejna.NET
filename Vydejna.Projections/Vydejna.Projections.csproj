@@ -46,6 +46,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="DetailNaradiProjection.cs" />
+    <Compile Include="HistorieNaradiProjection.cs" />
     <Compile Include="IndexObjednavekProjection.cs" />
     <Compile Include="NaradiNaObjednavceProjection.cs" />
     <Compile Include="NaradiNaPracovistiProjection.cs" />
@@ -61,6 +62,10 @@
     <Compile Include="SeznamVadProjection.cs" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\Npgsql\Npgsql\Npgsql.csproj">
+      <Project>{9d13b739-62b1-4190-b386-7a9547304eb3}</Project>
+      <Name>Npgsql</Name>
+    </ProjectReference>
     <ProjectReference Include="..\ServiceLib\ServiceLib.csproj">
       <Project>{8cb4d646-008c-4e91-b860-c32e2db195dd}</Project>
       <Name>ServiceLib</Name>

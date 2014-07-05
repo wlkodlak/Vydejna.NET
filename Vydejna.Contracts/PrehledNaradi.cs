@@ -97,6 +97,57 @@ namespace Vydejna.Contracts
         public string KodVady { get; set; }
         public string NazevVady { get; set; }
     }
+    public enum HistorieNaradiTypFiltru
+    {
+        Vsechno,
+        CislovaneNaradi,
+        Objednavka,
+        Pracoviste,
+        Naradi
+    }
+    public class HistorieNaradiRequest
+    {
+        public HistorieNaradiTypFiltru TypFiltru { get; set; }
+        public Guid? NaradiId { get; set; }
+        public DateTime? DatumOd { get; set; }
+        public DateTime? DatumDo { get; set; }
+        public string KodDodavatele { get; set; }
+        public string CisloObjednavky { get; set; }
+        public string KodPracoviste { get; set; }
+        public bool PouzeVydejeDoVyroby { get; set; }
+        public int? CisloNaradi { get; set; }
+        public int Stranka { get; set; }
+    }
+    public class HistorieNaradiResponse
+    {
+        public HistorieNaradiRequest Filtr { get; set; }
+        public int PocetCelkem { get; set; }
+        public int PocetStranek { get; set; }
+        public List<HistorieNaradiOperace> SeznamOperaci { get; set; }
+    }
+    public class HistorieNaradiOperace
+    {
+        public Guid EventId { get; set; }
+        public DateTime Datum { get; set; }
+        public int? CisloNaradi { get; set; }
+        public int Pocet { get; set; }
+        public Guid NaradiId { get; set; }
+        public string Vykres { get; set; }
+        public string Rozmer { get; set; }
+        public string KodPracoviste { get; set; }
+        public string NazevPracoviste { get; set; }
+        public string KodDodavatele { get; set; }
+        public string NazevDodavatele { get; set; }
+        public string CisloObjednavky { get; set; }
+        public string TypUdalosti { get; set; }
+        public string NazevOperace { get; set; }
+        public string KodVady { get; set; }
+        public string NazevVady { get; set; }
+        public StavNaradi StavNaradi { get; set; }
+        public decimal? PuvodniCelkovaCena { get; set; }
+        public decimal? NovaCelkovaCena { get; set; }
+        public bool Stornovano { get; set; }
+    }
 
     public class PrehledNaradiTypeMapping : IRegisterTypes
     {
@@ -104,6 +155,7 @@ namespace Vydejna.Contracts
         {
             mapper.Register<PrehledNaradiResponse>();
             mapper.Register<DetailNaradiResponse>();
+            mapper.Register<HistorieNaradiResponse>();
         }
     }
 }

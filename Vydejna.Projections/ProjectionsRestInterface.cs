@@ -1,5 +1,6 @@
 ﻿using ServiceLib;
 using System;
+using System.Globalization;
 using System.Threading.Tasks;
 using Vydejna.Contracts;
 
@@ -21,16 +22,20 @@ namespace Vydejna.Projections
             config.Route("seznamnaradi/prehled").To(PrehledNaradi);
             config.Route("seznamnaradi/navydejne").To(NaradiNaVydejne);
             config.Route("seznamnaradi/overitunikatnost").To(OveritUnikatnost);
+            config.Route("seznamnaradi/historie").To(HistorieNaradiVsechno);
 
             config.Route("cislovane/prehled").To(PrehledCislovaneho);
+            config.Route("cislovane/historie").To(HistorieNaradiCislovane);
 
             config.Route("objednavky/najit").To(NajitObjednavku);
             config.Route("objednavky/dodacilist").To(NajitDodaciList);
             config.Route("objednavky/naradi").To(NaradiNaObjednavce);
             config.Route("objednavky/prehled").To(PrehledObjednavek);
+            config.Route("objednavky/historie").To(HistorieNaradiObjednavky);
 
             config.Route("pracoviste/seznam").To(SeznamPracovist);
             config.Route("pracoviste/naradi").To(NaradiNaPracovisti);
+            config.Route("pracoviste/historie").To(HistorieNaradiPracoviste);
 
             config.Route("dodavatele/seznam").To(SeznamDodavatelu);
 
@@ -246,6 +251,91 @@ namespace Vydejna.Projections
             {
                 return TaskUtils.FromError<object>(ex);
             }
+        }
+
+        public Task HistorieNaradiVsechno(IHttpServerStagedContext ctx)
+        {
+            try
+            {
+                // seznamnaradi/historie
+                var request = new HistorieNaradiRequest();
+                request.TypFiltru = HistorieNaradiTypFiltru.Vsechno;
+                request.DatumOd = ctx.Parameter("datumod").As(ParseDate).Default(DateTime.MinValue).Get();
+                request.DatumDo = ctx.Parameter("datumod").As(ParseDate).Default(DateTime.MaxValue).Get();
+                request.PouzeVydejeDoVyroby = ctx.Parameter("jenvydeje").AsString().Default("false").Get() == "true";
+                request.NaradiId = ctx.Parameter("naradi").AsGuid().Default(Guid.Empty).Get();
+                request.Stranka = ctx.Parameter("stranka").AsInteger().Default(1).Get();
+                if (request.NaradiId.HasValue && request.NaradiId.Value != Guid.Empty)
+                    request.TypFiltru = HistorieNaradiTypFiltru.Naradi;
+                return _bus.SendQuery<HistorieNaradiRequest, HistorieNaradiResponse>(request).ContinueWith(task => Finish(task, ctx));
+            }
+            catch (Exception ex)
+            {
+                return TaskUtils.FromError<object>(ex);
+            }
+        }
+
+        public Task HistorieNaradiCislovane(IHttpServerStagedContext ctx)
+        {
+            try
+            {
+                // cislovane/historie
+                var request = new HistorieNaradiRequest();
+                request.TypFiltru = HistorieNaradiTypFiltru.CislovaneNaradi;
+                request.CisloNaradi = ctx.Parameter("cisloNaradi").AsInteger().Mandatory().Get();
+                request.DatumOd = ctx.Parameter("datumod").As(ParseDate).Default(DateTime.MinValue).Get();
+                request.DatumDo = ctx.Parameter("datumod").As(ParseDate).Default(DateTime.MaxValue).Get();
+                request.Stranka = ctx.Parameter("stranka").AsInteger().Default(1).Get();
+                return _bus.SendQuery<HistorieNaradiRequest, HistorieNaradiResponse>(request).ContinueWith(task => Finish(task, ctx));
+            }
+            catch (Exception ex)
+            {
+                return TaskUtils.FromError<object>(ex);
+            }
+        }
+
+        public Task HistorieNaradiPracoviste(IHttpServerStagedContext ctx)
+        {
+            try
+            {
+                // historie/seznam
+                var request = new HistorieNaradiRequest();
+                request.TypFiltru = HistorieNaradiTypFiltru.Pracoviste;
+                request.DatumOd = ctx.Parameter("datumod").As(ParseDate).Default(DateTime.MinValue).Get();
+                request.DatumDo = ctx.Parameter("datumod").As(ParseDate).Default(DateTime.MaxValue).Get();
+                request.KodPracoviste = ctx.Parameter("pracoviste").AsString().Mandatory().Get();
+                request.Stranka = ctx.Parameter("stranka").AsInteger().Default(1).Get();
+                return _bus.SendQuery<HistorieNaradiRequest, HistorieNaradiResponse>(request).ContinueWith(task => Finish(task, ctx));
+            }
+            catch (Exception ex)
+            {
+                return TaskUtils.FromError<object>(ex);
+            }
+        }
+
+        public Task HistorieNaradiObjednavky(IHttpServerStagedContext ctx)
+        {
+            try
+            {
+                // objednavky/historie
+                var request = new HistorieNaradiRequest();
+                request.TypFiltru = HistorieNaradiTypFiltru.Objednavka;
+                request.DatumOd = ctx.Parameter("datumod").As(ParseDate).Default(DateTime.MinValue).Get();
+                request.DatumDo = ctx.Parameter("datumod").As(ParseDate).Default(DateTime.MaxValue).Get();
+                request.KodDodavatele = ctx.Parameter("dodavatel").AsString().Mandatory().Get();
+                request.CisloObjednavky = ctx.Parameter("objednavka").AsString().Mandatory().Get();
+                request.Stranka = ctx.Parameter("stranka").AsInteger().Default(1).Get();
+                return _bus.SendQuery<HistorieNaradiRequest, HistorieNaradiResponse>(request).ContinueWith(task => Finish(task, ctx));
+            }
+            catch (Exception ex)
+            {
+                return TaskUtils.FromError<object>(ex);
+            }
+        }
+
+        private DateTime ParseDate(string input)
+        {
+            return DateTime.ParseExact(input, "yyyy-MM-dd", CultureInfo.InvariantCulture);
         }
 
         private void Finish<T>(Task<T> task, IHttpServerStagedContext ctx)
