@@ -125,10 +125,10 @@ namespace Vydejna.Projections.HistorieNaradiReadModel
             }
             naradi.Vykres = command.Vykres;
             naradi.Rozmer = command.Rozmer;
-            _cacheNaradi.Insert(klicCache, verzeNaradi, naradi);
 
             var taskUlozeni = _dbPomocne.UlozitNaradi(verzeNaradi, naradi);
             yield return taskUlozeni;
+            _cacheNaradi.Insert(klicCache, taskUlozeni.Result, naradi);
         }
 
         public Task Handle(DefinovanDodavatelEvent command)
@@ -147,10 +147,10 @@ namespace Vydejna.Projections.HistorieNaradiReadModel
                 dodavatele.IndexDodavatelu[command.Kod] = dodavatel = new HistorieNaradiDataDodavatel();
             dodavatel.KodDodavatele = command.Kod;
             dodavatel.NazevDodavatele = command.Nazev;
-            _cacheDodavatele.Insert("dodavatele", verzeDodavatele, dodavatele);
 
             var taskUlozeni = _dbPomocne.UlozitDodavatele(verzeDodavatele, dodavatele);
             yield return taskUlozeni;
+            _cacheDodavatele.Insert("dodavatele", taskUlozeni.Result, dodavatele);
         }
 
         private HistorieNaradiDataDodavatele RozsiritData(HistorieNaradiDataDodavatele zaklad)
@@ -180,10 +180,10 @@ namespace Vydejna.Projections.HistorieNaradiReadModel
             pracoviste.Nazev = command.Nazev;
             pracoviste.Stredisko = command.Stredisko;
             pracoviste.Aktivni = !command.Deaktivovano;
-            _cachePracoviste.Insert(command.Kod, verzePracoviste, pracoviste);
 
             var taskUlozeni = _dbPomocne.UlozitPracoviste(verzePracoviste, pracoviste);
             yield return taskUlozeni;
+            _cachePracoviste.Insert(command.Kod, taskUlozeni.Result, pracoviste);
         }
 
         public Task Handle(DefinovanaVadaNaradiEvent command)
@@ -193,7 +193,7 @@ namespace Vydejna.Projections.HistorieNaradiReadModel
 
         private IEnumerable<Task> HandleInternal(DefinovanaVadaNaradiEvent command)
         {
-            var taskNacteni = _cacheVady.Get("vady", load => _dbPomocne.NacistVady());
+            var taskNacteni = _cacheVady.Get("vady", load => _dbPomocne.NacistVady().Transform(RozsiritData));
             yield return taskNacteni;
             var verzeVad = taskNacteni.Result.Version;
             var vady = taskNacteni.Result.Value;
@@ -204,10 +204,10 @@ namespace Vydejna.Projections.HistorieNaradiReadModel
             vada.Kod = command.Kod;
             vada.Nazev = command.Nazev;
             vada.Deaktivovana = command.Deaktivovana;
-            _cacheVady.Insert("vady", verzeVad, vady);
 
             var taskUlozeni = _dbPomocne.UlozitVady(verzeVad, vady);
             yield return taskUlozeni;
+            _cacheVady.Insert("vady", taskUlozeni.Result, vady);
         }
 
         private HistorieNaradiDataVady RozsiritData(HistorieNaradiDataVady zaklad)

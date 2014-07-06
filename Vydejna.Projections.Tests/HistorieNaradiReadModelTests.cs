@@ -220,13 +220,133 @@ namespace Vydejna.Projections.Tests
             Assert.IsFalse(string.IsNullOrEmpty(operace.NazevOperace), "NazevOperace");
         }
 
-        /*
-         * ============================================================================
-         * Na uvod definovat vadu, dodavatele, naradi a pracoviste (od kazdeho 1 kus)
-         * Jedna udalost pro kazdy typ operace, overit spravne vygenerovani operace do DB operaci
-         * Otestovat preziti pri pouziti udalosti bez nadefinovanych zavislosti (dodavatel, vada, pracoviste, naradi)
-         * Overeni probiha tak, ze: v DB operaci ma byt jedna operace s patricnym EventId, u teto operace se testuji vlastnosti
-         */
+        [TestMethod]
+        public void PrijemCislovanehoNaradiNaVydejnu()
+        {
+            _build.Naradi("A").Definovano("382-1193", "30x30", "Bruska");
+            _build.Dodavatel("D39", "Dodavatel 1");
+            var id = _build.Naradi("A").Prijmout().Cislovane(3).Dodavatel("D39").Send();
+            var operace = ZiskatOperaci(id);
+            Assert.AreEqual(CurrentTime, operace.Datum, "Datum");
+            Assert.AreEqual(NaradiTestEventBuilder.BuildNaradiId("A"), operace.NaradiId, "NaradiId");
+            Assert.AreEqual("382-1193", operace.Vykres, "Vykres");
+            Assert.AreEqual("30x30", operace.Rozmer, "Rozmer");
+            Assert.AreEqual(1, operace.Pocet, "Pocet");
+            Assert.AreEqual(3, operace.CisloNaradi, "CisloNaradi");
+            Assert.AreEqual("D39", operace.KodDodavatele, "KodDodavatele");
+            Assert.AreEqual("Dodavatel 1", operace.NazevDodavatele, "NazevDodavatele");
+            Assert.AreEqual("CislovaneNaradiPrijatoNaVydejnuEvent", operace.TypUdalosti, "TypUdalosti");
+            Assert.IsFalse(string.IsNullOrEmpty(operace.NazevOperace), "NazevOperace");
+        }
+
+        [TestMethod]
+        public void VydejNaradiNaNeexistujiciPracoviste()
+        {
+            _build.Naradi("A").Definovano("382-1193", "30x30", "Bruska");
+            var id = _build.Naradi("A").Vydat().Necislovane(1).Pracoviste("18472230").Send();
+            var operace = ZiskatOperaci(id);
+            Assert.AreEqual("18472230", operace.KodPracoviste, "KodPracoviste");
+        }
+
+        [TestMethod]
+        public void VydejNaradiNaPracoviste()
+        {
+            _build.Naradi("A").Definovano("382-1193", "30x30", "Bruska");
+            _build.Pracoviste("18472230", "Brouseni", "230");
+            _build.Pracoviste("82748120", "Kaleni", "120");
+            var id = _build.Naradi("A").Vydat().Necislovane(4).Pracoviste("82748120").Send();
+            var operace = ZiskatOperaci(id);
+            Assert.AreEqual(NaradiTestEventBuilder.BuildNaradiId("A"), operace.NaradiId, "NaradiId");
+            Assert.AreEqual("382-1193", operace.Vykres, "Vykres");
+            Assert.AreEqual("30x30", operace.Rozmer, "Rozmer");
+            Assert.AreEqual(4, operace.Pocet, "Pocet");
+            Assert.AreEqual(null, operace.CisloNaradi, "CisloNaradi");
+            Assert.AreEqual("82748120", operace.KodPracoviste, "KodPracoviste");
+            Assert.AreEqual("Kaleni", operace.NazevPracoviste, "NazevPracoviste");
+            Assert.AreEqual("NecislovaneNaradiVydanoDoVyrobyEvent", operace.TypUdalosti, "TypUdalosti");
+            Assert.IsFalse(string.IsNullOrEmpty(operace.NazevOperace), "NazevOperace");
+        }
+
+        [TestMethod]
+        public void PrijemCislovanehoVcetneVady()
+        {
+            _build.Naradi("A").Definovano("382-1193", "30x30", "Bruska");
+            _build.Pracoviste("18472230", "Brouseni", "230");
+            _build.Vada("0", "bez vady");
+            _build.Vada("1", "opotrebovane");
+            _build.Vada("2", "vyrobni defekt");
+            var id = _build.Naradi("A").Vratit().Cislovane(11).Pracoviste("18472230").Poskozene("1").Send();
+            var operace = ZiskatOperaci(id);
+            Assert.AreEqual(NaradiTestEventBuilder.BuildNaradiId("A"), operace.NaradiId, "NaradiId");
+            Assert.AreEqual("382-1193", operace.Vykres, "Vykres");
+            Assert.AreEqual("30x30", operace.Rozmer, "Rozmer");
+            Assert.AreEqual(1, operace.Pocet, "Pocet");
+            Assert.AreEqual(11, operace.CisloNaradi, "CisloNaradi");
+            Assert.AreEqual("18472230", operace.KodPracoviste, "KodPracoviste");
+            Assert.AreEqual("Brouseni", operace.NazevPracoviste, "NazevPracoviste");
+            Assert.AreEqual("1", operace.KodVady, "KodVady");
+            Assert.AreEqual("opotrebovane", operace.NazevVady, "NazevVady");
+            Assert.AreEqual(StavNaradi.NutnoOpravit, operace.StavNaradi, "StavNaradi");
+            Assert.AreEqual("CislovaneNaradiPrijatoZVyrobyEvent", operace.TypUdalosti, "TypUdalosti");
+            Assert.IsFalse(string.IsNullOrEmpty(operace.NazevOperace), "NazevOperace");
+        }
+
+        [TestMethod]
+        public void VydejNaradiKOprave()
+        {
+            CurrentTime = new DateTime(2014,6,22,15,22,6);
+            _build.Naradi("A").Definovano("382-1193", "30x30", "Bruska");
+            _build.Dodavatel("D28", "Naradi s.r.o.");
+            var id = _build.Naradi("A").DatOpravit().Necislovane(10)
+                .Objednavka("D28", "184/2014").TerminDodani(CurrentTime.Date.AddDays(15)).Send();
+            var operace = ZiskatOperaci(id);
+            Assert.AreEqual(NaradiTestEventBuilder.BuildNaradiId("A"), operace.NaradiId, "NaradiId");
+            Assert.AreEqual("382-1193", operace.Vykres, "Vykres");
+            Assert.AreEqual("30x30", operace.Rozmer, "Rozmer");
+            Assert.AreEqual(10, operace.Pocet, "Pocet");
+            Assert.AreEqual(null, operace.CisloNaradi, "CisloNaradi");
+            Assert.AreEqual("D28", operace.KodDodavatele, "KodDodavatele");
+            Assert.AreEqual("Naradi s.r.o.", operace.NazevDodavatele, "NazevDodavatele");
+            Assert.AreEqual("184/2014", operace.CisloObjednavky, "CisloObjednavky");
+            Assert.AreEqual("NecislovaneNaradiPredanoKOpraveEvent", operace.TypUdalosti, "TypUdalosti");
+            Assert.IsFalse(string.IsNullOrEmpty(operace.NazevOperace), "NazevOperace");
+        }
+
+        [TestMethod]
+        public void PrijemOpravenehoCislovanehoNaradi()
+        {
+            _build.Naradi("A").Definovano("382-1193", "30x30", "Bruska");
+            _build.Dodavatel("D28", "Naradi s.r.o.");
+            var id = _build.Naradi("A").Opravit().Cislovane(8).Opravene()
+                .Objednavka("D28", "184/2014").DodaciList("D190/2014").Send();
+            var operace = ZiskatOperaci(id);
+            Assert.AreEqual(NaradiTestEventBuilder.BuildNaradiId("A"), operace.NaradiId, "NaradiId");
+            Assert.AreEqual("382-1193", operace.Vykres, "Vykres");
+            Assert.AreEqual("30x30", operace.Rozmer, "Rozmer");
+            Assert.AreEqual(1, operace.Pocet, "Pocet");
+            Assert.AreEqual(8, operace.CisloNaradi, "CisloNaradi");
+            Assert.AreEqual("D28", operace.KodDodavatele, "KodDodavatele");
+            Assert.AreEqual("Naradi s.r.o.", operace.NazevDodavatele, "NazevDodavatele");
+            Assert.AreEqual("184/2014", operace.CisloObjednavky, "CisloObjednavky");
+            Assert.AreEqual(StavNaradi.VPoradku, operace.StavNaradi, "StavNaradi");
+            Assert.AreEqual("CislovaneNaradiPrijatoZOpravyEvent", operace.TypUdalosti, "TypUdalosti");
+            Assert.IsFalse(string.IsNullOrEmpty(operace.NazevOperace), "NazevOperace");
+        }
+
+        [TestMethod]
+        public void SrotovaniNaradi()
+        {
+            _build.Naradi("A").Definovano("382-1193", "30x30", "Bruska");
+            var id = _build.Naradi("A").Srotovat().Necislovane(3).Send();
+            var operace = ZiskatOperaci(id);
+            Assert.AreEqual(NaradiTestEventBuilder.BuildNaradiId("A"), operace.NaradiId, "NaradiId");
+            Assert.AreEqual("382-1193", operace.Vykres, "Vykres");
+            Assert.AreEqual("30x30", operace.Rozmer, "Rozmer");
+            Assert.AreEqual(3, operace.Pocet, "Pocet");
+            Assert.AreEqual(null, operace.CisloNaradi, "CisloNaradi");
+            Assert.AreEqual("NecislovaneNaradiPredanoKeSesrotovaniEvent", operace.TypUdalosti, "TypUdalosti");
+            Assert.IsFalse(string.IsNullOrEmpty(operace.NazevOperace), "NazevOperace");
+        }
     }
 
 

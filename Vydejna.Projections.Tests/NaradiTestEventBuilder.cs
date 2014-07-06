@@ -465,7 +465,7 @@ namespace Vydejna.Projections.Tests
                 return this;
             }
 
-            public void Send()
+            public Guid Send()
             {
                 if (_evnt.PredchoziUmisteni == null)
                 {
@@ -495,6 +495,7 @@ namespace Vydejna.Projections.Tests
                     default:
                         throw new NotSupportedException("Nepodporovany typ pro odesilani");
                 }
+                return _evnt.EventId;
             }
         }
 
