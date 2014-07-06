@@ -193,14 +193,35 @@ namespace Vydejna.Projections.Tests
     public class HistorieNaradiReadModelTest_ProjectionBase : HistorieNaradiReadModelTestBase
     {
         [TestMethod]
-        public void PrijemNaVydejnuBezDodavatele()
+        public void PrijemNaVydejnuBezDefinic()
         {
             var id = _build.Naradi("A").Prijmout().Necislovane(5).Dodavatel("D34").Send();
             var operace = ZiskatOperaci(id);
             Assert.AreEqual(NaradiTestEventBuilder.BuildNaradiId("A"), operace.NaradiId, "NaradiId");
         }
 
+        [TestMethod]
+        public void PrijemNaVydejnuNormalne()
+        {
+            _build.Naradi("A").Definovano("382-1193", "30x30", "Bruska");
+            _build.Naradi("B").Definovano("Chyba", "Chyba", "Chyba");
+            _build.Dodavatel("D39", "Dodavatel 1");
+            _build.Dodavatel("D00", "Chyba");
+            var id = _build.Naradi("A").Prijmout().Necislovane(5).Dodavatel("D39").Send();
+            var operace = ZiskatOperaci(id);
+            Assert.AreEqual(NaradiTestEventBuilder.BuildNaradiId("A"), operace.NaradiId, "NaradiId");
+            Assert.AreEqual("382-1193", operace.Vykres, "Vykres");
+            Assert.AreEqual("30x30", operace.Rozmer, "Rozmer");
+            Assert.AreEqual(5, operace.Pocet, "Pocet");
+            Assert.AreEqual(null, operace.CisloNaradi, "CisloNaradi");
+            Assert.AreEqual("D39", operace.KodDodavatele, "KodDodavatele");
+            Assert.AreEqual("Dodavatel 1", operace.NazevDodavatele, "NazevDodavatele");
+            Assert.AreEqual("NecislovaneNaradiPrijatoNaVydejnuEvent", operace.TypUdalosti, "TypUdalosti");
+            Assert.IsFalse(string.IsNullOrEmpty(operace.NazevOperace), "NazevOperace");
+        }
+
         /*
+         * ============================================================================
          * Na uvod definovat vadu, dodavatele, naradi a pracoviste (od kazdeho 1 kus)
          * Jedna udalost pro kazdy typ operace, overit spravne vygenerovani operace do DB operaci
          * Otestovat preziti pri pouziti udalosti bez nadefinovanych zavislosti (dodavatel, vada, pracoviste, naradi)
