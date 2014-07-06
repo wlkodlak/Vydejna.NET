@@ -58,6 +58,7 @@
   </Choose>
   <ItemGroup>
     <Compile Include="DetailNaradiReadModelTests.cs" />
+    <Compile Include="HistorieNaradiReadModelTests.cs" />
     <Compile Include="IndexObjednavekReadModelTests.cs" />
     <Compile Include="NaradiNaPracovistiReadModelTests.cs" />
     <Compile Include="NaradiNaVydejneReadModelTests.cs" />

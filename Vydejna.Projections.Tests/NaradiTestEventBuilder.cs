@@ -730,7 +730,7 @@ namespace Vydejna.Projections.Tests
                 return this;
             }
 
-            public void Send()
+            public Guid Send()
             {
                 DoplnitCelkovyPocet();
                 switch (_rezim)
@@ -756,6 +756,7 @@ namespace Vydejna.Projections.Tests
                     default:
                         throw new NotSupportedException("Rezim " + _rezim + " nepodporovan pro odesilani");
                 }
+                return _evnt.EventId;
             }
 
             private static string KlicUmisteni(UmisteniNaradiDto umisteni)

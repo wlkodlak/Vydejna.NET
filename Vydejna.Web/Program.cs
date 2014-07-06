@@ -13,6 +13,7 @@ using Vydejna.Domain.Procesy;
 using Vydejna.Domain.UnikatnostNaradi;
 using Vydejna.Projections;
 using Vydejna.Projections.DetailNaradiReadModel;
+using Vydejna.Projections.HistorieNaradiReadModel;
 using Vydejna.Projections.IndexObjednavekReadModel;
 using Vydejna.Projections.NaradiNaObjednavceReadModel;
 using Vydejna.Projections.NaradiNaPracovistiReadModel;
@@ -109,6 +110,7 @@ namespace Vydejna.Web
             new UnikatnostNaradiService(new UnikatnostNaradiRepository(_eventStore, "unikatnost", _eventSerializer)).Subscribe(_mainBus);
 
             new DetailNaradiReader(new DetailNaradiRepository(documentStore.GetFolder("detailnaradi")), _time).Subscribe(_mainBus);
+            new HistorieNaradiReader(new HistorieNaradiRepositoryOperace(postgres)).Subscribe(_mainBus);
             new IndexObjednavekReader(new IndexObjednavekRepository(documentStore.GetFolder("indexobjednavek")), _time).Subscribe(_mainBus);
             new NaradiNaObjednavceReader(new NaradiNaObjednavceRepository(documentStore.GetFolder("naradiobjednavky")), _time).Subscribe(_mainBus);
             new NaradiNaPracovistiReader(new NaradiNaPracovistiRepository(documentStore.GetFolder("naradipracoviste")), _time).Subscribe(_mainBus);
@@ -124,6 +126,10 @@ namespace Vydejna.Web
             BuildEventProcessor(new ProcesDefiniceNaradi(_mainBus), "ProcesDefiniceNaradi");
 
             BuildProjection(new DetailNaradiProjection(new DetailNaradiRepository(documentStore.GetFolder("detailnaradi")), _time), "DetailNaradi");
+            BuildProjection(new HistorieNaradiProjection(
+                new HistorieNaradiRepositoryOperace(postgres),
+                new HistorieNaradiRepositoryPomocne(documentStore.GetFolder("historienaradi")), _time),
+                "HistorieNaradi");
             BuildProjection(new IndexObjednavekProjection(new IndexObjednavekRepository(documentStore.GetFolder("indexobjednavek")), _time), "IndexObjednavek");
             BuildProjection(new NaradiNaObjednavceProjection(new NaradiNaObjednavceRepository(documentStore.GetFolder("naradiobjednavky")), _time), "NaradiNaObjednavce");
             BuildProjection(new NaradiNaPracovistiProjection(new NaradiNaPracovistiRepository(documentStore.GetFolder("naradipracoviste")), _time), "NaradiNaPracovisti");
