@@ -7,6 +7,7 @@ namespace Vydejna.Domain.NecislovaneNaradi
         public NecislovaneNaradiRepository(IEventStore store, string prefix, IEventSourcedSerializer serializer)
             : base(store, prefix, serializer)
         {
+            SnapshotInterval = 20;
         }
 
         protected override NecislovaneNaradiAggregate CreateAggregate()
