@@ -229,6 +229,7 @@ namespace Vydejna.Projections.NaradiNaPracovistiReadModel
         public InformaceOPracovisti Pracoviste { get; set; }
         public int PocetCelkem { get; set; }
         public List<NaradiNaPracovisti> Seznam { get; set; }
+        [NonSerialized]
         public Dictionary<Guid, NaradiNaPracovisti> IndexPodleIdNaradi;
     }
 

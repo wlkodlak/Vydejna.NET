@@ -158,7 +158,7 @@ namespace Vydejna.Projections.NaradiNaObjednavceReadModel
             yield return taskNaradi;
             var naradiInfo = taskNaradi.Result.Value;
 
-            var taskDodavatele = _cacheDodavatele.Get("dodavatele", load => _repository.NacistDodavatele());
+            var taskDodavatele = _cacheDodavatele.Get("dodavatele", load => _repository.NacistDodavatele().Transform(RozsiritData));
             yield return taskDodavatele;
             var dodavatele = taskDodavatele.Result.Value;
             InformaceODodavateli dodavatel;
@@ -258,11 +258,13 @@ namespace Vydejna.Projections.NaradiNaObjednavceReadModel
         public DateTime? TerminDodani { get; set; }
         public int PocetCelkem { get; set; }
         public List<NaradiNaObjednavce> Seznam { get; set; }
+        [NonSerialized]
         public Dictionary<Guid, NaradiNaObjednavce> IndexPodleIdNaradi;
     }
     public class NaradiNaObjednavceDataDodavatele
     {
         public List<InformaceODodavateli> SeznamDodavatelu { get; set; }
+        [NonSerialized]
         public Dictionary<string, InformaceODodavateli> IndexDodavatelu;
     }
 

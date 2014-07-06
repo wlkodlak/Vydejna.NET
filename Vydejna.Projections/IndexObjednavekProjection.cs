@@ -101,7 +101,7 @@ namespace Vydejna.Projections.IndexObjednavekReadModel
             var verzeObjednavky = taskObjednavka.Result.Version;
             var objednavka = taskObjednavka.Result.Value;
 
-            var taskDodavatele = _cacheDodavatelu.Get("dodavatele", load => _repository.NacistDodavatele());
+            var taskDodavatele = _cacheDodavatelu.Get("dodavatele", load => _repository.NacistDodavatele().Transform(RozsiritData));
             yield return taskDodavatele;
             var dodavatele = taskDodavatele.Result.Value;
 
@@ -144,7 +144,7 @@ namespace Vydejna.Projections.IndexObjednavekReadModel
             var dodaciListy = taskDodaciListy.Result.Value;
             var verzeDodListu = taskDodaciListy.Result.Version;
 
-            var taskDodavatele = _cacheDodavatelu.Get("dodavatele", load => _repository.NacistDodavatele());
+            var taskDodavatele = _cacheDodavatelu.Get("dodavatele", load => _repository.NacistDodavatele().Transform(RozsiritData));
             yield return taskDodavatele;
             var dodavatele = taskDodavatele.Result.Value;
 
@@ -279,6 +279,7 @@ namespace Vydejna.Projections.IndexObjednavekReadModel
     public class IndexObjednavekDodavatele
     {
         public List<IndexObjednavekDodavatel> Dodavatele { get; set; }
+        [NonSerialized]
         public Dictionary<string, IndexObjednavekDodavatel> IndexDodavatelu;
     }
     public class IndexObjednavekDodavatel

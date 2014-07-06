@@ -874,9 +874,13 @@ namespace Vydejna.Projections.DetailNaradiReadModel
         public List<string> ReferenceVad { get; set; }
         public List<string> ReferencePracovist { get; set; }
 
+        [NonSerialized]
         public Dictionary<int, DetailNaradiCislovane> IndexCislovane;
+        [NonSerialized]
         public Dictionary<string, DetailNaradiNecislovane> IndexPodleObjednavky;
+        [NonSerialized]
         public Dictionary<string, DetailNaradiNecislovane> IndexPodlePracoviste;
+        [NonSerialized]
         public Dictionary<StavNaradi, DetailNaradiNecislovane> IndexPodleStavu;
     }
     public class DetailNaradiDataDodavatel
@@ -887,11 +891,13 @@ namespace Vydejna.Projections.DetailNaradiReadModel
     public class DetailNaradiDataVady
     {
         public List<DefinovanaVadaNaradiEvent> Vady { get; set; }
+        [NonSerialized]
         public Dictionary<string, DefinovanaVadaNaradiEvent> IndexVad;
     }
     public class DetailNaradiDataDodavatele
     {
         public List<DetailNaradiDataDodavatel> Dodavatele { get; set; }
+        [NonSerialized]
         public Dictionary<string, DetailNaradiDataDodavatel> IndexDodavatelu;
     }
 

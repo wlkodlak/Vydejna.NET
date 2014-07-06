@@ -307,6 +307,7 @@ namespace Vydejna.Projections.PrehledObjednavekReadModel
     public class PrehledObjednavekDataSeznamDodavatelu
     {
         public List<PrehledObjednavekDataDodavatele> SeznamDodavatelu { get; set; }
+        [NonSerialized]
         public Dictionary<string, PrehledObjednavekDataDodavatele> IndexDodavatelu;
     }
     public class PrehledObjednavekDataDodavatele
