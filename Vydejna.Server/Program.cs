@@ -1,17 +1,19 @@
 ﻿using ServiceLib;
 using System;
-using System.Linq;
 using System.Collections.Generic;
 using System.Configuration;
+using System.Threading;
 using Vydejna.Contracts;
 using Vydejna.Domain;
 using Vydejna.Domain.CislovaneNaradi;
 using Vydejna.Domain.DefinovaneNaradi;
 using Vydejna.Domain.ExterniCiselniky;
+using Vydejna.Domain.NecislovaneNaradi;
 using Vydejna.Domain.Procesy;
 using Vydejna.Domain.UnikatnostNaradi;
 using Vydejna.Projections;
 using Vydejna.Projections.DetailNaradiReadModel;
+using Vydejna.Projections.HistorieNaradiReadModel;
 using Vydejna.Projections.IndexObjednavekReadModel;
 using Vydejna.Projections.NaradiNaObjednavceReadModel;
 using Vydejna.Projections.NaradiNaPracovistiReadModel;
@@ -23,8 +25,6 @@ using Vydejna.Projections.SeznamDodavateluReadModel;
 using Vydejna.Projections.SeznamNaradiReadModel;
 using Vydejna.Projections.SeznamPracovistReadModel;
 using Vydejna.Projections.SeznamVadReadModel;
-using System.Threading;
-using Vydejna.Domain.NecislovaneNaradi;
 
 namespace Vydejna.Server
 {
@@ -198,6 +198,7 @@ namespace Vydejna.Server
             new UnikatnostNaradiService(new UnikatnostNaradiRepository(_eventStore, "unikatnost", _eventSerializer)).Subscribe(_mainBus);
 
             new DetailNaradiReader(new DetailNaradiRepository(documentStore.GetFolder("detailnaradi")), _time).Subscribe(_mainBus);
+            new HistorieNaradiReader(new HistorieNaradiRepositoryOperace(postgres)).Subscribe(_mainBus);
             new IndexObjednavekReader(new IndexObjednavekRepository(documentStore.GetFolder("indexobjednavek")),  _time).Subscribe(_mainBus);
             new NaradiNaObjednavceReader(new NaradiNaObjednavceRepository(documentStore.GetFolder("naradiobjednavky")),  _time).Subscribe(_mainBus);
             new NaradiNaPracovistiReader(new NaradiNaPracovistiRepository(documentStore.GetFolder("naradipracoviste")),  _time).Subscribe(_mainBus);
@@ -213,6 +214,10 @@ namespace Vydejna.Server
             BuildEventProcessor(new ProcesDefiniceNaradi(_mainBus), "ProcesDefiniceNaradi");
 
             BuildProjection(new DetailNaradiProjection(new DetailNaradiRepository(documentStore.GetFolder("detailnaradi")),  _time), "DetailNaradi");
+            BuildProjection(new HistorieNaradiProjection(
+                new HistorieNaradiRepositoryOperace(postgres), 
+                new HistorieNaradiRepositoryPomocne(documentStore.GetFolder("historienaradi")), _time), 
+                "HistorieNaradi");
             BuildProjection(new IndexObjednavekProjection(new IndexObjednavekRepository(documentStore.GetFolder("indexobjednavek")), _time), "IndexObjednavek");
             BuildProjection(new NaradiNaObjednavceProjection(new NaradiNaObjednavceRepository(documentStore.GetFolder("naradiobjednavky")), _time), "NaradiNaObjednavce");
             BuildProjection(new NaradiNaPracovistiProjection(new NaradiNaPracovistiRepository(documentStore.GetFolder("naradipracoviste")), _time), "NaradiNaPracovisti");

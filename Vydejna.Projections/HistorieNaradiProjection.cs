@@ -7,7 +7,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Vydejna.Contracts;
 
-namespace Vydejna.Projections
+namespace Vydejna.Projections.HistorieNaradiReadModel
 {
     public class HistorieNaradiProjection
         : IEventProjection
@@ -745,6 +745,11 @@ namespace Vydejna.Projections
         public HistorieNaradiReader(IHistorieNaradiRepositoryOperace repository)
         {
             _repository = repository;
+        }
+
+        public void Subscribe(ISubscribable bus)
+        {
+            bus.Subscribe<HistorieNaradiRequest, HistorieNaradiResponse>(this);
         }
 
         public Task<HistorieNaradiResponse> Handle(HistorieNaradiRequest query)
