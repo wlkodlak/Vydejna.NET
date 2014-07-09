@@ -177,5 +177,16 @@ namespace ServiceLib.Tests.EventHandlers
             _coordinator.Stop();
             AssertCompleted(task, false);
         }
+
+        [TestMethod]
+        public void CompletedBeforeTrackerIsCommitted()
+        {
+            CreateHandlers("Handler1", "Handler2");
+            ReportProgress("Handler1", "20");
+            ReportProgress("Handler2", "18");
+            var tracker = CompleteTracker("18");
+            var task = StartWaiting(tracker, 100);
+            AssertCompleted(task, true);
+        }
     }
 }

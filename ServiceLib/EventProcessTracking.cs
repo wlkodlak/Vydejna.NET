@@ -96,6 +96,13 @@ namespace ServiceLib
                 {
                     Parent._trackersById.Add(TrackingId, trackItem);
                     Parent._items.Add(trackItem);
+                    long alreadyFinished = 0;
+                    foreach (var handler in Parent._handlers.Values)
+                    {
+                        if (EventStoreToken.Compare(handler.LastToken, LastToken) >= 0)
+                            alreadyFinished |= handler.SetMask;
+                    }
+                    trackItem.UnfinishedHandlersSet &= ~alreadyFinished;
                 }
             }
         }
@@ -150,12 +157,14 @@ namespace ServiceLib
             public readonly EventProcessTracking Parent;
             public readonly string HandlerName;
             public readonly long SetMask;
+            public EventStoreToken LastToken;
 
             public TrackTarget(EventProcessTracking parent, string name, long setMask)
             {
                 Parent = parent;
                 HandlerName = name;
                 SetMask = setMask;
+                LastToken = EventStoreToken.Initial;
             }
 
             string IEventProcessTrackTarget.HandlerName { get { return HandlerName; } }
@@ -164,6 +173,7 @@ namespace ServiceLib
             {
                 lock (Parent._lock)
                 {
+                    LastToken = token;
                     foreach (var item in Parent._items)
                     {
                         if ((item.UnfinishedHandlersSet & SetMask) == 0)
