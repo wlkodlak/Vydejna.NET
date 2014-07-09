@@ -11,7 +11,7 @@ namespace Vydejna.Domain.DefinovaneNaradi
         , IProcessCommand<DeaktivovatNaradiCommand>
         , IProcessCommand<DefinovatNaradiInternalCommand>
     {
-        private IDefinovaneNaradiRepository _repoNaradi;
+        private readonly IDefinovaneNaradiRepository _repoNaradi;
         private static readonly ILog Logger = LogManager.GetLogger("Vydejna.Domain.DefinovaneNaradi");
 
         public DefinovaneNaradiService(IDefinovaneNaradiRepository repoNaradi)

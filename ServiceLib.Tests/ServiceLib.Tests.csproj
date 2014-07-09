@@ -107,6 +107,7 @@
     <Compile Include="TestUtils\TestScheduler.cs" />
     <Compile Include="TestUtils\TestStagedContext.cs" />
     <Compile Include="TestUtils\TestStreaming.cs" />
+    <Compile Include="TestUtils\TestTracking.cs" />
     <Compile Include="TestUtils\VirtualTime.cs" />
   </ItemGroup>
   <ItemGroup />

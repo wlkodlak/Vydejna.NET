@@ -43,6 +43,7 @@ namespace ServiceLib
         private readonly IEventStreamingDeserialized _streaming;
         private readonly IEventSubscriptionManager _subscriptions;
         private readonly IEventProjection _projectionInfo;
+        private readonly IEventProcessTrackTarget _tracker;
         private readonly ITime _time;
         private readonly string _logName;
         private readonly Stopwatch _stopwatch;
@@ -57,7 +58,13 @@ namespace ServiceLib
         private int _processedEventsCount;
         private bool _exceptionAlreadyLogged;
 
-        public EventProjectorSimple(IEventProjection projection, IMetadataInstance metadata, IEventStreamingDeserialized streaming, IEventSubscriptionManager subscriptions, ITime time)
+        public EventProjectorSimple(
+            IEventProjection projection, 
+            IMetadataInstance metadata, 
+            IEventStreamingDeserialized streaming, 
+            IEventSubscriptionManager subscriptions,
+            ITime time, 
+            IEventProcessTrackTarget tracker)
         {
             _lock = new object();
             _projectionInfo = projection;
@@ -65,6 +72,7 @@ namespace ServiceLib
             _streaming = streaming;
             _subscriptions = subscriptions;
             _time = time;
+            _tracker = tracker;
             _logName = _metadata.ProcessName;
             _stopwatch = new Stopwatch();
         }
@@ -402,7 +410,11 @@ namespace ServiceLib
                 else if (task.Exception == null)
                 {
                     _stopwatch.Stop();
-                    _parent._processedEventsCount++;
+                    if (_token != null)
+                    {
+                        _parent._processedEventsCount++;
+                        _parent._tracker.ReportProgress(_token);
+                    }
                     Logger.InfoFormat("{0}: Event {1} (token {2}) processed in {3} ms.", 
                         _parent._logName, _typeName, _token, _stopwatch.ElapsedMilliseconds);
                     return task;
@@ -423,7 +435,11 @@ namespace ServiceLib
                 else
                 {
                     _stopwatch.Stop();
-                    _parent._processedEventsCount++;
+                    if (_token != null)
+                    {
+                        _parent._processedEventsCount++;
+                        _parent._tracker.ReportProgress(_token);
+                    }
                     Logger.ErrorFormat("{0}: Error when processing event {1} (token {2}), putting to dead-letter. {3}",
                         _parent._logName, _typeName, _token, task.Exception.InnerException);
                     return MarkAsDeadLetter();

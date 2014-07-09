@@ -2,6 +2,7 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -307,5 +308,32 @@ namespace ServiceLib
             if (_cancelSource != null)
                 _cancelSource.Dispose();
         }
+    }
+
+    public class EventProcessTrackService
+    {
+        private IEventProcessTrackCoordinator _coordinator;
+
+        public EventProcessTrackService(IEventProcessTrackCoordinator coordinator)
+        {
+            _coordinator = coordinator;
+        }
+
+        public void Register(IHttpRouteCommonConfigurator config)
+        {
+            config.Route("utils/tracking/{id}").To(ctx => TaskUtils.FromEnumerable(HandleTracking(ctx)).GetTask());
+        }
+
+        public IEnumerable<Task> HandleTracking(IHttpServerStagedContext ctx)
+        {
+            // utils/tracking
+            var trackingId = ctx.Route("id").AsString().Get();
+            var timeout = ctx.Parameter("timeout").AsInteger().Default(10000).Get();
+            var taskWait = _coordinator.FindTracker(trackingId).WaitForFinish(timeout);
+            yield return taskWait;
+
+            ctx.StatusCode = taskWait.Result ? (int)HttpStatusCode.OK : (int)HttpStatusCode.Accepted;
+        }
+
     }
 }

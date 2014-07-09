@@ -45,6 +45,7 @@ namespace Vydejna.Server
         private Dictionary<string, CommandInfo> _consoleCommands;
         private QueuedBus _mainBus;
         private ThreadedTaskScheduler _scheduler;
+        private EventProcessTracking _trackingCoordinator;
 
         public Program()
         {
@@ -158,12 +159,16 @@ namespace Vydejna.Server
             }
             _processes.RegisterBus("MainBus", _mainBus, new QueuedBusProcess(_mainBus).WithWorkers(1));
 
+            _trackingCoordinator = new EventProcessTracking(_time);
+            _processes.RegisterLocal("EventHandlerTracking", _trackingCoordinator);
+
             var httpRouter = new HttpRouter();
             _router = new HttpRouterCommon(httpRouter);
             _router.WithSerializer(new HttpSerializerJson()).WithSerializer(new HttpSerializerXml()).WithPicker(new HttpSerializerPicker());
             _processes.RegisterLocal("HttpServer", new HttpServer(_httpPrefixes, new HttpServerDispatcher(httpRouter)).SetupWorkerCount(1));
             new DomainRestInterface(_mainBus).Register(_router);
             new ProjectionsRestInterface(_mainBus).Register(_router);
+            new EventProcessTrackService(_trackingCoordinator).Register(_router);
             _router.Commit();
 
             var networkBus = new NetworkBusPostgres(_nodeId, postgres, _time);
@@ -236,8 +241,11 @@ namespace Vydejna.Server
         {
             var subscriptions = new EventSubscriptionManager();
             processor.Subscribe(subscriptions);
-            var process = new EventProcessSimple(_metadataManager.GetConsumer(processorName),
-                new EventStreamingDeserialized(_eventStreaming, _eventSerializer), subscriptions, _time);
+            var process = new EventProcessSimple(
+                _metadataManager.GetConsumer(processorName),
+                new EventStreamingDeserialized(_eventStreaming, _eventSerializer), 
+                subscriptions, _time,
+                _trackingCoordinator.RegisterHandler(processorName));
             _processes.RegisterGlobal(processorName, process, 0, 0);
         }
 
@@ -246,8 +254,13 @@ namespace Vydejna.Server
         {
             var subscriptions = new EventSubscriptionManager();
             projection.Subscribe(subscriptions);
-            var projector = new EventProjectorSimple(projection, _metadataManager.GetConsumer(projectionName),
-                new EventStreamingDeserialized(_eventStreaming, _eventSerializer), subscriptions, _time);
+            var projector = new EventProjectorSimple(
+                projection, 
+                _metadataManager.GetConsumer(projectionName),
+                new EventStreamingDeserialized(_eventStreaming, _eventSerializer), 
+                subscriptions, 
+                _time,
+                _trackingCoordinator.RegisterHandler(projectionName));
             _processes.RegisterGlobal(projectionName, projector, 0, 0);
         }
 

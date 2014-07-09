@@ -17,6 +17,7 @@ namespace ServiceLib.Tests.EventHandlers
         private EventProcessSimple _process;
         private TestHandler _handler;
         private VirtualTime _time;
+        private TestTrackTarget _tracking;
 
         [TestInitialize]
         public void Initialize()
@@ -27,7 +28,8 @@ namespace ServiceLib.Tests.EventHandlers
             _subscriptions = new EventSubscriptionManager();
             _handler = new TestHandler();
             _time = new VirtualTime();
-            _process = new EventProcessSimple(_metadata, _streaming, _subscriptions, _time).WithTokenFlushing(5);
+            _tracking = new TestTrackTarget();
+            _process = new EventProcessSimple(_metadata, _streaming, _subscriptions, _time, _tracking).WithTokenFlushing(5);
             _process.Register<TestEvent1>(_handler);
             _process.Register<TestEvent2>(_handler);
             _process.Register<TestEvent3>(_handler);
@@ -86,6 +88,7 @@ namespace ServiceLib.Tests.EventHandlers
             Assert.IsTrue(_streaming.IsWaiting, "Waiting");
             Assert.AreEqual(new EventStoreToken("1"), _streaming.CurrentToken, "CurrentToken");
             Assert.AreEqual(new EventStoreToken("1"), _metadata.Token, "Metadata token");
+            Assert.AreEqual(new EventStoreToken("1"), _tracking.LastToken, "Tracking token");
         }
 
         [TestMethod]
@@ -103,6 +106,7 @@ namespace ServiceLib.Tests.EventHandlers
             Assert.IsTrue(_streaming.IsReading, "Reading");
             Assert.AreEqual(new EventStoreToken("5"), _streaming.CurrentToken, "CurrentToken");
             Assert.AreEqual(new EventStoreToken("5"), _metadata.Token, "Metadata token");
+            Assert.AreEqual(new EventStoreToken("5"), _tracking.LastToken, "Tracking token");
         }
 
         [TestMethod]
@@ -143,6 +147,7 @@ namespace ServiceLib.Tests.EventHandlers
             Assert.AreEqual(new EventStoreToken("5"), _streaming.CurrentToken, "CurrentToken");
             Assert.AreEqual(new EventStoreToken("5"), _metadata.Token, "Metadata token");
             Assert.AreEqual(1, _streaming.DeadLetters.Count, "Dead letters");
+            Assert.AreEqual(new EventStoreToken("5"), _tracking.LastToken, "Tracking token");
         }
 
         [TestMethod]
@@ -181,6 +186,7 @@ namespace ServiceLib.Tests.EventHandlers
             Assert.AreEqual(new EventStoreToken("5"), _streaming.CurrentToken, "CurrentToken");
             Assert.AreEqual(new EventStoreToken("5"), _metadata.Token, "Metadata token");
             Assert.AreEqual(0, _streaming.DeadLetters.Count, "Dead letters");
+            Assert.AreEqual(new EventStoreToken("5"), _tracking.LastToken, "Tracking token");
         }
 
         private class TestHandler

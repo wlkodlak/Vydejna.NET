@@ -18,6 +18,7 @@ namespace ServiceLib.Tests.EventHandlers
         private IEventSubscriptionManager _subscriptions;
         private EventProjectorSimple _process;
         private VirtualTime _time;
+        private TestTrackTarget _tracking;
 
         [TestInitialize]
         public void Initialize()
@@ -28,7 +29,8 @@ namespace ServiceLib.Tests.EventHandlers
             _streaming = new TestStreaming();
             _subscriptions = new EventSubscriptionManager();
             _time = new VirtualTime();
-            _process = new EventProjectorSimple(_projection, _metadata, _streaming, _subscriptions, _time);
+            _tracking = new TestTrackTarget();
+            _process = new EventProjectorSimple(_projection, _metadata, _streaming, _subscriptions, _time, _tracking);
             _process.Init(null, _scheduler);
             _process.Register<ProjectorMessages.Reset>(_projection);
             _process.Register<ProjectorMessages.UpgradeFrom>(_projection);
@@ -124,6 +126,7 @@ namespace ServiceLib.Tests.EventHandlers
             Assert.IsTrue(_streaming.IsWaiting, "IsWaiting");
             Assert.AreEqual(new EventStoreToken("3"), _metadata.Token, "Metadata token");
             CollectionAssert.Contains(_projection.LogEntries, "RebuildFinished");
+            Assert.AreEqual(new EventStoreToken("3"), _tracking.LastToken, "Tracking token");
         }
 
         [TestMethod]
@@ -143,6 +146,7 @@ namespace ServiceLib.Tests.EventHandlers
             Assert.IsTrue(_streaming.IsWaiting, "IsWaiting");
             Assert.AreEqual(new EventStoreToken("3"), _metadata.Token, "Metadata token");
             CollectionAssert.Contains(_projection.LogEntries, "Flush");
+            Assert.AreEqual(new EventStoreToken("3"), _tracking.LastToken, "Tracking token");
         }
 
         [TestMethod]
@@ -169,6 +173,7 @@ namespace ServiceLib.Tests.EventHandlers
             Assert.IsTrue(_streaming.IsWaiting, "IsWaiting");
             Assert.AreEqual(new EventStoreToken("4"), _metadata.Token, "Metadata token");
             Assert.AreEqual(2, _projection.LogEntries.Count(s => s == "Flush"), "Flush count");
+            Assert.AreEqual(new EventStoreToken("4"), _tracking.LastToken, "Tracking token");
         }
 
         [TestMethod]

@@ -14,6 +14,7 @@ namespace ServiceLib
         private readonly IMetadataInstance _metadata;
         private readonly IEventStreamingDeserialized _streaming;
         private readonly IEventSubscriptionManager _subscriptions;
+        private readonly IEventProcessTrackTarget _tracker;
         private readonly object _lock;
         private readonly Stopwatch _stopwatch;
         private readonly string _logName;
@@ -27,10 +28,11 @@ namespace ServiceLib
 
         public EventProcessSimple(
             IMetadataInstance metadata, IEventStreamingDeserialized streaming,
-            IEventSubscriptionManager subscriptions, ITime time)
+            IEventSubscriptionManager subscriptions, ITime time, IEventProcessTrackTarget tracker)
         {
             _metadata = metadata;
             _streaming = streaming;
+            _tracker = tracker;
             _subscriptions = subscriptions;
             _processState = ProcessState.Uninitialized;
             _time = time;
@@ -211,6 +213,7 @@ namespace ServiceLib
                         }
                         else
                         {
+                            _tracker.ReportProgress(nextEvent.Token);
                             Logger.InfoFormat("{0}: Event {1} (token {2}) processed in {3} ms",
                                _logName, eventType.Name, nextEvent.Token, _stopwatch.ElapsedMilliseconds);
                             _stopwatch.Restart();

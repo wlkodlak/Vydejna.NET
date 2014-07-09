@@ -55,6 +55,10 @@ namespace ServiceLib
         {
             self.To(new DelegatedHttpProcessor(processor));
         }
+        public static void To(this IHttpRouteCommonConfiguratorRoute self, Func<IHttpServerStagedContext, IEnumerable<Task>> processor)
+        {
+            self.To(new DelegatedEnumerableHttpProcessor(processor));
+        }
         private class DelegatedHttpRouteHandler : IHttpRouteHandler
         {
             Func<IHttpServerRawContext, Task> _handler;
@@ -77,6 +81,18 @@ namespace ServiceLib
             public Task Process(IHttpServerStagedContext context)
             {
                 return _handler(context);
+            }
+        }
+        private class DelegatedEnumerableHttpProcessor : IHttpProcessor
+        {
+            Func<IHttpServerStagedContext, IEnumerable<Task>> _handler;
+            public DelegatedEnumerableHttpProcessor(Func<IHttpServerStagedContext, IEnumerable<Task>> handler)
+            {
+                _handler = handler;
+            }
+            public Task Process(IHttpServerStagedContext context)
+            {
+                return TaskUtils.FromEnumerable(_handler(context)).GetTask();
             }
         }
     }
