@@ -68,6 +68,7 @@
     <Compile Include="Documents\EventHandlerMetadataTests.cs" />
     <Compile Include="EventHandlers\EventProcessSimpleTests.cs" />
     <Compile Include="EventHandlers\EventProjectorSimpleTests.cs" />
+    <Compile Include="EventHandlers\EventTrackingTests.cs" />
     <Compile Include="EventSourced\AggregateTests.cs" />
     <Compile Include="EventSourced\EventStoreInMemoryTests.cs" />
     <Compile Include="EventSourced\EventStoreTestBase.cs" />

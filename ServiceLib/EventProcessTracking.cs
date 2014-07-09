@@ -39,6 +39,7 @@ namespace ServiceLib
         private readonly List<TrackItem> _items;
 
         private readonly Task<bool> _finishedWait;
+        private readonly Task<bool> _unfinishedWait;
         private List<TrackWaiter> _waiters;
         private long _fullMask;
         private int _nextSetIndex;
@@ -58,6 +59,7 @@ namespace ServiceLib
             _items = new List<TrackItem>();
 
             _finishedWait = TaskUtils.FromResult(true);
+            _unfinishedWait = TaskUtils.FromResult(false);
             _fullMask = 0;
             _nextSetIndex = 0;
             _waiters = new List<TrackWaiter>();
@@ -91,6 +93,7 @@ namespace ServiceLib
                 var trackItem = new TrackItem(Parent, TrackingId, LastToken);
                 lock (Parent._lock)
                 {
+                    Parent._trackersById.Add(TrackingId, trackItem);
                     Parent._items.Add(trackItem);
                 }
             }
@@ -118,6 +121,8 @@ namespace ServiceLib
             {
                 if (UnfinishedHandlersSet == 0)
                     return Parent._finishedWait;
+                if (timeoutMilliseconds <= 0)
+                    return Parent._unfinishedWait;
                 var maxTime = Parent._time.GetUtcTime().AddMilliseconds(timeoutMilliseconds);
                 var waiter = new TrackWaiter(maxTime);
                 lock (Parent._lock)
