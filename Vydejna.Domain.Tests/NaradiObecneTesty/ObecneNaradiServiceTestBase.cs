@@ -19,6 +19,7 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
         protected TestRepository<TAggregate> _repository;
         protected Dictionary<string, int> _newEventCounts;
         protected VirtualTime _time;
+        protected TestTracking _tracking;
 
         [TestInitialize]
         public void Initialize()
@@ -27,6 +28,7 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
             _time.SetTime(new DateTime(2012, 1, 18, 8, 19, 21));
             _scheduler = new TestScheduler();
             _repository = new TestRepository<TAggregate>();
+            _tracking = new TestTracking();
             InitializeCore();
             _svc = CreateService();
             _newEventCounts = null;

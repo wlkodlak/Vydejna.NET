@@ -18,6 +18,7 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
         private List<object> _obsahRepository;
         private UnikatnostNaradiService _svc;
         private TestScheduler _scheduler;
+        private TestTracking _tracking;
 
         [TestInitialize]
         public void Initialize()
@@ -27,11 +28,12 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
             _udalosti = new List<object>();
             _obsahRepository = new List<object>();
             _aktualniUdalost = null;
+            _tracking = new TestTracking();
         }
 
         private void VytvoritService()
         {
-            _svc = new UnikatnostNaradiService(_repository);
+            _svc = new UnikatnostNaradiService(_repository, _tracking);
         }
 
         private void ZpracovatPrikaz<T>(T cmd)
@@ -77,7 +79,7 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
                 return TaskUtils.FromResult(UnikatnostNaradiAggregate.LoadFrom(_parent._obsahRepository));
             }
 
-            public Task<bool> Save(UnikatnostNaradiAggregate unikatnost)
+            public Task<bool> Save(UnikatnostNaradiAggregate unikatnost, IEventProcessTrackSource tracker)
             {
                 var udalosti = (unikatnost as IEventSourcedAggregate).GetChanges();
                 _parent._udalosti.AddRange(udalosti);

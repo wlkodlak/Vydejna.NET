@@ -17,58 +17,54 @@ namespace ServiceLib
     public class CommandResult
     {
         private static readonly CommandError[] _emptyErrors = new CommandError[0];
-        private static readonly CommandResult _successResult;
-        private static readonly Task<CommandResult> _successTask;
 
         static CommandResult()
         {
             _emptyErrors = new CommandError[0];
-            _successResult = new CommandResult(CommandResultStatus.Success, _emptyErrors);
-            var tcsSuccess = new TaskCompletionSource<CommandResult>();
-            tcsSuccess.TrySetResult(_successResult);
-            _successTask = tcsSuccess.Task;
         }
 
-        public CommandResultStatus Status { get; set; }
-        public IList<CommandError> Errors { get; set; }
+        public CommandResultStatus Status { get; private set; }
+        public IList<CommandError> Errors { get; private set; }
+        public string TrackingId { get; private set; }
 
-        public CommandResult() { }
-
-        public CommandResult(CommandResultStatus status, IList<CommandError> errors)
+        public CommandResult(CommandResultStatus status, IList<CommandError> errors, string trackingId)
         {
             Status = status;
             Errors = errors;
+            TrackingId = trackingId;
         }
 
-        public static CommandResult Ok { get { return _successResult; } }
-        public static Task<CommandResult> TaskOk { get { return _successTask; } }
+        public static CommandResult Success(string trackingId)
+        {
+            return new CommandResult(CommandResultStatus.Success, _emptyErrors, trackingId);
+        }
 
         public static CommandResult From(IList<CommandError> errors)
         {
             if (errors == null || errors.Count == 0)
-                return _successResult;
+                return new CommandResult(CommandResultStatus.Success, _emptyErrors, null);
             else
-                return new CommandResult(CommandResultStatus.InvalidCommand, errors);
+                return new CommandResult(CommandResultStatus.InvalidCommand, errors, null);
         }
 
         public static CommandResult From(CommandError error)
         {
             if (error == null)
                 throw new ArgumentNullException("error");
-            return new CommandResult(CommandResultStatus.InvalidCommand, new[] { error });
+            return new CommandResult(CommandResultStatus.InvalidCommand, new[] { error }, null);
         }
 
         public static CommandResult From(DomainErrorException error)
         {
             if (error == null)
                 throw new ArgumentNullException("error");
-            return new CommandResult(CommandResultStatus.WrongState, new[] { new CommandError(error) });
+            return new CommandResult(CommandResultStatus.WrongState, new[] { new CommandError(error) }, null);
         }
 
         public static CommandResult From(Exception exception)
         {
             var error = new CommandError("__SYSTEM__", exception.GetType().Name, ExceptionMessage(exception));
-            return new CommandResult(CommandResultStatus.InternalError, new[] { error });
+            return new CommandResult(CommandResultStatus.InternalError, new[] { error }, null);
         }
 
         private static string ExceptionMessage(Exception exception)

@@ -39,7 +39,7 @@ namespace ServiceLib.Tests.Http
         public void ServerError()
         {
             var handler = new Mock<IHttpRouteHandler>();
-            handler.Setup(x => x.Handle(_context.Object)).Throws(new InvalidOperationException("Some error"));
+            handler.Setup(x => x.Handle(_context.Object, new RequestParameter[0])).Throws(new InvalidOperationException("Some error"));
             var route = new HttpUsedRoute(new ParametrizedUrl("/path/to/resource"), handler.Object);
             _router.Setup(r => r.FindRoute("http://localhost/path/to/resource")).Returns(route);
             _context.Setup(x => x.Url).Returns("http://localhost/path/to/resource");
@@ -54,7 +54,7 @@ namespace ServiceLib.Tests.Http
         public void PassToHandler()
         {
             var handler = new Mock<IHttpRouteHandler>();
-            handler.Setup(x => x.Handle(_context.Object)).Verifiable();
+            handler.Setup(x => x.Handle(_context.Object, new RequestParameter[0])).Verifiable();
             var route = new HttpUsedRoute(new ParametrizedUrl("/path/to/resource"), handler.Object);
             _router.Setup(r => r.FindRoute("http://localhost/path/to/resource")).Returns(route);
             _context.Setup(x => x.Url).Returns("http://localhost/path/to/resource");

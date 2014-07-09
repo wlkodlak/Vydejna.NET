@@ -14,12 +14,14 @@ namespace Vydejna.Domain.UnikatnostNaradi
         : IProcessCommand<DefinovatNaradiCommand>
         , IProcessCommand<DokoncitDefiniciNaradiInternalCommand>
     {
-        private IEventSourcedRepository<UnikatnostNaradiAggregate> _repoUnikatnost;
+        private readonly IEventSourcedRepository<UnikatnostNaradiAggregate> _repoUnikatnost;
+        private readonly IEventProcessTrackCoordinator _tracking;
         private static readonly ILog Logger = LogManager.GetLogger("Vydejna.Domain.UnikatnostNaradi");
 
-        public UnikatnostNaradiService(IUnikatnostNaradiRepository repoUnikatnost)
+        public UnikatnostNaradiService(IUnikatnostNaradiRepository repoUnikatnost, IEventProcessTrackCoordinator tracking)
         {
             _repoUnikatnost = repoUnikatnost.AsGeneric();
+            _tracking = tracking;
         }
 
         public void Subscribe(ISubscribable bus)
@@ -30,14 +32,14 @@ namespace Vydejna.Domain.UnikatnostNaradi
 
         public Task<CommandResult> Handle(DefinovatNaradiCommand msg)
         {
-            return new EventSourcedServiceExecution<UnikatnostNaradiAggregate>(_repoUnikatnost, UnikatnostNaradiId.Value, Logger)
+            return new EventSourcedServiceExecution<UnikatnostNaradiAggregate>(_repoUnikatnost, UnikatnostNaradiId.Value, Logger, _tracking)
                 .OnRequest(unikatnost => unikatnost.ZahajitDefinici(msg.NaradiId, msg.Vykres, msg.Rozmer, msg.Druh))
                 .Execute();
         }
 
         public Task<CommandResult> Handle(DokoncitDefiniciNaradiInternalCommand msg)
         {
-            return new EventSourcedServiceExecution<UnikatnostNaradiAggregate>(_repoUnikatnost, UnikatnostNaradiId.Value, Logger)
+            return new EventSourcedServiceExecution<UnikatnostNaradiAggregate>(_repoUnikatnost, UnikatnostNaradiId.Value, Logger, _tracking)
                 .OnRequest(unikatnost => unikatnost.DokoncitDefinici(msg.NaradiId, msg.Vykres, msg.Rozmer, msg.Druh))
                 .Execute();
         }

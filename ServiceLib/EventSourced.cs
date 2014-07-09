@@ -183,7 +183,7 @@ namespace ServiceLib
         where T : class, IEventSourcedAggregate
     {
         Task<T> Load(IAggregateId id);
-        Task<bool> Save(T aggregate);
+        Task<bool> Save(T aggregate, IEventProcessTrackSource tracker);
     }
 
     public interface IEventSourcedSerializer
@@ -276,12 +276,12 @@ namespace ServiceLib
             yield return TaskUtils.FromResult(aggregate);
         }
 
-        public Task<bool> Save(T aggregate)
+        public Task<bool> Save(T aggregate, IEventProcessTrackSource tracker)
         {
-            return TaskUtils.FromEnumerable<bool>(SaveInternal(aggregate)).GetTask();
+            return TaskUtils.FromEnumerable<bool>(SaveInternal(aggregate, tracker)).GetTask();
         }
 
-        private IEnumerable<Task> SaveInternal(T aggregate)
+        private IEnumerable<Task> SaveInternal(T aggregate, IEventProcessTrackSource tracker)
         {
             var changes = aggregate.GetChanges();
             if (changes.Count != 0)
@@ -322,6 +322,9 @@ namespace ServiceLib
                         yield return taskSaveSnapshot;
                     }
                 }
+
+                foreach (var stored in serialized)
+                    tracker.AddEvent(stored.Token);
             }
             yield return TaskUtils.FromResult(true);
         }

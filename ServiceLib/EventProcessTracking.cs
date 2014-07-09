@@ -1,4 +1,5 @@
-﻿using System;
+﻿using log4net;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -322,7 +323,8 @@ namespace ServiceLib
 
     public class EventProcessTrackService
     {
-        private IEventProcessTrackCoordinator _coordinator;
+        private readonly IEventProcessTrackCoordinator _coordinator;
+        private readonly static ILog Logger = LogManager.GetLogger("ServiceLib.EventProcessTracking");
 
         public EventProcessTrackService(IEventProcessTrackCoordinator coordinator)
         {
@@ -334,6 +336,11 @@ namespace ServiceLib
             config.Route("utils/tracking/{id}").To(ctx => TaskUtils.FromEnumerable(HandleTracking(ctx)).GetTask());
         }
 
+        public static string GetTrackingUrlBase(string appBase)
+        {
+            return string.Concat(appBase, "utils/tracking/");
+        }
+
         public IEnumerable<Task> HandleTracking(IHttpServerStagedContext ctx)
         {
             // utils/tracking
@@ -342,7 +349,12 @@ namespace ServiceLib
             var taskWait = _coordinator.FindTracker(trackingId).WaitForFinish(timeout);
             yield return taskWait;
 
-            ctx.StatusCode = taskWait.Result ? (int)HttpStatusCode.OK : (int)HttpStatusCode.Accepted;
+            var finished = taskWait.Result;
+            ctx.StatusCode = finished ? (int)HttpStatusCode.OK : (int)HttpStatusCode.Accepted;
+            Logger.InfoFormat(
+                "Tracking request with id {0} (timeout {1}) reported {2}",
+                trackingId, timeout, finished ? "finished command" : "unfinished command");
+            yield return TaskUtils.CompletedTask();
         }
 
     }

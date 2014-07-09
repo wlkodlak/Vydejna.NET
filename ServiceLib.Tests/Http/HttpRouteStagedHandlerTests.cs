@@ -42,7 +42,7 @@ namespace ServiceLib.Tests.Http
 
             var scheduler = new TestScheduler();
             scheduler.AllowWaiting();
-            var taskHandle = scheduler.Run(() => _handler.Handle(_rawContext), false);
+            var taskHandle = scheduler.Run(() => _handler.Handle(_rawContext, new RequestParameter[0]), false);
             _staged = _processor.WaitForCall();
             Assert.IsNotNull(_staged, "Staged context not available");
             _staged.StatusCode = 302;
@@ -74,7 +74,7 @@ namespace ServiceLib.Tests.Http
                 .Returns(_serializer.Object).Verifiable();
             _rawContext.SetInput(Encoding.UTF8.GetBytes("Hello World!"));
 
-            var taskHandle = scheduler.Run(() => _handler.Handle(_rawContext), false);
+            var taskHandle = scheduler.Run(() => _handler.Handle(_rawContext, new RequestParameter[0]), false);
             _staged = _processor.WaitForCall();
             Assert.IsNotNull(_staged, "Staged context not available");
             _processor.SendCompletion();

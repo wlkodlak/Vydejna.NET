@@ -70,19 +70,23 @@ namespace ServiceLib.Tests.Messaging
         {
             public string Data = null;
         }
+        private static Task<CommandResult> CommandSuccess()
+        {
+            return TaskUtils.FromResult(CommandResult.Success(null));
+        }
         private class TestHandler1 : IProcessCommand<TestMessage1>, IProcessCommand<TestMessage2>
         {
             private List<string> _calls;
             public TestHandler1(List<string> calls) { _calls = calls; }
-            public Task<CommandResult> Handle(TestMessage1 msg) { _calls.Add(string.Format("Msg1 H1 {0}", msg.Data)); return CommandResult.TaskOk; }
-            public Task<CommandResult> Handle(TestMessage2 msg) { _calls.Add(string.Format("Msg2 H1 {0}", msg.Data)); return CommandResult.TaskOk; }
+            public Task<CommandResult> Handle(TestMessage1 msg) { _calls.Add(string.Format("Msg1 H1 {0}", msg.Data)); return CommandSuccess(); }
+            public Task<CommandResult> Handle(TestMessage2 msg) { _calls.Add(string.Format("Msg2 H1 {0}", msg.Data)); return CommandSuccess(); }
         }
         private class TestHandler2 : IProcessCommand<TestMessage1>, IProcessCommand<TestMessage2>
         {
             private List<string> _calls;
             public TestHandler2(List<string> calls) { _calls = calls; }
-            public Task<CommandResult> Handle(TestMessage1 msg) { _calls.Add(string.Format("Msg1 H2 {0}", msg.Data)); return CommandResult.TaskOk; }
-            public Task<CommandResult> Handle(TestMessage2 msg) { _calls.Add(string.Format("Msg2 H2 {0}", msg.Data)); return CommandResult.TaskOk; }
+            public Task<CommandResult> Handle(TestMessage1 msg) { _calls.Add(string.Format("Msg1 H2 {0}", msg.Data)); return CommandSuccess(); }
+            public Task<CommandResult> Handle(TestMessage2 msg) { _calls.Add(string.Format("Msg2 H2 {0}", msg.Data)); return CommandSuccess(); }
         }
     }
 }

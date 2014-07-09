@@ -10,7 +10,7 @@ namespace ServiceLib
 {
     public interface IExternalEventRepository
     {
-        Task Save(object evnt, string streamName);
+        Task Save(object evnt, string streamName, IEventProcessTrackSource tracker);
     }
 
     public class ExternalEventRepository : IExternalEventRepository
@@ -26,12 +26,23 @@ namespace ServiceLib
             _serializer = serializer;
         }
 
-        public Task Save(object evnt, string streamName)
+        public Task Save(object evnt, string streamName, IEventProcessTrackSource tracker)
+        {
+            return TaskUtils.FromEnumerable(SaveInternal(evnt, streamName, tracker)).GetTask();
+        }
+
+        public IEnumerable<Task> SaveInternal(object evnt, string streamName, IEventProcessTrackSource tracker)
         {
             var storedEvent = new EventStoreEvent();
             _serializer.Serialize(evnt, storedEvent);
             var fullStreamName = string.Concat(_streamPrefix, streamName);
-            return _eventStore.AddToStream(fullStreamName, new[] { storedEvent }, EventStoreVersion.Any);
+            var taskAdd = _eventStore.AddToStream(fullStreamName, new[] { storedEvent }, EventStoreVersion.Any);
+            yield return taskAdd;
+
+            if (taskAdd.Result)
+            {
+                tracker.AddEvent(storedEvent.Token);
+            }
         }
     }
 
@@ -42,11 +53,13 @@ namespace ServiceLib
         private readonly string _streamName;
         private readonly Stopwatch _stopwatch;
         private readonly List<object> _events;
+        private readonly IEventProcessTrackCoordinator _tracking;
 
-        public ExternalEventServiceExecution(IExternalEventRepository repository, ILog logger, string streamName)
+        public ExternalEventServiceExecution(IExternalEventRepository repository, ILog logger, IEventProcessTrackCoordinator tracking, string streamName)
         {
             _repository = repository;
             _logger = logger;
+            _tracking = tracking;
             _streamName = streamName;
             _stopwatch = new Stopwatch();
             _events = new List<object>();
@@ -68,16 +81,17 @@ namespace ServiceLib
             _stopwatch.Start();
             try
             {
+                var tracker = _tracking.CreateTracker();
                 foreach (var evnt in _events)
                 {
-                    var taskSave = _repository.Save(evnt, _streamName);
+                    var taskSave = _repository.Save(evnt, _streamName, tracker);
                     yield return taskSave;
                     taskSave.Wait();
                 }
                 _logger.InfoFormat("Events {0} saved in {1} ms", 
                     string.Join(", ", _events.Select(e => e.GetType().Name)), 
                     _stopwatch.ElapsedMilliseconds);
-                yield return CommandResult.TaskOk;
+                yield return TaskUtils.FromResult(CommandResult.Success(tracker.TrackingId));
             }
             finally
             {

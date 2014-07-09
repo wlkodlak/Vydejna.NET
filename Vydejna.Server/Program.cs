@@ -162,11 +162,12 @@ namespace Vydejna.Server
             _trackingCoordinator = new EventProcessTracking(_time);
             _processes.RegisterLocal("EventHandlerTracking", _trackingCoordinator);
 
+            var httpAppBase = _httpPrefixes[0];
             var httpRouter = new HttpRouter();
             _router = new HttpRouterCommon(httpRouter);
             _router.WithSerializer(new HttpSerializerJson()).WithSerializer(new HttpSerializerXml()).WithPicker(new HttpSerializerPicker());
             _processes.RegisterLocal("HttpServer", new HttpServer(_httpPrefixes, new HttpServerDispatcher(httpRouter)).SetupWorkerCount(1));
-            new DomainRestInterface(_mainBus).Register(_router);
+            new DomainRestInterface(_mainBus, EventProcessTrackService.GetTrackingUrlBase(httpAppBase)).Register(_router);
             new ProjectionsRestInterface(_mainBus).Register(_router);
             new EventProcessTrackService(_trackingCoordinator).Register(_router);
             _router.Commit();
@@ -196,11 +197,11 @@ namespace Vydejna.Server
             _typeMapper.Register(new SeznamNaradiTypeMapping());
             _eventSerializer = new EventSourcedJsonSerializer(_typeMapper);
 
-            new DefinovaneNaradiService(new DefinovaneNaradiRepository(_eventStore, "definovane", _eventSerializer)).Subscribe(_mainBus);
-            new CislovaneNaradiService(new CislovaneNaradiRepository(_eventStore, "cislovane", _eventSerializer), _time).Subscribe(_mainBus);
-            new NecislovaneNaradiService(new NecislovaneNaradiRepository(_eventStore, "necislovane", _eventSerializer), _time).Subscribe(_mainBus);
-            new ExterniCiselnikyService(new ExternalEventRepository(_eventStore, "externi-", _eventSerializer)).Subscribe(_mainBus);
-            new UnikatnostNaradiService(new UnikatnostNaradiRepository(_eventStore, "unikatnost", _eventSerializer)).Subscribe(_mainBus);
+            new DefinovaneNaradiService(new DefinovaneNaradiRepository(_eventStore, "definovane", _eventSerializer), _trackingCoordinator).Subscribe(_mainBus);
+            new CislovaneNaradiService(new CislovaneNaradiRepository(_eventStore, "cislovane", _eventSerializer), _time, _trackingCoordinator).Subscribe(_mainBus);
+            new NecislovaneNaradiService(new NecislovaneNaradiRepository(_eventStore, "necislovane", _eventSerializer), _time, _trackingCoordinator).Subscribe(_mainBus);
+            new ExterniCiselnikyService(new ExternalEventRepository(_eventStore, "externi-", _eventSerializer), _trackingCoordinator).Subscribe(_mainBus);
+            new UnikatnostNaradiService(new UnikatnostNaradiRepository(_eventStore, "unikatnost", _eventSerializer), _trackingCoordinator).Subscribe(_mainBus);
 
             new DetailNaradiReader(new DetailNaradiRepository(documentStore.GetFolder("detailnaradi")), _time).Subscribe(_mainBus);
             new HistorieNaradiReader(new HistorieNaradiRepositoryOperace(postgres)).Subscribe(_mainBus);

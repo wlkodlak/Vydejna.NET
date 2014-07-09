@@ -10,10 +10,12 @@ namespace Vydejna.Domain
     public class DomainRestInterface
     {
         private IPublisher _publisher;
+        private string _trackingUrlPrefix;
         
-        public DomainRestInterface(IPublisher publisher)
+        public DomainRestInterface(IPublisher publisher, string trackingUrlPrefix)
         {
             _publisher = publisher;
+            _trackingUrlPrefix = trackingUrlPrefix;
         }
 
         private Task ProvestPrikaz<T>(IHttpServerStagedContext ctx)
@@ -36,7 +38,7 @@ namespace Vydejna.Domain
             catch (Exception exception)
             {
                 var message = exception.InnerException != null ? exception.InnerException.Message : exception.Message;
-                result = new CommandResult(CommandResultStatus.InvalidCommand, new[] { new CommandError("POSTDATA", "PARSE", message) });
+                result = CommandResult.From(new CommandError("POSTDATA", "PARSE", message));
             }
             if (cmd != null)
             {
@@ -45,8 +47,10 @@ namespace Vydejna.Domain
 
                 if (task.Exception != null)
                 {
-                    result = new CommandResult(CommandResultStatus.InternalError,
-                        task.Exception.InnerExceptions.Select(ex => new CommandError("", ex.GetType().Name, ex.Message)).ToList());
+                    result = new CommandResult(
+                        CommandResultStatus.InternalError,
+                        task.Exception.InnerExceptions.Select(ex => new CommandError("", ex.GetType().Name, ex.Message)).ToList(),
+                        null);
                 }
                 else if (!task.IsCanceled)
                 {
@@ -55,7 +59,7 @@ namespace Vydejna.Domain
             }
             else if (result == null)
             {
-                result = new CommandResult(CommandResultStatus.InvalidCommand, new[] { new CommandError("POSTDATA", "REQUIRED", "Command data required") });
+                result = CommandResult.From(new CommandError("POSTDATA", "REQUIRED", "Command data required"));
             }
             if (result == null)
             {
@@ -64,6 +68,7 @@ namespace Vydejna.Domain
             else if (result.Status == CommandResultStatus.Success)
             {
                 ctx.StatusCode = 204;
+                ctx.OutputHeaders.Add("X-Completion-Tracking", string.Concat(_trackingUrlPrefix, result.TrackingId));
             }
             else
             {

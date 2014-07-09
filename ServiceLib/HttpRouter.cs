@@ -165,7 +165,7 @@ namespace ServiceLib
 
     public interface IHttpRouteHandler
     {
-        Task Handle(IHttpServerRawContext context);
+        Task Handle(IHttpServerRawContext context, IList<RequestParameter> routeParameters);
     }
 
     public class HttpUsedRoute

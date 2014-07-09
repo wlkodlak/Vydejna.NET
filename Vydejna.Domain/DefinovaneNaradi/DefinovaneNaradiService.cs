@@ -12,11 +12,13 @@ namespace Vydejna.Domain.DefinovaneNaradi
         , IProcessCommand<DefinovatNaradiInternalCommand>
     {
         private readonly IDefinovaneNaradiRepository _repoNaradi;
+        private readonly IEventProcessTrackCoordinator _tracking;
         private static readonly ILog Logger = LogManager.GetLogger("Vydejna.Domain.DefinovaneNaradi");
 
-        public DefinovaneNaradiService(IDefinovaneNaradiRepository repoNaradi)
+        public DefinovaneNaradiService(IDefinovaneNaradiRepository repoNaradi, IEventProcessTrackCoordinator tracking)
         {
             _repoNaradi = repoNaradi;
+            _tracking = tracking;
         }
 
         public void Subscribe(ISubscribable bus)
@@ -28,20 +30,20 @@ namespace Vydejna.Domain.DefinovaneNaradi
 
         public Task<CommandResult> Handle(AktivovatNaradiCommand msg)
         {
-            return new EventSourcedServiceExecution<DefinovaneNaradiAggregate>(_repoNaradi, msg.NaradiId.ToId(), Logger)
+            return new EventSourcedServiceExecution<DefinovaneNaradiAggregate>(_repoNaradi, msg.NaradiId.ToId(), Logger, _tracking)
                 .OnExisting(naradi => naradi.Aktivovat())
                 .Execute();
         }
         public Task<CommandResult> Handle(DeaktivovatNaradiCommand msg)
         {
-            return new EventSourcedServiceExecution<DefinovaneNaradiAggregate>(_repoNaradi, msg.NaradiId.ToId(), Logger)
+            return new EventSourcedServiceExecution<DefinovaneNaradiAggregate>(_repoNaradi, msg.NaradiId.ToId(), Logger, _tracking)
                 .OnExisting(naradi => naradi.Deaktivovat())
                 .Execute();
         }
 
         public Task<CommandResult> Handle(DefinovatNaradiInternalCommand msg)
         {
-            return new EventSourcedServiceExecution<DefinovaneNaradiAggregate>(_repoNaradi, msg.NaradiId.ToId(), Logger)
+            return new EventSourcedServiceExecution<DefinovaneNaradiAggregate>(_repoNaradi, msg.NaradiId.ToId(), Logger, _tracking)
                 .OnNew(() => DefinovaneNaradiAggregate.Definovat(msg.NaradiId, msg.Vykres, msg.Rozmer, msg.Druh))
                 .Execute();
         }

@@ -20,4 +20,47 @@ namespace ServiceLib.Tests.TestUtils
         }
     }
 
+    public class TestTrackSource : IEventProcessTrackSource
+    {
+        public bool Committed;
+        public EventStoreToken LastToken = EventStoreToken.Initial;
+        public int TrackedEvents = 0;
+        public string TrackingId;
+
+        string IEventProcessTrackSource.TrackingId
+        {
+            get { return TrackingId; }
+        }
+
+        public void AddEvent(EventStoreToken token)
+        {
+            TrackedEvents++;
+            if (EventStoreToken.Compare(token, LastToken) >= 0)
+                LastToken = token;
+        }
+
+        public void CommitToTracker()
+        {
+            Committed = true;
+        }
+    }
+
+    public class TestTracking : IEventProcessTrackCoordinator
+    {
+        public IEventProcessTrackSource CreateTracker()
+        {
+            return new TestTrackSource();
+        }
+
+        public IEventProcessTrackItem FindTracker(string trackingId)
+        {
+            throw new NotSupportedException();
+        }
+
+        public IEventProcessTrackTarget RegisterHandler(string handlerName)
+        {
+            throw new NotSupportedException();
+        }
+    }
+
 }

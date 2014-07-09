@@ -20,8 +20,9 @@ namespace ServiceLib
         private Stopwatch _stopwatch;
         private Dictionary<Type, Func<object, string>> _logConverters;
         private ILog _logger;
+        private IEventProcessTrackCoordinator _tracking;
 
-        public EventSourcedServiceExecution(IEventSourcedRepository<T> repository, IAggregateId aggregateId, ILog logger)
+        public EventSourcedServiceExecution(IEventSourcedRepository<T> repository, IAggregateId aggregateId, ILog logger, IEventProcessTrackCoordinator tracking)
         {
             _repository = repository;
             _aggregateId = aggregateId;
@@ -29,6 +30,7 @@ namespace ServiceLib
             _stopwatch = new Stopwatch();
             _logConverters = new Dictionary<Type, Func<object, string>>();
             _logger = logger;
+            _tracking = tracking;
         }
 
         public EventSourcedServiceExecution<T> OnExisting(Action<T> action)
@@ -82,6 +84,7 @@ namespace ServiceLib
                     yield break;
                 }
             }
+            var tracker = _tracking.CreateTracker();
             for (_tryNumber = 0; _tryNumber <= 3; _tryNumber++)
             {
                 var loadTask = _repository.Load(_aggregateId);
@@ -127,7 +130,7 @@ namespace ServiceLib
                     _stopwatch.Stop();
                     var newEvents = aggregate.GetChanges();
 
-                    var saveTask = _repository.Save(aggregate);
+                    var saveTask = _repository.Save(aggregate, tracker);
                     yield return saveTask;
 
                     aggregateSaved = saveTask.Result;
@@ -136,7 +139,7 @@ namespace ServiceLib
                     aggregateSaved = true;
                 if (aggregateSaved)
                 {
-                    yield return CommandResult.TaskOk;
+                    yield return TaskUtils.FromResult(CommandResult.Success(tracker.TrackingId));
                     yield break;
                 }
             }

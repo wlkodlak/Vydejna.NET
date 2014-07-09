@@ -12,12 +12,14 @@ namespace Vydejna.Domain.ExterniCiselniky
         , IProcessCommand<DefinovanaVadaNaradiEvent>
         , IProcessCommand<DefinovanoPracovisteEvent>
     {
-        private IExternalEventRepository _repository;
+        private readonly IExternalEventRepository _repository;
+        private readonly IEventProcessTrackCoordinator _tracking;
         private static readonly ILog Logger = LogManager.GetLogger("Vydejna.Domain.ExterniCiselniky");
 
-        public ExterniCiselnikyService(IExternalEventRepository repository)
+        public ExterniCiselnikyService(IExternalEventRepository repository, IEventProcessTrackCoordinator tracking)
         {
             _repository = repository;
+            _tracking = tracking;
         }
 
         public void Subscribe(ISubscribable bus)
@@ -29,15 +31,15 @@ namespace Vydejna.Domain.ExterniCiselniky
 
         public Task<CommandResult> Handle(DefinovanDodavatelEvent msg)
         {
-            return new ExternalEventServiceExecution(_repository, Logger, "dodavatele").AddEvent(msg).Execute();
+            return new ExternalEventServiceExecution(_repository, Logger, _tracking, "dodavatele").AddEvent(msg).Execute();
         }
         public Task<CommandResult> Handle(DefinovanaVadaNaradiEvent msg)
         {
-            return new ExternalEventServiceExecution(_repository, Logger, "vady").AddEvent(msg).Execute();
+            return new ExternalEventServiceExecution(_repository, Logger, _tracking, "vady").AddEvent(msg).Execute();
         }
         public Task<CommandResult> Handle(DefinovanoPracovisteEvent msg)
         {
-            return new ExternalEventServiceExecution(_repository, Logger, "pracoviste").AddEvent(msg).Execute();
+            return new ExternalEventServiceExecution(_repository, Logger, _tracking, "pracoviste").AddEvent(msg).Execute();
         }
     }
 }

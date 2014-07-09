@@ -67,7 +67,7 @@ namespace ServiceLib.Tests.TestUtils
             }
         }
 
-        public Task<bool> Save(T aggregate)
+        public Task<bool> Save(T aggregate, IEventProcessTrackSource tracker)
         {
             try
             {

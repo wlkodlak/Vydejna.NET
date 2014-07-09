@@ -24,7 +24,7 @@ namespace Vydejna.Domain.Tests.NecislovaneNaradiTesty
 
         protected override NecislovaneNaradiService CreateService()
         {
-            return new NecislovaneNaradiService(_repository, _time);
+            return new NecislovaneNaradiService(_repository, _time, _tracking);
         }
 
         protected override void Execute<T>(T cmd)

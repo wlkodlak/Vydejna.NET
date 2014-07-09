@@ -32,7 +32,7 @@ namespace Vydejna.Domain.Tests.NaradiObecneTesty
                 {
                     var msg = (AsyncRpcMessage<T, CommandResult>)o;
                     action(msg.Query);
-                    msg.Response.TrySetResult(CommandResult.Ok);
+                    msg.Response.TrySetResult(CommandResult.Success(null));
                 };
             }
 

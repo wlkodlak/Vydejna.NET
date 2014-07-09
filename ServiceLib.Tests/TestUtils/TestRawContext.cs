@@ -18,7 +18,6 @@ namespace ServiceLib.Tests.TestUtils
             _output = new MemoryStream();
             InputHeaders = new TestHeaders();
             OutputHeaders = new TestHeaders();
-            RouteParameters = new List<RequestParameter>();
         }
         public string Method { get { return _method; } }
         public string Url { get { return _url; } }
@@ -26,7 +25,6 @@ namespace ServiceLib.Tests.TestUtils
         public int StatusCode { get; set; }
         public Stream InputStream { get { return _input; } }
         public Stream OutputStream { get { return _output; } }
-        public IList<RequestParameter> RouteParameters { get; private set; }
         public IHttpServerRawHeaders InputHeaders { get; private set; }
         public IHttpServerRawHeaders OutputHeaders { get; private set; }
         public byte[] GetRawOutput()

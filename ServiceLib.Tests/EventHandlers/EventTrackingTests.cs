@@ -14,7 +14,6 @@ namespace ServiceLib.Tests.EventHandlers
     {
         private VirtualTime _time;
         private EventProcessTracking _coordinator;
-        private IEventProcessTrackSource _tracker;
         private List<IEventProcessTrackTarget> _targets;
         private TestScheduler _scheduler;
 

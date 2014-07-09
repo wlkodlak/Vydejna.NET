@@ -22,18 +22,18 @@ namespace ServiceLib
             _processor = processor;
         }
 
-        public Task Handle(IHttpServerRawContext context)
+        public Task Handle(IHttpServerRawContext context, IList<RequestParameter> routeParameters)
         {
-            return TaskUtils.FromEnumerable(HandleInternal(context)).GetTask();
+            return TaskUtils.FromEnumerable(HandleInternal(context, routeParameters)).GetTask();
         }
 
-        private IEnumerable<Task> HandleInternal(IHttpServerRawContext raw)
+        private IEnumerable<Task> HandleInternal(IHttpServerRawContext raw, IList<RequestParameter> routeParameters)
         {
             var requestId = Interlocked.Increment(ref _requestId);
             HttpServerStagedContext staged;
             using (new LogMethod(Logger, "Handle_Input"))
             {
-                staged = new HttpServerStagedContext(raw);
+                staged = new HttpServerStagedContext(raw, routeParameters);
                 staged.LoadParameters();
 
                 if (raw.InputStream != null)

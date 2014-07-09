@@ -13,16 +13,18 @@ namespace Vydejna.Domain.NecislovaneNaradi
         , IProcessCommand<NecislovaneNaradiPrijmoutZOpravyCommand>
         , IProcessCommand<NecislovaneNaradiPredatKeSesrotovaniCommand>
     {
-        private IEventSourcedRepository<NecislovaneNaradiAggregate> _repository;
-        private ITime _time;
-        private NecislovaneNaradiValidation _validator;
+        private readonly IEventSourcedRepository<NecislovaneNaradiAggregate> _repository;
+        private readonly ITime _time;
+        private readonly NecislovaneNaradiValidation _validator;
+        private readonly IEventProcessTrackCoordinator _tracking;
         private static readonly ILog Logger = LogManager.GetLogger("Vydejna.Domain.NecislovaneNaradi");
 
-        public NecislovaneNaradiService(IEventSourcedRepository<NecislovaneNaradiAggregate> repository, ITime time)
+        public NecislovaneNaradiService(IEventSourcedRepository<NecislovaneNaradiAggregate> repository, ITime time, IEventProcessTrackCoordinator tracking)
         {
             _repository = repository;
             _time = time;
             _validator = new NecislovaneNaradiValidation();
+            _tracking = tracking;
         }
 
         public void Subscribe(ISubscribable bus)
@@ -37,7 +39,7 @@ namespace Vydejna.Domain.NecislovaneNaradi
 
         public Task<CommandResult> Handle(NecislovaneNaradiPrijmoutNaVydejnuCommand message)
         {
-            return new EventSourcedServiceExecution<NecislovaneNaradiAggregate>(_repository, message.NaradiId.ToId(), Logger)
+            return new EventSourcedServiceExecution<NecislovaneNaradiAggregate>(_repository, message.NaradiId.ToId(), Logger, _tracking)
                 .Validate(() => _validator.Validace(message))
                 .OnRequest(agg => agg.Execute(message, _time))
                 .Execute();
@@ -45,7 +47,7 @@ namespace Vydejna.Domain.NecislovaneNaradi
 
         public Task<CommandResult> Handle(NecislovaneNaradiVydatDoVyrobyCommand message)
         {
-            return new EventSourcedServiceExecution<NecislovaneNaradiAggregate>(_repository, message.NaradiId.ToId(), Logger)
+            return new EventSourcedServiceExecution<NecislovaneNaradiAggregate>(_repository, message.NaradiId.ToId(), Logger, _tracking)
                 .Validate(() => _validator.Validace(message))
                 .OnRequest(agg => agg.Execute(message, _time))
                 .Execute();
@@ -53,7 +55,7 @@ namespace Vydejna.Domain.NecislovaneNaradi
 
         public Task<CommandResult> Handle(NecislovaneNaradiPrijmoutZVyrobyCommand message)
         {
-            return new EventSourcedServiceExecution<NecislovaneNaradiAggregate>(_repository, message.NaradiId.ToId(), Logger)
+            return new EventSourcedServiceExecution<NecislovaneNaradiAggregate>(_repository, message.NaradiId.ToId(), Logger, _tracking)
                 .Validate(() => _validator.Validace(message))
                 .OnRequest(agg => agg.Execute(message, _time))
                 .Execute();
@@ -61,7 +63,7 @@ namespace Vydejna.Domain.NecislovaneNaradi
 
         public Task<CommandResult> Handle(NecislovaneNaradiPredatKOpraveCommand message)
         {
-            return new EventSourcedServiceExecution<NecislovaneNaradiAggregate>(_repository, message.NaradiId.ToId(), Logger)
+            return new EventSourcedServiceExecution<NecislovaneNaradiAggregate>(_repository, message.NaradiId.ToId(), Logger, _tracking)
                 .Validate(() => _validator.Validace(message, _time))
                 .OnRequest(agg => agg.Execute(message, _time))
                 .Execute();
@@ -69,7 +71,7 @@ namespace Vydejna.Domain.NecislovaneNaradi
 
         public Task<CommandResult> Handle(NecislovaneNaradiPrijmoutZOpravyCommand message)
         {
-            return new EventSourcedServiceExecution<NecislovaneNaradiAggregate>(_repository, message.NaradiId.ToId(), Logger)
+            return new EventSourcedServiceExecution<NecislovaneNaradiAggregate>(_repository, message.NaradiId.ToId(), Logger, _tracking)
                 .Validate(() => _validator.Validace(message))
                 .OnRequest(agg => agg.Execute(message, _time))
                 .Execute();
@@ -77,7 +79,7 @@ namespace Vydejna.Domain.NecislovaneNaradi
 
         public Task<CommandResult> Handle(NecislovaneNaradiPredatKeSesrotovaniCommand message)
         {
-            return new EventSourcedServiceExecution<NecislovaneNaradiAggregate>(_repository, message.NaradiId.ToId(), Logger)
+            return new EventSourcedServiceExecution<NecislovaneNaradiAggregate>(_repository, message.NaradiId.ToId(), Logger, _tracking)
                 .Validate(() => _validator.Validace(message))
                 .OnRequest(agg => agg.Execute(message, _time))
                 .Execute();

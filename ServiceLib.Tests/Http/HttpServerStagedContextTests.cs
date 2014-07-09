@@ -19,7 +19,7 @@ namespace ServiceLib.Tests.Http
         [TestMethod]
         public void CreateFromRawContext()
         {
-            var ctx = new HttpServerStagedContext(_rawContext);
+            var ctx = new HttpServerStagedContext(_rawContext, new RequestParameter[0]);
             Assert.AreEqual("GET", ctx.Method, "Method");
             Assert.AreEqual("http://localhost/path/to/resource?id=448&name=wlkodlak", ctx.Url, "Method");
             Assert.AreEqual("127.0.0.1", ctx.ClientAddress, "Method");
@@ -30,7 +30,7 @@ namespace ServiceLib.Tests.Http
         {
             _rawContext.InputHeaders.Add("Content-Type", "text/xml");
             _rawContext.InputHeaders.Add("Referer", "http://referring.host.cz/");
-            var ctx = new HttpServerStagedContext(_rawContext);
+            var ctx = new HttpServerStagedContext(_rawContext, new RequestParameter[0]);
             Assert.AreEqual("text/xml", ctx.InputHeaders.ContentType, "ContentType");
             Assert.AreEqual("http://referring.host.cz/", ctx.InputHeaders.Referer, "Referer");
         }
@@ -38,8 +38,8 @@ namespace ServiceLib.Tests.Http
         [TestMethod]
         public void LoadParameters()
         {
-            _rawContext.RouteParameters.Add(new RequestParameter(RequestParameterType.Path, "res", "resource"));
-            var ctx = new HttpServerStagedContext(_rawContext);
+            var routeParameters = new[] { new RequestParameter(RequestParameterType.Path, "res", "resource") };
+            var ctx = new HttpServerStagedContext(_rawContext, routeParameters);
             ctx.LoadParameters();
             var parameters = string.Join(", ", ctx.RawParameters.OrderBy(p => p.Name).Select(p => string.Format("{0}:{1}", p.Name, p.Value)));
             Assert.AreEqual("id:448, name:wlkodlak, res:resource", parameters);

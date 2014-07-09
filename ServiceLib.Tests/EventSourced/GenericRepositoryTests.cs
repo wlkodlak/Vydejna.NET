@@ -159,12 +159,14 @@ namespace Vydejna.Tests.EventSourcedTests
         private readonly string _streamName = "testaggregate_11111111222233334444000000000001";
         private TestScheduler _scheduler;
         private TestEventStore _store;
+        private TestTrackSource _tracker;
 
         [TestInitialize]
         public void Initialize()
         {
             _scheduler = new TestScheduler();
             _store = new TestEventStore();
+            _tracker = new TestTrackSource();
         }
 
         private TestRepository GetRepository()
@@ -244,10 +246,11 @@ namespace Vydejna.Tests.EventSourcedTests
             aggregate.Id = _aggregateGuid;
             aggregate.Changes.Add(new TestEvent2 { Contents = "NewEvent" });
 
-            var outcome = _scheduler.Run(() => repository.Save(aggregate)).Result;
+            var outcome = _scheduler.Run(() => repository.Save(aggregate, _tracker)).Result;
 
             Assert.AreEqual(true, outcome, "Outcome");
             Assert.AreEqual(1, aggregate.CommitedVersion, "Committed version");
+            Assert.AreEqual(1, _tracker.TrackedEvents, "Number of tracked events");
         }
 
         [TestMethod]
@@ -258,13 +261,14 @@ namespace Vydejna.Tests.EventSourcedTests
             aggregate.Id = _aggregateGuid;
             aggregate.Changes.Add(new TestEvent2 { Contents = "NewEvent" });
 
-            var outcome = _scheduler.Run(() => repository.Save(aggregate)).Result;
+            var outcome = _scheduler.Run(() => repository.Save(aggregate, _tracker)).Result;
 
             var storedEvents = _store.GetAllEvents();
             Assert.AreEqual(1, storedEvents.Count, "Count");
             Assert.AreEqual(_streamName, storedEvents[0].StreamName);
             Assert.AreEqual("TestEvent2", storedEvents[0].Type);
             Assert.AreEqual("NewEvent", storedEvents[0].Body);
+            Assert.AreEqual(1, _tracker.TrackedEvents, "Number of tracked events");
         }
 
         [TestMethod]
@@ -280,7 +284,7 @@ namespace Vydejna.Tests.EventSourcedTests
             aggregate.Id = _aggregateGuid;  // ID is not present in test events - must be added manually
             aggregate.Changes.Add(new TestEvent2 { Contents = "NewEvent" });
 
-            var outcome = _scheduler.Run(() => repository.Save(aggregate)).Result;
+            var outcome = _scheduler.Run(() => repository.Save(aggregate, _tracker)).Result;
 
             var storedEvents = _store.GetAllEvents();
             Assert.AreEqual(true, outcome, "Outcome");
@@ -289,6 +293,7 @@ namespace Vydejna.Tests.EventSourcedTests
             Assert.AreEqual(2, storedEvents[1].StreamVersion, "StreamVersion");
             Assert.AreEqual("TestEvent2", storedEvents[1].Type, "Type");
             Assert.AreEqual("NewEvent", storedEvents[1].Body, "Body");
+            Assert.AreEqual(1, _tracker.TrackedEvents, "Number of tracked events");
         }
 
         [TestMethod]
@@ -306,7 +311,7 @@ namespace Vydejna.Tests.EventSourcedTests
 
             _store.AddToStream(_streamName, new[] { new EventStoreEvent { Type = "TestEvent1", Body = "Contents2" } });
 
-            var outcome = _scheduler.Run(() => repository.Save(aggregate)).Result;
+            var outcome = _scheduler.Run(() => repository.Save(aggregate, _tracker)).Result;
 
             var storedEvents = _store.GetAllEvents();
             Assert.AreEqual(false, outcome, "Outcome");
@@ -315,6 +320,7 @@ namespace Vydejna.Tests.EventSourcedTests
             Assert.AreEqual(2, storedEvents[1].StreamVersion, "StreamVersion");
             Assert.AreEqual("TestEvent1", storedEvents[1].Type, "Type");
             Assert.AreEqual("Contents2", storedEvents[1].Body, "Body");
+            Assert.AreEqual(0, _tracker.TrackedEvents, "Number of tracked events");
         }
 
         [TestMethod]
@@ -331,7 +337,7 @@ namespace Vydejna.Tests.EventSourcedTests
             aggregate.Id = _aggregateGuid;  // ID is not present in test events - must be added manually
             aggregate.Changes.Add(new TestEvent2 { Contents = "NewEvent" });
 
-            var outcome = _scheduler.Run(() => repository.Save(aggregate)).Result;
+            var outcome = _scheduler.Run(() => repository.Save(aggregate, _tracker)).Result;
 
             var storedEvents = _store.GetAllEvents();
             Assert.AreEqual(true, outcome, "Outcome");
@@ -340,6 +346,7 @@ namespace Vydejna.Tests.EventSourcedTests
             Assert.AreEqual(2, storedEvents[1].StreamVersion, "StreamVersion");
             Assert.AreEqual("TestEvent2", storedEvents[1].Type, "Type");
             Assert.AreEqual("NewEvent", storedEvents[1].Body, "Body");
+            Assert.AreEqual(1, _tracker.TrackedEvents, "Number of tracked events");
         }
 
         [TestMethod]
@@ -356,7 +363,7 @@ namespace Vydejna.Tests.EventSourcedTests
             aggregate.Id = _aggregateGuid;  // ID is not present in test events - must be added manually
             aggregate.Changes.Add(new TestEvent2 { Contents = "NewEvent" });
 
-            var outcome = _scheduler.Run(() => repository.Save(aggregate)).Result;
+            var outcome = _scheduler.Run(() => repository.Save(aggregate, _tracker)).Result;
 
             var snapshots = _store.GetAllSnapshots();
             Assert.AreEqual(true, outcome);
@@ -364,6 +371,7 @@ namespace Vydejna.Tests.EventSourcedTests
             Assert.AreEqual(_streamName, snapshots[0].StreamName, "StreamName");
             Assert.AreEqual("TestSnapshot", snapshots[0].Type, "Type");
             Assert.AreEqual("TestEvent1:Contents1\r\nTestEvent2:NewEvent", snapshots[0].Body, "Body");
+            Assert.AreEqual(1, _tracker.TrackedEvents, "Number of tracked events");
         }
 
         [TestMethod]
@@ -383,7 +391,7 @@ namespace Vydejna.Tests.EventSourcedTests
             aggregate.Id = _aggregateGuid;  // ID is not present in test events - must be added manually
             aggregate.Changes.Add(new TestEvent2 { Contents = "NewEvent" });
 
-            var outcome = _scheduler.Run(() => repository.Save(aggregate)).Result;
+            var outcome = _scheduler.Run(() => repository.Save(aggregate, _tracker)).Result;
 
             var snapshots = _store.GetAllSnapshots();
             Assert.AreEqual(true, outcome);
@@ -391,6 +399,7 @@ namespace Vydejna.Tests.EventSourcedTests
             Assert.AreEqual(_streamName, snapshots[0].StreamName, "StreamName");
             Assert.AreEqual("TestSnapshot", snapshots[0].Type, "Type");
             Assert.AreEqual("TestEvent1:Contents1\r\nTestEvent2:NewEvent", snapshots[0].Body, "Body");
+            Assert.AreEqual(1, _tracker.TrackedEvents, "Number of tracked events");
         }
     }
 }

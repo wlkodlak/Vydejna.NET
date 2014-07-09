@@ -16,7 +16,6 @@ namespace ServiceLib
         int StatusCode { get; set; }
         Stream InputStream { get; }
         Stream OutputStream { get; }
-        IList<RequestParameter> RouteParameters { get; }
         IHttpServerRawHeaders InputHeaders { get; }
         IHttpServerRawHeaders OutputHeaders { get; }
     }

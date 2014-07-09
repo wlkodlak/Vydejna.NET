@@ -18,13 +18,15 @@ namespace Vydejna.Domain.Tests.ExterniCiselnikyTesty
         private TestExternalEventRepository _repository;
         private ExterniCiselnikyService _service;
         private CommandResult _result;
+        private TestTracking _tracking;
 
         [TestInitialize]
         public void Initialize()
         {
             _scheduler = new TestScheduler();
             _repository = new TestExternalEventRepository();
-            _service = new ExterniCiselnikyService(_repository);
+            _tracking = new TestTracking();
+            _service = new ExterniCiselnikyService(_repository, _tracking);
             _result = null;
         }
 
@@ -108,7 +110,7 @@ namespace Vydejna.Domain.Tests.ExterniCiselnikyTesty
                 _events = new Dictionary<string, List<object>>();
             }
 
-            public Task Save(object evnt, string streamName)
+            public Task Save(object evnt, string streamName, IEventProcessTrackSource tracker)
             {
                 List<object> eventList;
                 if (!_events.TryGetValue(streamName, out eventList))

@@ -6,10 +6,10 @@ namespace ServiceLib
 {
     public class HttpServerStagedContext : IHttpServerStagedContext
     {
-        private IHttpServerRawContext _rawContext;
-        private HttpServerStagedParameters _parameters;
+        private readonly IHttpServerRawContext _rawContext;
+        private readonly HttpServerStagedParameters _parameters;
 
-        public HttpServerStagedContext(IHttpServerRawContext context)
+        public HttpServerStagedContext(IHttpServerRawContext context, IList<RequestParameter> routeParameters)
         {
             _rawContext = context;
             Method = context.Method;
@@ -20,12 +20,12 @@ namespace ServiceLib
                 InputHeaders.Add(item.Key, item.Value);
             OutputHeaders = new HttpServerStagedContextHeaders();
             _parameters = new HttpServerStagedParameters();
+            foreach (var parameter in routeParameters)
+                _parameters.AddParameter(parameter);
         }
 
         public void LoadParameters()
         {
-            foreach (var parameter in _rawContext.RouteParameters)
-                _parameters.AddParameter(parameter);
             foreach (var parameter in ParametrizedUrl.ParseQueryString(_rawContext.Url))
                 _parameters.AddParameter(parameter);
         }

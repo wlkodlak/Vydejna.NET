@@ -47,7 +47,7 @@ namespace ServiceLib
     }
     public static class HttpRouteCommonConfiguratorRouteExtensions
     {
-        public static void To(this IHttpRouteCommonConfiguratorRoute self, Func<IHttpServerRawContext, Task> handler)
+        public static void To(this IHttpRouteCommonConfiguratorRoute self, Func<IHttpServerRawContext, IList<RequestParameter>, Task> handler)
         {
             self.To(new DelegatedHttpRouteHandler(handler));
         }
@@ -57,14 +57,14 @@ namespace ServiceLib
         }
         private class DelegatedHttpRouteHandler : IHttpRouteHandler
         {
-            Func<IHttpServerRawContext, Task> _handler;
-            public DelegatedHttpRouteHandler(Func<IHttpServerRawContext, Task> handler)
+            Func<IHttpServerRawContext, IList<RequestParameter>, Task> _handler;
+            public DelegatedHttpRouteHandler(Func<IHttpServerRawContext, IList<RequestParameter>, Task> handler)
             {
                 _handler = handler;
             }
-            public Task Handle(IHttpServerRawContext context)
+            public Task Handle(IHttpServerRawContext context, IList<RequestParameter> routeParameters)
             {
-                return _handler(context);
+                return _handler(context, routeParameters);
             }
         }
         private class DelegatedHttpProcessor : IHttpProcessor

@@ -25,7 +25,9 @@ namespace ServiceLib
                     return TaskUtils.CompletedTask();
                 }
                 else
-                    return route.Handler.Handle(context);
+                {
+                    return route.Handler.Handle(context, route.RouteParameters);
+                }
             }
             catch
             {

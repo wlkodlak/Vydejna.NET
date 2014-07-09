@@ -147,7 +147,6 @@ namespace ServiceLib
         private HttpListenerResponse _response;
         private Stream _inputStream;
         private string _clientAddress;
-        private IList<RequestParameter> _routeParameters;
         private Action _onCompleted;
         private string _url;
 
@@ -157,7 +156,6 @@ namespace ServiceLib
             _url = _request.Url.OriginalString;
             _response = listenerContext.Response;
             _clientAddress = _request.RemoteEndPoint.Address.ToString();
-            _routeParameters = new List<RequestParameter>();
             _inputStream = _request.HasEntityBody ? _request.InputStream : null;
             InputHeaders = new HttpServerListenerRequestHeaders(_request);
             OutputHeaders = new HttpServerListenerResponseHeaders(_response);
@@ -170,7 +168,6 @@ namespace ServiceLib
         public int StatusCode { get { return _response.StatusCode; } set { _response.StatusCode = value; } }
         public Stream InputStream { get { return _inputStream; } }
         public Stream OutputStream { get { return _response.OutputStream; } }
-        public IList<RequestParameter> RouteParameters { get { return _routeParameters; } }
         public IHttpServerRawHeaders InputHeaders { get; private set; }
         public IHttpServerRawHeaders OutputHeaders { get; private set; }
     }

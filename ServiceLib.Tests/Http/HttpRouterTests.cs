@@ -41,7 +41,7 @@ namespace ServiceLib.Tests.Http
         {
             var route = _router.FindRoute("http://localhost" + url);
             _output.Clear();
-            route.Handler.Handle(null);
+            route.Handler.Handle(null, null);
             var actualHandler = _output.Count == 1 ? _output[0] : null;
             Assert.AreEqual(handlerName, actualHandler, "Handler for {0}", url);
             var actualParameters = string.Join(", ", route.RouteParameters.Select(p => string.Format("{0}: {1}", p.Name, p.Value)));
@@ -59,7 +59,7 @@ namespace ServiceLib.Tests.Http
                 _name = name;
             }
 
-            public Task Handle(IHttpServerRawContext context)
+            public Task Handle(IHttpServerRawContext context, IList<RequestParameter> routeParameters)
             {
                 _output.Add(_name);
                 return TaskUtils.CompletedTask();

@@ -10,7 +10,7 @@ namespace Vydejna.Domain.Tests.CislovaneNaradiTesty
     {
         protected override CislovaneNaradiService CreateService()
         {
-            return new CislovaneNaradiService(_repository, _time);
+            return new CislovaneNaradiService(_repository, _time, _tracking);
         }
 
         protected void Given(Guid naradiId, int cisloNaradi, params object[] events)

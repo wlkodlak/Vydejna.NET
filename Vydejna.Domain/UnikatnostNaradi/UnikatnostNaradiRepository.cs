@@ -7,7 +7,7 @@ namespace Vydejna.Domain.UnikatnostNaradi
     public interface IUnikatnostNaradiRepository
     {
         Task<UnikatnostNaradiAggregate> Load();
-        Task<bool> Save(UnikatnostNaradiAggregate aggregate);
+        Task<bool> Save(UnikatnostNaradiAggregate aggregate, IEventProcessTrackSource tracker);
     }
 
     public class UnikatnostNaradiId : IAggregateId
@@ -76,9 +76,9 @@ namespace Vydejna.Domain.UnikatnostNaradi
                 return _repository.Load();
             }
 
-            public Task<bool> Save(UnikatnostNaradiAggregate aggregate)
+            public Task<bool> Save(UnikatnostNaradiAggregate aggregate, IEventProcessTrackSource tracker)
             {
-                return _repository.Save(aggregate);
+                return _repository.Save(aggregate, tracker);
             }
         }
     }
