@@ -17,7 +17,8 @@ namespace Vydejna.Web
             if (useEmbeddedServer)
             {
                 _program = new Program();
-                _program.Initialize("Api");
+                var appBase = System.Configuration.ConfigurationManager.AppSettings["appBaseUrl"];
+                _program.Initialize(appBase, "Api");
                 _program.Start();
             }
             AddRoutes(RouteTable.Routes);

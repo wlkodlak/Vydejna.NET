@@ -9,6 +9,7 @@ using Vydejna.Domain;
 using Vydejna.Domain.CislovaneNaradi;
 using Vydejna.Domain.DefinovaneNaradi;
 using Vydejna.Domain.ExterniCiselniky;
+using Vydejna.Domain.NecislovaneNaradi;
 using Vydejna.Domain.Procesy;
 using Vydejna.Domain.UnikatnostNaradi;
 using Vydejna.Projections;
@@ -43,8 +44,9 @@ namespace Vydejna.Web
         private HttpHandler _handler;
         private QueuedBus _mainBus;
         private string _urlFolder;
+        private EventProcessTracking _trackingCoordinator;
 
-        public void Initialize(string uriFolder)
+        public void Initialize(string httpAppBase, string uriFolder)
         {
             _postgresConnectionString = ConfigurationManager.AppSettings.Get("database");
             _multiNode = ConfigurationManager.AppSettings.Get("multinode"); ;
@@ -68,6 +70,9 @@ namespace Vydejna.Web
             }
             _processes.RegisterBus("MainBus", _mainBus, new QueuedBusProcess(_mainBus));
 
+            _trackingCoordinator = new EventProcessTracking(_time);
+            _processes.RegisterLocal("EventHandlerTracking", _trackingCoordinator);
+
             var httpRouter = new HttpRouter();
             _router = new HttpRouterCommon(httpRouter);
             _router.WithSerializer(new HttpSerializerJson()).WithSerializer(new HttpSerializerXml()).WithPicker(new HttpSerializerPicker());
@@ -75,8 +80,10 @@ namespace Vydejna.Web
                 _router.ForFolder(_urlFolder);
             _handler = new HttpHandler(new HttpServerDispatcher(httpRouter));
 
-            new DomainRestInterface(_mainBus).Register(_router);
+            var trackingUrlPrefix = EventProcessTrackService.GetTrackingUrlBase(httpAppBase);
+            new DomainRestInterface(_mainBus, trackingUrlPrefix).Register(_router);
             new ProjectionsRestInterface(_mainBus).Register(_router);
+            new EventProcessTrackService(_trackingCoordinator).Register(_router);
             _router.Commit();
 
             var networkBus = new NetworkBusPostgres(_nodeId, postgres, _time);
@@ -104,10 +111,11 @@ namespace Vydejna.Web
             _typeMapper.Register(new SeznamNaradiTypeMapping());
             _eventSerializer = new EventSourcedJsonSerializer(_typeMapper);
 
-            new DefinovaneNaradiService(new DefinovaneNaradiRepository(_eventStore, "definovane", _eventSerializer)).Subscribe(_mainBus);
-            new CislovaneNaradiService(new CislovaneNaradiRepository(_eventStore, "cislovane", _eventSerializer), _time).Subscribe(_mainBus);
-            new ExterniCiselnikyService(new ExternalEventRepository(_eventStore, "externi-", _eventSerializer)).Subscribe(_mainBus);
-            new UnikatnostNaradiService(new UnikatnostNaradiRepository(_eventStore, "unikatnost", _eventSerializer)).Subscribe(_mainBus);
+            new DefinovaneNaradiService(new DefinovaneNaradiRepository(_eventStore, "definovane", _eventSerializer), _trackingCoordinator).Subscribe(_mainBus);
+            new CislovaneNaradiService(new CislovaneNaradiRepository(_eventStore, "cislovane", _eventSerializer), _time, _trackingCoordinator).Subscribe(_mainBus);
+            new NecislovaneNaradiService(new NecislovaneNaradiRepository(_eventStore, "necislovane", _eventSerializer), _time, _trackingCoordinator).Subscribe(_mainBus);
+            new ExterniCiselnikyService(new ExternalEventRepository(_eventStore, "externi-", _eventSerializer), _trackingCoordinator).Subscribe(_mainBus);
+            new UnikatnostNaradiService(new UnikatnostNaradiRepository(_eventStore, "unikatnost", _eventSerializer), _trackingCoordinator).Subscribe(_mainBus);
 
             new DetailNaradiReader(new DetailNaradiRepository(documentStore.GetFolder("detailnaradi")), _time).Subscribe(_mainBus);
             new HistorieNaradiReader(new HistorieNaradiRepositoryOperace(postgres)).Subscribe(_mainBus);
@@ -163,8 +171,12 @@ namespace Vydejna.Web
         {
             var subscriptions = new EventSubscriptionManager();
             processor.Subscribe(subscriptions);
-            var process = new EventProcessSimple(_metadataManager.GetConsumer(processorName),
-                new EventStreamingDeserialized(_eventStreaming, _eventSerializer), subscriptions, _time);
+            var process = new EventProcessSimple(
+                _metadataManager.GetConsumer(processorName),
+                new EventStreamingDeserialized(_eventStreaming, _eventSerializer), 
+                subscriptions, 
+                _time, 
+                _trackingCoordinator.RegisterHandler(processorName));
             _processes.RegisterGlobal("ProcesDefiniceNaradi", process, 0, 0);
         }
 
@@ -173,8 +185,13 @@ namespace Vydejna.Web
         {
             var subscriptions = new EventSubscriptionManager();
             projection.Subscribe(subscriptions);
-            var projector = new EventProjectorSimple(projection, _metadataManager.GetConsumer(projectionName),
-                new EventStreamingDeserialized(_eventStreaming, _eventSerializer), subscriptions, _time);
+            var projector = new EventProjectorSimple(
+                projection, 
+                _metadataManager.GetConsumer(projectionName),
+                new EventStreamingDeserialized(_eventStreaming, _eventSerializer), 
+                subscriptions, 
+                _time, 
+                _trackingCoordinator.RegisterHandler(projectionName));
             _processes.RegisterGlobal(projectionName, projector, 0, 0);
         }
 
