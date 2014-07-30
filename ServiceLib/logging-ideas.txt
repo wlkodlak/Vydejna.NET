@@ -1,0 +1,102 @@
+﻿SHORT CONTEXTS:
+* Used instead of thread ID in synchronous code, present in every log message
+* For event handlers: projection name + token
+* For http requests: request number (hex int)
+* Other background tasks: process name + possibly some number when there are more "threads"
+
+LOGGING LEVELS:
+* FATAL - unable to start, assembly missing => bad installation
+* ERROR - unexpected error
+* TRANSIENT UNCORRECTED - transient error eventually unsuccessful (duplicate with just TRANSIENT)
+* TRANSIENT - transient error (both eventually successful and unsuccessful)
+* WARN - possible problem
+	- automatically corrected error (like using default values when mandatory element is missing in non-refusable message like events)
+* INFO FRAGMENT - data used to assemble one summary message for whole request
+* DEBUG 1-5 - debug levels; which are actually written depends on request mode
+
+HTTP-ONLY SUCCESS:
+* URL, Postdata (optionally trimmed), Full request
+* Status code, content type + response body (optionally trimmed), Full response
+* Exception message, Full exception
+
+HTTP-ONLY FAILURE:
+* URL, Postdata (optionally trimmed), Full request
+* Status code, content type + response body (optionally trimmed), Full response
+* Exception message, Full exception
+
+HTTP-ONLY ERROR:
+* URL, Postdata (optionally trimmed), Full request
+* Status code, content type + response body (optionally trimmed), Full response
+* Full exception
+
+COMMAND SUCCESS:
+* Request duration
+* Command type
+* Command summary (needs description generator)
+* Postdata (optionally trimmed) + content type
+* Full response
+* Tracking ID
+* Debug messages in OK mode
+* Generated events: type, token, summary
+* Corrected transient errors
+
+COMMAND NORMAL FAILURE (validation error, domain error, warning occurred, transient error):
+* Request duration
+* Command type
+* Command summary
+* Postdata (optionally trimmed) + content type
+* Full response
+* Debug messages in modes OK, ClientError
+* Error summary (code + message), full error exception, including inner exceptions
+* Corrected transient errors, uncorrected transient errors
+
+COMMAND ERROR (unexpected exceptions):
+* Request duration
+* Command type, summary, postdata (optionally trimmed) + content-type
+* Full response
+* All debug messages
+* Full error exception including inner exceptions
+* Corrected transient errors, uncorrected transient errors
+
+QUERY SUCCESS:
+* Request duration
+* Query summary, URL, URL + trimmed postdata, full request
+* Response summary, response data (optinally trimmed), full response
+* Corrected transient errors
+
+QUERY FAILURE (bad parameters, warning occurred, transient error):
+* Request duration
+* Query summary, URL, URL + trimmed postdata, full request
+* Response summary, response data (optinally trimmed), full response
+* Error message, full exception
+* Corrected transient errors, uncorrected transient errors
+
+QUERY ERROR (unexpected exception):
+* Request duration
+* Query summary, URL, URL + trimmed postdata, full request
+* Response summary, response data (optinally trimmed), full response
+* Error message, full exception
+* Corrected transient errors, uncorrected transient errors
+
+PROJECTION REBUILD FINISHED:
+* Projection name, Total events count, total duration, final token
+
+PROJECTION INITIALIZATION:
+* Projection name, rebuild mode, starting token (after possible reset)
+
+PROJECTION FLUSH:
+* Projection name, event count, flush duration, total duration (event processing + flush)
+
+PROJECTION SUCCESS:
+* Projection name
+* Token, Event type + token, Event summary, event data (serialized)
+
+PROJECTION FAILURE (due to transient error, will retry):
+* Projection name
+* Token, Event type + token, Event summary, event data (serialized)
+* Error message, full exception
+
+PROJECTION ERROR:
+* Projection name
+* Token, Event type + token, Event summary, event data (serialized)
+* Full exception

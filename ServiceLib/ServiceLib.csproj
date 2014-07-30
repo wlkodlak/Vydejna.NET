@@ -106,6 +106,7 @@
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="logging-ideas.txt" />
     <Content Include="TODO.txt" />
   </ItemGroup>
   <ItemGroup>
