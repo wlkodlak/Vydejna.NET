@@ -1,0 +1,30 @@
+﻿Client API - sending raw information to logs:
+
+	LogContextFactory.Build(string shortContext) : LogContext
+	LogContext.Log(origin, level, message, parameters)
+		- error (bug)
+		- fresh transient error
+		- transient error corrected
+		- failure (bad input)
+		- info (operation summary)
+		- debug (useful bits of information to resolve problems in production)
+		- trace (detailed data when debugging in Visual Studio)
+	LogContext.GetLogMessages() : LogMessage[] { Timestamp, Origin, Level, FullMessage, Exception }
+	LogContext.Finish()
+	LogContextHttp.Request(IHttpServerStagedContext)
+	LogContextHttp.Response(IHttpServerStagedContext)
+	LogContextCommand.Request(commandObject)
+	LogContextCommand.Response(commandResponse)
+	LogContextQuery.Request(queryObject)
+	LogContextQuery.Response(queryResponse)
+	LogContextEvent.Initialization(projectionName, rebuildMode, startingToken)
+	LogContextEvent.RebuildFinished()
+	LogContextEvent.Flushed()
+	LogContextEvent.EventArrived(serializedEvent, objectEvent)
+	LogContextEvent.EventProcessed()
+
+Configuration API - configuring what to log, when and where
+	LogContextFactory.WhenFinished(Predicate<LogContext>, int priority).UseGenerator(Action<LogContext, LogContextWriter>)
+	LogContextFactory.ImmediateLog(Action<LogContext, LogContextWriter, LogMessage>)
+	
+	LogContext*Writer: Command, Query, Event, Http

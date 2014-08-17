@@ -82,6 +82,7 @@
     <Compile Include="HttpServerStagedContextHeaders.cs" />
     <Compile Include="HttpServerStagedParameters.cs" />
     <Compile Include="IHandle.cs" />
+    <Compile Include="LogContext.cs" />
     <Compile Include="LoggingExtensions.cs" />
     <Compile Include="MemoryCache.cs" />
     <Compile Include="NetworkBus.cs" />
@@ -106,6 +107,7 @@
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="logging-design.txt" />
     <Content Include="logging-ideas.txt" />
     <Content Include="TODO.txt" />
   </ItemGroup>
