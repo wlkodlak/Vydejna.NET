@@ -28,3 +28,21 @@ Configuration API - configuring what to log, when and where
 	LogContextFactory.ImmediateLog(Action<LogContext, LogContextWriter, LogMessage>)
 	
 	LogContext*Writer: Command, Query, Event, Http
+
+
+
+Full HTTP log message:
+	[HTTP #48b93aa9] [2014-08-17 16:41:22.394 INFO] Request http://localhost:3394/path/to/resource?query=stress+test processed in 49ms as status 200.
+	[HTTP #48b93aa9] Request headers:
+	Content-Type: text/xml
+	Content-Length: 398482
+	Accept-Language: en, cs
+	[HTTP #48b93aa9] Request body (text/xml): ...............
+	............................
+	.....................
+	[HTTP #48b93aa9] Response headers:
+	Content-Type: text/xml
+	Content-Length: 398482
+	[HTTP #48b93aa9] Response body (200 text/xml):  .........................
+	.......................
+	.....

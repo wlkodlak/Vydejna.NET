@@ -62,7 +62,7 @@ namespace ServiceLib
 
     public enum LogContextLevel
     {
-        Unknown,
+        None,
         Critical,
         Error,
         Transient,
@@ -811,6 +811,25 @@ namespace ServiceLib
                 return string.Format("Event {0} in projection {1} crashed. {2}",
                     SerializedEvent.Type, ProjectionName, Exception);
             }
+        }
+    }
+
+    public enum LogContextHttpRequestLevel { None, URL, TrimmedPostdata, FullPostdata, FullRequest }
+    public enum LogContextHttpResponseLevel { None, StatusCode, TrimmedBody, FullBody, FullResponse }
+    public enum LogContextHttpErrorLevel { MessageOnly, FirstException, WholeExceptionTree }
+
+    public class LogContextHttpWriter : ILogContextDelayedWriter
+    {
+        public LogContextHttpRequestLevel RequestLevel { get; set; }
+        public LogContextHttpResponseLevel ResponseLevel { get; set; }
+        public LogContextHttpErrorLevel ErrorLevel { get; set; }
+        public LogContextLevel IncludedMessages { get; set; }
+        public bool IncludeDuration { get; set; }
+
+        public void Write(ILogContextAdvanced context, System.IO.TextWriter writer)
+        {
+            var httpLogContext = context.GetContext<LogContextHttp>();
+            var logMessage = new StringBuilder();
         }
     }
 }
