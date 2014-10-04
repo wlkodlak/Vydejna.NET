@@ -7,7 +7,7 @@ using Npgsql;
 using System.Threading;
 using System.Data;
 using System.IO;
-using log4net;
+using System.Diagnostics;
 
 namespace ServiceLib
 {
@@ -19,7 +19,7 @@ namespace ServiceLib
         private readonly ITime _time;
         private readonly CircuitBreaker _breaker;
         private readonly string _logName;
-        private static readonly ILog Logger = LogManager.GetLogger("ServiceLib.Database");
+        private static readonly DatabasePostgresTraceSource Logger = new DatabasePostgresTraceSource("ServiceLib.DatabasePostgres");
         private int _concurrentWorkers;
         private TaskScheduler _scheduler;
 
@@ -106,8 +106,7 @@ namespace ServiceLib
         {
             try
             {
-                Logger.TraceFormat("Getting connection to {0} ({1} concurrent workers)", 
-                    _logName, Thread.VolatileRead(ref _concurrentWorkers));
+                Logger.GettingConnection(_logName, Thread.VolatileRead(ref _concurrentWorkers));
                 conn.Open();
             }
             catch (Exception ex)
@@ -274,7 +273,7 @@ namespace ServiceLib
 
             private void OnNotified(object sender, NpgsqlNotificationEventArgs e)
             {
-                Logger.DebugFormat("Received notification {0}, payload {1}", e.Condition, e.AdditionalInformation);
+                Logger.ReceivedNotification(e.Condition, e.AdditionalInformation);
                 OnNotified(e.Condition, e.AdditionalInformation);
             }
 
@@ -298,7 +297,7 @@ namespace ServiceLib
                     _listeners.Add(listener);
                     if (add)
                     {
-                        Logger.DebugFormat("Adding listener for {0}", listener.Name);
+                        Logger.AddingListener(listener.Name);
                         _changes.Add(new ListeningChange { Add = true, Name = listener.Name });
                         Monitor.Pulse(_lock);
                     }
@@ -312,7 +311,7 @@ namespace ServiceLib
                     _listeners.Remove(listener);
                     if (!_listeners.Any(l => l.Name == listener.Name))
                     {
-                        Logger.DebugFormat("Removing listener for {0}", listener.Name);
+                        Logger.RemovingListener(listener.Name);
                         _changes.Add(new ListeningChange { Add = true, Name = listener.Name });
                         Monitor.Pulse(_lock);
                     }
@@ -323,7 +322,7 @@ namespace ServiceLib
             {
                 lock (_lock)
                 {
-                    Logger.DebugFormat("Scheduling notification for {0}", name);
+                    Logger.ScheduleNotify(name, payload);
                     _notifications.Add(new Notification { Name = name, Payload = payload });
                     Monitor.Pulse(_lock);
                 }
@@ -349,7 +348,7 @@ namespace ServiceLib
                 {
                     var cancel = _cancel.Token;
                     var attemptNumber = 0;
-                    Logger.Debug("Starting notification service");
+                    Logger.StartingNotificationService();
                     while (!cancel.IsCancellationRequested)
                     {
                         attemptNumber++;
@@ -382,7 +381,7 @@ namespace ServiceLib
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine("Fatal error in NOTIFY task: " + ex.ToString());
+                    Logger.NotificationCoreCrashed(ex);
                 }
             }
 
@@ -391,13 +390,13 @@ namespace ServiceLib
                 var attemptStart = _parent._time.GetUtcTime();
                 try
                 {
-                    Logger.DebugFormat("Opening connection for notifications to {0}", _parent._logName);
+                    Logger.OpeningNotificationConnection(_parent._logName);
                     conn.Open();
                     return true;
                 }
-                catch (IOException)
+                catch (IOException ex)
                 {
-                    Logger.DebugFormat("Connection could not be established to {0}", _parent._logName);
+                    Logger.OpeningNotificationConnectionFailed(_parent._logName, ex);
                     var attemptLength = (int)(_parent._time.GetUtcTime() - attemptStart).TotalMilliseconds;
                     var timeout = Math.Max(0, (attemptNumber == 0 ? 0 : 20000) - attemptLength);
                     if (timeout > 0)
@@ -419,7 +418,7 @@ namespace ServiceLib
                 }
                 if (commands.Length > 0)
                 {
-                    Logger.DebugFormat("Sending LISTEN after restoring connection - {0}", commands);
+                    Logger.SendInitialListen(commands.ToString());
                     using (var cmd = conn.CreateCommand())
                     {
                         cmd.CommandText = commands.ToString();
@@ -453,7 +452,7 @@ namespace ServiceLib
                 }
                 if (commands.Length > 0)
                 {
-                    Logger.DebugFormat("Sending additional LISTENing changes - {0}", commands);
+                    Logger.SendAdditionalListen(commands.ToString());
                     notificationsCheck = false;
                     using (var cmd = conn.CreateCommand())
                     {
@@ -471,7 +470,7 @@ namespace ServiceLib
                         var paramPayload = cmd.Parameters.Add("payload", NpgsqlTypes.NpgsqlDbType.Text);
                         foreach (var notification in notifications)
                         {
-                            Logger.DebugFormat("Sending notification {0}, payload {1}", notification.Name, notification.Payload);
+                            Logger.NotifyListener(notification.Name, notification.Payload);
                             paramName.Value = notification.Name;
                             paramPayload.Value = notification.Payload;
                             cmd.ExecuteNonQuery();
@@ -487,6 +486,101 @@ namespace ServiceLib
                     }
                 }
             }
+        }
+    }
+
+    public class DatabasePostgresTraceSource : TraceSource
+    {
+        public DatabasePostgresTraceSource(string name)
+            : base(name) 
+        { 
+        }
+
+        public void GettingConnection(string connectionSetup, int workerCount)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 101, "Getting connection");
+            msg.SetProperty("Setup", false, connectionSetup);
+            msg.SetProperty("ConcurrentWorkers", false, workerCount);
+            msg.Log(this);
+        }
+
+        public void ReceivedNotification(string condition, string payload)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 201, "Received notification");
+            msg.SetProperty("Condition", false, condition);
+            msg.SetProperty("Payload", false, payload);
+            msg.Log(this);
+        }
+
+        public void AddingListener(string name)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 202, "Adding listener");
+            msg.SetProperty("ListenerName", false, name);
+            msg.Log(this);
+        }
+
+        public void RemovingListener(string name)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 203, "Removing listener");
+            msg.SetProperty("ListenerName", false, name);
+            msg.Log(this);
+        }
+
+        public void ScheduleNotify(string name, string payload)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 204, "Scheduling notification for {ListenerName}");
+            msg.SetProperty("ListenerName", false, name);
+            msg.SetProperty("Payload", false, payload);
+            msg.Log(this);
+        }
+
+        public void NotifyListener(string name, string payload)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 204, "Sending notification for {ListenerName}");
+            msg.SetProperty("ListenerName", false, name);
+            msg.SetProperty("Payload", false, payload);
+            msg.Log(this);
+        }
+
+        public void StartingNotificationService()
+        {
+            new LogContextMessage(TraceEventType.Verbose, 205, "Starting notification service").Log(this);
+        }
+
+        public void OpeningNotificationConnection(string connectionSetup)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 206, "Opening connection for notifications");
+            msg.SetProperty("ConnectionSetup", false, connectionSetup);
+            msg.Log(this);
+        }
+
+        public void OpeningNotificationConnectionFailed(string connectionSetup, Exception exception)
+        {
+            var msg = new LogContextMessage(TraceEventType.Warning, 207, "Opening connection for notifications failed");
+            msg.SetProperty("ConnectionSetup", false, connectionSetup);
+            msg.SetProperty("Exception", true, exception);
+            msg.Log(this);
+        }
+
+        public void SendInitialListen(string listenCommands)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 208, "Sending initial LISTEN commands after restoring connection");
+            msg.SetProperty("Commands", true, listenCommands);
+            msg.Log(this);
+        }
+
+        public void SendAdditionalListen(string listenCommands)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 209, "Sending additional LISTENing changes");
+            msg.SetProperty("Commands", true, listenCommands);
+            msg.Log(this);
+        }
+
+        public void NotificationCoreCrashed(Exception ex)
+        {
+            var msg = new LogContextMessage(TraceEventType.Error, 280, "Notification core crashed!");
+            msg.SetProperty("Exception", true, ex);
+            msg.Log(this);
         }
     }
 }
