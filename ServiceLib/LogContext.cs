@@ -1,34 +1,18 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
+using System.Threading;
 
 namespace ServiceLib
 {
     public interface ILogContext
     {
-        ILogContextAdvanced Advanced { get; }
-        void Critical(string origin, string message, Exception exception, params object[] parameters);
-        void Error(string origin, string message, Exception exception, params object[] parameters);
-        void Error(string origin, string message, params object[] parameters);
-        void TransientError(string origin, string message, Exception exception, params object[] parameters);
-        void TransientFixed(string origin, string message, params object[] parameters);
-        void Failure(string origin, string message, Exception exception, params object[] parameters);
-        void Warning(string origin, string message, params object[] parameters);
-        void Info(string origin, string message, params object[] parameters);
-        void Debug(string origin, string message, params object[] parameters);
-        void Trace(string origin, string message, params object[] parameters);
-    }
-    public interface ILogContextAdvanced
-    {
-        void Finish();
-        IList<ILogContextMessage> GetLogMessages();
+        string ShortContext { get; }
         T GetContext<T>();
         void SetContext<T>(T context);
-        void Log(ILogContextMessage message);
-        string GenerateSummaryFor(object message);
-        DateTime CurrentTimestamp();
     }
 
     public interface ILogContextFactory
@@ -36,800 +20,421 @@ namespace ServiceLib
         ILogContext Build(string shortContext);
     }
 
-    public interface ILogContextImmediateWriter
+    public interface ILogContextMessage : IEnumerable<LogContextMessageProperty>
     {
-        void Write(ILogContextAdvanced context, System.IO.TextWriter writer, ILogContextMessage message);
+        TraceEventType Level { get; }
+        string SummaryFormat { get; }
+        object GetProperty(string name);
     }
 
-    public interface ILogContextDelayedWriter
+    public struct LogContextMessageProperty
     {
-        void Write(ILogContextAdvanced context, System.IO.TextWriter writer);
+        public string Name;
+        public bool IsLong;
+        public object Value;
     }
 
-    public interface ILogContextConfigurable
+    public class LogContext : ILogContext
     {
-        void ImmediateLog(ILogContextImmediateWriter writer);
-        void When(Predicate<ILogContextAdvanced> condition, int priority, ILogContextDelayedWriter writer);
-    }
+        private string _shortCode;
+        private readonly ConcurrentDictionary<Type, object> _contexts;
 
-    public interface ILogContextMessage
-    {
-        DateTime Timestamp { get; }
-        string Origin { get; }
-        LogContextLevel Level { get; }
-        string Message { get; }
-    }
-
-    public enum LogContextLevel
-    {
-        None,
-        Critical,
-        Error,
-        Transient,
-        TransientFixed,
-        Failure,
-        Warning,
-        Information,
-        Debug,
-        Trace,
-        ContextReset
-    }
-
-    public class LogContextHttp
-    {
-        private ILogContextAdvanced _context;
-        private Stopwatch _stopwatch;
-        private IHttpServerStagedContext _httpContext;
-        private Exception _exception;
-
-        private LogContextHttp() { }
-
-        public IHttpServerStagedContext HttpContext { get { return _httpContext; } }
-        public Exception Exception { get { return _exception; } }
-
-        public static void Request(ILogContext context, IHttpServerStagedContext httpContext)
+        public LogContext(string shortCode)
         {
-            var self = new LogContextHttp();
-            self._context = context.Advanced;
-            self._stopwatch = new Stopwatch();
-            self._httpContext = httpContext;
-            self._stopwatch.Start();
-            self._context.SetContext(self);
-            self._context.Log(new LogContextHttpRequestMessage
-            {
-                Timestamp = self._context.CurrentTimestamp(),
-                HttpContext = self._httpContext
-            });
+            _shortCode = shortCode;
+            _contexts = new ConcurrentDictionary<Type, object>();
         }
 
-        public static void Response(ILogContext context)
+        string ILogContext.ShortContext
         {
-            var self = context.Advanced.GetContext<LogContextHttp>();
-            self._stopwatch.Stop();
-            self._context.Log(new LogContextHttpResponseMessage
-            {
-                Timestamp = self._context.CurrentTimestamp(),
-                HttpContext = self._httpContext,
-                DurationMs = self._stopwatch.ElapsedMilliseconds
-            });
+            get { return _shortCode; }
         }
 
-        public static void Crashed(ILogContext context, Exception exception)
+        T ILogContext.GetContext<T>()
         {
-            var self = context.Advanced.GetContext<LogContextHttp>();
-            self._exception = exception;
-            self._stopwatch.Stop();
-            self._context.Log(new LogContextHttpCrashedMessage
-            {
-                Timestamp = self._context.CurrentTimestamp(),
-                HttpContext = self._httpContext,
-                Exception = self._exception
-            });
+            object context;
+            if (_contexts.TryGetValue(typeof(T), out context))
+                return (T)context;
+            else
+                return default(T);
+        }
+
+        void ILogContext.SetContext<T>(T context)
+        {
+            _contexts[typeof(T)] = context;
         }
     }
 
-    public class LogContextHttpRequestMessage : ILogContextMessage
+    public class LogContextFactory : ILogContextFactory
     {
-        public DateTime Timestamp { get; set; }
-        public IHttpServerStagedContext HttpContext { get; set; }
-
-        string ILogContextMessage.Origin { get { return "ServiceLib.LogContextHttp.Request"; } }
-        LogContextLevel ILogContextMessage.Level { get { return LogContextLevel.Debug; } }
-        string ILogContextMessage.Message
+        ILogContext ILogContextFactory.Build(string shortContext)
         {
-            get { return string.Format("HTTP request {0} arrived", HttpContext.Url); }
-        }
-    }
-
-    public class LogContextHttpResponseMessage : ILogContextMessage
-    {
-        public DateTime Timestamp { get; set; }
-        public IHttpServerStagedContext HttpContext { get; set; }
-        public long DurationMs { get; set; }
-
-        string ILogContextMessage.Origin { get { return "ServiceLib.LogContextHttp.Response"; } }
-        LogContextLevel ILogContextMessage.Level { get { return LogContextLevel.Debug; } }
-        string ILogContextMessage.Message
-        {
-            get
-            {
-                return string.Format(
-                    "HTTP response {0} dispatched ({1} ms)",
-                    HttpContext.StatusCode, DurationMs);
-            }
-        }
-    }
-
-    public class LogContextHttpCrashedMessage : ILogContextMessage
-    {
-        public DateTime Timestamp { get; set; }
-        public IHttpServerStagedContext HttpContext { get; set; }
-        public Exception Exception { get; set; }
-
-        string ILogContextMessage.Origin { get { return "ServiceLib.LogContextHttp.Crashed"; } }
-        LogContextLevel ILogContextMessage.Level { get { return LogContextLevel.Error; } }
-        string ILogContextMessage.Message
-        {
-            get
-            {
-                return string.Format(
-                    "HTTP request {0} caused crash: {1}",
-                    HttpContext.Url, Exception);
-            }
-        }
-    }
-
-    public class LogContextCommand
-    {
-        private ILogContextAdvanced _context;
-        private Stopwatch _stopwatch;
-        private object _command;
-        private CommandResult _result;
-        private Exception _exception;
-
-        private LogContextCommand() { }
-
-        public object Command { get { return _command; } }
-        public CommandResult Result { get { return _result; } }
-        public Exception Exception { get { return _exception; } }
-
-        public static void Arrived(ILogContext context, object command)
-        {
-            var self = new LogContextCommand();
-            self._command = command;
-            self._context = context.Advanced;
-            self._stopwatch = new Stopwatch();
-            self._stopwatch.Start();
-            self._context.SetContext(self);
-            self._context.Log(new LogContextCommandArrivedMessage
-            {
-                Timestamp = self._context.CurrentTimestamp(),
-                Command = command
-            });
-        }
-        public static void ProducedEvent(ILogContext context, object evnt)
-        {
-            var self = context.Advanced.GetContext<LogContextCommand>();
-            self._context.Log(new LogContextCommandProducedEventMessage
-            {
-                Timestamp = self._context.CurrentTimestamp(),
-                Command = self._command,
-                Event = evnt
-            });
-        }
-        public static void Finished(ILogContext context, CommandResult result)
-        {
-            var self = context.Advanced.GetContext<LogContextCommand>();
-            self._result = result;
-            self._stopwatch.Stop();
-            self._context.Log(new LogContextCommandFinishedMessage
-            {
-                Timestamp = self._context.CurrentTimestamp(),
-                Command = self._command,
-                Result = self._result,
-                DurationMs = self._stopwatch.ElapsedMilliseconds
-            });
-        }
-        public static void Failed(ILogContext context, Exception exception)
-        {
-            var self = context.Advanced.GetContext<LogContextCommand>();
-            self._exception = exception;
-            self._stopwatch.Stop();
-            self._context.Log(new LogContextCommandFailedMessage
-            {
-                Timestamp = self._context.CurrentTimestamp(),
-                Command = self._command,
-                Exception = exception
-            });
-        }
-        public static void Crashed(ILogContext context, Exception exception)
-        {
-            var self = context.Advanced.GetContext<LogContextCommand>();
-            self._exception = exception;
-            self._stopwatch.Stop();
-            self._context.Log(new LogContextCommandCrashedMessage
-            {
-                Timestamp = self._context.CurrentTimestamp(),
-                Command = self._command,
-                Exception = exception
-            });
-        }
-    }
-
-    public class LogContextCommandArrivedMessage : ILogContextMessage
-    {
-        public DateTime Timestamp { get; set; }
-        public object Command { get; set; }
-
-        string ILogContextMessage.Origin { get { return "ServiceLib.LogContextCommand.Arrived"; } }
-        LogContextLevel ILogContextMessage.Level { get { return LogContextLevel.Debug; } }
-        string ILogContextMessage.Message
-        {
-            get { return string.Format("Command {0} arrived", Command.GetType().FullName); }
-        }
-    }
-
-    public class LogContextCommandCrashedMessage : ILogContextMessage
-    {
-        public DateTime Timestamp { get; set; }
-        public object Command { get; set; }
-        public Exception Exception { get; set; }
-
-        string ILogContextMessage.Origin { get { return "ServiceLib.LogContextCommand.Crashed"; } }
-        LogContextLevel ILogContextMessage.Level { get { return LogContextLevel.Error; } }
-        string ILogContextMessage.Message
-        {
-            get { return string.Format("Command {0} crashed: {1}", Command.GetType().FullName, Exception); }
-        }
-    }
-
-    public class LogContextCommandFailedMessage : ILogContextMessage
-    {
-        public DateTime Timestamp { get; set; }
-        public object Command { get; set; }
-        public Exception Exception { get; set; }
-
-        string ILogContextMessage.Origin { get { return "ServiceLib.LogContextCommand.Crashed"; } }
-        LogContextLevel ILogContextMessage.Level { get { return LogContextLevel.Transient; } }
-        string ILogContextMessage.Message
-        {
-            get
-            {
-                return string.Format(
-                    "Command {0} could not be processed and should be retried: {1}",
-                    Command.GetType().FullName, Exception);
-            }
-        }
-    }
-
-    public class LogContextCommandFinishedMessage : ILogContextMessage
-    {
-        public DateTime Timestamp { get; set; }
-        public object Command { get; set; }
-        public CommandResult Result { get; set; }
-        public long DurationMs { get; set; }
-
-        string ILogContextMessage.Origin { get { return "ServiceLib.LogContextCommand.Finished"; } }
-        LogContextLevel ILogContextMessage.Level
-        {
-            get
-            {
-                return (Result.Status == CommandResultStatus.InternalError)
-                    ? LogContextLevel.Error : LogContextLevel.Information;
-            }
-        }
-        string ILogContextMessage.Message
-        {
-            get
-            {
-                if (Result.Status == CommandResultStatus.Success)
-                {
-                    return string.Format(
-                        "Command {0} processed (tracking id {1})",
-                           Command.GetType().FullName, Result.TrackingId);
-                }
-                else
-                {
-                    var sb = new StringBuilder();
-                    sb.AppendFormat("Command {0} failed: ", Command.GetType().FullName);
-                    bool first = true;
-                    foreach (var error in Result.Errors)
-                    {
-                        if (!first)
-                            sb.Append(",");
-                        first = false;
-                        sb.Append(error.Message);
-                    }
-                    return sb.ToString();
-                }
-            }
-        }
-    }
-
-    public class LogContextCommandProducedEventMessage : ILogContextMessage
-    {
-        public DateTime Timestamp { get; set; }
-        public object Command { get; set; }
-        public object Event { get; set; }
-
-        string ILogContextMessage.Origin { get { return "ServiceLib.LogContextCommand.ProducedEvent"; } }
-        LogContextLevel ILogContextMessage.Level { get { return LogContextLevel.Debug; } }
-        string ILogContextMessage.Message
-        {
-            get { return string.Format(""); }
-        }
-    }
-
-    public class LogContextQuery
-    {
-        private ILogContextAdvanced _context;
-        private object _query, _response;
-        private Stopwatch _stopwatch;
-        private Exception _exception;
-
-        private LogContextQuery() { }
-
-        public object Query { get { return _query; } }
-        public object Response { get { return _response; } }
-        public Exception Exception { get { return _exception; } }
-
-        public static void WrongRequest(ILogContext context, object query, Exception exception)
-        {
-            var self = new LogContextQuery();
-            self._context = context.Advanced;
-            self._query = query;
-            self._exception = exception;
-            self._stopwatch = new Stopwatch();
-            self._context.SetContext(self);
-            self._context.Log(new LogContextQueryWrongMessage
-            {
-                Timestamp = self._context.CurrentTimestamp(),
-                Query = self._query,
-                Exception = exception
-            });
-        }
-
-        public static void Arrived(ILogContext context, object query)
-        {
-            var self = new LogContextQuery();
-            self._context = context.Advanced;
-            self._query = query;
-            self._stopwatch = new Stopwatch();
-            self._stopwatch.Start();
-            self._context.SetContext(self);
-            self._context.Log(new LogContextQueryArrivedMessage
-            {
-                Timestamp = self._context.CurrentTimestamp(),
-                Query = self._query
-            });
-        }
-
-        public static void Finished(ILogContext context, object response)
-        {
-            var self = context.Advanced.GetContext<LogContextQuery>();
-            self._response = response;
-            self._stopwatch.Stop();
-            self._context.Log(new LogContextQueryFinishedMessage
-            {
-                Timestamp = self._context.CurrentTimestamp(),
-                Query = self._query,
-                Response = self._response,
-                DurationMs = self._stopwatch.ElapsedMilliseconds
-            });
-        }
-
-        public static void Failed(ILogContext context, Exception exception)
-        {
-            var self = context.Advanced.GetContext<LogContextQuery>();
-            self._exception = exception;
-            self._stopwatch.Stop();
-            self._context.Log(new LogContextQueryFailedMessage
-            {
-                Timestamp = self._context.CurrentTimestamp(),
-                Query = self._query,
-                Exception = self._exception,
-                DurationMs = self._stopwatch.ElapsedMilliseconds
-            });
-        }
-
-        public static void Crashed(ILogContext context, Exception exception)
-        {
-            var self = context.Advanced.GetContext<LogContextQuery>();
-            self._exception = exception;
-            self._stopwatch.Stop();
-            self._context.Log(new LogContextQueryCrashedMessage
-            {
-                Timestamp = self._context.CurrentTimestamp(),
-                Query = self._query,
-                Exception = self._exception,
-                DurationMs = self._stopwatch.ElapsedMilliseconds
-            });
-        }
-    }
-
-    public class LogContextQueryArrivedMessage : ILogContextMessage
-    {
-        public DateTime Timestamp { get; set; }
-        public object Query { get; set; }
-
-        string ILogContextMessage.Origin { get { return "ServiceLib.LogContextQuery.Arrived"; } }
-        LogContextLevel ILogContextMessage.Level { get { return LogContextLevel.Debug; } }
-        string ILogContextMessage.Message
-        {
-            get { return string.Format("Query request {0} arrived", Query.GetType().FullName); }
-        }
-    }
-
-    public class LogContextQueryFinishedMessage : ILogContextMessage
-    {
-        public DateTime Timestamp { get; set; }
-        public object Query { get; set; }
-        public object Response { get; set; }
-        public long DurationMs { get; set; }
-
-        string ILogContextMessage.Origin { get { return "ServiceLib.LogContextQuery.Finished"; } }
-        LogContextLevel ILogContextMessage.Level { get { return LogContextLevel.Debug; } }
-        string ILogContextMessage.Message
-        {
-            get { return string.Format("Query response {0} dispatched", Response.GetType().FullName); }
-        }
-    }
-
-    public class LogContextQueryWrongMessage : ILogContextMessage
-    {
-        public DateTime Timestamp { get; set; }
-        public object Query { get; set; }
-        public Exception Exception { get; set; }
-
-        string ILogContextMessage.Origin { get { return "ServiceLib.LogContextQuery.WrongRequest"; } }
-        LogContextLevel ILogContextMessage.Level { get { return LogContextLevel.Debug; } }
-        string ILogContextMessage.Message
-        {
-            get
-            {
-                return string.Format(
-                    "Wrong query request {0} arrived: {1}",
-                    Query.GetType().FullName, Exception.Message);
-            }
-        }
-    }
-
-    public class LogContextQueryFailedMessage : ILogContextMessage
-    {
-        public DateTime Timestamp { get; set; }
-        public object Query { get; set; }
-        public Exception Exception { get; set; }
-        public long DurationMs { get; set; }
-
-        string ILogContextMessage.Origin { get { return "ServiceLib.LogContextQuery.Failed"; } }
-        LogContextLevel ILogContextMessage.Level { get { return LogContextLevel.Transient; } }
-        string ILogContextMessage.Message
-        {
-            get
-            {
-                return string.Format(
-                    "Query request {0} could not be fulfilled: {1}",
-                    Query.GetType().FullName, Exception.Message);
-            }
-        }
-    }
-
-    public class LogContextQueryCrashedMessage : ILogContextMessage
-    {
-        public DateTime Timestamp { get; set; }
-        public object Query { get; set; }
-        public Exception Exception { get; set; }
-        public long DurationMs { get; set; }
-
-        string ILogContextMessage.Origin { get { return "ServiceLib.LogContextQuery.Crashed"; } }
-        LogContextLevel ILogContextMessage.Level { get { return LogContextLevel.Error; } }
-        string ILogContextMessage.Message
-        {
-            get
-            {
-                return string.Format(
-                    "Error occurred while processing query request {0}: {1}",
-                    Query.GetType().FullName, Exception.Message);
-            }
-        }
-    }
-
-
-
-    public class LogContextEvent
-    {
-        private ILogContextAdvanced _context;
-        private string _projectionName;
-        private EventProjectionUpgradeMode _upgradeMode;
-        private EventStoreToken _currentToken;
-        private Stopwatch _flushStopwatch, _eventStopwatch, _rebuildStopwatch;
-        private int _flushEventsCount, _rebuildEventsCount;
-        private bool _flushActive;
-        private EventStoreEvent _processedEvent;
-        private object _deserializedEvent;
-
-        private LogContextEvent() { }
-
-        public string ProjectionName { get { return _projectionName; } }
-        public EventProjectionUpgradeMode UpgradeMode { get { return _upgradeMode; } }
-        public EventStoreToken CurrentToken { get { return _currentToken; } }
-        public EventStoreEvent CurrentEvent { get { return _processedEvent; } }
-        public object DeserializedEvent { get { return _deserializedEvent; } }
-
-        public static void Initialization(
-            ILogContext context, string projectionName,
-            EventProjectionUpgradeMode upgradeMode, EventStoreToken startingToken)
-        {
-            var self = new LogContextEvent();
-            self._context = context.Advanced;
-            self._projectionName = projectionName;
-            self._upgradeMode = upgradeMode;
-            self._currentToken = startingToken;
-            self._flushStopwatch = new Stopwatch();
-            self._rebuildStopwatch = new Stopwatch();
-            if (upgradeMode == EventProjectionUpgradeMode.Rebuild)
-                self._rebuildStopwatch.Start();
-            self._context.SetContext(self);
-            self._context.Log(new LogContextEventInitializedMessage
-            {
-                Timestamp = self._context.CurrentTimestamp(),
-                ProjectionName = projectionName,
-                UpgradeMode = upgradeMode,
-                StartingToken = startingToken
-            });
-        }
-
-        public static void RebuildFinished(ILogContext context)
-        {
-            var self = context.Advanced.GetContext<LogContextEvent>();
-            self._rebuildStopwatch.Stop();
-            self._context.Log(new LogContextEventRebuildFinishedMessage
-            {
-                Timestamp = self._context.CurrentTimestamp(),
-                ProjectionName = self._projectionName,
-                ProcessedEventsCount = self._rebuildEventsCount,
-                ProcessedEventsDurationMs = self._rebuildStopwatch.ElapsedMilliseconds
-            });
-        }
-
-        public static void Flushed(ILogContext context)
-        {
-            var self = context.Advanced.GetContext<LogContextEvent>();
-            self._flushStopwatch.Stop();
-            self._context.Log(new LogContextEventFlushedMessage
-            {
-                Timestamp = self._context.CurrentTimestamp(),
-                ProjectionName = self._projectionName,
-                ProcessedEventsCount = self._flushEventsCount,
-                ProcessedEventsDurationMs = self._flushStopwatch.ElapsedMilliseconds
-            });
-            self._flushEventsCount = 0;
-            self._flushActive = false;
-            self._deserializedEvent = null;
-            self._processedEvent = null;
-        }
-
-        public static void EventArrived(ILogContext context, EventStoreEvent storedEvent, object deserializedEvent)
-        {
-            var self = context.Advanced.GetContext<LogContextEvent>();
-            self._eventStopwatch.Start();
-            self._processedEvent = storedEvent;
-            self._deserializedEvent = deserializedEvent;
-            self._currentToken = storedEvent.Token;
-            self._context.Log(new LogContextEventArrivedMessage
-            {
-                Timestamp = self._context.CurrentTimestamp(),
-                ProjectionName = self._projectionName,
-                SerializedEvent = storedEvent,
-                DeserializedEvent = self._deserializedEvent
-            });
-        }
-
-        public static void EventProcessed(ILogContext context)
-        {
-            var self = context.Advanced.GetContext<LogContextEvent>();
-            self._flushActive = true;
-            self._eventStopwatch.Stop();
-            self._flushEventsCount++;
-            self._rebuildEventsCount++;
-            self._context.Log(new LogContextEventProcessedMessage
-            {
-                Timestamp = self._context.CurrentTimestamp(),
-                ProjectionName = self._projectionName,
-                SerializedEvent = self._processedEvent,
-                DeserializedEvent = self._deserializedEvent,
-                DurationMs = self._eventStopwatch.ElapsedMilliseconds
-            });
-        }
-
-        public static void EventFailed(ILogContext context, Exception exception)
-        {
-            var self = context.Advanced.GetContext<LogContextEvent>();
-            self._eventStopwatch.Stop();
-            self._context.Log(new LogContextEventFailedMessage
-            {
-                Timestamp = self._context.CurrentTimestamp(),
-                ProjectionName = self._projectionName,
-                SerializedEvent = self._processedEvent,
-                DeserializedEvent = self._deserializedEvent,
-                DurationMs = self._eventStopwatch.ElapsedMilliseconds,
-                Exception = exception
-            });
-        }
-
-        public static void EventCrashed(ILogContext context, Exception exception)
-        {
-            var self = context.Advanced.GetContext<LogContextEvent>();
-            self._eventStopwatch.Stop();
-            self._context.Log(new LogContextEventCrashedMessage
-            {
-                Timestamp = self._context.CurrentTimestamp(),
-                ProjectionName = self._projectionName,
-                SerializedEvent = self._processedEvent,
-                DeserializedEvent = self._deserializedEvent,
-                DurationMs = self._eventStopwatch.ElapsedMilliseconds,
-                Exception = exception
-            });
+            return new LogContext(shortContext);
         }
     }
 
     public class LogContextMessage : ILogContextMessage
     {
-        public DateTime Timestamp { get; set; }
-        public string Origin { get; set; }
-        public LogContextLevel Level { get; set; }
-        public string Message { get; set; }
+        private readonly TraceEventType _level;
+        private readonly int _eventId;
+        private readonly Dictionary<string, LogContextMessageProperty> _properties;
+
+        public LogContextMessage(TraceEventType level, int eventId, string summary)
+        {
+            _level = level;
+            _eventId = eventId;
+            SummaryFormat = summary;
+            _properties = new Dictionary<string, LogContextMessageProperty>();
+        }
+
+        public TraceEventType Level { get { return _level; } }
+
+        public string SummaryFormat { get; set; }
+
+        public void SetProperty(string name, bool isLong, object value)
+        {
+            _properties[name] = new LogContextMessageProperty
+            {
+                Name = name,
+                IsLong = isLong,
+                Value = value
+            };
+        }
+
+        public void Log(TraceSource trace)
+        {
+            trace.TraceData(_level, _eventId, this);
+        }
+
+        public override string ToString()
+        {
+            bool first;
+            var sb = new StringBuilder();
+            var summaryGenerator = new LogContextSummaryGenerator(this);
+            sb.Append(summaryGenerator.Generate());
+
+            first = true;
+            foreach (var property in _properties.Values)
+            {
+                if (property.IsLong)
+                    continue;
+                if (first)
+                    first = false;
+                else
+                    sb.Append(",");
+                sb.Append(" ");
+                sb.Append(property.Name).Append("=");
+                sb.Append(property.Value);
+            }
+
+            first = true;
+            foreach (var property in _properties.Values)
+            {
+                if (!property.IsLong)
+                    continue;
+                if (first)
+                {
+                    first = false;
+                    sb.AppendLine();
+                }
+                sb.Append(property.Name).AppendLine(":");
+                if (property.Value != null)
+                    sb.Append(property.Value.ToString());
+                sb.AppendLine();
+            }
+
+            return sb.ToString();
+        }
+
+        public object GetProperty(string name)
+        {
+            LogContextMessageProperty property;
+            if (!_properties.TryGetValue(name, out property))
+                return null;
+            return property.Value;
+        }
+
+        public IEnumerator<LogContextMessageProperty> GetEnumerator()
+        {
+            return _properties.Values.GetEnumerator();
+        }
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator()
+        {
+            return GetEnumerator();
+        }
     }
 
-    public class LogContextEventInitializedMessage : ILogContextMessage
+    public class LogContextSummaryElement
     {
-        public DateTime Timestamp { get; set; }
-        public string ProjectionName { get; set; }
-        public EventProjectionUpgradeMode UpgradeMode { get; set; }
-        public EventStoreToken StartingToken { get; set; }
+        public string PropertyName { get; private set; }
+        public string FixedText { get; private set; }
+        public object PropertyValue { get; private set; }
 
-        string ILogContextMessage.Origin { get { return "ServiceLib.LogContextEvent.Initialized"; } }
-        LogContextLevel ILogContextMessage.Level { get { return LogContextLevel.Information; } }
-        string ILogContextMessage.Message
+        private LogContextSummaryElement() { }
+
+        public static LogContextSummaryElement CreateFixed(string text)
         {
-            get
+            return new LogContextSummaryElement { FixedText = text };
+        }
+
+        public static LogContextSummaryElement CreateVariable(string property)
+        {
+            return new LogContextSummaryElement { PropertyName = property };
+        }
+
+        public LogContextSummaryElement LoadValueFrom(ILogContextMessage message)
+        {
+            if (!string.IsNullOrEmpty(PropertyName))
+                PropertyValue = message.GetProperty(PropertyName);
+            return this;
+        }
+
+        public override string ToString()
+        {
+            if (FixedText != null)
+                return FixedText;
+            if (string.IsNullOrEmpty(PropertyName) || PropertyValue == null)
+                return "";
+            return PropertyValue.ToString();
+        }
+    }
+
+    public class LogContextSummaryParser : IEnumerator<LogContextSummaryElement>
+    {
+        private char[] _format;
+        private int _state;
+        private int _blockStart;
+        private int _formatLength;
+        private int _currentPosition;
+        private LogContextSummaryElement _current;
+        private bool _emitted;
+
+        public LogContextSummaryParser(string format)
+        {
+            _format = format.ToCharArray();
+            Reset();
+        }
+
+        public bool MoveNext()
+        {
+            _emitted = false;
+            while (!_emitted)
             {
-                return string.Format(
-                    "Projection {0} initialized ({1} at {2})",
-                    ProjectionName, UpgradeMode, StartingToken);
+                if (_state == -1)
+                    StateEnd();
+                else if (_state == 0)
+                    State0();
+                else if (_state == 1)
+                    State1();
+                else if (_state == 2)
+                    State2();
+                else if (_state == 3)
+                    State3();
+                else if (_state == 4)
+                    State4();
+                else
+                    throw new InvalidOperationException("Unknown internal state");
+            }
+            return _current != null;
+        }
+
+        private void StateEnd()
+        {
+            EmitFixedChar(null);
+        }
+
+        private void State0()
+        {
+            if (IsEof())
+            {
+                EmitFixedChar(null);
+                GotoState(-1);
+            }
+            else
+            {
+                if (IsChar('{'))
+                {
+                    GotoState(2);
+                    ReadChar();
+                }
+                else if (IsChar('}'))
+                {
+                    GotoState(4);
+                    ReadChar();
+                }
+                else
+                {
+                    GotoState(1);
+                    StartBlock();
+                    ReadChar();
+                }
             }
         }
-    }
 
-    public class LogContextEventFlushedMessage : ILogContextMessage
-    {
-        public DateTime Timestamp { get; set; }
-        public string ProjectionName { get; set; }
-        public long FlushDurationMs { get; set; }
-        public long ProcessedEventsDurationMs { get; set; }
-        public long ProcessedEventsCount { get; set; }
-
-        string ILogContextMessage.Origin { get { return "ServiceLib.LogContextEvent.Flushed"; } }
-        LogContextLevel ILogContextMessage.Level { get { return LogContextLevel.Debug; } }
-        string ILogContextMessage.Message
+        private void State1()
         {
-            get { return string.Format("Projection {0} flushed it's data to storage", ProjectionName); }
-        }
-    }
-
-    public class LogContextEventRebuildFinishedMessage : ILogContextMessage
-    {
-        public DateTime Timestamp { get; set; }
-        public string ProjectionName { get; set; }
-        public long ProcessedEventsDurationMs { get; set; }
-        public long ProcessedEventsCount { get; set; }
-
-        string ILogContextMessage.Origin { get { return "ServiceLib.LogContextEvent.RebuildFinished"; } }
-        LogContextLevel ILogContextMessage.Level { get { return LogContextLevel.Debug; } }
-        string ILogContextMessage.Message
-        {
-            get { return string.Format("Rebuild of projection {0} finished", ProjectionName); }
-        }
-    }
-
-    public class LogContextEventArrivedMessage : ILogContextMessage
-    {
-        public DateTime Timestamp { get; set; }
-        public string ProjectionName { get; set; }
-        public EventStoreEvent SerializedEvent { get; set; }
-        public object DeserializedEvent { get; set; }
-
-        string ILogContextMessage.Origin { get { return "ServiceLib.LogContextEvent.EventArrived"; } }
-        LogContextLevel ILogContextMessage.Level { get { return LogContextLevel.Debug; } }
-        string ILogContextMessage.Message
-        {
-            get
+            if (IsEof())
             {
-                return string.Format(
-                    "Starting processing of event {0} (token {1}) in projection {1}",
-                    SerializedEvent.Type, SerializedEvent.Token, ProjectionName);
+                EmitFixedBlock();
+                GotoState(-1);
+            }
+            else
+            {
+                if (IsChar('{') || IsChar('}'))
+                {
+                    EmitFixedBlock();
+                    GotoState(0);
+                }
+                else
+                {
+                    ReadChar();
+                }
             }
         }
-    }
 
-    public class LogContextEventProcessedMessage : ILogContextMessage
-    {
-        public DateTime Timestamp { get; set; }
-        public string ProjectionName { get; set; }
-        public EventStoreEvent SerializedEvent { get; set; }
-        public object DeserializedEvent { get; set; }
-        public long DurationMs { get; set; }
-
-        string ILogContextMessage.Origin { get { return "ServiceLib.LogContextEvent.EventProcessed"; } }
-        LogContextLevel ILogContextMessage.Level { get { return LogContextLevel.Debug; } }
-        string ILogContextMessage.Message
+        private void State2()
         {
-            get
+            if (IsEof())
+                throw new FormatException("Invalid format: " + new string(_format));
+            if (IsChar('{'))
             {
-                return string.Format("Event {0} successfully processed in projection {1}",
-                    SerializedEvent.Type, ProjectionName);
+                EmitFixedChar("{");
+                GotoState(0);
+                ReadChar();
             }
+            else if (IsChar('}'))
+            {
+                EmitFixedChar("}");
+                GotoState(0);
+                ReadChar();
+            }
+            else
+            {
+                StartBlock();
+                GotoState(3);
+                ReadChar();
+            }
+        }
+
+        private void State3()
+        {
+            if (IsEof())
+                throw new FormatException("Invalid format: " + new string(_format));
+            if (IsChar('}'))
+            {
+                EmitVariableBlock();
+                GotoState(0);
+                ReadChar();
+            }
+            else
+            {
+                ReadChar();
+            }
+        }
+
+        private void State4()
+        {
+            if (IsChar('}'))
+            {
+                EmitFixedChar("}");
+                GotoState(0);
+                ReadChar();
+            }
+            else
+                throw new FormatException("Invalid format: " + new string(_format));
+        }
+
+        private bool IsEof()
+        {
+            return _currentPosition >= _formatLength;
+        }
+
+        private bool IsChar(char c)
+        {
+            return _currentPosition < _formatLength && _format[_currentPosition] == c;
+        }
+
+        private void GotoState(int state)
+        {
+            _state = state;
+        }
+
+        private void ReadChar()
+        {
+            if (_state != -1 && _currentPosition < _formatLength)
+                _currentPosition++;
+        }
+
+        private void StartBlock()
+        {
+            _blockStart = _currentPosition;
+        }
+
+        private void EmitFixedBlock()
+        {
+            _emitted = true;
+            _current = LogContextSummaryElement.CreateFixed(new string(_format, _blockStart, _currentPosition - _blockStart));
+        }
+
+        private void EmitFixedChar(string text)
+        {
+            _emitted = true;
+            if (text == null)
+                _current = null;
+            else
+                _current = LogContextSummaryElement.CreateFixed(text);
+        }
+
+        private void EmitVariableBlock()
+        {
+            _emitted = true;
+            _current = LogContextSummaryElement.CreateVariable(new string(_format, _blockStart, _currentPosition - _blockStart));
+        }
+
+        public LogContextSummaryElement Current
+        {
+            get { return _current; }
+        }
+
+        public void Dispose()
+        {
+        }
+
+        object System.Collections.IEnumerator.Current
+        {
+            get { return _current; }
+        }
+
+        public void Reset()
+        {
+            _state = 0;
+            _blockStart = 0;
+            _currentPosition = 0;
+            _formatLength = _format.Length;
         }
     }
 
-    public class LogContextEventFailedMessage : ILogContextMessage
+    public class LogContextSummaryGenerator
     {
-        public DateTime Timestamp { get; set; }
-        public string ProjectionName { get; set; }
-        public EventStoreEvent SerializedEvent { get; set; }
-        public object DeserializedEvent { get; set; }
-        public long DurationMs { get; set; }
-        public Exception Exception { get; set; }
+        private ILogContextMessage _message;
 
-        string ILogContextMessage.Origin { get { return "ServiceLib.LogContextEvent.EventFailed"; } }
-        LogContextLevel ILogContextMessage.Level { get { return LogContextLevel.Transient; } }
-        string ILogContextMessage.Message
+        public LogContextSummaryGenerator(ILogContextMessage message)
         {
-            get
-            {
-                return string.Format("Event {0} in projection {1} failed and should be retried. Error message: {2}",
-                    SerializedEvent.Type, ProjectionName, Exception.Message);
-            }
+            _message = message;
         }
-    }
 
-    public class LogContextEventCrashedMessage : ILogContextMessage
-    {
-        public DateTime Timestamp { get; set; }
-        public string ProjectionName { get; set; }
-        public EventStoreEvent SerializedEvent { get; set; }
-        public object DeserializedEvent { get; set; }
-        public long DurationMs { get; set; }
-        public Exception Exception { get; set; }
-
-        string ILogContextMessage.Origin { get { return "ServiceLib.LogContextEvent.EventCrashed"; } }
-        LogContextLevel ILogContextMessage.Level { get { return LogContextLevel.Error; } }
-        string ILogContextMessage.Message
+        public string Generate()
         {
-            get
+            var builder = new StringBuilder();
+            var parser = new LogContextSummaryParser(_message.SummaryFormat);
+            while (parser.MoveNext())
             {
-                return string.Format("Event {0} in projection {1} crashed. {2}",
-                    SerializedEvent.Type, ProjectionName, Exception);
+                var element = parser.Current;
+                element.LoadValueFrom(_message);
+                builder.Append(element);
             }
-        }
-    }
-
-    public enum LogContextHttpRequestLevel { None, URL, TrimmedPostdata, FullPostdata, FullRequest }
-    public enum LogContextHttpResponseLevel { None, StatusCode, TrimmedBody, FullBody, FullResponse }
-    public enum LogContextHttpErrorLevel { MessageOnly, FirstException, WholeExceptionTree }
-
-    public class LogContextHttpWriter : ILogContextDelayedWriter
-    {
-        public LogContextHttpRequestLevel RequestLevel { get; set; }
-        public LogContextHttpResponseLevel ResponseLevel { get; set; }
-        public LogContextHttpErrorLevel ErrorLevel { get; set; }
-        public LogContextLevel IncludedMessages { get; set; }
-        public bool IncludeDuration { get; set; }
-
-        public void Write(ILogContextAdvanced context, System.IO.TextWriter writer)
-        {
-            var httpLogContext = context.GetContext<LogContextHttp>();
-            var logMessage = new StringBuilder();
+            return builder.ToString();
         }
     }
 }

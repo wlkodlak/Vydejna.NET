@@ -90,6 +90,9 @@
     <Compile Include="Http\HttpStagedParametersTests.cs" />
     <Compile Include="Http\ParametrizedUrlTest.cs" />
     <Compile Include="Http\RestClientTest.cs" />
+    <Compile Include="Logging\LogContextMessageTests.cs" />
+    <Compile Include="Logging\LogContextSummaryParserTests.cs" />
+    <Compile Include="Logging\LogContextTests.cs" />
     <Compile Include="Messaging\BusTests.cs" />
     <Compile Include="Messaging\CommandSubscriptionManagerTests.cs" />
     <Compile Include="Messaging\EventSubscriptionManagerTests.cs" />
