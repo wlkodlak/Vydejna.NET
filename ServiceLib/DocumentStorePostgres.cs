@@ -7,7 +7,6 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Npgsql;
 using System.Threading;
-using log4net;
 
 namespace ServiceLib
 {
@@ -17,7 +16,7 @@ namespace ServiceLib
         private readonly Regex _pathRegex;
         private readonly object _lock;
         private readonly string _partition;
-        private static readonly ILog Logger = LogManager.GetLogger("ServiceLib.DocumentStore");
+        private static readonly DocumentStorePostgresTraceSource Logger = new DocumentStorePostgresTraceSource("ServiceLib.DocumentStore");
 
         private class Folder : IDocumentFolder
         {
@@ -122,9 +121,9 @@ namespace ServiceLib
                             tables.Add(reader.GetString(0));
                     }
                 }
+                var createdTables = new List<string>();
                 if (!tables.Contains(_partition))
                 {
-                    Logger.DebugFormat("Creating table {0}", _partition);
                     using (var cmd = conn.CreateCommand())
                     {
                         cmd.CommandText = string.Concat(
@@ -133,10 +132,10 @@ namespace ServiceLib
                         Logger.TraceSql(cmd);
                         cmd.ExecuteNonQuery();
                     }
+                    createdTables.Add(_partition);
                 }
                 if (!tables.Contains(_partition + "_idx"))
                 {
-                    Logger.DebugFormat("Creating table {0}_idx", _partition);
                     using (var cmd = conn.CreateCommand())
                     {
                         cmd.CommandText = string.Concat(
@@ -151,7 +150,9 @@ namespace ServiceLib
                         Logger.TraceSql(cmd);
                         cmd.ExecuteNonQuery();
                     }
+                    createdTables.Add(_partition + "_idx");
                 }
+                Logger.CreatedStorage(_partition, createdTables);
             }
         }
 
@@ -182,7 +183,6 @@ namespace ServiceLib
             using (new LogMethod(Logger, "DeleteAll"))
             {
                 var context = (DeleteAllParameters)objContext;
-                Logger.DebugFormat("Deleting folder {0}", context.FolderName);
                 using (var tran = conn.BeginTransaction())
                 {
                     using (var cmd = conn.CreateCommand())
@@ -196,6 +196,7 @@ namespace ServiceLib
                     }
                     tran.Commit();
                 }
+                Logger.DeletedFolder(context.FolderName);
             }
         }
 
@@ -235,8 +236,7 @@ namespace ServiceLib
                             int version;
                             if (!reader.Read())
                             {
-                                Logger.DebugFormat("GetNewerDocument({0}/{1}, version: {2}): document missing",
-                                    context.FolderName, context.DocumentName, context.KnownVersion);
+                                Logger.DocumentNotFound(context.FolderName, context.DocumentName);
                                 return null;
                             }
                             else
@@ -244,8 +244,7 @@ namespace ServiceLib
                                 version = reader.GetInt32(0);
                                 if (version == context.KnownVersion)
                                 {
-                                    Logger.DebugFormat("GetNewerDocument({0}/{1}, version: {2}): document is up to date",
-                                        context.FolderName, context.DocumentName, context.KnownVersion);
+                                    Logger.DocumentUpToDate(context.FolderName, context.DocumentName, context.KnownVersion);
                                     return new DocumentStoreFoundDocument(context.DocumentName, version, false, null);
                                 }
                             }
@@ -266,14 +265,12 @@ namespace ServiceLib
                         {
                             version = reader.GetInt32(0);
                             contents = reader.GetString(1);
-                            Logger.DebugFormat("GetDocument({0}/{1}): returning version {2}",
-                                context.FolderName, context.DocumentName, version);
+                            Logger.DocumentRetrieved(context.FolderName, context.DocumentName, version, contents);
                             return new DocumentStoreFoundDocument(context.DocumentName, version, true, contents);
                         }
                         else
                         {
-                            Logger.DebugFormat("GetDocument({0}/{1}): document missing",
-                                context.FolderName, context.DocumentName);
+                            Logger.DocumentNotFound(context.FolderName, context.DocumentName);
                             return null;
                         }
                     }
@@ -341,7 +338,6 @@ namespace ServiceLib
                                     cmd.Parameters.AddWithValue("contents", context.Value);
                                     Logger.TraceSql(cmd);
                                     cmd.ExecuteNonQuery();
-                                    Logger.DebugFormat("SaveDocument ({0}/{1}, ...): new document inserted", context.FolderName, context.Name);
                                 }
                                 if (context.Indexes != null)
                                 {
@@ -362,7 +358,6 @@ namespace ServiceLib
                                                     cmd.Parameters.AddWithValue("document", context.Name);
                                                     Logger.TraceSql(cmd);
                                                     cmd.ExecuteNonQuery();
-                                                    Logger.DebugFormat("SaveDocument ({0}/{1}, ...): removed old index entries", context.FolderName, context.Name);
                                                 }
                                             }
                                             using (var cmd = conn.CreateCommand())
@@ -379,19 +374,6 @@ namespace ServiceLib
                                                     paramValues.Value = valuesArray;
                                                     Logger.TraceSql(cmd);
                                                     cmd.ExecuteNonQuery();
-                                                    if (Logger.IsDebugEnabled)
-                                                    {
-                                                        if (valuesArray.Length == 1)
-                                                        {
-                                                            Logger.DebugFormat("SaveDocument ({0}/{1}, ...): added value {2} for index {3} ",
-                                                                context.FolderName, context.Name, valuesArray[0], indexChange.IndexName);
-                                                        }
-                                                        else
-                                                        {
-                                                            Logger.DebugFormat("SaveDocument ({0}/{1}, ...): added {2} values for index {3} ",
-                                                                context.FolderName, context.Name, valuesArray.Length, indexChange.IndexName);
-                                                        }
-                                                    }
                                                 }
                                             }
                                         }
@@ -402,8 +384,7 @@ namespace ServiceLib
                                                 retryIndex = true;
                                                 deleteBeforeInsert = true;
                                                 tran.Rollback("saveindex");
-                                                Logger.DebugFormat("SaveDocument ({0}/{1}, ...): retrying index insert after unique_violation",
-                                                    context.FolderName, context.Name);
+                                                Logger.UpdateIndexWillRetry(context.FolderName, context.Name, ex);
                                             }
                                             else
                                                 throw;
@@ -412,6 +393,7 @@ namespace ServiceLib
                                 }
                                 wasSaved = true;
                                 tran.Commit();
+                                Logger.DocumentSaved(context.FolderName, context.Name, 1, context.Value);
                             }
                             else if (context.ExpectedVersion.VerifyVersion(documentVersion))
                             {
@@ -424,8 +406,6 @@ namespace ServiceLib
                                     cmd.Parameters.AddWithValue("contents", context.Value);
                                     Logger.TraceSql(cmd);
                                     cmd.ExecuteNonQuery();
-                                    Logger.DebugFormat("SaveDocument ({0}/{1}, ...): saved new version {2}",
-                                        context.FolderName, context.Name, documentVersion + 1);
                                 }
                                 if (context.Indexes != null)
                                 {
@@ -443,7 +423,6 @@ namespace ServiceLib
                                                 cmd.Parameters.AddWithValue("document", context.Name);
                                                 Logger.TraceSql(cmd);
                                                 cmd.ExecuteNonQuery();
-                                                Logger.DebugFormat("SaveDocument ({0}/{1}, ...): removed old index entries", context.FolderName, context.Name);
                                             }
                                             using (var cmd = conn.CreateCommand())
                                             {
@@ -459,19 +438,6 @@ namespace ServiceLib
                                                     paramValues.Value = valuesArray;
                                                     Logger.TraceSql(cmd);
                                                     cmd.ExecuteNonQuery();
-                                                    if (Logger.IsDebugEnabled)
-                                                    {
-                                                        if (valuesArray.Length == 1)
-                                                        {
-                                                            Logger.DebugFormat("SaveDocument ({0}/{1}, ...): added value {2} for index {3} ",
-                                                                context.FolderName, context.Name, valuesArray[0], indexChange.IndexName);
-                                                        }
-                                                        else
-                                                        {
-                                                            Logger.DebugFormat("SaveDocument ({0}/{1}, ...): added {2} values for index {3} ",
-                                                                context.FolderName, context.Name, valuesArray.Length, indexChange.IndexName);
-                                                        }
-                                                    }
                                                 }
                                             }
                                         }
@@ -481,8 +447,7 @@ namespace ServiceLib
                                             {
                                                 retryIndex = true;
                                                 tran.Rollback("saveindex");
-                                                Logger.DebugFormat("SaveDocument ({0}/{1}, ...): retrying index insert after unique_violation",
-                                                    context.FolderName, context.Name);
+                                                Logger.UpdateIndexWillRetry(context.FolderName, context.Name, ex);
                                             }
                                             else
                                                 throw;
@@ -491,9 +456,13 @@ namespace ServiceLib
                                 }
                                 wasSaved = true;
                                 tran.Commit();
+                                Logger.DocumentSaved(context.FolderName, context.Name, documentVersion + 1, context.Value);
                             }
                             else
+                            {
                                 wasSaved = false;
+                                Logger.DocumentConflicted(context.FolderName, context.Name, context.ExpectedVersion, documentVersion);
+                            }
                         }
                     }
                     catch (NpgsqlException ex)
@@ -501,8 +470,7 @@ namespace ServiceLib
                         if (ex.Code == "23505")
                         {
                             retry = true;
-                            Logger.DebugFormat("SaveDocument ({0}/{1}, ...): retrying index insert after unique_violation",
-                                context.FolderName, context.Name);
+                            Logger.SaveDocumentWillRetry(context.FolderName, context.Name, ex);
                         }
                         else
                             throw;
@@ -560,8 +528,7 @@ namespace ServiceLib
                         while (reader.Read())
                             list.Add(reader.GetString(0));
                     }
-                    Logger.DebugFormat("FindDocumentKeys(index: {0}/{1}, min: {2}, max: {3}): found {4} keys",
-                        context.FolderName, context.IndexName, context.MinValue, context.MaxValue, list.Count);
+                    Logger.FoundDocumentKeys(context.FolderName, context.IndexName, context.MinValue, context.MaxValue, list);
                 }
                 return list.ToList();
             }
@@ -685,8 +652,9 @@ namespace ServiceLib
                     }
                 }
 
-                Logger.DebugFormat("FindDocuments(index: {0}/{1}, min: {2}, max: {3}, offset: {4}, limit: {5}): returning {6} documents, found {7} ",
-                    context.FolderName, context.IndexName, context.MinValue, context.MaxValue, context.Skip, context.MaxCount, list.Count, list.TotalFound);
+                Logger.FoundDocuments(
+                    context.FolderName, context.IndexName, context.MinValue, context.MaxValue, 
+                    context.Skip, context.MaxCount, context.Ascending, list);
                 return list;
             }
         }

@@ -106,11 +106,13 @@ namespace ServiceLib
         {
             try
             {
-                Logger.GettingConnection(_logName, Thread.VolatileRead(ref _concurrentWorkers));
+                Logger.OpeningConnection(_logName, Thread.VolatileRead(ref _concurrentWorkers));
                 conn.Open();
+                Logger.OpenedConnection(_logName);
             }
             catch (Exception ex)
             {
+                Logger.OpeningConnectionFailed(_logName, ex);
                 if (DetectTransient(ex))
                     throw new TransientErrorException("DBOPEN", ex);
                 else
@@ -496,11 +498,27 @@ namespace ServiceLib
         { 
         }
 
-        public void GettingConnection(string connectionSetup, int workerCount)
+        public void OpeningConnection(string connectionSetup, int workerCount)
         {
-            var msg = new LogContextMessage(TraceEventType.Verbose, 101, "Getting connection");
+            var msg = new LogContextMessage(TraceEventType.Verbose, 101, "Trying to open connection");
             msg.SetProperty("Setup", false, connectionSetup);
             msg.SetProperty("ConcurrentWorkers", false, workerCount);
+            msg.Log(this);
+        }
+
+        public void OpenedConnection(string connectionSetup)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 101, "Connection opened");
+            msg.SetProperty("Setup", false, connectionSetup);
+            msg.Log(this);
+        }
+
+
+        public void OpeningConnectionFailed(string connectionSetup, Exception exception)
+        {
+            var msg = new LogContextMessage(TraceEventType.Information, 102, "Attept to open connection failed");
+            msg.SetProperty("Setup", false, connectionSetup);
+            msg.SetProperty("Reason", true, exception.Message);
             msg.Log(this);
         }
 
@@ -556,7 +574,7 @@ namespace ServiceLib
 
         public void OpeningNotificationConnectionFailed(string connectionSetup, Exception exception)
         {
-            var msg = new LogContextMessage(TraceEventType.Warning, 207, "Opening connection for notifications failed");
+            var msg = new LogContextMessage(TraceEventType.Information, 207, "Opening connection for notifications failed");
             msg.SetProperty("ConnectionSetup", false, connectionSetup);
             msg.SetProperty("Exception", true, exception);
             msg.Log(this);
