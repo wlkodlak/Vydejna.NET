@@ -295,6 +295,7 @@ namespace ServiceLib.Tests.Messaging
             _db = new DatabasePostgres(GetConnectionString(), TimeService);
             Scheduler.AllowWaiting(4, 50);
             _disposables = new List<IDisposable>();
+            _disposables.Add(_db);
         }
 
         protected override INetworkBus CreateBus()

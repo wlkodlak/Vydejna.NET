@@ -42,6 +42,7 @@ namespace ServiceLib.Tests.Documents
             base.InitializeCore();
             _disposables = new List<IDisposable>();
             _db = new DatabasePostgres(GetConnectionString(), new VirtualTime());
+            _disposables.Add(_db);
         }
 
         private string GetConnectionString()
