@@ -128,11 +128,11 @@ namespace ServiceLib
             logger.Log(_declaringType, _traceLevel, sb, null);
         }
 
-        public static void TraceSql(this TraceSource log, NpgsqlCommand dbCommand)
+        public static void TraceSql(this TraceSource log, ILogContext logContext, NpgsqlCommand dbCommand)
         {
             if (!log.Switch.ShouldTrace(TraceEventType.Verbose))
                 return;
-            new LogContextTraceSqlMessage(dbCommand).Log(log);
+            new LogContextTraceSqlMessage(dbCommand).Log(log, logContext);
         }
 
         private static StringBuilder GenerateTraceSqlMessage(NpgsqlCommand dbCommand)
@@ -171,6 +171,7 @@ namespace ServiceLib
     {
         private string _commandText;
         private Dictionary<string, string> _parameters;
+        private ILogContext _logContext;
 
         public LogContextTraceSqlMessage(NpgsqlCommand cmd)
         {
@@ -213,6 +214,11 @@ namespace ServiceLib
             get { return "Executing SQL: {CommandText}"; }
         }
 
+        public ILogContext LogContext
+        {
+            get { return _logContext; }
+        }
+
         public object GetProperty(string name)
         {
             string parameterValue;
@@ -240,8 +246,9 @@ namespace ServiceLib
             return GetEnumerator();
         }
 
-        public void Log(TraceSource log)
+        public void Log(TraceSource log, ILogContext logContext)
         {
+            _logContext = logContext;
             log.TraceData(Level, 10001, this);
         }
     }

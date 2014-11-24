@@ -23,6 +23,7 @@ namespace ServiceLib
     public interface ILogContextMessage : IEnumerable<LogContextMessageProperty>
     {
         TraceEventType Level { get; }
+        ILogContext LogContext { get; }
         string SummaryFormat { get; }
         object GetProperty(string name);
     }
@@ -63,6 +64,11 @@ namespace ServiceLib
         {
             _contexts[typeof(T)] = context;
         }
+
+        public override string ToString()
+        {
+            return _shortCode;
+        }
     }
 
     public class LogContextFactory : ILogContextFactory
@@ -78,6 +84,7 @@ namespace ServiceLib
         private readonly TraceEventType _level;
         private readonly int _eventId;
         private readonly Dictionary<string, LogContextMessageProperty> _properties;
+        private ILogContext _logContext;
 
         public LogContextMessage(TraceEventType level, int eventId, string summary)
         {
@@ -91,6 +98,11 @@ namespace ServiceLib
 
         public string SummaryFormat { get; set; }
 
+        public ILogContext LogContext
+        {
+            get { return _logContext; }
+        }
+
         public void SetProperty(string name, bool isLong, object value)
         {
             _properties[name] = new LogContextMessageProperty
@@ -101,8 +113,9 @@ namespace ServiceLib
             };
         }
 
-        public void Log(TraceSource trace)
+        public void Log(TraceSource trace, ILogContext logContext = null)
         {
+            _logContext = logContext;
             trace.TraceData(_level, _eventId, this);
         }
 
@@ -110,6 +123,12 @@ namespace ServiceLib
         {
             bool first;
             var sb = new StringBuilder();
+
+            if (_logContext != null)
+            {
+                sb.Append("[").Append(_logContext.ShortContext).Append("] ");
+            }
+
             var summaryGenerator = new LogContextSummaryGenerator(this);
             sb.Append(summaryGenerator.Generate());
 
