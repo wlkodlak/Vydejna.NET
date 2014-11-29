@@ -108,14 +108,13 @@ namespace ServiceLib
         }
         private void InitializeDatabase(NpgsqlConnection conn)
         {
-            var logContext = new LogContext("INIT");
             using (new LogMethod(Logger, "InitializeDatabase"))
             {
                 var tables = new HashSet<string>();
                 using (var cmd = conn.CreateCommand())
                 {
                     cmd.CommandText = "SELECT relname FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind = 'r' AND n.nspname = 'public'";
-                    Logger.TraceSql(logContext, cmd);
+                    Logger.TraceSql(cmd);
                     using (var reader = cmd.ExecuteReader())
                     {
                         while (reader.Read())

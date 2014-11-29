@@ -8,22 +8,9 @@ using System.Threading;
 
 namespace ServiceLib
 {
-    public interface ILogContext
-    {
-        string ShortContext { get; }
-        T GetContext<T>();
-        void SetContext<T>(T context);
-    }
-
-    public interface ILogContextFactory
-    {
-        ILogContext Build(string shortContext);
-    }
-
     public interface ILogContextMessage : IEnumerable<LogContextMessageProperty>
     {
         TraceEventType Level { get; }
-        ILogContext LogContext { get; }
         string SummaryFormat { get; }
         object GetProperty(string name);
     }
@@ -35,56 +22,11 @@ namespace ServiceLib
         public object Value;
     }
 
-    public class LogContext : ILogContext
-    {
-        private string _shortCode;
-        private readonly ConcurrentDictionary<Type, object> _contexts;
-
-        public LogContext(string shortCode)
-        {
-            _shortCode = shortCode;
-            _contexts = new ConcurrentDictionary<Type, object>();
-        }
-
-        string ILogContext.ShortContext
-        {
-            get { return _shortCode; }
-        }
-
-        T ILogContext.GetContext<T>()
-        {
-            object context;
-            if (_contexts.TryGetValue(typeof(T), out context))
-                return (T)context;
-            else
-                return default(T);
-        }
-
-        void ILogContext.SetContext<T>(T context)
-        {
-            _contexts[typeof(T)] = context;
-        }
-
-        public override string ToString()
-        {
-            return _shortCode;
-        }
-    }
-
-    public class LogContextFactory : ILogContextFactory
-    {
-        ILogContext ILogContextFactory.Build(string shortContext)
-        {
-            return new LogContext(shortContext);
-        }
-    }
-
     public class LogContextMessage : ILogContextMessage
     {
         private readonly TraceEventType _level;
         private readonly int _eventId;
         private readonly Dictionary<string, LogContextMessageProperty> _properties;
-        private ILogContext _logContext;
 
         public LogContextMessage(TraceEventType level, int eventId, string summary)
         {
@@ -98,11 +40,6 @@ namespace ServiceLib
 
         public string SummaryFormat { get; set; }
 
-        public ILogContext LogContext
-        {
-            get { return _logContext; }
-        }
-
         public void SetProperty(string name, bool isLong, object value)
         {
             _properties[name] = new LogContextMessageProperty
@@ -113,9 +50,8 @@ namespace ServiceLib
             };
         }
 
-        public void Log(TraceSource trace, ILogContext logContext = null)
+        public void Log(TraceSource trace)
         {
-            _logContext = logContext;
             trace.TraceData(_level, _eventId, this);
         }
 
@@ -123,11 +59,6 @@ namespace ServiceLib
         {
             bool first;
             var sb = new StringBuilder();
-
-            if (_logContext != null)
-            {
-                sb.Append("[").Append(_logContext.ShortContext).Append("] ");
-            }
 
             var summaryGenerator = new LogContextSummaryGenerator(this);
             sb.Append(summaryGenerator.Generate());
