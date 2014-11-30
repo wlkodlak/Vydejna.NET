@@ -53,7 +53,7 @@ namespace Vydejna.Projections
             }
             catch (Exception ex)
             {
-                return TaskUtils.FromError<object>(ex);
+                return ProcessException(ex, ctx);
             }
         }
 
@@ -68,7 +68,7 @@ namespace Vydejna.Projections
             }
             catch (Exception ex)
             {
-                return TaskUtils.FromError<object>(ex);
+                return ProcessException(ex, ctx);
             }
         }
 
@@ -83,7 +83,7 @@ namespace Vydejna.Projections
             }
             catch (Exception ex)
             {
-                return TaskUtils.FromError<object>(ex);
+                return ProcessException(ex, ctx);
             }
         }
 
@@ -98,7 +98,7 @@ namespace Vydejna.Projections
             }
             catch (Exception ex)
             {
-                return TaskUtils.FromError<object>(ex);
+                return ProcessException(ex, ctx);
             }
         }
 
@@ -114,7 +114,7 @@ namespace Vydejna.Projections
             }
             catch (Exception ex)
             {
-                return TaskUtils.FromError<object>(ex);
+                return ProcessException(ex, ctx);
             }
         }
 
@@ -129,7 +129,7 @@ namespace Vydejna.Projections
             }
             catch (Exception ex)
             {
-                return TaskUtils.FromError<object>(ex);
+                return ProcessException(ex, ctx);
             }
         }
 
@@ -144,7 +144,7 @@ namespace Vydejna.Projections
             }
             catch (Exception ex)
             {
-                return TaskUtils.FromError<object>(ex);
+                return ProcessException(ex, ctx);
             }
         }
 
@@ -159,7 +159,7 @@ namespace Vydejna.Projections
             }
             catch (Exception ex)
             {
-                return TaskUtils.FromError<object>(ex);
+                return ProcessException(ex, ctx);
             }
         }
 
@@ -175,7 +175,7 @@ namespace Vydejna.Projections
             }
             catch (Exception ex)
             {
-                return TaskUtils.FromError<object>(ex);
+                return ProcessException(ex, ctx);
             }
         }
 
@@ -191,7 +191,7 @@ namespace Vydejna.Projections
             }
             catch (Exception ex)
             {
-                return TaskUtils.FromError<object>(ex);
+                return ProcessException(ex, ctx);
             }
         }
 
@@ -206,7 +206,7 @@ namespace Vydejna.Projections
             }
             catch (Exception ex)
             {
-                return TaskUtils.FromError<object>(ex);
+                return ProcessException(ex, ctx);
             }
         }
 
@@ -221,7 +221,7 @@ namespace Vydejna.Projections
             }
             catch (Exception ex)
             {
-                return TaskUtils.FromError<object>(ex);
+                return ProcessException(ex, ctx);
             }
         }
 
@@ -235,7 +235,7 @@ namespace Vydejna.Projections
             }
             catch (Exception ex)
             {
-                return TaskUtils.FromError<object>(ex);
+                return ProcessException(ex, ctx);
             }
         }
 
@@ -249,7 +249,7 @@ namespace Vydejna.Projections
             }
             catch (Exception ex)
             {
-                return TaskUtils.FromError<object>(ex);
+                return ProcessException(ex, ctx);
             }
         }
 
@@ -271,7 +271,7 @@ namespace Vydejna.Projections
             }
             catch (Exception ex)
             {
-                return TaskUtils.FromError<object>(ex);
+                return ProcessException(ex, ctx);
             }
         }
 
@@ -290,7 +290,7 @@ namespace Vydejna.Projections
             }
             catch (Exception ex)
             {
-                return TaskUtils.FromError<object>(ex);
+                return ProcessException(ex, ctx);
             }
         }
 
@@ -309,7 +309,7 @@ namespace Vydejna.Projections
             }
             catch (Exception ex)
             {
-                return TaskUtils.FromError<object>(ex);
+                return ProcessException(ex, ctx);
             }
         }
 
@@ -329,7 +329,7 @@ namespace Vydejna.Projections
             }
             catch (Exception ex)
             {
-                return TaskUtils.FromError<object>(ex);
+                return ProcessException(ex, ctx);
             }
         }
 
@@ -352,6 +352,14 @@ namespace Vydejna.Projections
                 ctx.OutputString = task.Exception.InnerException.Message;
                 ctx.OutputHeaders.ContentType = "text/plain";
             }
+        }
+
+        private Task ProcessException(Exception exception, IHttpServerStagedContext ctx)
+        {
+            ctx.StatusCode = 400;
+            ctx.OutputString = exception.Message;
+            ctx.OutputHeaders.ContentType = "text/plain";
+            return TaskUtils.CompletedTask();
         }
     }
 }

@@ -44,9 +44,13 @@ namespace ServiceLib
 
         protected override void QueueTask(Task task)
         {
-            _tasks.Enqueue(task);
+            if (task == null)
+                throw new ArgumentNullException("task");
             lock (_tasks)
+            {
+                _tasks.Enqueue(task);
                 Monitor.Pulse(_tasks);
+            }
         }
 
         protected override bool TryExecuteTaskInline(Task task, bool taskWasPreviouslyQueued)

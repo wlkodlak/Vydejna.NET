@@ -26,7 +26,12 @@ namespace ServiceLib
                 }
                 else
                 {
-                    return route.Handler.Handle(context, route.RouteParameters);
+                    return route.Handler.Handle(context, route.RouteParameters).ContinueWith(
+                        task =>
+                        {
+                            if (task.IsFaulted)
+                                context.StatusCode = 500;
+                        });
                 }
             }
             catch

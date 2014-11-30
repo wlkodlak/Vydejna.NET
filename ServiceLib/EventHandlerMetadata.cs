@@ -1,6 +1,6 @@
-﻿using log4net;
-using System;
+﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -45,7 +45,7 @@ namespace ServiceLib
         private IDocumentFolder _store;
         private int _versionVer;
         private int _tokenVer;
-        private static readonly ILog Logger = LogManager.GetLogger("ServiceLib.EventHandlerMetadata");
+        private static readonly MetadataTraceSource Logger = new MetadataTraceSource("ServiceLib.EventHandlerMetadata");
 
         public MetadataInstance(string baseName, string versionDoc, string tokenDoc, IDocumentFolder store)
         {
@@ -67,16 +67,19 @@ namespace ServiceLib
             return _store.GetDocument(_tokenDoc).ContinueWith(task =>
             {
                 var doc = task.Result;
+                EventStoreToken token;
                 if (doc == null)
                 {
                     _tokenVer = 0;
-                    return EventStoreToken.Initial;
+                    token = EventStoreToken.Initial;
                 }
                 else
                 {
                     _tokenVer = doc.Version;
-                    return new EventStoreToken(doc.Contents);
+                    token = new EventStoreToken(doc.Contents);
                 }
+                Logger.TokenLoaded(_tokenVer, token);
+                return token;
             });
         }
 
@@ -85,8 +88,12 @@ namespace ServiceLib
             return _store.SaveDocument(_tokenDoc, token.ToString(), DocumentStoreVersion.At(_tokenVer), null).ContinueWith(task =>
             {
                 if (!task.Result)
-                    throw new MetadataInstanceConcurrencyException();
+                {
+                    Logger.TokenSavingFailedDueToConcurrency(_tokenDoc, _tokenVer, token);
+                    throw new MetadataInstanceConcurrencyException().WithDetails(_versionDoc, _versionVer, token);
+                }
                 _tokenVer++;
+                Logger.TokenSavedSuccessfully(_tokenVer, token);
             });
         }
 
@@ -97,16 +104,19 @@ namespace ServiceLib
             return _store.GetDocument(_versionDoc).ContinueWith(task =>
             {
                 var doc = task.Result;
+                string version;
                 if (doc == null)
                 {
                     _versionVer = 0;
-                    return null;
+                    version = null;
                 }
                 else
                 {
                     _versionVer = doc.Version;
-                    return doc.Contents;
+                    version = doc.Contents;
                 }
+                Logger.VersionLoaded(_versionVer, version);
+                return version;
             });
         }
 
@@ -117,7 +127,12 @@ namespace ServiceLib
             return _store.SaveDocument(_versionDoc, version, DocumentStoreVersion.At(_versionVer), null).ContinueWith(task =>
             {
                 if (!task.Result)
-                    throw new MetadataInstanceConcurrencyException();
+                {
+                    Logger.VersionSavingFailedDueToConcurrency(_versionDoc, _versionVer, version);
+                    throw new MetadataInstanceConcurrencyException().WithDetails(_versionDoc, _versionVer, version);
+                }
+                _versionVer++;
+                Logger.VersionSaved(_versionVer, version);
             });
         }
     }
@@ -131,6 +146,74 @@ namespace ServiceLib
         protected MetadataInstanceConcurrencyException(
           System.Runtime.Serialization.SerializationInfo info,
           System.Runtime.Serialization.StreamingContext context)
-            : base(info, context) { }
+            : base(info, context)
+        {
+        }
+
+        public MetadataInstanceConcurrencyException WithDetails(string documentName, int expectedVersion, object dataToSave)
+        {
+            Data["DocumentName"] = documentName;
+            Data["ExpectedVersion"] = expectedVersion;
+            Data["DataToSave"] = dataToSave.ToString();
+            return this;
+        }
+    }
+
+    public class MetadataTraceSource : TraceSource
+    {
+        public MetadataTraceSource(string name)
+            : base(name)
+        {
+        }
+
+        public void TokenLoaded(int documentVersion, EventStoreToken token)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 1, "Loaded token {Token}");
+            msg.SetProperty("Token", false, token);
+            msg.SetProperty("DocumentVersion", false, documentVersion);
+            msg.Log(this);
+        }
+
+        public void TokenSavingFailedDueToConcurrency(string documentName, int documentVersion, EventStoreToken token)
+        {
+            var msg = new LogContextMessage(TraceEventType.Error, 3, "Token {Token} could not be saved due to concurrency");
+            msg.SetProperty("Token", false, token);
+            msg.SetProperty("DocumentName", false, documentName);
+            msg.SetProperty("DocumentVersion", false, documentVersion);
+            msg.Log(this);
+        }
+
+        public void TokenSavedSuccessfully(int documentVersion, EventStoreToken token)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 2, "Token {Token} saved");
+            msg.SetProperty("Token", false, token);
+            msg.SetProperty("DocumentVersion", false, documentVersion);
+            msg.Log(this);
+        }
+
+        public void VersionLoaded(int documentVersion, string version)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 6, "Loaded version {Version}");
+            msg.SetProperty("Version", false, version);
+            msg.SetProperty("DocumentVersion", false, documentVersion);
+            msg.Log(this);
+        }
+
+        public void VersionSavingFailedDueToConcurrency(string documentName, int documentVersion, string version)
+        {
+            var msg = new LogContextMessage(TraceEventType.Error, 8, "Version {Version} could not be saved due to concurrency");
+            msg.SetProperty("Version", false, version);
+            msg.SetProperty("DocumentName", false, documentName);
+            msg.SetProperty("DocumentVersion", false, documentVersion);
+            msg.Log(this);
+        }
+
+        public void VersionSaved(int documentVersion, string version)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 7, "Version {Version} saved");
+            msg.SetProperty("Version", false, version);
+            msg.SetProperty("DocumentVersion", false, documentVersion);
+            msg.Log(this);
+        }
     }
 }
