@@ -137,6 +137,21 @@ namespace ServiceLib
         }
     }
 
+    [Serializable]
+    public class DocumentNameInvalidException : ArgumentException
+    {
+        public DocumentNameInvalidException(string documentName)
+            : base("Invalid name for document")
+        {
+            Data["DocumentName"] = documentName;
+        }
+
+        protected DocumentNameInvalidException(
+          System.Runtime.Serialization.SerializationInfo info,
+          System.Runtime.Serialization.StreamingContext context)
+            : base(info, context) { }
+    }
+
     public class DocumentStoreTraceSource : TraceSource
     {
         public DocumentStoreTraceSource(string name)

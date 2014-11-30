@@ -29,63 +29,59 @@ namespace ServiceLib
                 _folderName = folderName;
             }
 
-            public Task DeleteAll()
+            public async Task DeleteAll()
             {
-                return _parent._db.Execute(DeleteAllWorker, new DeleteAllParameters(
+                await _parent._db.Execute(DeleteAllWorker, new DeleteAllParameters(
                     _parent._partition, _folderName));
             }
 
-            public Task<DocumentStoreFoundDocument> GetDocument(string name)
+            private void AssertPathOk(string documentName)
             {
-                if (_parent.VerifyPath(name))
-                {
-                    return _parent._db.Query(GetDocumentWorker, new GetDocumentParameters(
+                if (!_parent.VerifyPath(documentName))
+                    throw new DocumentNameInvalidException(documentName);
+            }
+
+            public async Task<DocumentStoreFoundDocument> GetDocument(string name)
+            {
+                AssertPathOk(name);
+                return await _parent._db.Query(GetDocumentWorker, new GetDocumentParameters(
                         _parent._partition, _folderName, name, -1, false));
-                }
-                else
-                    return TaskUtils.FromError<DocumentStoreFoundDocument>(new ArgumentOutOfRangeException("name", string.Format("Name {0} is not valid", name)));
             }
 
-            public Task<DocumentStoreFoundDocument> GetNewerDocument(string name, int knownVersion)
+            public async Task<DocumentStoreFoundDocument> GetNewerDocument(string name, int knownVersion)
             {
-                if (_parent.VerifyPath(name))
-                    return _parent._db.Query(GetDocumentWorker, new GetDocumentParameters(
-                        _parent._partition, _folderName, name, knownVersion, true));
-                else
-                    return TaskUtils.FromError<DocumentStoreFoundDocument>(new ArgumentOutOfRangeException("name", string.Format("Name {0} is not valid", name)));
+                AssertPathOk(name);
+                return await _parent._db.Query(GetDocumentWorker, new GetDocumentParameters(
+                    _parent._partition, _folderName, name, knownVersion, true));
             }
 
 
-            public Task<bool> SaveDocument(string name, string value, DocumentStoreVersion expectedVersion, IList<DocumentIndexing> indexes)
+            public async Task<bool> SaveDocument(string name, string value, DocumentStoreVersion expectedVersion, IList<DocumentIndexing> indexes)
             {
-                if (!_parent.VerifyPath(name))
-                    return TaskUtils.FromError<bool>(new ArgumentOutOfRangeException("name", string.Format("Name {0} is not valid", name)));
+                AssertPathOk(name);
                 if (indexes != null)
                 {
                     foreach (var index in indexes)
                     {
-                        if (!_parent.VerifyPath(index.IndexName))
-                            return TaskUtils.FromError<bool>(new ArgumentOutOfRangeException("indexes", string.Format("Index name {0} is not valid", index.IndexName)));
+                        AssertPathOk(index.IndexName);
                     }
                 }
-                return _parent._db.Query(SaveDocumentWorker, new SaveDocumentParameters(
+                return await _parent._db.Query(SaveDocumentWorker, new SaveDocumentParameters(
                     _parent._partition, _folderName, name, value, expectedVersion, indexes));
             }
 
 
-            public Task<IList<string>> FindDocumentKeys(string indexName, string minValue, string maxValue)
+            public async Task<IList<string>> FindDocumentKeys(string indexName, string minValue, string maxValue)
             {
-                if (!_parent.VerifyPath(indexName))
-                    return TaskUtils.FromError<IList<string>>(new ArgumentOutOfRangeException("name", string.Format("Index name {0} is not valid", indexName)));
-                return _parent._db.Query(FindDocumentKeysWorker, new FindDocumentKeysParameters(
+                AssertPathOk(indexName);
+                return await _parent._db.Query(FindDocumentKeysWorker, new FindDocumentKeysParameters(
                     _parent._partition, _folderName, indexName, minValue, maxValue));
             }
 
-            public Task<DocumentStoreFoundDocuments> FindDocuments(string indexName, string minValue, string maxValue, int skip, int maxCount, bool ascending)
+            public async Task<DocumentStoreFoundDocuments> FindDocuments(string indexName, string minValue, string maxValue, int skip, int maxCount, bool ascending)
             {
-                if (!_parent.VerifyPath(indexName))
-                    return TaskUtils.FromError<DocumentStoreFoundDocuments>(new ArgumentOutOfRangeException("name", string.Format("Index name {0} is not valid", indexName)));
-                return _parent._db.Query(FindDocumentsWorker, new FindDocumentsParameters(
+                AssertPathOk(indexName);
+                return await _parent._db.Query(FindDocumentsWorker, new FindDocumentsParameters(
                     _parent._partition, _folderName, indexName, minValue, maxValue, skip, maxCount, ascending));
             }
         }
@@ -113,7 +109,10 @@ namespace ServiceLib
                 var tables = new HashSet<string>();
                 using (var cmd = conn.CreateCommand())
                 {
-                    cmd.CommandText = "SELECT relname FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind = 'r' AND n.nspname = 'public'";
+                    cmd.CommandText = 
+                        "SELECT relname FROM pg_catalog.pg_class c " +
+                        "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace " +
+                        "WHERE c.relkind = 'r' AND n.nspname = 'public'";
                     Logger.TraceSql(cmd);
                     using (var reader = cmd.ExecuteReader())
                     {
@@ -128,7 +127,8 @@ namespace ServiceLib
                     {
                         cmd.CommandText = string.Concat(
                             "CREATE TABLE IF NOT EXISTS ", _partition,
-                            " (folder varchar NOT NULL, document varchar NOT NULL, version integer NOT NULL, contents text NOT NULL, PRIMARY KEY (folder, document))");
+                            " (folder varchar NOT NULL, document varchar NOT NULL, version integer NOT NULL, " +
+                            "contents text NOT NULL, PRIMARY KEY (folder, document))");
                         Logger.TraceSql(cmd);
                         cmd.ExecuteNonQuery();
                     }
@@ -140,7 +140,8 @@ namespace ServiceLib
                     {
                         cmd.CommandText = string.Concat(
                             "CREATE TABLE IF NOT EXISTS ", _partition,
-                            "_idx (folder varchar NOT NULL, indexname varchar NOT NULL, value varchar NOT NULL, document varchar NOT NULL, PRIMARY KEY (folder, indexname, value, document))");
+                            "_idx (folder varchar NOT NULL, indexname varchar NOT NULL, value varchar NOT NULL, " +
+                            "document varchar NOT NULL, PRIMARY KEY (folder, indexname, value, document))");
                         Logger.TraceSql(cmd);
                         cmd.ExecuteNonQuery();
                     }
@@ -163,6 +164,8 @@ namespace ServiceLib
 
         public IDocumentFolder GetFolder(string name)
         {
+            if (!VerifyPath(name))
+                throw new DocumentNameInvalidException(name);
             return new Folder(this, name);
         }
 

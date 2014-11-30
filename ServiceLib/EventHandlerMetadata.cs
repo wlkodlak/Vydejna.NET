@@ -62,100 +62,87 @@ namespace ServiceLib
             get { return _baseName; }
         }
 
-        public Task<EventStoreToken> GetToken()
+        public async Task<EventStoreToken> GetToken()
         {
-            return _store.GetDocument(_tokenDoc).ContinueWith(task =>
+            var doc = await _store.GetDocument(_tokenDoc);
+            EventStoreToken token;
+            if (doc == null)
             {
-                var doc = task.Result;
-                EventStoreToken token;
-                if (doc == null)
-                {
-                    _tokenVer = 0;
-                    token = EventStoreToken.Initial;
-                }
-                else
-                {
-                    _tokenVer = doc.Version;
-                    token = new EventStoreToken(doc.Contents);
-                }
-                Logger.TokenLoaded(_tokenVer, token);
-                return token;
-            });
+                _tokenVer = 0;
+                token = EventStoreToken.Initial;
+            }
+            else
+            {
+                _tokenVer = doc.Version;
+                token = new EventStoreToken(doc.Contents);
+            }
+            Logger.TokenLoaded(_tokenVer, token);
+            return token;
         }
 
-        public Task SetToken(EventStoreToken token)
+        public async Task SetToken(EventStoreToken token)
         {
-            return _store.SaveDocument(_tokenDoc, token.ToString(), DocumentStoreVersion.At(_tokenVer), null).ContinueWith(task =>
+            var saved = await _store.SaveDocument(_tokenDoc, token.ToString(), DocumentStoreVersion.At(_tokenVer), null);
+            if (!saved)
             {
-                if (!task.Result)
-                {
-                    Logger.TokenSavingFailedDueToConcurrency(_tokenDoc, _tokenVer, token);
-                    throw new MetadataInstanceConcurrencyException().WithDetails(_versionDoc, _versionVer, token);
-                }
-                _tokenVer++;
-                Logger.TokenSavedSuccessfully(_tokenVer, token);
-            });
+                Logger.TokenSavingFailedDueToConcurrency(_tokenDoc, _tokenVer, token);
+                throw new MetadataInstanceConcurrencyException(_versionDoc, _versionVer, token);
+            }
+            _tokenVer++;
+            Logger.TokenSavedSuccessfully(_tokenVer, token);
         }
 
-        public Task<string> GetVersion()
+        public async Task<string> GetVersion()
         {
             if (string.IsNullOrEmpty(_versionDoc))
-                return TaskUtils.FromResult<string>(null);
-            return _store.GetDocument(_versionDoc).ContinueWith(task =>
+                return null;
+
+            var doc = await _store.GetDocument(_versionDoc);
+            string version;
+            if (doc == null)
             {
-                var doc = task.Result;
-                string version;
-                if (doc == null)
-                {
-                    _versionVer = 0;
-                    version = null;
-                }
-                else
-                {
-                    _versionVer = doc.Version;
-                    version = doc.Contents;
-                }
-                Logger.VersionLoaded(_versionVer, version);
-                return version;
-            });
+                _versionVer = 0;
+                version = null;
+            }
+            else
+            {
+                _versionVer = doc.Version;
+                version = doc.Contents;
+            }
+            Logger.VersionLoaded(_versionVer, version);
+            return version;
         }
 
-        public Task SetVersion(string version)
+        public async Task SetVersion(string version)
         {
             if (string.IsNullOrEmpty(_versionDoc))
-                return TaskUtils.FromResult<object>(null);
-            return _store.SaveDocument(_versionDoc, version, DocumentStoreVersion.At(_versionVer), null).ContinueWith(task =>
+                return;
+            var saved = await _store.SaveDocument(_versionDoc, version, DocumentStoreVersion.At(_versionVer), null);
+            if (!saved)
             {
-                if (!task.Result)
-                {
-                    Logger.VersionSavingFailedDueToConcurrency(_versionDoc, _versionVer, version);
-                    throw new MetadataInstanceConcurrencyException().WithDetails(_versionDoc, _versionVer, version);
-                }
-                _versionVer++;
-                Logger.VersionSaved(_versionVer, version);
-            });
+                Logger.VersionSavingFailedDueToConcurrency(_versionDoc, _versionVer, version);
+                throw new MetadataInstanceConcurrencyException(_versionDoc, _versionVer, version);
+            }
+            _versionVer++;
+            Logger.VersionSaved(_versionVer, version);
         }
     }
 
     [Serializable]
     public class MetadataInstanceConcurrencyException : Exception
     {
-        public MetadataInstanceConcurrencyException() { }
-        public MetadataInstanceConcurrencyException(string message) : base(message) { }
-        public MetadataInstanceConcurrencyException(string message, Exception inner) : base(message, inner) { }
+        public MetadataInstanceConcurrencyException(string documentName, int expectedVersion, object dataToSave)
+            : base("Could not save metadata due to document store concurrency")
+        {
+            Data["DocumentName"] = documentName;
+            Data["ExpectedVersion"] = expectedVersion;
+            Data["DataToSave"] = dataToSave.ToString();
+        }
         protected MetadataInstanceConcurrencyException(
           System.Runtime.Serialization.SerializationInfo info,
           System.Runtime.Serialization.StreamingContext context)
             : base(info, context)
         {
-        }
-
-        public MetadataInstanceConcurrencyException WithDetails(string documentName, int expectedVersion, object dataToSave)
-        {
-            Data["DocumentName"] = documentName;
-            Data["ExpectedVersion"] = expectedVersion;
-            Data["DataToSave"] = dataToSave.ToString();
-            return this;
         }
     }
 

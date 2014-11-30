@@ -1,5 +1,4 @@
-﻿using log4net;
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -66,7 +65,7 @@ namespace ServiceLib
                 {
                     if (!_nameRegex.IsMatch(name))
                     {
-                        tcs.SetException(new ArgumentOutOfRangeException(name, "Invalid characters in name"));
+                        tcs.SetException(new DocumentNameInvalidException(name));
                     }
                     else
                     {
@@ -102,7 +101,7 @@ namespace ServiceLib
                 {
                     if (!_nameRegex.IsMatch(name))
                     {
-                        tcs.SetException(new ArgumentOutOfRangeException(name, "Invalid characters in name"));
+                        tcs.SetException(new DocumentNameInvalidException(name));
                     }
                     else
                     {
@@ -144,7 +143,7 @@ namespace ServiceLib
                 {
                     if (!_nameRegex.IsMatch(name))
                     {
-                        return TaskUtils.FromError<bool>(new ArgumentOutOfRangeException(name, "Invalid characters in name"));
+                        return TaskUtils.FromError<bool>(new DocumentNameInvalidException(name));
                     }
                     var newDocument = new Document(0, null);
                     var existingDocument = _documents.GetOrAdd(name, newDocument);
@@ -219,7 +218,7 @@ namespace ServiceLib
                 Index index;
                 if (!_indexes.TryGetValue(indexName, out index))
                 {
-                    return TaskUtils.FromError<IList<string>>(new ArgumentOutOfRangeException("indexName", string.Format("Index {0} does not exist in folder {1}", indexName, _folderName)));
+                    return TaskUtils.FromResult<IList<string>>(new string[0]);
                 }
                 var foundKeys = new HashSet<string>();
                 if (string.Equals(minValue, maxValue, StringComparison.Ordinal))
@@ -305,7 +304,7 @@ namespace ServiceLib
         public IDocumentFolder GetFolder(string name)
         {
             if (!_nameRegex.IsMatch(name))
-                throw new ArgumentOutOfRangeException(name, "Invalid characters in name");
+                throw new DocumentNameInvalidException(name);
             DocumentFolder folder;
             while (true)
             {
