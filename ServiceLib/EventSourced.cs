@@ -201,6 +201,9 @@ namespace ServiceLib
         : IEventSourcedRepository<T>
         where T : class, IEventSourcedAggregate
     {
+        private static readonly EventSourcedRepositoryTraceSource Logger = 
+            new EventSourcedRepositoryTraceSource("ServiceLib.EventSourcedRepository." + typeof(T).FullName);
+
         private IEventStore _store;
         private string _prefix;
         private IEventSourcedSerializer _serializer;
@@ -239,18 +242,11 @@ namespace ServiceLib
             set { _snapshotInterval = value; }
         }
 
-        public Task<T> Load(IAggregateId id)
-        {
-            return TaskUtils.FromEnumerable<T>(LoadInternal(id)).GetTask();
-        }
-
-        private IEnumerable<Task> LoadInternal(IAggregateId id)
+        public async Task<T> Load(IAggregateId id)
         {
             var streamName = StreamNameForId(id);
-            var taskLoadSnapshot = _store.LoadSnapshot(streamName);
-            yield return taskLoadSnapshot;
 
-            var storedSnapshot = taskLoadSnapshot.Result;
+            var storedSnapshot = await _store.LoadSnapshot(streamName);
             var fromVersion = 0;
             var snapshot = storedSnapshot == null ? null : _serializer.Deserialize(storedSnapshot);
             T aggregate = null;
@@ -260,10 +256,8 @@ namespace ServiceLib
                 aggregate = CreateAggregate();
                 fromVersion = 1 + aggregate.LoadFromSnapshot(snapshot);
             }
-            var taskReadStream = _store.ReadStream(streamName, fromVersion, int.MaxValue, true);
-            yield return taskReadStream;
 
-            var stream = taskReadStream.Result;
+            var stream = await _store.ReadStream(streamName, fromVersion, int.MaxValue, true);
             if (stream.StreamVersion != 0)
             {
                 var deserialized = stream.Events.Select(_serializer.Deserialize).ToList();
@@ -273,15 +267,10 @@ namespace ServiceLib
                 aggregate.CommitChanges(stream.StreamVersion);
             }
 
-            yield return TaskUtils.FromResult(aggregate);
+            return aggregate;
         }
 
-        public Task<bool> Save(T aggregate, IEventProcessTrackSource tracker)
-        {
-            return TaskUtils.FromEnumerable<bool>(SaveInternal(aggregate, tracker)).GetTask();
-        }
-
-        private IEnumerable<Task> SaveInternal(T aggregate, IEventProcessTrackSource tracker)
+        public async Task<bool> Save(T aggregate, IEventProcessTrackSource tracker)
         {
             var changes = aggregate.GetChanges();
             if (changes.Count != 0)
@@ -301,12 +290,10 @@ namespace ServiceLib
                     ? EventStoreVersion.New
                     : EventStoreVersion.At(aggregate.OriginalVersion);
                 var streamName = StreamNameForId(aggregate.Id);
-                var taskAddToStream = _store.AddToStream(streamName, serialized, expectedVersion);
-                yield return taskAddToStream;
-                if (!taskAddToStream.Result)
+                var addedToStream = await _store.AddToStream(streamName, serialized, expectedVersion);
+                if (!addedToStream)
                 {
-                    yield return TaskUtils.FromResult(false);
-                    yield break;
+                    return false;
                 }
 
                 bool shouldCreateSnapshot = ShouldCreateSnapshot(aggregate);
@@ -318,15 +305,14 @@ namespace ServiceLib
                     {
                         var storedSnapshot = new EventStoreSnapshot();
                         _serializer.Serialize(objectSnapshot, storedSnapshot);
-                        var taskSaveSnapshot = _store.SaveSnapshot(streamName, storedSnapshot);
-                        yield return taskSaveSnapshot;
+                        await _store.SaveSnapshot(streamName, storedSnapshot);
                     }
                 }
 
                 foreach (var stored in serialized)
                     tracker.AddEvent(stored.Token);
             }
-            yield return TaskUtils.FromResult(true);
+            return true;
         }
     }
 

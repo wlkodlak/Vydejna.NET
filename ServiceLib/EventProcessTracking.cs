@@ -1,7 +1,7 @@
-﻿using log4net;
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Net;
 using System.Text;
@@ -324,7 +324,7 @@ namespace ServiceLib
     public class EventProcessTrackService
     {
         private readonly IEventProcessTrackCoordinator _coordinator;
-        private readonly static ILog Logger = LogManager.GetLogger("ServiceLib.EventProcessTracking");
+        private readonly static EventProcessTrackingTraceSource Logger = new EventProcessTrackingTraceSource("ServiceLib.EventProcessTracking");
 
         public EventProcessTrackService(IEventProcessTrackCoordinator coordinator)
         {
@@ -333,7 +333,7 @@ namespace ServiceLib
 
         public void Register(IHttpRouteCommonConfigurator config)
         {
-            config.Route("utils/tracking/{id}").To(ctx => TaskUtils.FromEnumerable(HandleTracking(ctx)).GetTask());
+            config.Route("utils/tracking/{id}").To(ctx => HandleTracking(ctx));
         }
 
         public static string GetTrackingUrlBase(string appBase)
@@ -341,20 +341,30 @@ namespace ServiceLib
             return string.Concat(appBase, "utils/tracking/");
         }
 
-        public IEnumerable<Task> HandleTracking(IHttpServerStagedContext ctx)
+        public async Task HandleTracking(IHttpServerStagedContext ctx)
         {
             // utils/tracking
             var trackingId = ctx.Route("id").AsString().Get();
             var timeout = ctx.Parameter("timeout").AsInteger().Default(10000).Get();
-            var taskWait = _coordinator.FindTracker(trackingId).WaitForFinish(timeout);
-            yield return taskWait;
+            var finished = await _coordinator.FindTracker(trackingId).WaitForFinish(timeout);
 
-            var finished = taskWait.Result;
             ctx.StatusCode = finished ? (int)HttpStatusCode.OK : (int)HttpStatusCode.Accepted;
-            Logger.InfoFormat(
-                "Tracking request with id {0} (timeout {1}) reported {2}",
-                trackingId, timeout, finished ? "finished command" : "unfinished command");
-            yield return TaskUtils.CompletedTask();
+            Logger.TrackingReport(trackingId, timeout, finished);
+        }
+    }
+
+    public class EventProcessTrackingTraceSource : TraceSource
+    {
+        public EventProcessTrackingTraceSource(string name) : base(name) { }
+
+        public void TrackingReport(string trackingId, int timeout, bool finished)
+        {
+            var msg = new LogContextMessage(TraceEventType.Information, 1, 
+                "Tracking request with id {TrackingId} reported " + (finished ? "" : "un") + "finished command");
+            msg.SetProperty("TrackingId", false, trackingId);
+            msg.SetProperty("Timeout", false, timeout);
+            msg.SetProperty("Finished", false, finished);
+            msg.Log(this);
         }
 
     }
