@@ -1,9 +1,6 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
-using System.Text;
-using System.Threading;
+using System.Runtime.Serialization;
 using System.Threading.Tasks;
 
 namespace ServiceLib
@@ -24,7 +21,7 @@ namespace ServiceLib
 
     public class MetadataManager : IMetadataManager
     {
-        private IDocumentFolder _store;
+        private readonly IDocumentFolder _store;
 
         public MetadataManager(IDocumentFolder store)
         {
@@ -39,22 +36,22 @@ namespace ServiceLib
 
     public class MetadataInstance : IMetadataInstance
     {
-        private string _baseName;
-        private string _versionDoc;
-        private string _tokenDoc;
-        private IDocumentFolder _store;
+        private readonly string _baseName;
+        private readonly string _versionDoc;
+        private readonly string _tokenDoc;
+        private readonly IDocumentFolder _store;
         private int _versionVer;
         private int _tokenVer;
         private static readonly MetadataTraceSource Logger = new MetadataTraceSource("ServiceLib.EventHandlerMetadata");
 
         public MetadataInstance(string baseName, string versionDoc, string tokenDoc, IDocumentFolder store)
         {
-            this._baseName = baseName;
-            this._versionDoc = versionDoc;
-            this._tokenDoc = tokenDoc;
-            this._versionVer = 0;
-            this._tokenVer = 0;
-            this._store = store;
+            _baseName = baseName;
+            _versionDoc = versionDoc;
+            _tokenDoc = tokenDoc;
+            _versionVer = 0;
+            _tokenVer = 0;
+            _store = store;
         }
 
         public string ProcessName
@@ -131,18 +128,48 @@ namespace ServiceLib
     [Serializable]
     public class MetadataInstanceConcurrencyException : Exception
     {
+        private readonly string _documentName;
+        private readonly int _expectedVersion;
+        private readonly object _dataToSave;
+
         public MetadataInstanceConcurrencyException(string documentName, int expectedVersion, object dataToSave)
             : base("Could not save metadata due to document store concurrency")
         {
-            Data["DocumentName"] = documentName;
-            Data["ExpectedVersion"] = expectedVersion;
-            Data["DataToSave"] = dataToSave.ToString();
+            _documentName = documentName;
+            _expectedVersion = expectedVersion;
+            _dataToSave = dataToSave;
         }
         protected MetadataInstanceConcurrencyException(
-          System.Runtime.Serialization.SerializationInfo info,
-          System.Runtime.Serialization.StreamingContext context)
+          SerializationInfo info,
+          StreamingContext context)
             : base(info, context)
         {
+            _documentName = info.GetString("DocumentName");
+            _expectedVersion = info.GetInt32("ExpectedVersion");
+            _dataToSave = info.GetString("DataToSave");
+        }
+
+        public string DocumentName
+        {
+            get { return _documentName; }
+        }
+
+        public int ExpectedVersion
+        {
+            get { return _expectedVersion; }
+        }
+
+        public object DataToSave
+        {
+            get { return _dataToSave; }
+        }
+
+        public override void GetObjectData(SerializationInfo info, StreamingContext context)
+        {
+            base.GetObjectData(info, context);
+            info.AddValue("DocumentName", _documentName);
+            info.AddValue("ExpectedVersion", _expectedVersion);
+            info.AddValue("DataToSave", _dataToSave == null ? null : _dataToSave.ToString());
         }
     }
 

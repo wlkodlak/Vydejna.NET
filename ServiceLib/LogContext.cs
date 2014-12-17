@@ -1,10 +1,8 @@
 ﻿using System;
-using System.Collections.Concurrent;
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using System.Text;
-using System.Threading;
 
 namespace ServiceLib
 {
@@ -57,13 +55,12 @@ namespace ServiceLib
 
         public override string ToString()
         {
-            bool first;
             var sb = new StringBuilder();
 
             var summaryGenerator = new LogContextSummaryGenerator(this);
             sb.Append(summaryGenerator.Generate());
 
-            first = true;
+            var first = true;
             foreach (var property in _properties.Values)
             {
                 if (property.IsLong)
@@ -89,7 +86,7 @@ namespace ServiceLib
                 }
                 sb.Append(property.Name).AppendLine(":");
                 if (property.Value != null)
-                    sb.Append(property.Value.ToString());
+                    sb.Append(property.Value);
                 sb.AppendLine();
             }
 
@@ -109,7 +106,7 @@ namespace ServiceLib
             return _properties.Values.GetEnumerator();
         }
 
-        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator()
+        IEnumerator IEnumerable.GetEnumerator()
         {
             return GetEnumerator();
         }
@@ -152,7 +149,7 @@ namespace ServiceLib
 
     public class LogContextSummaryParser : IEnumerator<LogContextSummaryElement>
     {
-        private char[] _format;
+        private readonly char[] _format;
         private int _state;
         private int _blockStart;
         private int _formatLength;
@@ -351,7 +348,7 @@ namespace ServiceLib
         {
         }
 
-        object System.Collections.IEnumerator.Current
+        object IEnumerator.Current
         {
             get { return _current; }
         }
@@ -367,7 +364,7 @@ namespace ServiceLib
 
     public class LogContextSummaryGenerator
     {
-        private ILogContextMessage _message;
+        private readonly ILogContextMessage _message;
 
         public LogContextSummaryGenerator(ILogContextMessage message)
         {

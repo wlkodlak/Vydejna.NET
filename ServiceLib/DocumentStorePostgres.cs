@@ -1,12 +1,12 @@
 ﻿using System;
-using System.Data;
 using System.Collections.Generic;
+using System.Data;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Npgsql;
-using System.Threading;
+using NpgsqlTypes;
 
 namespace ServiceLib
 {
@@ -14,14 +14,15 @@ namespace ServiceLib
     {
         private readonly DatabasePostgres _db;
         private readonly Regex _pathRegex;
-        private readonly object _lock;
         private readonly string _partition;
-        private static readonly DocumentStorePostgresTraceSource Logger = new DocumentStorePostgresTraceSource("ServiceLib.DocumentStore");
+
+        private static readonly DocumentStorePostgresTraceSource Logger =
+            new DocumentStorePostgresTraceSource("ServiceLib.DocumentStore");
 
         private class Folder : IDocumentFolder
         {
-            private DocumentStorePostgres _parent;
-            private string _folderName;
+            private readonly DocumentStorePostgres _parent;
+            private readonly string _folderName;
 
             public Folder(DocumentStorePostgres parent, string folderName)
             {
@@ -31,8 +32,8 @@ namespace ServiceLib
 
             public async Task DeleteAll()
             {
-                await _parent._db.Execute(DeleteAllWorker, new DeleteAllParameters(
-                    _parent._partition, _folderName));
+                var parameters = new DeleteAllParameters(_parent._partition, _folderName);
+                await _parent._db.Execute(DeleteAllWorker, parameters);
             }
 
             private void AssertPathOk(string documentName)
@@ -41,48 +42,58 @@ namespace ServiceLib
                     throw new DocumentNameInvalidException(documentName);
             }
 
+            private void AssertIndexesOk(IList<DocumentIndexing> indexes)
+            {
+                if (indexes == null) return;
+                foreach (var index in indexes)
+                {
+                    AssertPathOk(index.IndexName);
+                }
+            }
+
             public async Task<DocumentStoreFoundDocument> GetDocument(string name)
             {
                 AssertPathOk(name);
-                return await _parent._db.Query(GetDocumentWorker, new GetDocumentParameters(
-                        _parent._partition, _folderName, name, -1, false));
+                var parameters = new GetDocumentParameters(_parent._partition, _folderName, name, -1, false);
+                return await _parent._db.Query(GetDocumentWorker, parameters);
             }
 
             public async Task<DocumentStoreFoundDocument> GetNewerDocument(string name, int knownVersion)
             {
                 AssertPathOk(name);
-                return await _parent._db.Query(GetDocumentWorker, new GetDocumentParameters(
-                    _parent._partition, _folderName, name, knownVersion, true));
+                var parameters = new GetDocumentParameters(_parent._partition, _folderName, name, knownVersion, true);
+                return await _parent._db.Query(GetDocumentWorker, parameters);
             }
 
 
-            public async Task<bool> SaveDocument(string name, string value, DocumentStoreVersion expectedVersion, IList<DocumentIndexing> indexes)
+            public async Task<bool> SaveDocument(
+                string name, string value,
+                DocumentStoreVersion expectedVersion,
+                IList<DocumentIndexing> indexes)
             {
                 AssertPathOk(name);
-                if (indexes != null)
-                {
-                    foreach (var index in indexes)
-                    {
-                        AssertPathOk(index.IndexName);
-                    }
-                }
-                return await _parent._db.Query(SaveDocumentWorker, new SaveDocumentParameters(
-                    _parent._partition, _folderName, name, value, expectedVersion, indexes));
+                AssertIndexesOk(indexes);
+                var parameters = new SaveDocumentParameters(
+                    _parent._partition, _folderName, name, value, expectedVersion, indexes);
+                return await _parent._db.Query(SaveDocumentWorker, parameters);
             }
 
 
             public async Task<IList<string>> FindDocumentKeys(string indexName, string minValue, string maxValue)
             {
                 AssertPathOk(indexName);
-                return await _parent._db.Query(FindDocumentKeysWorker, new FindDocumentKeysParameters(
-                    _parent._partition, _folderName, indexName, minValue, maxValue));
+                var parameters = new FindDocumentKeysParameters(
+                    _parent._partition, _folderName, indexName, minValue, maxValue);
+                return await _parent._db.Query(FindDocumentKeysWorker, parameters);
             }
 
-            public async Task<DocumentStoreFoundDocuments> FindDocuments(string indexName, string minValue, string maxValue, int skip, int maxCount, bool ascending)
+            public async Task<DocumentStoreFoundDocuments> FindDocuments(
+                string indexName, string minValue, string maxValue, int skip, int maxCount, bool ascending)
             {
                 AssertPathOk(indexName);
-                return await _parent._db.Query(FindDocumentsWorker, new FindDocumentsParameters(
-                    _parent._partition, _folderName, indexName, minValue, maxValue, skip, maxCount, ascending));
+                var parameters = new FindDocumentsParameters(
+                    _parent._partition, _folderName, indexName, minValue, maxValue, skip, maxCount, ascending);
+                return await _parent._db.Query(FindDocumentsWorker, parameters);
             }
         }
 
@@ -91,7 +102,6 @@ namespace ServiceLib
             _db = db;
             _pathRegex = new Regex(@"^[a-zA-Z0-9\-_]+$", RegexOptions.Compiled);
             _partition = partition;
-            _lock = new object();
         }
 
         public void Dispose()
@@ -102,6 +112,7 @@ namespace ServiceLib
         {
             _db.ExecuteSync(InitializeDatabase);
         }
+
         private void InitializeDatabase(NpgsqlConnection conn)
         {
             using (new LogMethod(Logger, "InitializeDatabase"))
@@ -109,7 +120,7 @@ namespace ServiceLib
                 var tables = new HashSet<string>();
                 using (var cmd = conn.CreateCommand())
                 {
-                    cmd.CommandText = 
+                    cmd.CommandText =
                         "SELECT relname FROM pg_catalog.pg_class c " +
                         "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace " +
                         "WHERE c.relkind = 'r' AND n.nspname = 'public'";
@@ -147,7 +158,8 @@ namespace ServiceLib
                     }
                     using (var cmd = conn.CreateCommand())
                     {
-                        cmd.CommandText = string.Concat("CREATE INDEX ON ", _partition, "_idx (folder, document, indexname)");
+                        cmd.CommandText = string.Concat(
+                            "CREATE INDEX ON ", _partition, "_idx (folder, document, indexname)");
                         Logger.TraceSql(cmd);
                         cmd.ExecuteNonQuery();
                     }
@@ -185,7 +197,7 @@ namespace ServiceLib
         {
             using (new LogMethod(Logger, "DeleteAll"))
             {
-                var context = (DeleteAllParameters)objContext;
+                var context = (DeleteAllParameters) objContext;
                 using (var tran = conn.BeginTransaction())
                 {
                     using (var cmd = conn.CreateCommand())
@@ -211,7 +223,12 @@ namespace ServiceLib
             public readonly int KnownVersion;
             public readonly bool CanOmitContents;
 
-            public GetDocumentParameters(string partition, string folderName, string name, int knownVersion, bool canOmitContents)
+            public GetDocumentParameters(
+                string partition,
+                string folderName,
+                string name,
+                int knownVersion,
+                bool canOmitContents)
             {
                 Partition = partition;
                 FolderName = folderName;
@@ -225,18 +242,18 @@ namespace ServiceLib
         {
             using (new LogMethod(Logger, "GetDocument"))
             {
-                var context = (GetDocumentParameters)objContext;
+                var context = (GetDocumentParameters) objContext;
                 if (context.CanOmitContents)
                 {
                     using (var cmd = conn.CreateCommand())
                     {
-                        cmd.CommandText = "SELECT version FROM " + context.Partition + " WHERE folder = :folder AND document = :document LIMIT 1";
+                        cmd.CommandText = "SELECT version FROM " + context.Partition +
+                                          " WHERE folder = :folder AND document = :document LIMIT 1";
                         cmd.Parameters.AddWithValue("folder", context.FolderName);
                         cmd.Parameters.AddWithValue("document", context.DocumentName);
                         Logger.TraceSql(cmd);
                         using (var reader = cmd.ExecuteReader(CommandBehavior.SingleRow))
                         {
-                            int version;
                             if (!reader.Read())
                             {
                                 Logger.DocumentNotFound(context.FolderName, context.DocumentName);
@@ -244,10 +261,11 @@ namespace ServiceLib
                             }
                             else
                             {
-                                version = reader.GetInt32(0);
+                                var version = reader.GetInt32(0);
                                 if (version == context.KnownVersion)
                                 {
-                                    Logger.DocumentUpToDate(context.FolderName, context.DocumentName, context.KnownVersion);
+                                    Logger.DocumentUpToDate(
+                                        context.FolderName, context.DocumentName, context.KnownVersion);
                                     return new DocumentStoreFoundDocument(context.DocumentName, version, false, null);
                                 }
                             }
@@ -256,18 +274,17 @@ namespace ServiceLib
                 }
                 using (var cmd = conn.CreateCommand())
                 {
-                    cmd.CommandText = "SELECT version, contents FROM " + context.Partition + " WHERE folder = :folder AND document = :document LIMIT 1";
+                    cmd.CommandText = "SELECT version, contents FROM " + context.Partition +
+                                      " WHERE folder = :folder AND document = :document LIMIT 1";
                     cmd.Parameters.AddWithValue("folder", context.FolderName);
                     cmd.Parameters.AddWithValue("document", context.DocumentName);
                     Logger.TraceSql(cmd);
                     using (var reader = cmd.ExecuteReader(CommandBehavior.SingleRow))
                     {
-                        int version;
-                        string contents;
                         if (reader.Read())
                         {
-                            version = reader.GetInt32(0);
-                            contents = reader.GetString(1);
+                            var version = reader.GetInt32(0);
+                            var contents = reader.GetString(1);
                             Logger.DocumentRetrieved(context.FolderName, context.DocumentName, version, contents);
                             return new DocumentStoreFoundDocument(context.DocumentName, version, true, contents);
                         }
@@ -289,8 +306,13 @@ namespace ServiceLib
             public readonly string Value;
             public readonly DocumentStoreVersion ExpectedVersion;
             public readonly IList<DocumentIndexing> Indexes;
+            public int DocumentVersion;
+            public bool WasSaved;
 
-            public SaveDocumentParameters(string partition, string folderName, string name, string value, DocumentStoreVersion expectedVersion, IList<DocumentIndexing> indexes)
+            public SaveDocumentParameters(
+                string partition, string folderName, string name, string value,
+                DocumentStoreVersion expectedVersion,
+                IList<DocumentIndexing> indexes)
             {
                 Partition = partition;
                 FolderName = folderName;
@@ -298,6 +320,8 @@ namespace ServiceLib
                 Value = value;
                 ExpectedVersion = expectedVersion;
                 Indexes = indexes;
+                DocumentVersion = -1;
+                WasSaved = false;
             }
         }
 
@@ -305,182 +329,178 @@ namespace ServiceLib
         {
             using (new LogMethod(Logger, "SaveDocument"))
             {
-                var context = (SaveDocumentParameters)objContext;
-                bool retry = true;
-                int documentVersion = -1;
-                bool wasSaved = false;
-                while (retry)
+                var context = (SaveDocumentParameters) objContext;
+                while (true)
                 {
-                    retry = false;
-                    try
-                    {
-                        using (var tran = conn.BeginTransaction())
-                        {
-                            using (var cmd = conn.CreateCommand())
-                            {
-                                cmd.CommandText = "SELECT version FROM " + context.Partition + " WHERE folder = :folder AND document = :document LIMIT 1 FOR UPDATE";
-                                cmd.Parameters.AddWithValue("folder", context.FolderName);
-                                cmd.Parameters.AddWithValue("document", context.Name);
-                                Logger.TraceSql(cmd);
-                                using (var reader = cmd.ExecuteReader())
-                                {
-                                    if (reader.Read())
-                                        documentVersion = reader.GetInt32(0);
-                                    else
-                                        documentVersion = -1;
-                                }
-                            }
+                    if (TrySaveDocument(conn, context))
+                        return context.WasSaved;
+                }
+            }
+        }
 
-                            if (documentVersion == -1)
-                            {
-                                using (var cmd = conn.CreateCommand())
-                                {
-                                    cmd.CommandText = "INSERT INTO " + context.Partition + " (folder, document, version, contents) VALUES (:folder, :document, 1, :contents)";
-                                    cmd.Parameters.AddWithValue("folder", context.FolderName);
-                                    cmd.Parameters.AddWithValue("document", context.Name);
-                                    cmd.Parameters.AddWithValue("contents", context.Value);
-                                    Logger.TraceSql(cmd);
-                                    cmd.ExecuteNonQuery();
-                                }
-                                if (context.Indexes != null)
-                                {
-                                    var retryIndex = true;
-                                    var deleteBeforeInsert = false;
-                                    while (retryIndex)
-                                    {
-                                        tran.Save("saveindex");
-                                        retryIndex = false;
-                                        try
-                                        {
-                                            if (deleteBeforeInsert)
-                                            {
-                                                using (var cmd = conn.CreateCommand())
-                                                {
-                                                    cmd.CommandText = "DELETE FROM " + context.Partition + "_idx WHERE folder = :folder AND document = :document";
-                                                    cmd.Parameters.AddWithValue("folder", context.FolderName);
-                                                    cmd.Parameters.AddWithValue("document", context.Name);
-                                                    Logger.TraceSql(cmd);
-                                                    cmd.ExecuteNonQuery();
-                                                }
-                                            }
-                                            using (var cmd = conn.CreateCommand())
-                                            {
-                                                cmd.CommandText = "INSERT INTO " + context.Partition + "_idx (folder, document, indexname, value) SELECT :folder, :document, :indexname, unnest(:value)";
-                                                cmd.Parameters.AddWithValue("folder", context.FolderName);
-                                                cmd.Parameters.AddWithValue("document", context.Name);
-                                                var paramIndex = cmd.Parameters.Add("indexname", NpgsqlTypes.NpgsqlDbType.Varchar);
-                                                var paramValues = cmd.Parameters.Add("value", NpgsqlTypes.NpgsqlDbType.Array | NpgsqlTypes.NpgsqlDbType.Varchar);
-                                                foreach (var indexChange in context.Indexes)
-                                                {
-                                                    paramIndex.Value = indexChange.IndexName;
-                                                    var valuesArray = indexChange.Values.Distinct().ToArray();
-                                                    paramValues.Value = valuesArray;
-                                                    Logger.TraceSql(cmd);
-                                                    cmd.ExecuteNonQuery();
-                                                }
-                                            }
-                                        }
-                                        catch (NpgsqlException ex)
-                                        {
-                                            if (ex.Code == "23505")
-                                            {
-                                                retryIndex = true;
-                                                deleteBeforeInsert = true;
-                                                tran.Rollback("saveindex");
-                                                Logger.UpdateIndexWillRetry(context.FolderName, context.Name, ex);
-                                            }
-                                            else
-                                                throw;
-                                        }
-                                    }
-                                }
-                                wasSaved = true;
-                                tran.Commit();
-                                Logger.DocumentSaved(context.FolderName, context.Name, 1, context.Value);
-                            }
-                            else if (context.ExpectedVersion.VerifyVersion(documentVersion))
-                            {
-                                using (var cmd = conn.CreateCommand())
-                                {
-                                    cmd.CommandText = "UPDATE " + context.Partition + " SET version = :version, contents = :contents WHERE folder = :folder AND document = :document";
-                                    cmd.Parameters.AddWithValue("folder", context.FolderName);
-                                    cmd.Parameters.AddWithValue("document", context.Name);
-                                    cmd.Parameters.AddWithValue("version", documentVersion + 1);
-                                    cmd.Parameters.AddWithValue("contents", context.Value);
-                                    Logger.TraceSql(cmd);
-                                    cmd.ExecuteNonQuery();
-                                }
-                                if (context.Indexes != null)
-                                {
-                                    var retryIndex = true;
-                                    while (retryIndex)
-                                    {
-                                        tran.Save("saveindex");
-                                        retryIndex = false;
-                                        try
-                                        {
-                                            using (var cmd = conn.CreateCommand())
-                                            {
-                                                cmd.CommandText = "DELETE FROM " + context.Partition + "_idx WHERE folder = :folder AND document = :document";
-                                                cmd.Parameters.AddWithValue("folder", context.FolderName);
-                                                cmd.Parameters.AddWithValue("document", context.Name);
-                                                Logger.TraceSql(cmd);
-                                                cmd.ExecuteNonQuery();
-                                            }
-                                            using (var cmd = conn.CreateCommand())
-                                            {
-                                                cmd.CommandText = "INSERT INTO " + context.Partition + "_idx (folder, document, indexname, value) SELECT :folder, :document, :indexname, unnest(:value)";
-                                                cmd.Parameters.AddWithValue("folder", context.FolderName);
-                                                cmd.Parameters.AddWithValue("document", context.Name);
-                                                var paramIndex = cmd.Parameters.Add("indexname", NpgsqlTypes.NpgsqlDbType.Varchar);
-                                                var paramValues = cmd.Parameters.Add("value", NpgsqlTypes.NpgsqlDbType.Array | NpgsqlTypes.NpgsqlDbType.Varchar);
-                                                foreach (var indexChange in context.Indexes)
-                                                {
-                                                    paramIndex.Value = indexChange.IndexName;
-                                                    var valuesArray = indexChange.Values.Distinct().ToArray();
-                                                    paramValues.Value = valuesArray;
-                                                    Logger.TraceSql(cmd);
-                                                    cmd.ExecuteNonQuery();
-                                                }
-                                            }
-                                        }
-                                        catch (NpgsqlException ex)
-                                        {
-                                            if (ex.Code == "23505")
-                                            {
-                                                retryIndex = true;
-                                                tran.Rollback("saveindex");
-                                                Logger.UpdateIndexWillRetry(context.FolderName, context.Name, ex);
-                                            }
-                                            else
-                                                throw;
-                                        }
-                                    }
-                                }
-                                wasSaved = true;
-                                tran.Commit();
-                                Logger.DocumentSaved(context.FolderName, context.Name, documentVersion + 1, context.Value);
-                            }
-                            else
-                            {
-                                wasSaved = false;
-                                Logger.DocumentConflicted(context.FolderName, context.Name, context.ExpectedVersion, documentVersion);
-                            }
-                        }
-                    }
-                    catch (NpgsqlException ex)
+        private static bool TrySaveDocument(NpgsqlConnection conn, SaveDocumentParameters context)
+        {
+            try
+            {
+                using (var tran = conn.BeginTransaction())
+                {
+                    context.DocumentVersion = GetDocumentVersionForSave(conn, context);
+
+                    if (context.DocumentVersion == -1)
                     {
-                        if (ex.Code == "23505")
+                        InsertNewDocument(conn, context);
+                        if (context.Indexes != null)
                         {
-                            retry = true;
-                            Logger.SaveDocumentWillRetry(context.FolderName, context.Name, ex);
+                            UpdateIndexes(conn, context, tran, false);
                         }
-                        else
-                            throw;
+                        context.WasSaved = true;
+                        tran.Commit();
+                        Logger.DocumentSaved(context.FolderName, context.Name, 1, context.Value);
+                    }
+                    else if (context.ExpectedVersion.VerifyVersion(context.DocumentVersion))
+                    {
+                        UpdateDocument(conn, context);
+                        if (context.Indexes != null)
+                        {
+                            UpdateIndexes(conn, context, tran, true);
+                        }
+                        context.WasSaved = true;
+                        tran.Commit();
+                        Logger.DocumentSaved(
+                            context.FolderName, context.Name, context.DocumentVersion + 1, context.Value);
+                    }
+                    else
+                    {
+                        context.WasSaved = false;
+                        Logger.DocumentConflicted(
+                            context.FolderName, context.Name, context.ExpectedVersion, context.DocumentVersion);
                     }
                 }
+                return true;
+            }
+            catch (NpgsqlException ex)
+            {
+                if (ex.Code == "23505")
+                {
+                    Logger.SaveDocumentWillRetry(context.FolderName, context.Name, ex);
+                    return false;
+                }
+                else
+                    throw;
+            }
+        }
 
-                return wasSaved;
+        private static int GetDocumentVersionForSave(NpgsqlConnection conn, SaveDocumentParameters context)
+        {
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "SELECT version FROM " + context.Partition +
+                                  " WHERE folder = :folder AND document = :document LIMIT 1 FOR UPDATE";
+                cmd.Parameters.AddWithValue("folder", context.FolderName);
+                cmd.Parameters.AddWithValue("document", context.Name);
+                Logger.TraceSql(cmd);
+                using (var reader = cmd.ExecuteReader())
+                {
+                    if (reader.Read())
+                        return reader.GetInt32(0);
+                    else
+                        return -1;
+                }
+            }
+        }
+
+        private static void InsertNewDocument(NpgsqlConnection conn, SaveDocumentParameters context)
+        {
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "INSERT INTO " + context.Partition +
+                                  " (folder, document, version, contents) VALUES (:folder, :document, 1, :contents)";
+                cmd.Parameters.AddWithValue("folder", context.FolderName);
+                cmd.Parameters.AddWithValue("document", context.Name);
+                cmd.Parameters.AddWithValue("contents", context.Value);
+                Logger.TraceSql(cmd);
+                cmd.ExecuteNonQuery();
+            }
+        }
+
+        private static void UpdateDocument(NpgsqlConnection conn, SaveDocumentParameters context)
+        {
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "UPDATE " + context.Partition +
+                                  " SET version = :version, contents = :contents WHERE folder = :folder AND document = :document";
+                cmd.Parameters.AddWithValue("folder", context.FolderName);
+                cmd.Parameters.AddWithValue("document", context.Name);
+                cmd.Parameters.AddWithValue("version", context.DocumentVersion + 1);
+                cmd.Parameters.AddWithValue("contents", context.Value);
+                Logger.TraceSql(cmd);
+                cmd.ExecuteNonQuery();
+            }
+        }
+
+        private static void UpdateIndexes(
+            NpgsqlConnection conn, SaveDocumentParameters context, NpgsqlTransaction tran, bool deleteBeforeInsert)
+        {
+            var retryIndex = true;
+            while (retryIndex)
+            {
+                tran.Save("saveindex");
+                retryIndex = false;
+                try
+                {
+                    if (deleteBeforeInsert)
+                    {
+                        DeleteIndexContents(conn, context);
+                    }
+                    InsertIndexContents(conn, context);
+                }
+                catch (NpgsqlException ex)
+                {
+                    if (ex.Code == "23505")
+                    {
+                        retryIndex = true;
+                        deleteBeforeInsert = true;
+                        tran.Rollback("saveindex");
+                        Logger.UpdateIndexWillRetry(context.FolderName, context.Name, ex);
+                    }
+                    else
+                        throw;
+                }
+            }
+        }
+
+        private static void DeleteIndexContents(NpgsqlConnection conn, SaveDocumentParameters context)
+        {
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "DELETE FROM " + context.Partition +
+                                  "_idx WHERE folder = :folder AND document = :document";
+                cmd.Parameters.AddWithValue("folder", context.FolderName);
+                cmd.Parameters.AddWithValue("document", context.Name);
+                Logger.TraceSql(cmd);
+                cmd.ExecuteNonQuery();
+            }
+        }
+
+        private static void InsertIndexContents(NpgsqlConnection conn, SaveDocumentParameters context)
+        {
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "INSERT INTO " + context.Partition +
+                                  "_idx (folder, document, indexname, value) SELECT :folder, :document, :indexname, unnest(:value)";
+                cmd.Parameters.AddWithValue("folder", context.FolderName);
+                cmd.Parameters.AddWithValue("document", context.Name);
+                var paramIndex = cmd.Parameters.Add("indexname", NpgsqlDbType.Varchar);
+                // ReSharper disable once BitwiseOperatorOnEnumWithoutFlags
+                var paramValues = cmd.Parameters.Add("value", NpgsqlDbType.Array | NpgsqlDbType.Varchar);
+                foreach (var indexChange in context.Indexes)
+                {
+                    paramIndex.Value = indexChange.IndexName;
+                    var valuesArray = indexChange.Values.Distinct().ToArray();
+                    paramValues.Value = valuesArray;
+                    Logger.TraceSql(cmd);
+                    cmd.ExecuteNonQuery();
+                }
             }
         }
 
@@ -492,7 +512,7 @@ namespace ServiceLib
             public readonly string MinValue;
             public readonly string MaxValue;
 
-            public FindDocumentKeysParameters(string partition, string folderName, string indexName, string minValue, string maxValue)
+            public FindDocumentKeysParameters(string partition,string folderName,string indexName,string minValue,string maxValue)
             {
                 Partition = partition;
                 FolderName = folderName;
@@ -506,12 +526,14 @@ namespace ServiceLib
         {
             using (new LogMethod(Logger, "FindDocumentKeys"))
             {
-                var context = (FindDocumentKeysParameters)objContext;
+                var context = (FindDocumentKeysParameters) objContext;
                 var list = new HashSet<string>();
                 using (var cmd = conn.CreateCommand())
                 {
                     var cmdBuilder = new StringBuilder();
-                    cmdBuilder.Append("SELECT document FROM ").Append(context.Partition).Append("_idx WHERE folder = :folder AND indexname = :indexname");
+                    cmdBuilder.Append("SELECT document FROM ")
+                        .Append(context.Partition)
+                        .Append("_idx WHERE folder = :folder AND indexname = :indexname");
                     cmd.Parameters.AddWithValue("folder", context.FolderName);
                     cmd.Parameters.AddWithValue("indexname", context.IndexName);
                     if (context.MinValue != null)
@@ -531,7 +553,8 @@ namespace ServiceLib
                         while (reader.Read())
                             list.Add(reader.GetString(0));
                     }
-                    Logger.FoundDocumentKeys(context.FolderName, context.IndexName, context.MinValue, context.MaxValue, list);
+                    Logger.FoundDocumentKeys(
+                        context.FolderName, context.IndexName, context.MinValue, context.MaxValue, list);
                 }
                 return list.ToList();
             }
@@ -547,8 +570,13 @@ namespace ServiceLib
             public readonly int Skip;
             public readonly int MaxCount;
             public readonly bool Ascending;
+            
+            public bool NeedsSeparateTotalCount;
 
-            public FindDocumentsParameters(string partition, string folderName, string indexName, string minValue, string maxValue, int skip, int maxCount, bool ascending)
+            public FindDocumentsParameters(
+                string partition, string folderName, string indexName,
+                string minValue, string maxValue,
+                int skip, int maxCount, bool ascending)
             {
                 Partition = partition;
                 FolderName = folderName;
@@ -565,47 +593,11 @@ namespace ServiceLib
         {
             using (new LogMethod(Logger, "FindDocuments"))
             {
-                var context = (FindDocumentsParameters)objContext;
-                bool needsSeparateTotalCount = false;
+                var context = (FindDocumentsParameters) objContext;
                 var list = new DocumentStoreFoundDocuments();
                 using (var cmd = conn.CreateCommand())
                 {
-                    var cmdBuilder = new StringBuilder(300);
-                    cmdBuilder
-                        .Append("SELECT d.document, d.version, d.contents FROM ")
-                        .Append(context.Partition)
-                        .Append("_idx i JOIN ")
-                        .Append(context.Partition)
-                        .Append(" d ON i.document = d.document AND i.folder = d.folder")
-                        .Append(" WHERE i.folder = :folder AND i.indexname = :indexname");
-                    cmd.Parameters.AddWithValue("folder", context.FolderName);
-                    cmd.Parameters.AddWithValue("indexname", context.IndexName);
-                    if (context.MinValue != null)
-                    {
-                        cmdBuilder.Append(" AND value >= :minvalue");
-                        cmd.Parameters.AddWithValue("minvalue", context.MinValue);
-                    }
-                    if (context.MaxValue != null)
-                    {
-                        cmdBuilder.Append(" AND value <= :maxvalue");
-                        cmd.Parameters.AddWithValue("maxvalue", context.MaxValue);
-                    }
-                    cmdBuilder.Append(" ORDER BY i.value");
-                    if (!context.Ascending)
-                    {
-                        cmdBuilder.Append(" DESC");
-                    }
-                    if (context.Skip > 0)
-                    {
-                        cmdBuilder.Append(" OFFSET ").Append(context.Skip);
-                        needsSeparateTotalCount = true;
-                    }
-                    if (context.MaxCount < int.MaxValue)
-                    {
-                        cmdBuilder.Append(" LIMIT ").Append(context.MaxCount);
-                        needsSeparateTotalCount = true;
-                    }
-                    cmd.CommandText = cmdBuilder.ToString();
+                    cmd.CommandText = BuildFindDocumentsCommand(context, cmd);
                     Logger.TraceSql(cmd);
                     using (var reader = cmd.ExecuteReader())
                     {
@@ -622,43 +614,90 @@ namespace ServiceLib
                         list.TotalFound = allKeys.Count;
                     }
                 }
-                if (needsSeparateTotalCount)
+                if (context.NeedsSeparateTotalCount)
                 {
-                    using (var cmd = conn.CreateCommand())
-                    {
-                        var cmdBuilder = new StringBuilder(300);
-                        cmdBuilder
-                            .Append("SELECT COUNT(DISTINCT i.document)::integer FROM ")
-                            .Append(context.Partition)
-                            .Append("_idx i WHERE i.folder = :folder AND i.indexname = :indexname");
-                        cmd.Parameters.AddWithValue("folder", context.FolderName);
-                        cmd.Parameters.AddWithValue("indexname", context.IndexName);
-                        if (context.MinValue != null)
-                        {
-                            cmdBuilder.Append(" AND value >= :minvalue");
-                            cmd.Parameters.AddWithValue("minvalue", context.MinValue);
-                        }
-                        if (context.MaxValue != null)
-                        {
-                            cmdBuilder.Append(" AND value <= :maxvalue");
-                            cmd.Parameters.AddWithValue("maxvalue", context.MaxValue);
-                        }
-                        cmd.CommandText = cmdBuilder.ToString();
-                        Logger.TraceSql(cmd);
-                        using (var reader = cmd.ExecuteReader())
-                        {
-                            if (reader.Read())
-                            {
-                                list.TotalFound = reader.GetInt32(0);
-                            }
-                        }
-                    }
+                    CalculateTotalFoundDocuments(conn, context, list);
                 }
 
                 Logger.FoundDocuments(
-                    context.FolderName, context.IndexName, context.MinValue, context.MaxValue, 
+                    context.FolderName, context.IndexName, context.MinValue, context.MaxValue,
                     context.Skip, context.MaxCount, context.Ascending, list);
                 return list;
+            }
+        }
+
+        private static string BuildFindDocumentsCommand(FindDocumentsParameters context, NpgsqlCommand cmd)
+        {
+            var cmdBuilder = new StringBuilder(300);
+            cmdBuilder
+                .Append("SELECT d.document, d.version, d.contents FROM ")
+                .Append(context.Partition)
+                .Append("_idx i JOIN ")
+                .Append(context.Partition)
+                .Append(" d ON i.document = d.document AND i.folder = d.folder")
+                .Append(" WHERE i.folder = :folder AND i.indexname = :indexname");
+            cmd.Parameters.AddWithValue("folder", context.FolderName);
+            cmd.Parameters.AddWithValue("indexname", context.IndexName);
+            if (context.MinValue != null)
+            {
+                cmdBuilder.Append(" AND value >= :minvalue");
+                cmd.Parameters.AddWithValue("minvalue", context.MinValue);
+            }
+            if (context.MaxValue != null)
+            {
+                cmdBuilder.Append(" AND value <= :maxvalue");
+                cmd.Parameters.AddWithValue("maxvalue", context.MaxValue);
+            }
+            cmdBuilder.Append(" ORDER BY i.value");
+            if (!context.Ascending)
+            {
+                cmdBuilder.Append(" DESC");
+            }
+            if (context.Skip > 0)
+            {
+                cmdBuilder.Append(" OFFSET ").Append(context.Skip);
+                context.NeedsSeparateTotalCount = true;
+            }
+            if (context.MaxCount < int.MaxValue)
+            {
+                cmdBuilder.Append(" LIMIT ").Append(context.MaxCount);
+                context.NeedsSeparateTotalCount = true;
+            }
+            var commandText = cmdBuilder.ToString();
+            return commandText;
+        }
+
+        private static void CalculateTotalFoundDocuments(
+            NpgsqlConnection conn, FindDocumentsParameters context, DocumentStoreFoundDocuments list)
+        {
+            using (var cmd = conn.CreateCommand())
+            {
+                var cmdBuilder = new StringBuilder(300);
+                cmdBuilder
+                    .Append("SELECT COUNT(DISTINCT i.document)::integer FROM ")
+                    .Append(context.Partition)
+                    .Append("_idx i WHERE i.folder = :folder AND i.indexname = :indexname");
+                cmd.Parameters.AddWithValue("folder", context.FolderName);
+                cmd.Parameters.AddWithValue("indexname", context.IndexName);
+                if (context.MinValue != null)
+                {
+                    cmdBuilder.Append(" AND value >= :minvalue");
+                    cmd.Parameters.AddWithValue("minvalue", context.MinValue);
+                }
+                if (context.MaxValue != null)
+                {
+                    cmdBuilder.Append(" AND value <= :maxvalue");
+                    cmd.Parameters.AddWithValue("maxvalue", context.MaxValue);
+                }
+                cmd.CommandText = cmdBuilder.ToString();
+                Logger.TraceSql(cmd);
+                using (var reader = cmd.ExecuteReader())
+                {
+                    if (reader.Read())
+                    {
+                        list.TotalFound = reader.GetInt32(0);
+                    }
+                }
             }
         }
     }

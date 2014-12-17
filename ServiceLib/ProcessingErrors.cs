@@ -1,8 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace ServiceLib
 {
@@ -16,7 +13,7 @@ namespace ServiceLib
 
     public class CommandResult
     {
-        private static readonly CommandError[] _emptyErrors = new CommandError[0];
+        private static readonly CommandError[] _emptyErrors;
 
         static CommandResult()
         {
@@ -61,6 +58,11 @@ namespace ServiceLib
             return new CommandResult(CommandResultStatus.WrongState, new[] { new CommandError(error) }, null);
         }
 
+        public static CommandResult From(TransientErrorException error)
+        {
+            return From(new CommandError("__TRANSIENT__", error.Category, error.Cause));
+        }
+
         public static CommandResult From(Exception exception)
         {
             var error = new CommandError("__SYSTEM__", exception.GetType().Name, ExceptionMessage(exception));
@@ -102,7 +104,7 @@ namespace ServiceLib
     {
         public string Field { get; private set; }
         public string Category { get; private set; }
-        private string _message;
+        private readonly string _message;
         public override string Message { get { return _message; } }
 
         public DomainErrorException(string field, string category, string message)
@@ -116,15 +118,18 @@ namespace ServiceLib
     public class TransientErrorException : Exception
     {
         public string Category { get; private set; }
+        public string Cause { get; private set; }
         public TransientErrorException(string category, Exception cause)
             : base(GenerateMessage(category, cause), cause)
         {
             Category = category;
+            Cause = cause.Message;
         }
         public TransientErrorException(string category, string cause)
             : base(GenerateMessage(category, cause))
         {
             Category = category;
+            Cause = cause;
         }
         private static string GenerateMessage(string category, Exception cause)
         {

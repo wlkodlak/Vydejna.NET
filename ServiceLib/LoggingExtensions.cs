@@ -1,22 +1,23 @@
-﻿using log4net;
-using log4net.Core;
-using System;
-using System.Diagnostics;
-using Npgsql;
-using NpgsqlTypes;
-using log4net.Util;
+﻿using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text;
-using System.Threading.Tasks;
+using log4net;
+using log4net.Core;
+using log4net.Util;
+using Npgsql;
+using NpgsqlTypes;
 
 namespace ServiceLib
 {
     public class LogMethod : IDisposable
     {
-        private IMethodLogger _log;
-        private string _methodName;
-        private Stopwatch _stopwatch;
+        private readonly IMethodLogger _log;
+        private readonly string _methodName;
+        private readonly Stopwatch _stopwatch;
 
         private interface IMethodLogger
         {
@@ -26,7 +27,7 @@ namespace ServiceLib
 
         private class MethodLoggerLog4Net : IMethodLogger
         {
-            private ILog _log;
+            private readonly ILog _log;
 
             public MethodLoggerLog4Net(ILog log)
             {
@@ -46,7 +47,7 @@ namespace ServiceLib
 
         private class MethodLoggerTraceSource : IMethodLogger
         {
-            private TraceSource _log;
+            private readonly TraceSource _log;
 
             public MethodLoggerTraceSource(TraceSource log)
             {
@@ -64,7 +65,7 @@ namespace ServiceLib
             }
         }
 
-        public LogMethod(ILog log, string methodName, params object[] parameters)
+        public LogMethod(ILog log, string methodName)
             : this(new MethodLoggerLog4Net(log), methodName)
         {
         }
@@ -135,6 +136,7 @@ namespace ServiceLib
             new LogContextTraceSqlMessage(dbCommand).Log(log);
         }
 
+        [SuppressMessage("ReSharper", "BitwiseOperatorOnEnumWithoutFlags")]
         private static StringBuilder GenerateTraceSqlMessage(NpgsqlCommand dbCommand)
         {
             var sb = new StringBuilder();
@@ -157,20 +159,23 @@ namespace ServiceLib
                 else
                 {
                     var array = dbParam.Value as Array;
-                    sb.Append(array.Length).Append(" elements");
+                    if (array != null)
+                        sb.Append(array.Length).Append(" elements");
+                    else
+                        sb.Append("ARRAY");
                 }
             }
             return sb;
         }
 
-        private static Level _traceLevel = Level.Trace;
-        private static Type _declaringType = typeof(LogExtensions);
+        private static readonly Level _traceLevel = Level.Trace;
+        private static readonly Type _declaringType = typeof(LogExtensions);
     }
 
     public class LogContextTraceSqlMessage : ILogContextMessage
     {
-        private string _commandText;
-        private Dictionary<string, string> _parameters;
+        private readonly string _commandText;
+        private readonly Dictionary<string, string> _parameters;
 
         public LogContextTraceSqlMessage(NpgsqlCommand cmd)
         {
@@ -182,6 +187,7 @@ namespace ServiceLib
             }
         }
 
+        [SuppressMessage("ReSharper", "BitwiseOperatorOnEnumWithoutFlags")]
         private string ToPrintableValue(NpgsqlParameter dbParam)
         {
             if (dbParam.Value == null)
@@ -199,7 +205,10 @@ namespace ServiceLib
             else
             {
                 var array = dbParam.Value as Array;
-                return string.Concat(array.Length, " elements");
+                if (array != null)
+                    return string.Concat(array.Length, " elements");
+                else
+                    return "ARRAY";
             }
         }
 
@@ -235,7 +244,7 @@ namespace ServiceLib
             return list.GetEnumerator();
         }
 
-        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator()
+        IEnumerator IEnumerable.GetEnumerator()
         {
             return GetEnumerator();
         }

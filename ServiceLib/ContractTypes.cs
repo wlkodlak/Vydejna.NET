@@ -1,9 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
 
 namespace ServiceLib
 {
@@ -21,9 +19,9 @@ namespace ServiceLib
 
     public class TypeMapper : ITypeMapper
     {
-        private ReaderWriterLockSlim _lock = new ReaderWriterLockSlim();
-        private Dictionary<string, Type> _byName = new Dictionary<string, Type>();
-        private Dictionary<Type, string> _byType = new Dictionary<Type, string>();
+        private readonly ReaderWriterLockSlim _lock = new ReaderWriterLockSlim();
+        private readonly Dictionary<string, Type> _byName = new Dictionary<string, Type>();
+        private readonly Dictionary<Type, string> _byType = new Dictionary<Type, string>();
 
         public void Register(Type type, string name)
         {

@@ -45,6 +45,7 @@ namespace Vydejna.Domain.CislovaneNaradi
         {
             return new EventSourcedServiceExecution<CislovaneNaradiAggregate>(
                 _repository, new CislovaneNaradiId(message.NaradiId, message.CisloNaradi), Logger, _tracking)
+                .LogCommand(message)
                 .Validate(() => _validator.Validace(message))
                 .OnRequest(agg => agg.Execute(message, _time))
                 .Execute();

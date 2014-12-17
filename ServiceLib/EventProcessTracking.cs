@@ -1,10 +1,7 @@
 ﻿using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using System.Net;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -42,7 +39,7 @@ namespace ServiceLib
 
         private readonly Task<bool> _finishedWait;
         private readonly Task<bool> _unfinishedWait;
-        private List<TrackWaiter> _waiters;
+        private readonly List<TrackWaiter> _waiters;
         private long _fullMask;
         private int _nextSetIndex;
         private ProcessState _processState;
@@ -69,38 +66,38 @@ namespace ServiceLib
 
         private class TrackSource : IEventProcessTrackSource
         {
-            public readonly EventProcessTracking Parent;
-            public readonly string TrackingId;
-            public EventStoreToken LastToken;
+            private readonly EventProcessTracking _parent;
+            private readonly string _trackingId;
+            private EventStoreToken _lastToken;
 
             public TrackSource(EventProcessTracking parent, string trackingId)
             {
-                Parent = parent;
-                TrackingId = trackingId;
-                LastToken = EventStoreToken.Initial;
+                _parent = parent;
+                _trackingId = trackingId;
+                _lastToken = EventStoreToken.Initial;
             }
 
-            string IEventProcessTrackSource.TrackingId { get { return TrackingId; } }
+            string IEventProcessTrackSource.TrackingId { get { return _trackingId; } }
 
             public void AddEvent(EventStoreToken token)
             {
-                if (LastToken == null)
-                    LastToken = token;
-                else if (EventStoreToken.Compare(token, LastToken) > 0)
-                    LastToken = token;
+                if (_lastToken == null)
+                    _lastToken = token;
+                else if (EventStoreToken.Compare(token, _lastToken) > 0)
+                    _lastToken = token;
             }
 
             public void CommitToTracker()
             {
-                var trackItem = new TrackItem(Parent, TrackingId, LastToken);
-                lock (Parent._lock)
+                var trackItem = new TrackItem(_parent, _trackingId, _lastToken);
+                lock (_parent._lock)
                 {
-                    Parent._trackersById.Add(TrackingId, trackItem);
-                    Parent._items.Add(trackItem);
+                    _parent._trackersById.Add(_trackingId, trackItem);
+                    _parent._items.Add(trackItem);
                     long alreadyFinished = 0;
-                    foreach (var handler in Parent._handlers.Values)
+                    foreach (var handler in _parent._handlers.Values)
                     {
-                        if (EventStoreToken.Compare(handler.LastToken, LastToken) >= 0)
+                        if (EventStoreToken.Compare(handler.LastToken, _lastToken) >= 0)
                             alreadyFinished |= handler.SetMask;
                     }
                     trackItem.UnfinishedHandlersSet &= ~alreadyFinished;
@@ -109,37 +106,37 @@ namespace ServiceLib
         }
         private class TrackItem : IEventProcessTrackItem
         {
-            public readonly EventProcessTracking Parent;
-            public readonly string TrackingId;
+            private readonly EventProcessTracking _parent;
+            private readonly string _trackingId;
+            private readonly List<TrackWaiter> _waiters;
             public readonly EventStoreToken LastToken;
             public long UnfinishedHandlersSet;
-            public readonly List<TrackWaiter> Waiters;
 
             public TrackItem(EventProcessTracking parent, string trackingId, EventStoreToken lastToken)
             {
-                Parent = parent;
-                TrackingId = trackingId;
+                _parent = parent;
+                _trackingId = trackingId;
+                _waiters = new List<TrackWaiter>();
                 LastToken = lastToken;
                 UnfinishedHandlersSet = parent._fullMask;
-                Waiters = new List<TrackWaiter>();
             }
 
-            string IEventProcessTrackItem.TrackingId { get { return TrackingId; } }
+            string IEventProcessTrackItem.TrackingId { get { return _trackingId; } }
 
             public Task<bool> WaitForFinish(int timeoutMilliseconds)
             {
                 if (UnfinishedHandlersSet == 0)
-                    return Parent._finishedWait;
+                    return _parent._finishedWait;
                 if (timeoutMilliseconds <= 0)
-                    return Parent._unfinishedWait;
-                var maxTime = Parent._time.GetUtcTime().AddMilliseconds(timeoutMilliseconds);
+                    return _parent._unfinishedWait;
+                var maxTime = _parent._time.GetUtcTime().AddMilliseconds(timeoutMilliseconds);
                 var waiter = new TrackWaiter(maxTime);
-                lock (Parent._lock)
+                lock (_parent._lock)
                 {
                     if (UnfinishedHandlersSet == 0)
-                        return Parent._finishedWait;
-                    Waiters.Add(waiter);
-                    Parent._waiters.Add(waiter);
+                        return _parent._finishedWait;
+                    _waiters.Add(waiter);
+                    _parent._waiters.Add(waiter);
                     return waiter.Task.Task;
                 }
             }
@@ -147,7 +144,7 @@ namespace ServiceLib
             public void NotifyWaiters()
             {
                 var result = UnfinishedHandlersSet == 0;
-                foreach (var waiter in Waiters)
+                foreach (var waiter in _waiters)
                 {
                     waiter.Task.TrySetResult(result);
                 }
@@ -155,27 +152,27 @@ namespace ServiceLib
         }
         private class TrackTarget : IEventProcessTrackTarget
         {
-            public readonly EventProcessTracking Parent;
-            public readonly string HandlerName;
+            private readonly EventProcessTracking _parent;
+            private readonly string _handlerName;
             public readonly long SetMask;
             public EventStoreToken LastToken;
 
             public TrackTarget(EventProcessTracking parent, string name, long setMask)
             {
-                Parent = parent;
-                HandlerName = name;
+                _parent = parent;
+                _handlerName = name;
                 SetMask = setMask;
                 LastToken = EventStoreToken.Initial;
             }
 
-            string IEventProcessTrackTarget.HandlerName { get { return HandlerName; } }
+            string IEventProcessTrackTarget.HandlerName { get { return _handlerName; } }
 
             public void ReportProgress(EventStoreToken token)
             {
-                lock (Parent._lock)
+                lock (_parent._lock)
                 {
                     LastToken = token;
-                    foreach (var item in Parent._items)
+                    foreach (var item in _parent._items)
                     {
                         if ((item.UnfinishedHandlersSet & SetMask) == 0)
                             continue;
@@ -291,7 +288,7 @@ namespace ServiceLib
                     }
                     _waiters.RemoveAll(w => w.MaxTime > time);
                 }
-                _time.Delay(1000, _cancel).ContinueWith(ProcessTimeouts);
+                _time.Delay(1000, _cancel).ContinueWith(ProcessTimeouts, _cancel);
             }
         }
 
@@ -333,7 +330,7 @@ namespace ServiceLib
 
         public void Register(IHttpRouteCommonConfigurator config)
         {
-            config.Route("utils/tracking/{id}").To(ctx => HandleTracking(ctx));
+            config.Route("utils/tracking/{id}").To(HandleTracking);
         }
 
         public static string GetTrackingUrlBase(string appBase)

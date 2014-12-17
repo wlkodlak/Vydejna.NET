@@ -3,7 +3,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
-using System.Threading;
 using System.Threading.Tasks;
 
 namespace ServiceLib
@@ -12,7 +11,7 @@ namespace ServiceLib
     {
         private class Document
         {
-            public object Lock;
+            public readonly object Lock;
             public string Value;
             public int Version;
             public Document(int version, string value)
@@ -25,13 +24,11 @@ namespace ServiceLib
 
         private class Index
         {
-            public string IndexName;
-            public SortedDictionary<string, HashSet<string>> ByDocument;
-            public SortedDictionary<string, HashSet<string>> ByValue;
+            public readonly SortedDictionary<string, HashSet<string>> ByDocument;
+            public readonly SortedDictionary<string, HashSet<string>> ByValue;
 
-            public Index(string indexName)
+            public Index()
             {
-                IndexName = indexName;
                 ByDocument = new SortedDictionary<string, HashSet<string>>();
                 ByValue = new SortedDictionary<string, HashSet<string>>();
             }
@@ -51,7 +48,6 @@ namespace ServiceLib
 
             public Task DeleteAll()
             {
-                List<string> documentNames = _documents.Keys.ToList();
                 _documents.Clear();
                 _indexes.Clear();
                 Logger.DeletedFolder(_folderName);
@@ -137,79 +133,87 @@ namespace ServiceLib
 
             public Task<bool> SaveDocument(string name, string value, DocumentStoreVersion expectedVersion, IList<DocumentIndexing> indexes)
             {
-                bool wasSaved = false;
-                int newVersion = 0;
                 try
                 {
                     if (!_nameRegex.IsMatch(name))
                     {
                         return TaskUtils.FromError<bool>(new DocumentNameInvalidException(name));
                     }
-                    var newDocument = new Document(0, null);
-                    var existingDocument = _documents.GetOrAdd(name, newDocument);
-                    lock (existingDocument.Lock)
-                    {
-                        wasSaved = expectedVersion.VerifyVersion(existingDocument.Version);
-                        if (wasSaved)
-                        {
-                            existingDocument.Version++;
-                            existingDocument.Value = value;
-                            newVersion = existingDocument.Version;
-                            Logger.DocumentSaved(_folderName, name, existingDocument.Version, existingDocument.Value);
-                        }
-                        else
-                        {
-                            Logger.DocumentConflicted(_folderName, name, expectedVersion, existingDocument.Version);
-                        }
-                    }
-                    if (indexes != null)
-                    {
-                        foreach (var indexChange in indexes)
-                        {
-                            Index index;
-                            if (!_indexes.TryGetValue(indexChange.IndexName, out index))
-                                index = _indexes.GetOrAdd(indexChange.IndexName, new Index(indexChange.IndexName));
-                            lock (index)
-                            {
-                                HashSet<string> existingValues, valueDocuments;
-                                if (!index.ByDocument.TryGetValue(name, out existingValues))
-                                {
-                                    index.ByDocument[name] = new HashSet<string>(indexChange.Values);
-                                    foreach (var idxValue in indexChange.Values)
-                                    {
-                                        if (!index.ByValue.TryGetValue(idxValue, out valueDocuments))
-                                            index.ByValue[idxValue] = valueDocuments = new HashSet<string>();
-                                        valueDocuments.Add(name);
-                                    }
-                                }
-                                else
-                                {
-                                    foreach (var idxValue in existingValues)
-                                    {
-                                        if (indexChange.Values.Contains(idxValue))
-                                            continue;
-                                        if (index.ByValue.TryGetValue(idxValue, out valueDocuments))
-                                            valueDocuments.Remove(name);
-                                    }
-                                    foreach (var idxValue in indexChange.Values)
-                                    {
-                                        if (existingValues.Contains(idxValue))
-                                            continue;
-                                        existingValues.Add(idxValue);
-                                        if (!index.ByValue.TryGetValue(idxValue, out valueDocuments))
-                                            index.ByValue[idxValue] = valueDocuments = new HashSet<string>();
-                                        valueDocuments.Add(name);
-                                    }
-                                }
-                                Logger.UpdatedIndex(_folderName, indexChange.IndexName, indexChange.Values);
-                            }
-                        }
-                    }
+                    var wasSaved = SaveDocumentCore(name, value, expectedVersion);
+                    if (wasSaved)
+                        UpdateIndexes(name, indexes);
                     return TaskUtils.FromResult(wasSaved);
                 }
                 catch (Exception ex)
                 {
                     return TaskUtils.FromError<bool>(ex);
+                }
+            }
+
+            private bool SaveDocumentCore(string name, string value, DocumentStoreVersion expectedVersion)
+            {
+                var newDocument = new Document(0, null);
+                var existingDocument = _documents.GetOrAdd(name, newDocument);
+                lock (existingDocument.Lock)
+                {
+                    var wasSaved = expectedVersion.VerifyVersion(existingDocument.Version);
+                    if (wasSaved)
+                    {
+                        existingDocument.Version++;
+                        existingDocument.Value = value;
+                        Logger.DocumentSaved(_folderName, name, existingDocument.Version, existingDocument.Value);
+                        return true;
+                    }
+                    else
+                    {
+                        Logger.DocumentConflicted(_folderName, name, expectedVersion, existingDocument.Version);
+                        return false;
+                    }
+                }
+            }
+
+            private void UpdateIndexes(string documentName, IList<DocumentIndexing> indexes)
+            {
+                if (indexes == null) return;
+                foreach (var indexChange in indexes)
+                {
+                    Index index;
+                    if (!_indexes.TryGetValue(indexChange.IndexName, out index))
+                        index = _indexes.GetOrAdd(indexChange.IndexName, new Index());
+                    lock (index)
+                    {
+                        HashSet<string> existingValues, valueDocuments;
+                        if (!index.ByDocument.TryGetValue(documentName, out existingValues))
+                        {
+                            index.ByDocument[documentName] = new HashSet<string>(indexChange.Values);
+                            foreach (var idxValue in indexChange.Values)
+                            {
+                                if (!index.ByValue.TryGetValue(idxValue, out valueDocuments))
+                                    index.ByValue[idxValue] = valueDocuments = new HashSet<string>();
+                                valueDocuments.Add(documentName);
+                            }
+                        }
+                        else
+                        {
+                            foreach (var idxValue in existingValues)
+                            {
+                                if (indexChange.Values.Contains(idxValue))
+                                    continue;
+                                if (index.ByValue.TryGetValue(idxValue, out valueDocuments))
+                                    valueDocuments.Remove(documentName);
+                            }
+                            foreach (var idxValue in indexChange.Values)
+                            {
+                                if (existingValues.Contains(idxValue))
+                                    continue;
+                                existingValues.Add(idxValue);
+                                if (!index.ByValue.TryGetValue(idxValue, out valueDocuments))
+                                    index.ByValue[idxValue] = valueDocuments = new HashSet<string>();
+                                valueDocuments.Add(documentName);
+                            }
+                        }
+                        Logger.UpdatedIndex(_folderName, indexChange.IndexName, indexChange.Values);
+                    }
                 }
             }
 
@@ -254,34 +258,8 @@ namespace ServiceLib
                     var result = new DocumentStoreFoundDocuments();
                     if (_indexes.TryGetValue(indexName, out index))
                     {
-                        var allKeys = new HashSet<string>();
                         var byValueOrdered = ascending ? index.ByValue.OrderBy(t => t.Key) : index.ByValue.OrderByDescending(t => t.Key);
-                        foreach (var pair in byValueOrdered)
-                        {
-                            if (minValue != null && string.CompareOrdinal(minValue, pair.Key) > 0)
-                                continue;
-                            if (maxValue != null && string.CompareOrdinal(pair.Key, maxValue) > 0)
-                                continue;
-                            foreach (var documentName in pair.Value)
-                            {
-                                if (!allKeys.Add(documentName))
-                                    continue;
-                                if (skip > 0)
-                                {
-                                    skip--;
-                                    continue;
-                                }
-                                if (maxCount == 0)
-                                    continue;
-                                maxCount--;
-                                Document document;
-                                if (_documents.TryGetValue(documentName, out document))
-                                {
-                                    result.Add(new DocumentStoreFoundDocument(documentName, document.Version, true, document.Value));
-                                }
-                            }
-                        }
-                        result.TotalFound = allKeys.Count;
+                        FillFromIndex(minValue, maxValue, skip, maxCount, byValueOrdered, result);
                         Logger.FoundDocuments(_folderName, indexName, minValue, maxValue, skip, maxCount, ascending, result);
                     }
                     return TaskUtils.FromResult(result);
@@ -291,9 +269,43 @@ namespace ServiceLib
                     return TaskUtils.FromError<DocumentStoreFoundDocuments>(ex);
                 }
             }
+
+            private void FillFromIndex(
+                string minValue, string maxValue, int skip, int maxCount,
+                IEnumerable<KeyValuePair<string, HashSet<string>>> byValueOrdered, 
+                DocumentStoreFoundDocuments result)
+            {
+                var allKeys = new HashSet<string>();
+                foreach (var pair in byValueOrdered)
+                {
+                    if (minValue != null && string.CompareOrdinal(minValue, pair.Key) > 0)
+                        continue;
+                    if (maxValue != null && string.CompareOrdinal(pair.Key, maxValue) > 0)
+                        continue;
+                    foreach (var documentName in pair.Value)
+                    {
+                        if (!allKeys.Add(documentName))
+                            continue;
+                        if (skip > 0)
+                        {
+                            skip--;
+                            continue;
+                        }
+                        if (maxCount == 0)
+                            continue;
+                        maxCount--;
+                        Document document;
+                        if (_documents.TryGetValue(documentName, out document))
+                        {
+                            result.Add(new DocumentStoreFoundDocument(documentName, document.Version, true, document.Value));
+                        }
+                    }
+                }
+                result.TotalFound = allKeys.Count;
+            }
         }
 
-        private ConcurrentDictionary<string, DocumentFolder> _folders = new ConcurrentDictionary<string, DocumentFolder>();
+        private readonly ConcurrentDictionary<string, DocumentFolder> _folders;
         private static readonly Regex _nameRegex = new Regex(@"^[a-zA-Z0-9_\-]+$", RegexOptions.Compiled);
 
         public DocumentStoreInMemory()

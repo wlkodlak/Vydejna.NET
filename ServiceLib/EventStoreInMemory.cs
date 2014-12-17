@@ -1,8 +1,6 @@
-﻿using log4net;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -10,12 +8,12 @@ namespace ServiceLib
 {
     public class EventStoreInMemory : IEventStoreWaitable
     {
-        private ReaderWriterLockSlim _lock;
-        private List<EventStoreEvent> _events;
-        private Dictionary<string, int> _versions;
-        private Dictionary<string, EventStoreSnapshot> _snapshots;
-        private List<Waiter> _waiters;
-        private static readonly ILog Logger = LogManager.GetLogger("ServiceLib.EventStore");
+        private readonly ReaderWriterLockSlim _lock;
+        private readonly List<EventStoreEvent> _events;
+        private readonly Dictionary<string, int> _versions;
+        private readonly Dictionary<string, EventStoreSnapshot> _snapshots;
+        private readonly List<Waiter> _waiters;
+        private static readonly EventStoreInMemoryTraceSource Logger = new EventStoreInMemoryTraceSource("ServiceLib.EventStore");
 
         public EventStoreInMemory()
         {
@@ -33,6 +31,8 @@ namespace ServiceLib
 
         public Task<bool> AddToStream(string stream, IEnumerable<EventStoreEvent> events, EventStoreVersion expectedVersion)
         {
+            if (events == null) throw new ArgumentNullException("events");
+            if (expectedVersion == null) throw new ArgumentNullException("expectedVersion");
             try
             {
                 bool wasCompleted;
@@ -60,12 +60,16 @@ namespace ServiceLib
                             _lock.EnterWriteLock();
                             _versions[stream] = streamVersion;
                             _events.AddRange(newEvents);
-                            Logger.DebugFormat("AddToStream({0}, {1} events): saved", stream, newEvents.Count);
+                            Logger.AddToStreamComplete(stream, newEvents);
                         }
                         finally
                         {
                             _lock.ExitWriteLock();
                         }
+                    }
+                    else
+                    {
+                        Logger.AddToStreamConflicts(stream, streamVersion, expectedVersion);
                     }
                 }
                 finally
@@ -78,7 +82,7 @@ namespace ServiceLib
             }
             catch (Exception ex)
             {
-                Logger.DebugFormat("AddToStream({0}, ...): failed", stream);
+                Logger.AddToStreamFailed(stream, ex);
                 return TaskUtils.FromError<bool>(ex);
             }
         }
@@ -95,8 +99,7 @@ namespace ServiceLib
                     _versions.TryGetValue(stream, out streamVersion);
                     var list = _events.Where(e => e.StreamName == stream && e.StreamVersion >= minVersion).Take(maxCount).ToList();
                     result = new EventStoreStream(list, streamVersion, 0);
-                    Logger.DebugFormat("ReadStream({0}, {1}, {2}): returning {3} events",
-                        stream, minVersion, maxCount, list.Count);
+                    Logger.ReadFromStreamComplete(stream, minVersion, maxCount, streamVersion, list);
                 }
                 finally
                 {
@@ -106,21 +109,20 @@ namespace ServiceLib
             }
             catch (Exception ex)
             {
-                Logger.DebugFormat("ReadStream({0}, {1}, {2}): failed",
-                    stream, minVersion, maxCount);
+                Logger.ReadFromStreamFailed(stream, minVersion, maxCount, ex);
                 return TaskUtils.FromError<IEventStoreStream>(ex);
             }
         }
 
         public Task<IEventStoreCollection> GetAllEvents(EventStoreToken token, int maxCount, bool loadBody)
         {
-            Waiter waiter;
             try
             {
+                Waiter waiter;
                 try
                 {
                     _lock.EnterReadLock();
-                    waiter = new Waiter(this, token, maxCount, loadBody, CancellationToken.None);
+                    waiter = new Waiter(this, token, maxCount, CancellationToken.None);
                     if (!waiter.Prepare())
                         waiter.PrepareNowait();
                 }
@@ -133,9 +135,7 @@ namespace ServiceLib
             }
             catch (Exception exception)
             {
-                Logger.DebugFormat("GetAllEvents({0}, {1}): failed",
-                    token == null ? "null" : token.IsInitial ? "Initial" : token.ToString(),
-                    maxCount);
+                Logger.GetAllEventsFailed(token, maxCount, exception);
                 return TaskUtils.FromError<IEventStoreCollection>(exception);
             }
         }
@@ -147,14 +147,14 @@ namespace ServiceLib
 
         public Task<IEventStoreCollection> WaitForEvents(EventStoreToken token, int maxCount, bool loadBody, CancellationToken cancel)
         {
-            Waiter waiter;
-            bool wasPrepared;
             try
             {
+                Waiter waiter;
+                bool wasPrepared;
                 try
                 {
                     _lock.EnterUpgradeableReadLock();
-                    waiter = new Waiter(this, token, maxCount, loadBody, cancel);
+                    waiter = new Waiter(this, token, maxCount, cancel);
                     wasPrepared = waiter.Prepare();
                     if (!wasPrepared)
                     {
@@ -179,9 +179,7 @@ namespace ServiceLib
             }
             catch (Exception exception)
             {
-                Logger.DebugFormat("GetAllEvents({0}, {1}): failed",
-                     token == null ? "null" : token.IsInitial ? "Initial" : token.ToString(),
-                     maxCount);
+                Logger.WaitForEventsFailed(token, maxCount, exception);
                 return TaskUtils.FromError<IEventStoreCollection>(exception);
             }
         }
@@ -220,19 +218,17 @@ namespace ServiceLib
 
         private class Waiter
         {
-            private EventStoreInMemory _parent;
-            private int _skip;
-            private EventStoreToken _token;
-            private int _maxCount;
-            private bool _loadBody;
-            private CancellationToken _cancel;
-            private TaskCompletionSource<IEventStoreCollection> _task;
-            private List<EventStoreEvent> _readyEvents;
+            private readonly EventStoreInMemory _parent;
+            private readonly int _skip;
+            private readonly EventStoreToken _token;
+            private readonly int _maxCount;
+            private readonly TaskCompletionSource<IEventStoreCollection> _task;
+            private readonly List<EventStoreEvent> _readyEvents;
             private EventStoreToken _nextToken;
 
             public Task<IEventStoreCollection> Task { get { return _task.Task; } }
 
-            public Waiter(EventStoreInMemory parent, EventStoreToken token, int maxCount, bool loadBody, CancellationToken cancel)
+            public Waiter(EventStoreInMemory parent, EventStoreToken token, int maxCount, CancellationToken cancel)
             {
                 _parent = parent;
                 _token = token;
@@ -243,11 +239,10 @@ namespace ServiceLib
                 else
                     _skip = int.Parse(token.ToString());
                 _maxCount = maxCount;
-                _loadBody = loadBody;
-                _cancel = cancel;
                 _task = new TaskCompletionSource<IEventStoreCollection>();
                 _readyEvents = new List<EventStoreEvent>();
-                if (_cancel.CanBeCanceled)
+                Logger.WaitForEventsInitialized(_token, _skip, _maxCount, _task.Task.Id);
+                if (cancel.CanBeCanceled)
                 {
                     cancel.Register(Unregister);
                 }
@@ -264,6 +259,7 @@ namespace ServiceLib
                 {
                     _parent._lock.ExitWriteLock();
                 }
+                Logger.WaitForEventsCancelled(_task.Task.Id);
                 _task.TrySetResult(new EventStoreCollection(new EventStoreEvent[0], _token));
             }
 
@@ -300,10 +296,7 @@ namespace ServiceLib
 
             public void Complete()
             {
-                Logger.DebugFormat("GetAllEvents({0}, {1}): returned {2} events with next token {3}",
-                    _token == null ? "null" : _token.IsInitial ? "Initial" : _token.ToString(),
-                    _maxCount, _readyEvents.Count,
-                    _nextToken == null ? "null" : _nextToken.IsInitial ? "Initial" : _nextToken.ToString());
+                Logger.WaitForEventsComplete(_token, _skip, _maxCount, _task.Task.Id, _readyEvents, _nextToken);
                 _task.TrySetResult(new EventStoreCollection(_readyEvents, _nextToken));
             }
         }
@@ -312,7 +305,7 @@ namespace ServiceLib
         {
             EventStoreSnapshot snapshot;
             _snapshots.TryGetValue(stream, out snapshot);
-            Logger.DebugFormat("LoadSnapshot({0}): {1}found", stream, snapshot == null ? "not " : "");
+            Logger.LoadSnapshotFinished(stream, snapshot);
             return TaskUtils.FromResult(snapshot);
         }
 
@@ -320,7 +313,7 @@ namespace ServiceLib
         {
             snapshot.StreamName = stream;
             _snapshots[stream] = snapshot;
-            Logger.DebugFormat("SaveSnapshot({0})", stream);
+            Logger.SaveSnapshotFinished(stream, snapshot);
             return TaskUtils.CompletedTask();
         }
     }

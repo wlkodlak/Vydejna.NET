@@ -21,9 +21,8 @@ namespace ServiceLib
         private CancellationTokenSource _cancelPause, _cancelStop;
         private ProcessState _processState;
         private Action<ProcessState> _onProcessStateChanged;
-        private int _flushAfter;
         private TaskScheduler _scheduler;
-        private ITime _time;
+        private readonly ITime _time;
         private static readonly ILog Logger = LogManager.GetLogger("ServiceLib.EventProcessSimple");
 
         public EventProcessSimple(
@@ -49,7 +48,6 @@ namespace ServiceLib
 
         public EventProcessSimple WithTokenFlushing(int flushAfter)
         {
-            _flushAfter = flushAfter;
             return this;
         }
 

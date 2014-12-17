@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
@@ -23,11 +24,10 @@ namespace ServiceLib
         }
         public override bool Equals(object obj)
         {
-            if (obj is AggregateIdGuid)
-                return Guid.Equals(((AggregateIdGuid)obj).Guid);
-            else
-                return false;
+            var aggregateIdGuid = obj as AggregateIdGuid;
+            return aggregateIdGuid != null && Guid.Equals(aggregateIdGuid.Guid);
         }
+
         public override string ToString()
         {
             return Guid.ToString("N").ToLowerInvariant();
@@ -62,7 +62,7 @@ namespace ServiceLib
 
     public abstract class EventSourcedAggregate : IEventSourcedAggregate
     {
-        private List<object> _changes;
+        private readonly List<object> _changes;
         private int _originalVersion;
         private bool _loadingEvents;
 
@@ -110,7 +110,7 @@ namespace ServiceLib
                 _changes.Add(ev);
         }
 
-        private Dictionary<Type, Action<object>> _eventMapping = new Dictionary<Type, Action<object>>();
+        private readonly Dictionary<Type, Action<object>> _eventMapping = new Dictionary<Type, Action<object>>();
 
         protected void RegisterEventHandlers(IEnumerable<MethodInfo> methods)
         {
@@ -122,7 +122,7 @@ namespace ServiceLib
                 var parameterType = parameters[0].ParameterType;
                 var parameterExpr = Expression.Parameter(typeof(object));
                 _eventMapping[parameterType] = Expression.Lambda<Action<object>>(
-                    Expression.Call(Expression.Constant(this), method, new[] { Expression.Convert(parameterExpr, parameterType) }),
+                    Expression.Call(Expression.Constant(this), method, Expression.Convert(parameterExpr, parameterType)),
                     parameterExpr
                     ).Compile();
             }
@@ -163,7 +163,7 @@ namespace ServiceLib
             get { return _id; }
         }
 
-        public EventSourcedGuidAggregate()
+        protected EventSourcedGuidAggregate()
         {
             _id = AggregateIdGuid.NewGuid();
         }
@@ -201,12 +201,12 @@ namespace ServiceLib
         : IEventSourcedRepository<T>
         where T : class, IEventSourcedAggregate
     {
-        private static readonly EventSourcedRepositoryTraceSource Logger = 
+        private static readonly EventSourcedRepositoryTraceSource Logger =
             new EventSourcedRepositoryTraceSource("ServiceLib.EventSourcedRepository." + typeof(T).FullName);
 
-        private IEventStore _store;
-        private string _prefix;
-        private IEventSourcedSerializer _serializer;
+        private readonly IEventStore _store;
+        private readonly string _prefix;
+        private readonly IEventSourcedSerializer _serializer;
         private int _snapshotInterval;
 
         protected EventSourcedRepository(IEventStore store, string prefix, IEventSourcedSerializer serializer)
@@ -225,7 +225,7 @@ namespace ServiceLib
             return new StringBuilder(64)
                 .Append(Prefix)
                 .Append('_')
-                .Append(id.ToString())
+                .Append(id)
                 .ToString();
         }
 
@@ -236,6 +236,7 @@ namespace ServiceLib
             var fromLastInterval = aggregate.OriginalVersion % _snapshotInterval + aggregate.GetChanges().Count;
             return fromLastInterval >= _snapshotInterval;
         }
+
         public int SnapshotInterval
         {
             get { return _snapshotInterval; }
@@ -250,11 +251,13 @@ namespace ServiceLib
             var fromVersion = 0;
             var snapshot = storedSnapshot == null ? null : _serializer.Deserialize(storedSnapshot);
             T aggregate = null;
+            var snapshotVersion = -1;
 
             if (snapshot != null)
             {
                 aggregate = CreateAggregate();
-                fromVersion = 1 + aggregate.LoadFromSnapshot(snapshot);
+                snapshotVersion = aggregate.LoadFromSnapshot(snapshot);
+                fromVersion = 1 + snapshotVersion;
             }
 
             var stream = await _store.ReadStream(streamName, fromVersion, int.MaxValue, true);
@@ -265,6 +268,11 @@ namespace ServiceLib
                     aggregate = CreateAggregate();
                 aggregate.LoadFromEvents(deserialized);
                 aggregate.CommitChanges(stream.StreamVersion);
+                Logger.AggregateLoaded(id, stream.StreamVersion, snapshotVersion);
+            }
+            else
+            {
+                Logger.AggregateDoesNotExist(id);
             }
 
             return aggregate;
@@ -293,11 +301,13 @@ namespace ServiceLib
                 var addedToStream = await _store.AddToStream(streamName, serialized, expectedVersion);
                 if (!addedToStream)
                 {
+                    Logger.AggregateSaveConflicted(aggregate.Id, expectedVersion);
                     return false;
                 }
 
                 bool shouldCreateSnapshot = ShouldCreateSnapshot(aggregate);
                 aggregate.CommitChanges(streamVersionForCommit);
+                Logger.AggregateSaved(aggregate.Id, streamVersionForCommit);
                 if (shouldCreateSnapshot)
                 {
                     var objectSnapshot = aggregate.CreateSnapshot();
@@ -306,6 +316,7 @@ namespace ServiceLib
                         var storedSnapshot = new EventStoreSnapshot();
                         _serializer.Serialize(objectSnapshot, storedSnapshot);
                         await _store.SaveSnapshot(streamName, storedSnapshot);
+                        Logger.SnapshotCreated(aggregate.Id, streamVersionForCommit);
                     }
                 }
 
@@ -331,9 +342,60 @@ namespace ServiceLib
         }
     }
 
+    public class EventSourcedRepositoryTraceSource : TraceSource
+    {
+        public EventSourcedRepositoryTraceSource(string name)
+            : base(name)
+        {
+        }
+
+
+        public void AggregateLoaded(IAggregateId aggregateId, int streamVersion, int snapshotVersion)
+        {
+            var summary = snapshotVersion >= 0 ? "Aggregate {AggregateId} loaded from snapshot" : "Aggregate {AggregateId} loaded";
+            var msg = new LogContextMessage(TraceEventType.Verbose, 1, summary);
+            msg.SetProperty("AggregateId", false, aggregateId);
+            msg.SetProperty("StreamVersion", false, streamVersion);
+            if (snapshotVersion >= 0)
+                msg.SetProperty("SnapshotVersion", false, snapshotVersion);
+            msg.Log(this);
+        }
+
+        public void AggregateDoesNotExist(IAggregateId aggregateId)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 8, "Aggregate {AggregateId} does not exist");
+            msg.SetProperty("AggregateId", false, aggregateId);
+            msg.Log(this);
+        }
+
+        public void AggregateSaveConflicted(IAggregateId aggregateId, EventStoreVersion expectedVersion)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 8, "Aggregate {AggregateId} save encountered optimistic concurrency");
+            msg.SetProperty("AggregateId", false, aggregateId);
+            msg.SetProperty("ExpectedVersion", false, expectedVersion);
+            msg.Log(this);
+        }
+
+        public void AggregateSaved(IAggregateId aggregateId, int aggregateVersion)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 8, "Aggregate {AggregateId} saved at version {Version}");
+            msg.SetProperty("AggregateId", false, aggregateId);
+            msg.SetProperty("Version", false, aggregateVersion);
+            msg.Log(this);
+        }
+
+        public void SnapshotCreated(IAggregateId aggregateId, int aggregateVersion)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 8, "Snapshot for aggregate {AggregateId} created at version {Version}");
+            msg.SetProperty("AggregateId", false, aggregateId);
+            msg.SetProperty("Version", false, aggregateVersion);
+            msg.Log(this);
+        }
+    }
+
     public class EventSourcedJsonSerializer : IEventSourcedSerializer
     {
-        private ITypeMapper _mapper;
+        private readonly ITypeMapper _mapper;
 
         public EventSourcedJsonSerializer(ITypeMapper mapper)
         {

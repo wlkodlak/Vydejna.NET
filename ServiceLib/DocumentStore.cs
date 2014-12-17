@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.Serialization;
 using System.Threading.Tasks;
 
 namespace ServiceLib
@@ -140,16 +141,25 @@ namespace ServiceLib
     [Serializable]
     public class DocumentNameInvalidException : ArgumentException
     {
+        private readonly string _documentName;
+
         public DocumentNameInvalidException(string documentName)
             : base("Invalid name for document")
         {
-            Data["DocumentName"] = documentName;
+            _documentName = documentName;
         }
 
-        protected DocumentNameInvalidException(
-          System.Runtime.Serialization.SerializationInfo info,
-          System.Runtime.Serialization.StreamingContext context)
-            : base(info, context) { }
+        protected DocumentNameInvalidException(SerializationInfo info, StreamingContext context)
+            : base(info, context)
+        {
+            _documentName = info.GetString("DocumentName");
+        }
+
+        public override void GetObjectData(SerializationInfo info, StreamingContext context)
+        {
+            base.GetObjectData(info, context);
+            info.AddValue("DocumentName", _documentName);
+        }
     }
 
     public class DocumentStoreTraceSource : TraceSource

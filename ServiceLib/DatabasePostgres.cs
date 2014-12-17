@@ -5,7 +5,6 @@ using System.Text;
 using System.Threading.Tasks;
 using Npgsql;
 using System.Threading;
-using System.Data;
 using System.IO;
 using System.Diagnostics;
 
@@ -172,7 +171,7 @@ namespace ServiceLib
         private static bool DetectTransient(Exception exception)
         {
             NpgsqlException npgsqlException;
-            if (exception is System.IO.IOException)
+            if (exception is IOException)
                 return true;
             else if ((npgsqlException = exception as NpgsqlException) != null)
             {
@@ -190,10 +189,11 @@ namespace ServiceLib
         {
             private readonly NotificationWatcher _notifications;
             public readonly string Name;
-            public readonly int Key;
-            private Action<string> _onNotify;
+            // ReSharper disable once NotAccessedField.Local
+            private readonly int _key;
+            private readonly Action<string> _onNotify;
             private CancellationToken _cancel;
-            private TaskFactory _taskFactory;
+            private readonly TaskFactory _taskFactory;
 
             public Listener(NotificationWatcher notifications, int key, string listenName, Action<string> onNotify, CancellationToken cancel)
             {
@@ -201,7 +201,7 @@ namespace ServiceLib
                 _onNotify = onNotify;
                 _cancel = cancel;
                 _taskFactory = Task.Factory;
-                Key = key;
+                _key = key;
                 Name = listenName;
             }
 
@@ -209,7 +209,7 @@ namespace ServiceLib
             {
                 if (!_cancel.IsCancellationRequested)
                 {
-                    _taskFactory.StartNew(OnNotify, payload);
+                    _taskFactory.StartNew(OnNotify, payload, _cancel);
                 }
             }
 
@@ -219,8 +219,9 @@ namespace ServiceLib
                 {
                     _onNotify(payload as string);
                 }
-                catch
+                catch (Exception ex)
                 {
+                    Logger.NotificationListenerCrashed(ex);
                 }
             }
 
@@ -381,6 +382,9 @@ namespace ServiceLib
                         }
                     }
                 }
+                catch (OperationCanceledException)
+                {
+                }
                 catch (Exception ex)
                 {
                     Logger.NotificationCoreCrashed(ex);
@@ -454,6 +458,7 @@ namespace ServiceLib
                 }
                 if (commands.Length > 0)
                 {
+                    cancel.ThrowIfCancellationRequested();
                     Logger.SendAdditionalListen(commands.ToString());
                     notificationsCheck = false;
                     using (var cmd = conn.CreateCommand())
@@ -472,6 +477,7 @@ namespace ServiceLib
                         var paramPayload = cmd.Parameters.Add("payload", NpgsqlTypes.NpgsqlDbType.Text);
                         foreach (var notification in notifications)
                         {
+                            cancel.ThrowIfCancellationRequested();
                             Logger.NotifyListener(notification.Name, notification.Payload);
                             paramName.Value = notification.Name;
                             paramPayload.Value = notification.Payload;
@@ -481,6 +487,7 @@ namespace ServiceLib
                 }
                 if (notificationsCheck)
                 {
+                    cancel.ThrowIfCancellationRequested();
                     using (var cmd = conn.CreateCommand())
                     {
                         cmd.CommandText = "";
@@ -598,6 +605,13 @@ namespace ServiceLib
         {
             var msg = new LogContextMessage(TraceEventType.Error, 280, "Notification core crashed!");
             msg.SetProperty("Exception", true, ex);
+            msg.Log(this);
+        }
+
+        public void NotificationListenerCrashed(Exception exception)
+        {
+            var msg = new LogContextMessage(TraceEventType.Error, 281, "Notification listener crashed!");
+            msg.SetProperty("Exception", true, exception);
             msg.Log(this);
         }
     }
