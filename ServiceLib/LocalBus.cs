@@ -1,10 +1,7 @@
 ﻿using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Linq.Expressions;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -40,12 +37,12 @@ namespace ServiceLib
     {
         public static void Subscribe<T>(this ISubscribable self, Action<T> handler)
         {
-            self.Subscribe<T>(new DelegatedSyncHandler<T>(handler));
+            self.Subscribe(new DelegatedSyncHandler<T>(handler));
         }
 
         private class DelegatedSyncHandler<T> : IHandle<T>
         {
-            private Action<T> _handler;
+            private readonly Action<T> _handler;
 
             public DelegatedSyncHandler(Action<T> handler)
             {
@@ -65,7 +62,7 @@ namespace ServiceLib
 
         private class ProcessEventToHandleAdapter<T> : IHandle<AsyncRpcMessage<T, object>>
         {
-            private IProcessEvent<T> _handler;
+            private readonly IProcessEvent<T> _handler;
 
             public ProcessEventToHandleAdapter(IProcessEvent<T> handler)
             {
@@ -93,7 +90,7 @@ namespace ServiceLib
 
         private class ProcessCommandToHandleAdapter<T> : IHandle<AsyncRpcMessage<T, CommandResult>>
         {
-            private IProcessCommand<T> _handler;
+            private readonly IProcessCommand<T> _handler;
 
             public ProcessCommandToHandleAdapter(IProcessCommand<T> handler)
             {
@@ -121,7 +118,7 @@ namespace ServiceLib
 
         private class AnswerToHandleAdapter<TQuery, TAnswer> : IHandle<AsyncRpcMessage<TQuery, TAnswer>>
         {
-            private IAnswer<TQuery, TAnswer> _handler;
+            private readonly IAnswer<TQuery, TAnswer> _handler;
 
             public AnswerToHandleAdapter(IAnswer<TQuery, TAnswer> handler)
             {
@@ -170,7 +167,7 @@ namespace ServiceLib
     public abstract class AbstractBus : IBus
     {
         private string _name;
-        private ISubscriptionManager _subscriptions;
+        private readonly ISubscriptionManager _subscriptions;
 
         public AbstractBus(ISubscriptionManager subscribtions, string name)
         {

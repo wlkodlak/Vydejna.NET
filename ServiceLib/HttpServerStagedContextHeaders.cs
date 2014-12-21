@@ -6,8 +6,8 @@ namespace ServiceLib
     {
         private string _contentType, _referer, _location;
         private int _contentLength;
-        private HttpServerStagedContextWeightedHeader _acceptTypes, _acceptLanguages;
-        private List<KeyValuePair<string, string>> _custom;
+        private readonly HttpServerStagedContextWeightedHeader _acceptTypes, _acceptLanguages;
+        private readonly List<KeyValuePair<string, string>> _custom;
 
         public HttpServerStagedContextHeaders()
         {
@@ -104,10 +104,10 @@ namespace ServiceLib
 
     public class HttpServerStagedContextWeightedHeader : IHttpServerStagedWeightedHeader
     {
-        private string _name;
+        private readonly string _name;
         private bool _isSet;
         private string _rawValue;
-        private List<string> _values;
+        private readonly List<string> _values;
 
         public HttpServerStagedContextWeightedHeader(string name)
         {
@@ -158,13 +158,12 @@ namespace ServiceLib
             _rawValue = rawValue;
             _values.Clear();
             _isSet = true;
-            if (!string.IsNullOrEmpty(rawValue))
+            if (string.IsNullOrEmpty(rawValue)) 
+                return;
+            foreach (var element in rawValue.Split(','))
             {
-                foreach (var element in rawValue.Split(','))
-                {
-                    var elementParts = element.Split(';');
-                    _values.Add(elementParts[0].Trim());
-                }
+                var elementParts = element.Split(';');
+                _values.Add(elementParts[0].Trim());
             }
         }
 

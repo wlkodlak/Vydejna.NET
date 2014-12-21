@@ -1,13 +1,12 @@
-﻿using Newtonsoft.Json;
+﻿using System;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
-using System;
-using System.Collections.Generic;
 
 namespace ServiceLib
 {
     public static class JsonSerializer
     {
-        private static JsonSerializerSettings _serializerSettings;
+        private static readonly JsonSerializerSettings _serializerSettings;
 
         static JsonSerializer()
         {

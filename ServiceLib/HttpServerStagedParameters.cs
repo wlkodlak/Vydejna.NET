@@ -58,9 +58,9 @@ namespace ServiceLib
 
     public class HttpProcessedParameter : IHttpProcessedParameter
     {
-        private RequestParameterType _type;
-        private string _name;
-        private string _singleValue;
+        private readonly RequestParameterType _type;
+        private readonly string _name;
+        private readonly string _singleValue;
         private IList<string> _values;
 
         public HttpProcessedParameter(RequestParameterType type, string name, string singleValue)
@@ -116,7 +116,7 @@ namespace ServiceLib
         public IList<string> GetRawValues()
         {
             if (_values == null)
-                _values = (_singleValue == null)? new string[0] :  new string[1] { _singleValue };
+                _values = (_singleValue == null)? new string[0] :  new[] { _singleValue };
             return _values;
         }
 
@@ -133,8 +133,8 @@ namespace ServiceLib
 
     public class HttpTypedProcessedParameter<T> : IHttpTypedProcessedParameter<T>
     {
-        private RequestParameterType _type;
-        private string _name;
+        private readonly RequestParameterType _type;
+        private readonly string _name;
         private T _parsedValue;
         private T _defaultValue;
         private bool _hasDefault;

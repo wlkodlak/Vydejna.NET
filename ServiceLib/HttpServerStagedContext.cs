@@ -1,6 +1,4 @@
 ﻿using System.Collections.Generic;
-using System.IO;
-using System.Threading.Tasks;
 
 namespace ServiceLib
 {
@@ -40,18 +38,22 @@ namespace ServiceLib
         public IHttpSerializer OutputSerializer { get; set; }
         public IHttpServerStagedHeaders InputHeaders { get; private set; }
         public IHttpServerStagedHeaders OutputHeaders { get; private set; }
+        
         public IEnumerable<RequestParameter> RawParameters
         {
             get { return _parameters; }
         }
+        
         public IHttpProcessedParameter Parameter(string name)
         {
             return _parameters.Get(RequestParameterType.QueryString, name);
         }
+       
         public IHttpProcessedParameter PostData(string name)
         {
             return _parameters.Get(RequestParameterType.PostData, name);
         }
+     
         public IHttpProcessedParameter Route(string name)
         {
             return _parameters.Get(RequestParameterType.Path, name);
