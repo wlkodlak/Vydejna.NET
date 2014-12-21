@@ -245,11 +245,11 @@ namespace ServiceLib.Tests.EventSourced
                 Disposed = false;
             }
 
-            public Task<EventStoreEvent> GetNextEvent(bool withoutWaiting)
+            public Task<EventStoreEvent> GetNextEvent(bool nowait)
             {
                 Assert.IsFalse(Disposed, "Disposed");
                 Processing = true;
-                Nowait = withoutWaiting;
+                Nowait = nowait;
                 Task = new TaskCompletionSource<EventStoreEvent>();
                 return Task.Task;
             }

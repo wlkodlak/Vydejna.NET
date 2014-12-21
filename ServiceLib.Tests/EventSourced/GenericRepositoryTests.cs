@@ -1,11 +1,10 @@
-﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
-using ServiceLib;
-using ServiceLib.Tests.TestUtils;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+using ServiceLib.Tests.TestUtils;
 
-namespace Vydejna.Tests.EventSourcedTests
+namespace ServiceLib.Tests.EventSourced
 {
     [TestClass]
     public class GenericRepositoryTests

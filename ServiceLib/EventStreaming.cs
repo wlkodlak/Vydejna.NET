@@ -1,6 +1,6 @@
-﻿using log4net;
-using System;
+﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -12,15 +12,15 @@ namespace ServiceLib
     }
     public interface IEventStreamer : IDisposable
     {
-        Task<EventStoreEvent> GetNextEvent(bool withoutWaiting);
+        Task<EventStoreEvent> GetNextEvent(bool nowait);
         Task MarkAsDeadLetter();
     }
 
     public class EventStreaming : IEventStreaming
     {
-        private IEventStoreWaitable _store;
+        private readonly IEventStoreWaitable _store;
+        private readonly INetworkBus _messaging;
         private int _batchSize = 20;
-        private INetworkBus _messaging;
 
         public EventStreaming(IEventStoreWaitable store, INetworkBus messaging)
         {
@@ -36,7 +36,7 @@ namespace ServiceLib
 
         public IEventStreamer GetStreamer(EventStoreToken token, string processName)
         {
-            return new EventsStream(this, token, processName);
+            return new EventsStream(_store, _messaging, _batchSize, token, processName);
         }
 
         private static EventStoreEvent EventFromMessage(Message msg)
@@ -44,7 +44,7 @@ namespace ServiceLib
             var evnt = new EventStoreEvent();
             evnt.Format = msg.Format;
             evnt.Type = msg.Type;
-            var endLine = msg.Body.IndexOf("\r\n");
+            var endLine = msg.Body.IndexOf("\r\n", StringComparison.Ordinal);
             if (endLine == -1)
                 return null;
             else
@@ -64,238 +64,284 @@ namespace ServiceLib
             return msg;
         }
 
-        private Task<IEventStoreCollection> GetEvents(EventStoreToken token, bool nowait, CancellationToken cancel)
-        {
-            if (nowait)
-                return _store.GetAllEvents(token, _batchSize, false);
-            else
-                return _store.WaitForEvents(token, _batchSize, false, cancel);
-        }
-
         private class EventsStream : IEventStreamer
         {
-            private object _lock;
-            private EventStreaming _parent;
+            private static readonly EventStreamingTraceSource Logger = new EventStreamingTraceSource("ServiceLib.EventStreaming");
+            private readonly object _lock;
+            private readonly IEventStoreWaitable _store;
+            private readonly INetworkBus _messaging;
+            private readonly int _batchSize;
             private EventStoreToken _token;
-            private string _processName;
-            private bool _disposed;
+            private readonly string _processName;
+            private bool _disposed, _isGettingNextEvent;
             private Message _currentMessage;
             private EventStoreEvent _currentEvent;
-            private Message _prefetchedMessage;
-            private Queue<EventStoreEvent> _prefetchedEvents;
-            private bool _isWaitingForMessages, _isWaitingForEvents;
-            private CancellationTokenSource _cancel;
-            private MessageDestination _inputMessagingQueue;
-            private AutoResetEventAsync _waitForSignal;
-            private AggregateException _pendingError;
-            private static readonly ILog Logger = LogManager.GetLogger("ServiceLib.EventStreaming");
+            private readonly Queue<EventStoreEvent> _prefetchedEvents;
+            private readonly CancellationTokenSource _cancel;
+            private readonly CancellationToken _cancelToken;
+            private readonly MessageDestination _inputMessagingQueue;
+            private readonly TaskCompletionSource<object> _taskDisposed;
+            private Task<Message> _taskReceiveMessage;
+            private Task<IEventStoreCollection> _taskWaitForEvents;
 
-            public EventsStream(EventStreaming parent, EventStoreToken token, string processName)
+            public EventsStream(IEventStoreWaitable store, INetworkBus messaging, int batchSize, EventStoreToken token, string processName)
             {
                 _lock = new object();
-                _parent = parent;
+                _store = store;
+                _messaging = messaging;
+                _batchSize = batchSize;
                 _token = token;
                 _processName = processName;
                 _cancel = new CancellationTokenSource();
+                _cancelToken = _cancel.Token;
                 _prefetchedEvents = new Queue<EventStoreEvent>();
                 _inputMessagingQueue = MessageDestination.For(processName, "__ANY__");
-                _waitForSignal = new AutoResetEventAsync();
+                _taskDisposed = new TaskCompletionSource<object>();
             }
 
-            public Task<EventStoreEvent> GetNextEvent(bool withoutWaiting)
+            public async Task<EventStoreEvent> GetNextEvent(bool nowait)
+            {
+                try
+                {
+                    LockGetNextEvent();
+                    await MarkCurrentMessageAsProcessed();
+
+                    while (true)
+                    {
+                        _cancelToken.ThrowIfCancellationRequested();
+
+                        var readyEvent = TryToUseReceivedMessage();
+                        if (readyEvent != null)
+                            return readyEvent;
+                        readyEvent = TryToUsePrefetchedEvent();
+                        if (readyEvent != null)
+                            return readyEvent;
+                        readyEvent = TryToUseReceivedEvents();
+                        if (readyEvent != null)
+                            return readyEvent;
+
+                        if (nowait)
+                        {
+                            readyEvent = await TryToReceiveMessageWithoutWaiting();
+                            if (readyEvent != null)
+                                return readyEvent;
+                            readyEvent = await TryToGetAllEventsWithoutWaiting();
+                            if (readyEvent != null)
+                                return readyEvent;
+                            return ReturnNoEventAvailable();
+                        }
+                        else
+                        {
+                            StartReceivingMessage();
+                            StartWaitingForEvents();
+                            await Task.WhenAny(_taskReceiveMessage, _taskWaitForEvents, _taskDisposed.Task);
+                        }
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    Logger.Cancelled(_processName);
+                    return null;
+                }
+                finally
+                {
+                    UnlockGetNextEvent();
+                }
+            }
+
+            private async Task MarkCurrentMessageAsProcessed()
+            {
+                var messageToMarkAsProcesed = _currentMessage;
+                _currentMessage = null;
+                if (messageToMarkAsProcesed != null)
+                {
+                    try
+                    {
+                        await _messaging.MarkProcessed(_currentMessage, MessageDestination.Processed);
+                        Logger.MarkedPreviousMessageAsProcessed(_processName, messageToMarkAsProcesed);
+                    }
+                    catch (Exception exception)
+                    {
+                        Logger.CouldNotMarkPreviousMessageAsProcessed(_processName, messageToMarkAsProcesed, exception);
+                        throw;
+                    }
+                }
+            }
+
+            private EventStoreEvent TryToUseReceivedMessage()
+            {
+                if (_taskReceiveMessage != null && _taskReceiveMessage.IsCompleted)
+                {
+                    var taskReceiveMessage = _taskReceiveMessage;
+                    _taskReceiveMessage = null;
+                    try
+                    {
+                        var message = taskReceiveMessage.GetAwaiter().GetResult();
+                        var readyEvent = ProcessReceivedMessage(message);
+                        if (readyEvent != null)
+                            return readyEvent;
+                    }
+                    catch (Exception exception)
+                    {
+                        Logger.ReceivingMessageFailed(_processName, _inputMessagingQueue, exception);
+                        throw;
+                    }
+                }
+                return null;
+            }
+
+            private EventStoreEvent TryToUsePrefetchedEvent()
+            {
+                if (_prefetchedEvents.Count <= 0)
+                    return null;
+                var receivedEvent = _prefetchedEvents.Dequeue();
+                _currentEvent = receivedEvent;
+                return receivedEvent;
+            }
+
+            private EventStoreEvent TryToUseReceivedEvents()
+            {
+                if (_taskWaitForEvents != null && _taskWaitForEvents.IsCompleted)
+                {
+                    var taskWaitForEvents = _taskWaitForEvents;
+                    _taskWaitForEvents = null;
+                    try
+                    {
+                        var newEvents = taskWaitForEvents.GetAwaiter().GetResult();
+                        var readyEvent = ProcessReceivedEvents(newEvents);
+                        if (readyEvent != null)
+                            return readyEvent;
+                    }
+                    catch (Exception exception)
+                    {
+                        Logger.ReceivingEventsFailed(_processName, _token, _batchSize, exception);
+                        throw;
+                    }
+                }
+
+                return null;
+            }
+
+            private async Task<EventStoreEvent> TryToReceiveMessageWithoutWaiting()
+            {
+                if (_taskReceiveMessage != null) 
+                    return null;
+                var message = await _messaging.Receive(_inputMessagingQueue, true, _cancelToken);
+                var readyEvent = ProcessReceivedMessage(message);
+                return readyEvent;
+            }
+
+            private async Task<EventStoreEvent> TryToGetAllEventsWithoutWaiting()
+            {
+                if (_taskWaitForEvents != null) 
+                    return null;
+                var newEvents = await _store.GetAllEvents(_token, _batchSize, false);
+                var readyEvent = ProcessReceivedEvents(newEvents);
+                return readyEvent;
+            }
+
+            private EventStoreEvent ProcessReceivedMessage(Message message)
+            {
+                if (message == null)
+                    return null;
+                _currentMessage = message;
+                var receivedEvent = EventFromMessage(message);
+                Logger.ReturnedMessage(_processName, message, receivedEvent);
+                return receivedEvent;
+            }
+
+            private EventStoreEvent ProcessReceivedEvents(IEventStoreCollection newEvents)
+            {
+                Logger.ReceivedEvents(_processName, _token, _batchSize, newEvents);
+                _token = newEvents.NextToken;
+                foreach (var receivedEvent in newEvents.Events)
+                    _prefetchedEvents.Enqueue(receivedEvent);
+
+                if (_prefetchedEvents.Count > 0)
+                {
+                    var receivedEvent = _prefetchedEvents.Dequeue();
+                    _currentEvent = receivedEvent;
+                    Logger.ReturnedEvent(_processName, receivedEvent);
+                    return receivedEvent;
+                }
+                return null;
+            }
+
+            private EventStoreEvent ReturnNoEventAvailable()
+            {
+                Logger.NoEventsAvailableForNowait(_processName);
+                return null;
+            }
+
+            private void StartReceivingMessage()
+            {
+                if (_taskReceiveMessage == null)
+                {
+                    Logger.StartedReceivingMessage(_processName, _inputMessagingQueue);
+                    _taskReceiveMessage = _messaging.Receive(_inputMessagingQueue, false, _cancelToken);
+                }
+            }
+
+            private void StartWaitingForEvents()
+            {
+                if (_taskWaitForEvents == null)
+                {
+                    Logger.StartedWaitingForEvents(_processName, _token, _batchSize);
+                    _taskWaitForEvents = _store.WaitForEvents(_token, _batchSize, false, _cancelToken);
+                }
+            }
+
+            private void LockGetNextEvent()
             {
                 lock (_lock)
                 {
                     if (_disposed)
-                        return TaskUtils.FromError<EventStoreEvent>(new ObjectDisposedException(_processName ?? "EventStreamer"));
+                        throw new ObjectDisposedException(_processName ?? "EventStreamer");
+                    AssertIsNotAlreadyGettingNextEvent();
+                    _isGettingNextEvent = true;
                 }
-                return TaskUtils.FromEnumerable<EventStoreEvent>(GetNextEventInternal(withoutWaiting)).GetTask();
             }
 
-            private IEnumerable<Task> GetNextEventInternal(bool nowait)
+            private void AssertIsNotAlreadyGettingNextEvent()
             {
+                lock (_lock)
+                {
+                    if (_isGettingNextEvent)
+                    {
+                        throw new InvalidOperationException(
+                            string.Format(
+                                "{0} is already in GetNextEvent()",
+                                _processName ?? "EventStreamer"));
+                    }
+                }
+            }
+
+            private void UnlockGetNextEvent()
+            {
+                lock (_lock)
+                {
+                    _isGettingNextEvent = false;
+                }
+            }
+
+
+            public async Task MarkAsDeadLetter()
+            {
+                AssertIsNotAlreadyGettingNextEvent();
                 if (_currentMessage != null)
                 {
-                    Logger.DebugFormat("{0}: Marking previous message (id {1}) as processed", _processName, _currentMessage.MessageId);
-                    var taskMarkProcessed = _parent._messaging.MarkProcessed(_currentMessage, MessageDestination.Processed);
+                    var message = _currentMessage;
                     _currentMessage = null;
-                    yield return taskMarkProcessed;
-                    taskMarkProcessed.Wait();
+                    await _messaging.MarkProcessed(message, MessageDestination.DeadLetters);
                 }
-                EventStoreEvent readyEvent = null;
-                var cancelToken = _cancel.Token;
-                Exception error = null;
-                while (readyEvent == null && !cancelToken.IsCancellationRequested)
+                else if (_currentEvent != null)
                 {
-                    bool startWaitingForEvents = false;
-                    bool startWaitingForMessages = false;
-                    bool nowaitGetEvents = false;
-                    bool nowaitGetMessage = false;
-                    lock (_lock)
-                    {
-                        if (_pendingError != null)
-                        {
-                            error = _pendingError;
-                            _pendingError = null;
-                            Logger.DebugFormat("{0}: failed", _processName);
-                        }
-                        else if (_prefetchedMessage != null)
-                        {
-                            _currentMessage = _prefetchedMessage;
-                            _prefetchedMessage = null;
-                            readyEvent = EventFromMessage(_currentMessage);
-                            Logger.DebugFormat("{0}: returning prefetched message {1} (type {2})", 
-                                _processName, _currentMessage.MessageId, _currentMessage.Type);
-                        }
-                        else if (_prefetchedEvents.Count > 0)
-                        {
-                            readyEvent = _currentEvent = _prefetchedEvents.Dequeue();
-                            Logger.DebugFormat("{0}: returning prefetched event '{1}' (type {2})", 
-                                _processName, readyEvent.Token, readyEvent.Type);
-                        }
-                        else if (nowait)
-                        {
-                            nowaitGetEvents = !_isWaitingForEvents;
-                            nowaitGetMessage = !_isWaitingForMessages;
-                        }
-                        else
-                        {
-                            startWaitingForEvents = !_isWaitingForEvents;
-                            startWaitingForMessages = !_isWaitingForMessages;
-                            _isWaitingForMessages = _isWaitingForEvents = true;
-                        }
-                    }
-                    if (error != null)
-                    {
-                        yield return TaskUtils.FromError<EventStoreEvent>(error);
-                        yield break;
-                    }
-                    if (nowaitGetMessage && readyEvent == null)
-                    {
-                        var taskReceive = _parent._messaging.Receive(_inputMessagingQueue, true, cancelToken);
-                        yield return taskReceive;
-                        _currentMessage = taskReceive.Result;
-                        if (_currentMessage != null)
-                        {
-                            readyEvent = EventFromMessage(_currentMessage);
-                            Logger.DebugFormat("{0}: returning fresh message {1} (type {2})",
-                                _processName, _currentMessage.MessageId, _currentMessage.Type);
-                        }
-                    }
-                    if (nowaitGetEvents && readyEvent == null)
-                    {
-                        var taskGetEvents = _parent.GetEvents(_token, true, cancelToken);
-                        yield return taskGetEvents;
-                        var loadedEvents = taskGetEvents.Result;
-                        foreach (var evnt in loadedEvents.Events)
-                            _prefetchedEvents.Enqueue(evnt);
-                        _token = loadedEvents.NextToken;
-                        if (loadedEvents.Events.Count != 0)
-                        {
-                            readyEvent = _currentEvent = _prefetchedEvents.Dequeue();
-                            Logger.DebugFormat("{0}: returning fresh event '{1}' (type {2})",
-                                _processName, readyEvent.Token, readyEvent.Type);
-                        }
-                    }
-                    if (startWaitingForMessages)
-                    {
-                        Logger.DebugFormat("{0}: starting waiting for messages", _processName);
-                        _parent._messaging.Receive(_inputMessagingQueue, false, cancelToken).ContinueWith(GetNextEvent_FromMessaging);
-                    }
-                    if (startWaitingForEvents)
-                    {
-                        Logger.DebugFormat("{0}: starting waiting for events", _processName);
-                        _parent.GetEvents(_token, false, cancelToken).ContinueWith(GetNextEvent_FromEventStore);
-                    }
-                    if (nowait || readyEvent != null)
-                    {
-                        break;
-                    }
-                    else
-                    {
-                        var taskWait = _waitForSignal.Wait();
-                        yield return taskWait;
-                    }
-                }
-                if (readyEvent == null)
-                {
-                    Logger.DebugFormat("{0}: returning null", _processName);
-                }
-                yield return TaskUtils.FromResult(readyEvent);
-            }
-
-            private void GetNextEvent_FromMessaging(Task<Message> taskReceive)
-            {
-                lock (_lock)
-                {
-                    _isWaitingForMessages = false;
-                    if (!taskReceive.IsCanceled)
-                    {
-                        if (taskReceive.Exception == null)
-                        {
-                            _prefetchedMessage = taskReceive.Result;
-                        }
-                        else
-                        {
-                            _pendingError = taskReceive.Exception;
-                        }
-                    }
-                }
-                _waitForSignal.Set();
-            }
-
-            private void GetNextEvent_FromEventStore(Task<IEventStoreCollection> taskReceive)
-            {
-                lock (_lock)
-                {
-                    _isWaitingForEvents = false;
-                    if (!taskReceive.IsCanceled)
-                    {
-                        if (taskReceive.Exception == null)
-                        {
-                            var loadedEvents = taskReceive.Result;
-                            foreach (var evnt in loadedEvents.Events)
-                                _prefetchedEvents.Enqueue(evnt);
-                            _token = loadedEvents.NextToken;
-                        }
-                        else
-                        {
-                            _pendingError = taskReceive.Exception;
-                        }
-                    }
-                }
-                _waitForSignal.Set();
-            }
-
-            public Task MarkAsDeadLetter()
-            {
-                Message message;
-                bool exists;
-                lock (_lock)
-                {
-                    if (_currentMessage != null)
-                    {
-                        message = _currentMessage;
-                        _currentMessage = null;
-                        exists = true;
-                    }
-                    else if (_currentEvent != null)
-                    {
-                        message = MessageFromEvent(_currentEvent);
-                        _currentEvent = null;
-                        exists = false;
-                    }
-                    else
-                        return TaskUtils.FromError<object>(new InvalidOperationException("EventStreamer: there is no event unfinished event"));
-                }
-                if (exists)
-                {
-                    return _parent._messaging.MarkProcessed(message, MessageDestination.DeadLetters);
+                    var message = MessageFromEvent(_currentEvent);
+                    _currentEvent = null;
+                    await _messaging.Send(MessageDestination.DeadLetters, message);
                 }
                 else
-                {
-                    return _parent._messaging.Send(MessageDestination.DeadLetters, message);
-                }
+                    throw new InvalidOperationException("EventStreamer: there is no event unfinished event");
             }
 
             public void Dispose()
@@ -307,10 +353,110 @@ namespace ServiceLib
                     _disposed = true;
                 }
                 _cancel.Cancel();
+                _taskDisposed.TrySetResult(null);
                 _cancel.Dispose();
-                _waitForSignal.Set();
             }
         }
     }
 
+    public class EventStreamingTraceSource : TraceSource
+    {
+        public EventStreamingTraceSource(string name)
+            : base(name)
+        {
+        }
+
+        public void MarkedPreviousMessageAsProcessed(string processName, Message message)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 11, "Message {MessageId} marked as processed in process {ProcessName}");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("MessageId", false, message);
+            msg.Log(this);
+        }
+
+        public void CouldNotMarkPreviousMessageAsProcessed(string processName, Message message, Exception exception)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 12, "Message {MessageId} could not be marked as processed in process {ProcessName}");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("MessageId", false, message);
+            msg.SetProperty("Exception", true, exception);
+            msg.Log(this);
+        }
+
+        public void ReceivedEvents(string processName, EventStoreToken token, int batchSize, IEventStoreCollection newEvents)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 1, "Received {EventsCount} events from token {Token} for process {ProcessName}");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("Token", false, token);
+            msg.SetProperty("BatchSize", false, batchSize);
+            msg.SetProperty("EventsCount", false, newEvents.Events.Count);
+            msg.Log(this);
+        }
+
+        public void ReturnedMessage(string processName, Message message, EventStoreEvent receivedEvent)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 5, "Returning event {EventType} based on message {MessageId} for process {ProcessName}");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("EventType", false, receivedEvent.Type);
+            msg.SetProperty("MessageId", false, message.MessageId);
+            msg.Log(this);
+        }
+
+        public void ReturnedEvent(string processName, EventStoreEvent receivedEvent)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 6, "Returning event {EventType} with token {Token} for process {ProcessName}");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("EventType", false, receivedEvent.Type);
+            msg.SetProperty("Token", false, receivedEvent.Token);
+            msg.Log(this);
+        }
+
+        public void NoEventsAvailableForNowait(string processName)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 7, "No events available immediatelly for {ProcessName}");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.Log(this);
+        }
+
+        public void StartedReceivingMessage(string processName, MessageDestination inputMessagingQueue)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 15, "Started waiting for message for {ProcessName}");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.Log(this);
+        }
+
+        public void StartedWaitingForEvents(string processName, EventStoreToken token, int batchSize)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 16, "Started waiting for events for {ProcessName} with token {Token}");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("Token", false, token);
+            msg.Log(this);
+        }
+
+        public void ReceivingMessageFailed(string processName, MessageDestination inputMessagingQueue, Exception exception)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 20, "Receiving messages for {ProcessName} failed");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("Queue", false, inputMessagingQueue);
+            msg.SetProperty("Exception", true, exception);
+            msg.Log(this);
+        }
+
+        public void ReceivingEventsFailed(string processName, EventStoreToken token, int batchSize, Exception exception)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 21, "Receiving events for {ProcessName} failed");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("Token", false, token);
+            msg.SetProperty("BatchSize", false, batchSize);
+            msg.SetProperty("Exception", true, exception);
+            msg.Log(this);
+        }
+
+        public void Cancelled(string processName)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 8, "GetNextEvent cancelled in {ProcessName}");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.Log(this);
+        }
+    }
 }

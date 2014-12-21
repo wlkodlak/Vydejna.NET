@@ -228,9 +228,16 @@ namespace ServiceLib.Tests.EventSourced
             StopWaiting();
 
             AddToStream("stream-01", newEvents, EventStoreVersion.Any);
-            events = GetAwaitedEvents();
-            Assert.IsNotNull(events, "Event list must be present");
-            Assert.AreEqual(0, events.Events.Count, "Event list must be empty");
+            try
+            {
+                /* Here we have two options: one is to return empty list, another is normal task cancellation */
+                events = GetAwaitedEvents();
+                Assert.IsNotNull(events, "Event list must be present");
+                Assert.AreEqual(0, events.Events.Count, "Event list must be empty");
+            }
+            catch (OperationCanceledException)
+            {
+            }
         }
 
         [TestMethod]
@@ -363,7 +370,11 @@ namespace ServiceLib.Tests.EventSourced
         protected IEventStoreCollection GetAwaitedEvents()
         {
             Scheduler.Process();
-            if (_waitTask.IsCompleted)
+            if (_waitTask.IsCanceled)
+                throw new OperationCanceledException();
+            else if (_waitTask.Exception != null)
+                throw _waitTask.Exception.InnerException.PreserveStackTrace();
+            else if (_waitTask.IsCompleted)
                 return _waitTask.Result;
             else
                 return null;
