@@ -512,5 +512,98 @@ namespace ServiceLib
             msg.Log(this);
         }
 
+        public void GetAllEventsComplete(EventStoreToken token, long eventId, int maxCount, IList<EventStoreEvent> events, EventStoreToken nextToken)
+        {
+            var msg = new LogContextMessage(
+                TraceEventType.Verbose, 81, 
+                "GetAllEvents from token {Token} returned {EventsCount} events");
+            msg.SetProperty("Token", false, token);
+            msg.SetProperty("EventId", false, eventId);
+            msg.SetProperty("MaxCount", false, maxCount);
+            msg.SetProperty("EventsCount", false, events.Count);
+            msg.SetProperty("NextToken", false, nextToken);
+            msg.Log(this);
+        }
+
+        public void WaitForEventsComplete(EventStoreToken token, long eventId, int maxCount, IList<EventStoreEvent> events, EventStoreToken nextToken)
+        {
+            var msg = new LogContextMessage(
+                TraceEventType.Verbose, 82,
+                "WaitForEvents from token {Token} returned {EventsCount} events");
+            msg.SetProperty("Token", false, token);
+            msg.SetProperty("EventId", false, eventId);
+            msg.SetProperty("MaxCount", false, maxCount);
+            msg.SetProperty("EventsCount", false, events.Count);
+            msg.SetProperty("NextToken", false, nextToken);
+            msg.Log(this);
+        }
+
+        public void WaitForEventsFailed(EventStoreToken token, long eventId, int maxCount, Exception exception)
+        {
+            var msg = new LogContextMessage(
+                TraceEventType.Verbose, 89,
+                "WaitForEvents from token {Token} failed");
+            msg.SetProperty("Token", false, token);
+            msg.SetProperty("EventId", false, eventId);
+            msg.SetProperty("MaxCount", false, maxCount);
+            msg.SetProperty("Exception", true, exception);
+            msg.Log(this);
+        }
+
+        public void WaitForEventsInitialized(EventStoreToken token, long eventId, int maxCount, int taskId)
+        {
+            var msg = new LogContextMessage(
+                TraceEventType.Verbose, 83,
+                "WaitForEvents starts waiting");
+            msg.SetProperty("Token", false, token);
+            msg.SetProperty("EventId", false, eventId);
+            msg.SetProperty("MaxCount", false, maxCount);
+            msg.SetProperty("TaskId", false, taskId);
+            msg.Log(this);
+        }
+
+        public void WaitForEventsCancelled(EventStoreToken token, int taskId)
+        {
+            var msg = new LogContextMessage(
+                TraceEventType.Verbose, 84,
+                "WaitForEvents from token {Token} cancelled");
+            msg.SetProperty("Token", false, token);
+            msg.SetProperty("TaskId", false, taskId);
+            msg.Log(this);
+        }
+
+        public void WaitForEventsCheckedForData(EventStoreToken token, long eventId, int maxCount, IList<EventStoreEvent> events, EventStoreToken nextToken, int taskId)
+        {
+            var msg = new LogContextMessage(
+                TraceEventType.Verbose, 85,
+                "WaitForEvents received {EventsCount} events");
+            msg.SetProperty("Token", false, token);
+            msg.SetProperty("EventId", false, eventId);
+            msg.SetProperty("MaxCount", false, maxCount);
+            msg.SetProperty("EventsCount", false, events.Count);
+            msg.SetProperty("NextToken", false, nextToken);
+            msg.SetProperty("TaskId", false, taskId);
+            msg.Log(this);
+        }
+
+        public void WaitForEventsTimerFired()
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 86, "Timer for WaitForEvents fired");
+            msg.Log(this);
+        }
+
+        public void WaitForEventsTimerCrashed(Exception exception)
+        {
+            var msg = new LogContextMessage(TraceEventType.Error, 87, "Timer for WaitForEvents crashed");
+            msg.SetProperty("Exception", true, exception);
+            msg.Log(this);
+        }
+
+        public void WaitForEventsFailedToGetNewData(Exception exception)
+        {
+            var msg = new LogContextMessage(TraceEventType.Error, 88, "Core of WaitForEvents failed to get new data");
+            msg.SetProperty("Exception", true, exception);
+            msg.Log(this);
+        }
     }
 }

@@ -21,7 +21,7 @@ namespace ServiceLib
         private bool _disposed;
         private int _canStartNotifications;
         private readonly CancellationTokenSource _cancelListening;
-        private Task _notificationTask;
+        private Task _timerTask, _notificationTask;
         private readonly string _partition;
         private static readonly EventStorePostgresTraceSource Logger = new EventStorePostgresTraceSource("ServiceLib.EventStore");
 
@@ -36,15 +36,6 @@ namespace ServiceLib
             _partition = partition;
         }
 
-        private void StartNotifications()
-        {
-            if (Interlocked.Exchange(ref _canStartNotifications, 0) == 1)
-            {
-                _db.Listen(_partition, s => _notified.Set(), _cancelListening.Token);
-                _notificationTask = TaskUtils.FromEnumerable(WaitForEvents_CoreInternal()).CatchAll().GetTask();
-            }
-        }
-
         public void Initialize()
         {
             _db.ExecuteSync(InitializeDatabase);
@@ -56,9 +47,25 @@ namespace ServiceLib
             _canStartNotifications = 0;
             _disposed = true;
             _notified.Set();
-            if (_notificationTask != null)
-                _notificationTask.Wait(1000);
+            WaitForTaskFinish(_timerTask);
+            WaitForTaskFinish(_notificationTask);
             _cancelListening.Dispose();
+        }
+
+        private void WaitForTaskFinish(Task task)
+        {
+            try
+            {
+                if (task == null)
+                    return;
+                task.Wait(1000);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (AggregateException)
+            {
+            }
         }
 
         private void InitializeDatabase(NpgsqlConnection conn)
@@ -540,65 +547,67 @@ namespace ServiceLib
 
         public async Task<IEventStoreCollection> GetAllEvents(EventStoreToken token, int maxCount, bool loadBody)
         {
-            var context = new WaitForEventsContext(null, token, maxCount, CancellationToken.None, true);
-            var response = await _db.Query(GetAllEventsWorker, context);
-            var events = response.BuildFinal();
-            return events;
+            var context = new WaitForEventsContext(token, maxCount, CancellationToken.None, true);
+            var immediateResult = await _db.Query(GetAllEventsWorker, context);
+            var response = immediateResult.BuildFinal();
+            Logger.GetAllEventsComplete(context.Token, context.EventId, context.MaxCount, response.Events, response.NextToken);
+            return response;
         }
 
         private GetAllEventsResponse GetAllEventsWorker(NpgsqlConnection conn, object objContext)
         {
-            using (new LogMethod(Logger, "GetAllEvents"))
+            using (new LogMethod(Logger, "GetAllEventsWorker"))
             {
                 var context = (WaitForEventsContext)objContext;
                 var eventId = GetLastEventId(conn);
                 if (context.EventId == -1)
                 {
-                    return new GetAllEventsResponse(null, eventId);
+                    var response = new GetAllEventsResponse(null, eventId);
+                    LogGetAllEventsChecked(context, response);
+                    return response;
                 }
                 var count = (int)Math.Min(context.MaxCount, eventId - context.EventId);
                 if (count == 0)
                 {
-                    if (context.Nowait)
-                    {
-                        Logger.DebugFormat("GetAllEvents(eventId: {0}): {1}",
-                            context.EventId,
-                            context.MaxCount == 0 ? "zero MaxCount" : "no events available");
-                    }
-                    return new GetAllEventsResponse(null, Math.Min(context.EventId, eventId));
+                    var response = new GetAllEventsResponse(null, Math.Min(context.EventId, eventId));
+                    LogGetAllEventsChecked(context, response);
+                    return response;
                 }
                 var events = GetEvents(conn, context.EventId, count);
                 if (events.Count == 0)
                 {
-                    if (context.Nowait)
-                    {
-                        Logger.DebugFormat("GetAllEvents(eventId: {0}): no events available", context.EventId);
-                    }
-                    return new GetAllEventsResponse(null, Math.Min(context.EventId, eventId));
+                    var response = new GetAllEventsResponse(null, Math.Min(context.EventId, eventId));
+                    LogGetAllEventsChecked(context, response);
+                    return response;
                 }
                 else
                 {
-                    Logger.DebugFormat("GetAllEvents(eventId: {0}): returning {1} events", context.EventId, events.Count);
-                    return new GetAllEventsResponse(events, events[events.Count - 1].Token);
+                    var response = new GetAllEventsResponse(events, events[events.Count - 1].Token);
+                    LogGetAllEventsChecked(context, response);
+                    return response;
                 }
             }
         }
 
+        private void LogGetAllEventsChecked(WaitForEventsContext context, GetAllEventsResponse response)
+        {
+            var taskId = context.Nowait ? 0 : context.Task.Task.Id;
+            Logger.WaitForEventsCheckedForData(context.Token, context.EventId, context.MaxCount, response.FinalEvents, response.NextToken, taskId);
+        }
+
         private class WaitForEventsContext
         {
-            public readonly EventStorePostgres Parent;
             public int WaiterId;
-            public EventStoreToken Token;
+            public readonly EventStoreToken Token;
             public readonly long EventId;
             public readonly int MaxCount;
             public CancellationToken Cancel;
-            public readonly TaskCompletionSource<IEventStoreCollection> Task;
+            public readonly TaskCompletionSource<GetAllEventsResponse> Task;
             public CancellationTokenRegistration CancelRegistration;
             public readonly bool Nowait;
 
-            public WaitForEventsContext(EventStorePostgres parent, EventStoreToken token, int maxCount, CancellationToken cancel, bool nowait)
+            public WaitForEventsContext(EventStoreToken token, int maxCount, CancellationToken cancel, bool nowait)
             {
-                Parent = parent;
                 Token = token;
                 EventId = IdFromToken(token);
                 MaxCount = maxCount;
@@ -606,13 +615,12 @@ namespace ServiceLib
                 Nowait = nowait || EventId == -1 || MaxCount == 0;
                 if (!nowait)
                 {
-                    Task = new TaskCompletionSource<IEventStoreCollection>();
+                    Task = new TaskCompletionSource<GetAllEventsResponse>();
+                    if (Cancel.IsCancellationRequested)
+                    {
+                        Task.TrySetCanceled();
+                    }
                 }
-            }
-
-            public void ImmediateFinished(Task<GetAllEventsResponse> task)
-            {
-                Parent.WaitForEvents_ImmediateFinished(task, this);
             }
         }
 
@@ -624,146 +632,212 @@ namespace ServiceLib
         private class GetAllEventsResponse
         {
             private static readonly IList<EventStoreEvent> NoEvents = new EventStoreEvent[0];
-            public readonly IList<GetAllEventsEvent> Events;
-            public readonly long EventId;
-            public readonly EventStoreToken Token;
+            private readonly IList<GetAllEventsEvent> _events;
+            private readonly long _eventId;
+            private readonly EventStoreToken _token;
 
             public GetAllEventsResponse(IList<GetAllEventsEvent> events, long eventId)
             {
-                Events = events;
-                EventId = eventId;
+                _events = events;
+                _eventId = eventId;
             }
             public GetAllEventsResponse(IList<GetAllEventsEvent> events, EventStoreToken token)
             {
-                Events = events;
-                Token = token;
+                _events = events;
+                _token = token;
             }
+
             public EventStoreCollection BuildFinal()
             {
-                var events = Events != null ? Events.Cast<EventStoreEvent>().ToList() : NoEvents;
-                var nextToken = Token ?? TokenFromId(EventId);
-                return new EventStoreCollection(events, nextToken);
+                return new EventStoreCollection(FinalEvents, NextToken);
+            }
+
+            public EventStoreToken NextToken
+            {
+                get { return _token ?? TokenFromId(_eventId); }
+            }
+
+            public IList<GetAllEventsEvent> Events
+            {
+                get { return _events; }
+            } 
+
+            public IList<EventStoreEvent> FinalEvents
+            {
+                get { return _events != null ? _events.Cast<EventStoreEvent>().ToList() : NoEvents; }
+            }
+
+            public bool HasAnyEvents
+            {
+                get { return _events != null && _events.Count > 0; }
             }
         }
 
-        public Task<IEventStoreCollection> WaitForEvents(EventStoreToken token, int maxCount, bool loadBody, CancellationToken cancel)
+        public async Task<IEventStoreCollection> WaitForEvents(EventStoreToken token, int maxCount, bool loadBody, CancellationToken cancel)
         {
             StartNotifications();
-            var waiter = new WaitForEventsContext(this, IdFromToken(token), maxCount, cancel, false);
-            _db.Query(GetAllEventsWorker, waiter).ContinueWith(waiter.ImmediateFinished);
-            return waiter.Task.Task;
+            var context = new WaitForEventsContext(token, maxCount, cancel, false);
+            try
+            {
+                var immediateResult = await _db.Query(GetAllEventsWorker, context);
+
+                if (!context.Nowait && !immediateResult.HasAnyEvents)
+                {
+                    if (context.Cancel.CanBeCanceled)
+                    {
+                        context.CancelRegistration = context.Cancel.Register(WaitForEvents_Cancelled, context);
+                    }
+                    Logger.WaitForEventsInitialized(
+                        context.Token, context.EventId, context.MaxCount, context.Task.Task.Id);
+                    while (true)
+                    {
+                        context.WaiterId = Interlocked.Increment(ref _waiterId);
+                        if (_waiters.TryAdd(context.WaiterId, context))
+                        {
+                            _notified.Set();
+                            break;
+                        }
+                    }
+
+                    immediateResult = await context.Task.Task;
+                }
+
+                var finalResponse = immediateResult.BuildFinal();
+                Logger.WaitForEventsComplete(
+                    context.Token, context.EventId, context.MaxCount, finalResponse.Events, finalResponse.NextToken);
+                return finalResponse;
+            }
+            catch (OperationCanceledException)
+            {
+                Logger.WaitForEventsCancelled(context.Token, context.Task.Task.Id);
+                throw;
+            }
+            catch (Exception exception)
+            {
+                Logger.WaitForEventsFailed(context.Token, context.EventId, context.MaxCount, exception);
+                throw;
+            }
         }
 
-        private void WaitForEvents_ImmediateFinished(Task<GetAllEventsResponse> taskImmediate, object objContext)
+        private void StartNotifications()
         {
-            var waiter = (WaitForEventsContext)objContext;
-            if (taskImmediate.Exception != null)
+            if (Interlocked.Exchange(ref _canStartNotifications, 0) == 1)
             {
-                Logger.DebugFormat("WaitForEvents(eventId: {0}): failed", waiter.EventId);
-                waiter.Task.TrySetException(taskImmediate.Exception.InnerExceptions);
+                _db.Listen(_partition, s => _notified.Set(), _cancelListening.Token);
+                _timerTask = WaitForEvents_Timer();
+                _notificationTask = WaitForEvents_CheckingLoop();
             }
-            else if (waiter.Nowait)
+        }
+
+        private void WaitForEvents_Cancelled(object param)
+        {
+            var waiter = (WaitForEventsContext)param;
+            WaitForEventsContext removedWaiter;
+            _waiters.TryRemove(waiter.WaiterId, out removedWaiter);
+            waiter.Task.TrySetCanceled();
+        }
+
+        private async Task WaitForEvents_Timer()
+        {
+            var cancelToken = _cancelListening.Token;
+            try
             {
-                var finalResult = taskImmediate.Result.BuildFinal();
-                Logger.DebugFormat("WaitForEvents(eventId: {0}): returning {1} events", waiter.EventId, finalResult.Events.Count);
-                waiter.Task.TrySetResult(finalResult);
+                while (!_disposed)
+                {
+                    cancelToken.ThrowIfCancellationRequested();
+                    await _time.Delay(5000, cancelToken);
+                    _notified.Set();
+                }
             }
-            else if (taskImmediate.Result.Events != null && taskImmediate.Result.Events.Count > 0)
+            catch (OperationCanceledException)
             {
-                var finalResult = taskImmediate.Result.BuildFinal();
-                Logger.DebugFormat("WaitForEvents(eventId: {0}): returning {1} events", waiter.EventId, finalResult.Events.Count);
-                waiter.Task.TrySetResult(finalResult);
+                throw;
             }
-            else
+            catch (Exception exception)
+            {
+                Logger.WaitForEventsTimerCrashed(exception);
+            }
+        }
+    
+
+        private async Task WaitForEvents_CheckingLoop()
+        {
+            try
+            {
+                while (!_disposed)
+                {
+                    await _notified.Wait();
+                    var minEventId = long.MaxValue;
+                    var maxCount = 0;
+                    foreach (var waiter in _waiters.Values)
+                    {
+                        if (minEventId > waiter.EventId)
+                            minEventId = waiter.EventId;
+                        if (maxCount < waiter.MaxCount)
+                            maxCount = waiter.MaxCount;
+                    }
+                    if (maxCount != 0)
+                    {
+                        try
+                        {
+                            var immediateContext = new WaitForEventsContext(
+                                TokenFromId(minEventId), maxCount, CancellationToken.None, false);
+                            var results = await _db.Query(GetAllEventsWorker, immediateContext);
+                            SendNewEventsToWaiters(results);
+                        }
+                        catch (Exception exception)
+                        {
+                            Logger.WaitForEventsFailedToGetNewData(exception);
+                        }
+                    }
+                    RemoveCancelledWaiters();
+                }
+            }
+            finally
+            {
+                CleanupWaiters();
+            }
+        }
+
+        private void SendNewEventsToWaiters(GetAllEventsResponse results)
+        {
+            if (results.Events == null || results.Events.Count == 0) 
+                return;
+            foreach (var waiter in _waiters.Values)
+            {
+                WaitForEventsContext removedWaiter;
+                var eventsForWaiter = FilterEventsForWaiter(results, waiter);
+                if (eventsForWaiter.Count == 0) 
+                    continue;
+                if (_waiters.TryRemove(waiter.WaiterId, out removedWaiter))
+                {
+                    var nextToken = eventsForWaiter[eventsForWaiter.Count - 1].Token;
+                    waiter.Task.TrySetResult(new GetAllEventsResponse(eventsForWaiter, nextToken));
+                    waiter.CancelRegistration.Dispose();
+                }
+            }
+        }
+
+        private static List<GetAllEventsEvent> FilterEventsForWaiter(GetAllEventsResponse results, WaitForEventsContext waiter)
+        {
+            return results.Events.Where(e => e.EventId > waiter.EventId).Take(waiter.MaxCount).ToList();
+        }
+
+        private void RemoveCancelledWaiters()
+        {
+            foreach (var waiter in _waiters.Values)
             {
                 if (waiter.Cancel.IsCancellationRequested)
                 {
-                    WaitForEvents_RemoveWaiter(waiter);
-                    return;
-                }
-                else if (waiter.Cancel.CanBeCanceled)
-                {
-                    waiter.CancelRegistration = waiter.Cancel.Register(WaitForEvents_RemoveWaiter, waiter);
-                }
-                while (true)
-                {
-                    waiter.WaiterId = Interlocked.Increment(ref _waiterId);
-                    if (_waiters.TryAdd(waiter.WaiterId, waiter))
-                    {
-                        if (waiter.Cancel.IsCancellationRequested)
-                            WaitForEvents_RemoveWaiter(waiter);
-                        else
-                            _notified.Set();
-                        break;
-                    }
-                }
-            }
-        }
-
-        private void WaitForEvents_RemoveWaiter(object param)
-        {
-            WaitForEventsContext waiter = (WaitForEventsContext)param;
-            WaitForEventsContext removedWaiter;
-            _waiters.TryRemove(waiter.WaiterId, out removedWaiter);
-            waiter.Task.TrySetResult(new EventStoreCollection(new EventStoreEvent[0], TokenFromId(waiter.EventId)));
-        }
-
-        private void WaitForEvents_Timer(Task task)
-        {
-            if (task.Exception == null && !task.IsCanceled)
-            {
-                _notified.Set();
-                _time.Delay(5000, _cancelListening.Token).ContinueWith(WaitForEvents_Timer);
-            }
-        }
-
-        private IEnumerable<Task> WaitForEvents_CoreInternal()
-        {
-            var lastKnownEventId = 0L;
-            _time.Delay(5000, _cancelListening.Token).ContinueWith(WaitForEvents_Timer);
-            while (!_disposed)
-            {
-                var taskWait = _notified.Wait();
-                yield return taskWait;
-                taskWait.Wait();
-                var minEventId = long.MaxValue;
-                var maxCount = 0;
-                foreach (var waiter in _waiters.Values)
-                {
-                    if (minEventId > waiter.EventId)
-                        minEventId = waiter.EventId;
-                    if (maxCount < waiter.MaxCount)
-                        maxCount = waiter.MaxCount;
-                }
-                if (maxCount == 0)
-                    continue;
-                var taskQuery = _db.Query(GetAllEventsWorker, new WaitForEventsContext(null, Math.Max(lastKnownEventId, minEventId), maxCount, CancellationToken.None, false));
-                yield return taskQuery;
-                try
-                {
-                    taskQuery.Wait();
-                }
-                catch
-                {
-                    continue;
-                }
-                var results = taskQuery.Result;
-                if (results.Events == null || results.Events.Count == 0)
-                    continue;
-                foreach (var waiter in _waiters.Values)
-                {
                     WaitForEventsContext removedWaiter;
-                    var eventsForWaiter = results.Events.Where(e => e.EventId > waiter.EventId).Take(waiter.MaxCount).Cast<EventStoreEvent>().ToList();
-                    if (eventsForWaiter.Count == 0)
-                        continue;
-                    if (_waiters.TryRemove(waiter.WaiterId, out removedWaiter))
-                    {
-                        var result = new EventStoreCollection(eventsForWaiter, eventsForWaiter[eventsForWaiter.Count - 1].Token);
-                        waiter.Task.TrySetResult(result);
-                        waiter.CancelRegistration.Dispose();
-                    }
+                    _waiters.TryRemove(waiter.WaiterId, out removedWaiter);
+                    waiter.Task.TrySetCanceled();
                 }
             }
+        }
+
+        private void CleanupWaiters()
+        {
             foreach (var waiter in _waiters.Values)
             {
                 waiter.CancelRegistration.Dispose();
