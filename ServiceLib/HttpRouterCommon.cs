@@ -6,11 +6,11 @@ namespace ServiceLib
     public class HttpRouterCommon : IHttpRouteCommonConfiguratorExtended
     {
         private string _prefix;
-        private IHttpAddRoute _router;
-        private List<IHttpRouteConfigCommitable> _subRouters;
-        private List<IHttpRouteConfigCommitable> _pending;
+        private readonly IHttpAddRoute _router;
+        private readonly List<IHttpRouteConfigCommitable> _subRouters;
+        private readonly List<IHttpRouteConfigCommitable> _pending;
         private ISerializerPicker _picker;
-        private IList<IHttpSerializer> _serializers;
+        private readonly IList<IHttpSerializer> _serializers;
 
         public HttpRouterCommon(IHttpAddRoute router)
         {
@@ -102,12 +102,12 @@ namespace ServiceLib
 
         private class HttpRouterCommonRoute : IHttpRouteCommonConfiguratorRoute, IHttpRouteConfigCommitable
         {
-            private HttpRouterCommon _parent;
+            private readonly HttpRouterCommon _parent;
             private bool _isCommitted;
-            private string _path;
-            private IHttpAddRoute _router;
+            private readonly string _path;
+            private readonly IHttpAddRoute _router;
             private ISerializerPicker _picker;
-            private IList<IHttpSerializer> _serializers;
+            private readonly IList<IHttpSerializer> _serializers;
             private IHttpRouteHandler _routeHandler;
 
             public HttpRouterCommonRoute(HttpRouterCommon parent, string path)
@@ -153,7 +153,7 @@ namespace ServiceLib
                 if (_isCommitted)
                     return;
                 _isCommitted = true;
-                _router.AddRoute(_path, _routeHandler, null);
+                _router.AddRoute(_path, _routeHandler);
             }
         }
     }

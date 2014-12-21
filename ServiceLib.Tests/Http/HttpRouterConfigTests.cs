@@ -99,7 +99,7 @@ namespace ServiceLib.Tests.Http
 
         private class TestRawHandler : IHttpRouteHandler
         {
-            public Task Handle(IHttpServerRawContext context, IList<RequestParameter> routeParameters)
+            public Task Handle(IHttpServerRawContext raw, IList<RequestParameter> routeParameters)
             {
                 return TaskUtils.CompletedTask();
             }

@@ -59,7 +59,7 @@ namespace ServiceLib.Tests.Http
                 _name = name;
             }
 
-            public Task Handle(IHttpServerRawContext context, IList<RequestParameter> routeParameters)
+            public Task Handle(IHttpServerRawContext raw, IList<RequestParameter> routeParameters)
             {
                 _output.Add(_name);
                 return TaskUtils.CompletedTask();

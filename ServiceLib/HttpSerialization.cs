@@ -1,12 +1,10 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Xml;
-using System.Runtime.Serialization;
+﻿using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using System.Linq;
+using System.Runtime.Serialization;
 using System.Text.RegularExpressions;
+using System.Xml;
 
 namespace ServiceLib
 {
@@ -107,7 +105,7 @@ namespace ServiceLib
         public T Deserialize<T>(string data)
         {
             var serializer = new DataContractSerializer(typeof(T));
-            return (T)serializer.ReadObject(XmlDictionaryReader.Create(new StringReader(data)));
+            return (T)serializer.ReadObject(XmlReader.Create(new StringReader(data)));
         }
 
         public string Serialize<T>(T data)
@@ -115,7 +113,7 @@ namespace ServiceLib
             var serializer = new DataContractSerializer(typeof(T));
             using (var stringWriter = new StringWriter())
             {
-                using (var xmlWriter = XmlDictionaryWriter.Create(stringWriter))
+                using (var xmlWriter = XmlWriter.Create(stringWriter))
                     serializer.WriteObject(xmlWriter, data);
                 return stringWriter.ToString();
             }
@@ -129,6 +127,7 @@ namespace ServiceLib
 
     public class HttpSerializerPicker : ISerializerPicker
     {
+        [SuppressMessage("ReSharper", "PossibleMultipleEnumeration")]
         public IHttpSerializer PickSerializer(IHttpServerStagedContext context, IEnumerable<IHttpSerializer> options, ISerializerPicker next)
         {
             var serializer = PickSerializerCore(context, options);
@@ -142,7 +141,7 @@ namespace ServiceLib
 
         private static IHttpSerializer PickSerializerCore(IHttpServerStagedContext context, IEnumerable<IHttpSerializer> options)
         {
-            var serializer = (IHttpSerializer)null;
+            IHttpSerializer serializer;
             var acceptTypes = context.InputHeaders.AcceptTypes;
             if (acceptTypes == null || acceptTypes.Count == 0)
                 serializer = options.FirstOrDefault();
@@ -153,11 +152,12 @@ namespace ServiceLib
             return serializer;
         }
 
+        [SuppressMessage("ReSharper", "PossibleMultipleEnumeration")]
         public IHttpSerializer PickDeserializer(IHttpServerStagedContext context, IEnumerable<IHttpSerializer> options, ISerializerPicker next)
         {
             var deserializer = (IHttpSerializer)null;
             var contentType = context.InputHeaders.ContentType;
-            if (deserializer == null && contentType != null)
+            if (contentType != null)
                 deserializer = options.FirstOrDefault(s => s.ConsumesContentType(contentType));
             if (deserializer == null && !string.IsNullOrEmpty(context.InputString))
                 deserializer = options.FirstOrDefault(s => s.TryRecognizeInput(context.InputString));

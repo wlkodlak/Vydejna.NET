@@ -1,10 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
-using System.IO;
-using System.Text.RegularExpressions;
 
 namespace ServiceLib
 {
@@ -57,19 +53,19 @@ namespace ServiceLib
         }
         private class DelegatedHttpRouteHandler : IHttpRouteHandler
         {
-            Func<IHttpServerRawContext, IList<RequestParameter>, Task> _handler;
+            private readonly Func<IHttpServerRawContext, IList<RequestParameter>, Task> _handler;
             public DelegatedHttpRouteHandler(Func<IHttpServerRawContext, IList<RequestParameter>, Task> handler)
             {
                 _handler = handler;
             }
-            public Task Handle(IHttpServerRawContext context, IList<RequestParameter> routeParameters)
+            public Task Handle(IHttpServerRawContext raw, IList<RequestParameter> routeParameters)
             {
-                return _handler(context, routeParameters);
+                return _handler(raw, routeParameters);
             }
         }
         private class DelegatedHttpProcessor : IHttpProcessor
         {
-            Func<IHttpServerStagedContext, Task> _handler;
+            private readonly Func<IHttpServerStagedContext, Task> _handler;
             public DelegatedHttpProcessor(Func<IHttpServerStagedContext, Task> handler)
             {
                 _handler = handler;

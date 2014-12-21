@@ -1,11 +1,9 @@
-﻿using log4net;
-using System;
+﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
-using System.Linq;
 using System.Net;
-using System.Text;
 using System.Threading.Tasks;
 
 namespace ServiceLib
@@ -21,7 +19,11 @@ namespace ServiceLib
         public string Url { get; set; }
         public List<HttpClientHeader> Headers { get; private set; }
         public byte[] Body { get; set; }
-        public HttpClientRequest() { this.Headers = new List<HttpClientHeader>(); }
+
+        public HttpClientRequest()
+        {
+            Headers = new List<HttpClientHeader>();
+        }
     }
 
     public class HttpClientResponse
@@ -29,7 +31,11 @@ namespace ServiceLib
         public int StatusCode { get; set; }
         public List<HttpClientHeader> Headers { get; private set; }
         public byte[] Body { get; set; }
-        public HttpClientResponse() { this.Headers = new List<HttpClientHeader>(); }
+
+        public HttpClientResponse()
+        {
+            Headers = new List<HttpClientHeader>();
+        }
     }
 
     public class HttpClientHeader
@@ -39,59 +45,49 @@ namespace ServiceLib
 
         public HttpClientHeader(string name, string value)
         {
-            this.Name = name;
-            this.Value = value;
+            Name = name;
+            Value = value;
         }
     }
 
     public class HttpClient : IHttpClient
     {
-        private static readonly ILog Logger = LogManager.GetLogger("ServiceLib.HttpClient");
+        private static readonly HttpClientTraceSource Logger = new HttpClientTraceSource("ServiceLib.HttpClient");
 
-        public Task<HttpClientResponse> Execute(HttpClientRequest request)
+        public async Task<HttpClientResponse> Execute(HttpClientRequest request)
         {
-            return TaskUtils.FromEnumerable<HttpClientResponse>(ExecuteInternal(request)).GetTask();
-        }
-
-        private IEnumerable<Task> ExecuteInternal(HttpClientRequest request)
-        {
-            using (new LogMethod(Logger, "Execute"))
+            var stopwatch = new Stopwatch();
+            stopwatch.Start();
+            try
             {
-                var webRequest = (HttpWebRequest)HttpWebRequest.Create(request.Url);
+                var webRequest = (HttpWebRequest)WebRequest.Create(request.Url);
                 webRequest.AllowAutoRedirect = false;
                 webRequest.Method = request.Method;
                 CopyHeadersToRequest(request, webRequest);
 
-                var response = new HttpClientResponse();
-
                 if (request.Body != null && request.Body.Length > 0)
                 {
-                    var taskGetRequestStream = Task.Factory.FromAsync<Stream>(webRequest.BeginGetRequestStream(null, null), webRequest.EndGetRequestStream);
-                    yield return taskGetRequestStream;
-                    var requestStream = taskGetRequestStream.Result;
-
-                    var taskWrite = Task.Factory.FromAsync(requestStream.BeginWrite(request.Body, 0, request.Body.Length, null, null), requestStream.EndWrite);
-                    yield return taskWrite;
-                    taskWrite.Wait();
-
-                    requestStream.Dispose();
+                    using (var requestStream = await webRequest.GetRequestStreamAsync())
+                    {
+                        await requestStream.WriteAsync(request.Body, 0, request.Body.Length);
+                    }
                 }
 
-                var taskGetResponse = Task.Factory.FromAsync<WebResponse>(webRequest.BeginGetResponse(null, null), webRequest.EndGetResponse);
-                yield return taskGetResponse;
+                var response = new HttpClientResponse();
 
                 HttpWebResponse webResponse;
-                if (taskGetResponse.Exception != null)
+                try
                 {
-                    var exception = taskGetResponse.Exception.InnerException as WebException;
-                    if (exception != null)
-                        webResponse = (HttpWebResponse)exception.Response;
-                    else
-                        throw taskGetResponse.Exception;
+                    webResponse = (HttpWebResponse)await webRequest.GetResponseAsync();
                 }
-                else
+                catch (WebException exception)
                 {
-                    webResponse = (HttpWebResponse)taskGetResponse.Result;
+                    webResponse = (HttpWebResponse)exception.Response;
+                    if (webResponse == null)
+                    {
+                        Logger.NoResponse(request);
+                        return response;
+                    }
                 }
 
                 response.StatusCode = (int)webResponse.StatusCode;
@@ -100,17 +96,24 @@ namespace ServiceLib
                 var copyBuffer = new byte[32 * 1024];
                 using (var responseStream = webResponse.GetResponseStream())
                 {
-                    while (true)
+                    if (responseStream != null)
                     {
-                        var taskRead = Task.Factory.FromAsync<int>(responseStream.BeginRead(copyBuffer, 0, copyBuffer.Length, null, null), responseStream.EndRead);
-                        yield return taskRead;
-                        if (taskRead.Result == 0)
-                            break;
-                        memoryStream.Write(copyBuffer, 0, taskRead.Result);
+                        while (true)
+                        {
+                            var readBytes = await responseStream.ReadAsync(copyBuffer, 0, copyBuffer.Length);
+                            if (readBytes == 0)
+                                break;
+                            memoryStream.Write(copyBuffer, 0, readBytes);
+                        }
                     }
                 }
                 response.Body = memoryStream.ToArray();
-                yield return TaskUtils.FromResult(response);
+                Logger.RequestComplete(request, response, stopwatch.ElapsedMilliseconds);
+                return response;
+            }
+            finally
+            {
+                stopwatch.Stop();
             }
         }
 
@@ -170,12 +173,42 @@ namespace ServiceLib
 
         private static void CopyHeadersToResponse(HttpClientResponse response, HttpWebResponse webResponse)
         {
-            for (int i = 0; i < webResponse.Headers.Count; i++)
+            for (var i = 0; i < webResponse.Headers.Count; i++)
             {
                 var name = webResponse.Headers.GetKey(i);
-                foreach (var value in webResponse.Headers.GetValues(i))
+                var values = webResponse.Headers.GetValues(i);
+                if (values == null)
+                    continue;
+                foreach (var value in values)
                     response.Headers.Add(new HttpClientHeader(name, value));
             }
+        }
+    }
+
+    public class HttpClientTraceSource : TraceSource
+    {
+        public HttpClientTraceSource(string name)
+            : base(name)
+        {
+        }
+
+        public void NoResponse(HttpClientRequest request)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 1, "No response to {Url}");
+            msg.SetProperty("Method", false, request.Method);
+            msg.SetProperty("Url", false, request.Url);
+            msg.Log(this);
+        }
+
+        public void RequestComplete(HttpClientRequest request, HttpClientResponse response, long elapsedMilliseconds)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 2, "Request to {Url} finished");
+            msg.SetProperty("Method", false, request.Method);
+            msg.SetProperty("Url", false, request.Url);
+            msg.SetProperty("Status", false, response.StatusCode);
+            msg.SetProperty("RequestBody", true, request.Body);
+            msg.SetProperty("ResponseBody", true, response.Body);
+            msg.Log(this);
         }
     }
 }

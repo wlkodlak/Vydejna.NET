@@ -1,11 +1,6 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
+﻿using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Xml;
-using System.Xml.Linq;
 
 namespace ServiceLib
 {
@@ -24,8 +19,8 @@ namespace ServiceLib
         private class RoutePath
         {
             public string Name;
-            public List<RouteConfiguration> Routes;
-            public List<RoutePath> SubPaths;
+            public readonly List<RouteConfiguration> Routes;
+            public readonly List<RoutePath> SubPaths;
             public RoutePath(string name, bool hasContents)
             {
                 Name = name;
@@ -52,10 +47,10 @@ namespace ServiceLib
             public ParametrizedUrl Url;
             public IHttpRouteHandler Handler;
         }
-        private RoutePath _paths;
-        private List<RouteConfiguration> _routes;
-        private RoutePathComparer _pathComparer;
-        private ReaderWriterLockSlim _lock;
+        private readonly RoutePath _paths;
+        private readonly List<RouteConfiguration> _routes;
+        private readonly RoutePathComparer _pathComparer;
+        private readonly ReaderWriterLockSlim _lock;
 
         public HttpRouter()
         {
@@ -145,7 +140,7 @@ namespace ServiceLib
             var maxLevel = prefix.Count;
             for (var level = 0; level < maxLevel; level++)
             {
-                var subFolder = (RoutePath)null;
+                RoutePath subFolder;
                 searched.Name = prefix[level];
                 var index = folder.SubPaths.BinarySearch(searched, _pathComparer);
                 if (index >= 0)
@@ -165,7 +160,7 @@ namespace ServiceLib
 
     public interface IHttpRouteHandler
     {
-        Task Handle(IHttpServerRawContext context, IList<RequestParameter> routeParameters);
+        Task Handle(IHttpServerRawContext raw, IList<RequestParameter> routeParameters);
     }
 
     public class HttpUsedRoute
