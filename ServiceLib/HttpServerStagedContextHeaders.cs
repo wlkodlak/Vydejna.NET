@@ -17,12 +17,39 @@ namespace ServiceLib
             _custom = new List<KeyValuePair<string, string>>();
         }
 
-        public string ContentType { get { return _contentType; } set { _contentType = value; } }
-        public IHttpServerStagedWeightedHeader AcceptTypes { get { return _acceptTypes; } }
-        public IHttpServerStagedWeightedHeader AcceptLanguages { get { return _acceptLanguages; } }
-        public int ContentLength { get { return _contentLength; } set { _contentLength = value; } }
-        public string Referer { get { return _referer; } set { _referer = value; } }
-        public string Location { get { return _location; } set { _location = value; } }
+        public string ContentType
+        {
+            get { return _contentType; }
+            set { _contentType = value; }
+        }
+
+        public IHttpServerStagedWeightedHeader AcceptTypes
+        {
+            get { return _acceptTypes; }
+        }
+
+        public IHttpServerStagedWeightedHeader AcceptLanguages
+        {
+            get { return _acceptLanguages; }
+        }
+
+        public int ContentLength
+        {
+            get { return _contentLength; }
+            set { _contentLength = value; }
+        }
+
+        public string Referer
+        {
+            get { return _referer; }
+            set { _referer = value; }
+        }
+
+        public string Location
+        {
+            get { return _location; }
+            set { _location = value; }
+        }
 
         public IEnumerator<KeyValuePair<string, string>> GetEnumerator()
         {
@@ -47,11 +74,13 @@ namespace ServiceLib
             if (!string.IsNullOrEmpty(value))
                 list.Add(new KeyValuePair<string, string>(name, value));
         }
+
         private void AddToList(List<KeyValuePair<string, string>> list, string name, int value, int defaultValue)
         {
             if (value != defaultValue)
                 list.Add(new KeyValuePair<string, string>(name, value.ToString()));
         }
+
         private void AddToList(List<KeyValuePair<string, string>> list, IHttpServerStagedWeightedHeader header)
         {
             if (header.IsSet)
@@ -116,23 +145,28 @@ namespace ServiceLib
             _rawValue = null;
             _values = new List<string>();
         }
+
         public string Name
         {
             get { return _name; }
         }
+
         public string RawValue
         {
             get { return _rawValue; }
             set { SetRawValue(value); }
         }
+
         public int Count
         {
             get { return _values.Count; }
         }
+
         public string this[int index]
         {
             get { return _values[index]; }
         }
+
         public bool IsSet
         {
             get { return _isSet; }
@@ -144,6 +178,7 @@ namespace ServiceLib
             _rawValue = "";
             _values.Clear();
         }
+
         public void Add(string value)
         {
             _isSet = true;
@@ -153,12 +188,13 @@ namespace ServiceLib
                 _rawValue = string.Concat(_rawValue, ", ", value);
             _values.Add(value);
         }
+
         public void SetRawValue(string rawValue)
         {
             _rawValue = rawValue;
             _values.Clear();
             _isSet = true;
-            if (string.IsNullOrEmpty(rawValue)) 
+            if (string.IsNullOrEmpty(rawValue))
                 return;
             foreach (var element in rawValue.Split(','))
             {
@@ -171,10 +207,10 @@ namespace ServiceLib
         {
             return _values.GetEnumerator();
         }
+
         System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator()
         {
             return GetEnumerator();
         }
     }
-
 }

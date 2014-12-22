@@ -1,9 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Text.RegularExpressions;
-using System.Threading.Tasks;
 using System.IO;
 
 namespace ServiceLib
@@ -19,6 +15,7 @@ namespace ServiceLib
         IHttpServerRawHeaders InputHeaders { get; }
         IHttpServerRawHeaders OutputHeaders { get; }
     }
+
     public interface IHttpServerRawHeaders : IEnumerable<KeyValuePair<string, string>>
     {
         void Add(string name, string value);
@@ -42,6 +39,7 @@ namespace ServiceLib
         IHttpProcessedParameter PostData(string name);
         IHttpProcessedParameter Route(string name);
     }
+
     public interface IHttpServerStagedHeaders : IHttpServerRawHeaders
     {
         string ContentType { get; set; }
@@ -51,6 +49,7 @@ namespace ServiceLib
         string Referer { get; set; }
         string Location { get; set; }
     }
+
     public interface IHttpServerStagedWeightedHeader : IEnumerable<string>
     {
         string Name { get; }
@@ -61,6 +60,7 @@ namespace ServiceLib
         void Add(string value);
         bool IsSet { get; }
     }
+
     public interface IHttpProcessedParameter
     {
         RequestParameterType Type { get; }
@@ -70,6 +70,7 @@ namespace ServiceLib
         IHttpTypedProcessedParameter<string> AsString();
         IHttpTypedProcessedParameter<T> As<T>(Func<string, T> converter);
     }
+
     public interface IHttpTypedProcessedParameter<T>
     {
         RequestParameterType Type { get; }
@@ -81,6 +82,7 @@ namespace ServiceLib
         IHttpTypedProcessedParameter<T> Mandatory();
         T Get();
     }
+
     public class MissingMandatoryParameterException : ArgumentException
     {
         public MissingMandatoryParameterException(string paramName)
@@ -88,6 +90,7 @@ namespace ServiceLib
         {
         }
     }
+
     public class ParameterValidationException : ArgumentException
     {
         public ParameterValidationException(string paramName, string actualValue, string description)
@@ -111,11 +114,12 @@ namespace ServiceLib
     {
         public static IHttpTypedProcessedParameter<Guid> AsGuid(this IHttpProcessedParameter self)
         {
-            return self.As<Guid>(Guid.Parse);
+            return self.As(Guid.Parse);
         }
+
         public static IHttpTypedProcessedParameter<T> AsEnum<T>(this IHttpProcessedParameter self) where T : struct
         {
-            return self.As<T>(s => (T)Enum.Parse(typeof(T), s));
+            return self.As(s => (T) Enum.Parse(typeof (T), s));
         }
     }
 }

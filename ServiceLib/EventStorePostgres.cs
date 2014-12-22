@@ -23,7 +23,9 @@ namespace ServiceLib
         private readonly CancellationTokenSource _cancelListening;
         private Task _timerTask, _notificationTask;
         private readonly string _partition;
-        private static readonly EventStorePostgresTraceSource Logger = new EventStorePostgresTraceSource("ServiceLib.EventStore");
+
+        private static readonly EventStorePostgresTraceSource Logger =
+            new EventStorePostgresTraceSource("ServiceLib.EventStore");
 
         public EventStorePostgres(DatabasePostgres db, ITime time, string partition = "eventstore")
         {
@@ -108,7 +110,8 @@ namespace ServiceLib
             }
         }
 
-        public Task<bool> AddToStream(string stream, IEnumerable<EventStoreEvent> events, EventStoreVersion expectedVersion)
+        public Task<bool> AddToStream(
+            string stream, IEnumerable<EventStoreEvent> events, EventStoreVersion expectedVersion)
         {
             return _db.Query(AddToStreamWorker, new AddToStreamParameters(stream, events, expectedVersion));
         }
@@ -119,7 +122,8 @@ namespace ServiceLib
             public readonly IEnumerable<EventStoreEvent> Events;
             public readonly EventStoreVersion ExpectedVersion;
 
-            public AddToStreamParameters(string stream, IEnumerable<EventStoreEvent> events, EventStoreVersion expectedVersion)
+            public AddToStreamParameters(
+                string stream, IEnumerable<EventStoreEvent> events, EventStoreVersion expectedVersion)
             {
                 Stream = stream;
                 Events = events;
@@ -131,7 +135,7 @@ namespace ServiceLib
         {
             using (new LogMethod(Logger, "AddToStream"))
             {
-                var context = (AddToStreamParameters)objContext;
+                var context = (AddToStreamParameters) objContext;
                 using (var tran = conn.BeginTransaction())
                 {
                     var rawVersion = GetStreamVersion(conn, context.Stream);
@@ -169,7 +173,8 @@ namespace ServiceLib
         {
             using (var cmd = conn.CreateCommand())
             {
-                cmd.CommandText = string.Concat("SELECT version FROM ", _partition, "_streams WHERE streamname = :streamname FOR UPDATE");
+                cmd.CommandText = string.Concat(
+                    "SELECT version FROM ", _partition, "_streams WHERE streamname = :streamname FOR UPDATE");
                 cmd.Parameters.AddWithValue("streamname", stream);
                 Logger.TraceSql(cmd);
                 using (var reader = cmd.ExecuteReader())
@@ -222,7 +227,8 @@ namespace ServiceLib
             }
         }
 
-        private void InsertNewEvents(NpgsqlConnection conn, string stream, int initialVersion, IEnumerable<EventStoreEvent> events)
+        private void InsertNewEvents(
+            NpgsqlConnection conn, string stream, int initialVersion, IEnumerable<EventStoreEvent> events)
         {
             using (var cmd = conn.CreateCommand())
             {
@@ -244,7 +250,7 @@ namespace ServiceLib
                     paramType.Value = evnt.Type;
                     paramBody.Value = evnt.Body;
                     Logger.TraceSql(cmd);
-                    var id = (long)cmd.ExecuteScalar();
+                    var id = (long) cmd.ExecuteScalar();
                     evnt.Token = TokenFromId(id);
                     Logger.InsertedEvent(evnt.StreamName, evnt.StreamVersion, evnt.Token);
                 }
@@ -255,7 +261,8 @@ namespace ServiceLib
         {
             using (var cmd = conn.CreateCommand())
             {
-                cmd.CommandText = "UPDATE " + _partition + "_streams SET version = :version WHERE streamname = :streamname";
+                cmd.CommandText = "UPDATE " + _partition +
+                                  "_streams SET version = :version WHERE streamname = :streamname";
                 cmd.Parameters.AddWithValue("streamname", stream);
                 cmd.Parameters.AddWithValue("version", version);
                 Logger.TraceSql(cmd);
@@ -300,21 +307,24 @@ namespace ServiceLib
         {
             using (new LogMethod(Logger, "ReadStream"))
             {
-                var context = (ReadStreamParameters)objContext;
+                var context = (ReadStreamParameters) objContext;
                 var version = Math.Max(0, GetStreamVersion(conn, context.Stream));
                 if (version < context.MinVersion)
                 {
-                    Logger.ReadFromStreamComplete(context.Stream, context.MinVersion, context.MaxCount, version, EmptyList);
+                    Logger.ReadFromStreamComplete(
+                        context.Stream, context.MinVersion, context.MaxCount, version, EmptyList);
                     return new EventStoreStream(EmptyList, version, version);
                 }
                 else if (context.MaxCount <= 0)
                 {
-                    Logger.ReadFromStreamComplete(context.Stream, context.MinVersion, context.MaxCount, version, EmptyList);
+                    Logger.ReadFromStreamComplete(
+                        context.Stream, context.MinVersion, context.MaxCount, version, EmptyList);
                     return new EventStoreStream(EmptyList, version, context.MinVersion);
                 }
                 else
                 {
-                    var events = LoadEvents(conn, context.Stream, context.MinVersion, Math.Min(version, context.MaxVersion));
+                    var events = LoadEvents(
+                        conn, context.Stream, context.MinVersion, Math.Min(version, context.MaxVersion));
                     Logger.ReadFromStreamComplete(context.Stream, context.MinVersion, context.MaxCount, version, events);
                     return new EventStoreStream(events, version, context.MinVersion);
                 }
@@ -358,7 +368,7 @@ namespace ServiceLib
             var ids = new Dictionary<long, EventStoreEvent>(events.Count);
             foreach (var evnt in events)
             {
-                if (evnt.Body != null) 
+                if (evnt.Body != null)
                     continue;
                 var id = IdFromToken(evnt.Token);
                 ids[id] = evnt;
@@ -374,10 +384,11 @@ namespace ServiceLib
         {
             using (new LogMethod(Logger, "LoadBodies"))
             {
-                var ids = (Dictionary<long, EventStoreEvent>)objContext;
+                var ids = (Dictionary<long, EventStoreEvent>) objContext;
                 using (var cmd = conn.CreateCommand())
                 {
-                    cmd.CommandText = string.Concat("SELECT id, contents FROM ", _partition, "_events WHERE id = ANY (:id)");
+                    cmd.CommandText = string.Concat(
+                        "SELECT id, contents FROM ", _partition, "_events WHERE id = ANY (:id)");
                     var paramId = cmd.Parameters.Add("id", NpgsqlDbType.Bigint | NpgsqlDbType.Array);
                     paramId.Value = ids;
                     Logger.TraceSql(cmd);
@@ -406,12 +417,13 @@ namespace ServiceLib
         {
             using (new LogMethod(Logger, "LoadSnapshot"))
             {
-                var stream = (string)objContext;
+                var stream = (string) objContext;
                 EventStoreSnapshot snapshot = null;
                 using (var cmd = conn.CreateCommand())
                 {
                     cmd.CommandText = string.Concat(
-                        "SELECT format, snapshottype, contents FROM ", _partition, "_snapshots WHERE streamname = :streamname");
+                        "SELECT format, snapshottype, contents FROM ", _partition,
+                        "_snapshots WHERE streamname = :streamname");
                     cmd.Parameters.AddWithValue("streamname", stream);
                     Logger.TraceSql(cmd);
                     using (var reader = cmd.ExecuteReader())
@@ -452,7 +464,7 @@ namespace ServiceLib
         {
             using (new LogMethod(Logger, "SaveSnapshot"))
             {
-                var context = (SaveSnapshotParameters)objContext;
+                var context = (SaveSnapshotParameters) objContext;
                 context.Snapshot.StreamName = context.Stream;
 
                 try
@@ -534,7 +546,8 @@ namespace ServiceLib
         {
             using (var cmd = conn.CreateCommand())
             {
-                cmd.CommandText = "UPDATE " + _partition + "_snapshots SET format = :format, snapshottype = :snapshottype, contents = :contents WHERE streamname = :streamname";
+                cmd.CommandText = "UPDATE " + _partition +
+                                  "_snapshots SET format = :format, snapshottype = :snapshottype, contents = :contents WHERE streamname = :streamname";
                 cmd.Parameters.Add("streamname", NpgsqlDbType.Varchar).Value = snapshot.StreamName;
                 cmd.Parameters.Add("format", NpgsqlDbType.Varchar).Value = snapshot.Format;
                 cmd.Parameters.Add("snapshottype", NpgsqlDbType.Varchar).Value = snapshot.Type;
@@ -550,7 +563,8 @@ namespace ServiceLib
             var context = new WaitForEventsContext(token, maxCount, CancellationToken.None, true);
             var immediateResult = await _db.Query(GetAllEventsWorker, context);
             var response = immediateResult.BuildFinal();
-            Logger.GetAllEventsComplete(context.Token, context.EventId, context.MaxCount, response.Events, response.NextToken);
+            Logger.GetAllEventsComplete(
+                context.Token, context.EventId, context.MaxCount, response.Events, response.NextToken);
             return response;
         }
 
@@ -558,7 +572,7 @@ namespace ServiceLib
         {
             using (new LogMethod(Logger, "GetAllEventsWorker"))
             {
-                var context = (WaitForEventsContext)objContext;
+                var context = (WaitForEventsContext) objContext;
                 var eventId = GetLastEventId(conn);
                 if (context.EventId == -1)
                 {
@@ -566,7 +580,7 @@ namespace ServiceLib
                     LogGetAllEventsChecked(context, response);
                     return response;
                 }
-                var count = (int)Math.Min(context.MaxCount, eventId - context.EventId);
+                var count = (int) Math.Min(context.MaxCount, eventId - context.EventId);
                 if (count == 0)
                 {
                     var response = new GetAllEventsResponse(null, Math.Min(context.EventId, eventId));
@@ -592,7 +606,8 @@ namespace ServiceLib
         private void LogGetAllEventsChecked(WaitForEventsContext context, GetAllEventsResponse response)
         {
             var taskId = context.Nowait ? 0 : context.Task.Task.Id;
-            Logger.WaitForEventsCheckedForData(context.Token, context.EventId, context.MaxCount, response.FinalEvents, response.NextToken, taskId);
+            Logger.WaitForEventsCheckedForData(
+                context.Token, context.EventId, context.MaxCount, response.FinalEvents, response.NextToken, taskId);
         }
 
         private class WaitForEventsContext
@@ -641,6 +656,7 @@ namespace ServiceLib
                 _events = events;
                 _eventId = eventId;
             }
+
             public GetAllEventsResponse(IList<GetAllEventsEvent> events, EventStoreToken token)
             {
                 _events = events;
@@ -660,7 +676,7 @@ namespace ServiceLib
             public IList<GetAllEventsEvent> Events
             {
                 get { return _events; }
-            } 
+            }
 
             public IList<EventStoreEvent> FinalEvents
             {
@@ -673,7 +689,8 @@ namespace ServiceLib
             }
         }
 
-        public async Task<IEventStoreCollection> WaitForEvents(EventStoreToken token, int maxCount, bool loadBody, CancellationToken cancel)
+        public async Task<IEventStoreCollection> WaitForEvents(
+            EventStoreToken token, int maxCount, bool loadBody, CancellationToken cancel)
         {
             StartNotifications();
             var context = new WaitForEventsContext(token, maxCount, cancel, false);
@@ -731,7 +748,7 @@ namespace ServiceLib
 
         private void WaitForEvents_Cancelled(object param)
         {
-            var waiter = (WaitForEventsContext)param;
+            var waiter = (WaitForEventsContext) param;
             WaitForEventsContext removedWaiter;
             _waiters.TryRemove(waiter.WaiterId, out removedWaiter);
             waiter.Task.TrySetCanceled();
@@ -758,7 +775,7 @@ namespace ServiceLib
                 Logger.WaitForEventsTimerCrashed(exception);
             }
         }
-    
+
 
         private async Task WaitForEvents_CheckingLoop()
         {
@@ -801,13 +818,13 @@ namespace ServiceLib
 
         private void SendNewEventsToWaiters(GetAllEventsResponse results)
         {
-            if (results.Events == null || results.Events.Count == 0) 
+            if (results.Events == null || results.Events.Count == 0)
                 return;
             foreach (var waiter in _waiters.Values)
             {
                 WaitForEventsContext removedWaiter;
                 var eventsForWaiter = FilterEventsForWaiter(results, waiter);
-                if (eventsForWaiter.Count == 0) 
+                if (eventsForWaiter.Count == 0)
                     continue;
                 if (_waiters.TryRemove(waiter.WaiterId, out removedWaiter))
                 {
@@ -818,7 +835,8 @@ namespace ServiceLib
             }
         }
 
-        private static List<GetAllEventsEvent> FilterEventsForWaiter(GetAllEventsResponse results, WaitForEventsContext waiter)
+        private static List<GetAllEventsEvent> FilterEventsForWaiter(
+            GetAllEventsResponse results, WaitForEventsContext waiter)
         {
             return results.Events.Where(e => e.EventId > waiter.EventId).Take(waiter.MaxCount).ToList();
         }
@@ -866,7 +884,8 @@ namespace ServiceLib
             using (var cmd = conn.CreateCommand())
             {
                 cmd.CommandText = string.Concat(
-                    "SELECT id, streamname, version, format, eventtype, contents FROM " + _partition + "_events WHERE id > ",
+                    "SELECT id, streamname, version, format, eventtype, contents FROM " + _partition +
+                    "_events WHERE id > ",
                     startingId.ToString(), " ORDER BY id LIMIT ", maxCount.ToString());
                 Logger.TraceSql(cmd);
                 using (var reader = cmd.ExecuteReader())
@@ -896,7 +915,7 @@ namespace ServiceLib
             else
                 return new EventStoreToken(id.ToString());
         }
-     
+
         private static long IdFromToken(EventStoreToken token)
         {
             if (token.IsInitial)

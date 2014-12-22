@@ -60,7 +60,7 @@ namespace ServiceLib
             stopwatch.Start();
             try
             {
-                var webRequest = (HttpWebRequest)WebRequest.Create(request.Url);
+                var webRequest = (HttpWebRequest) WebRequest.Create(request.Url);
                 webRequest.AllowAutoRedirect = false;
                 webRequest.Method = request.Method;
                 CopyHeadersToRequest(request, webRequest);
@@ -78,11 +78,11 @@ namespace ServiceLib
                 HttpWebResponse webResponse;
                 try
                 {
-                    webResponse = (HttpWebResponse)await webRequest.GetResponseAsync();
+                    webResponse = (HttpWebResponse) await webRequest.GetResponseAsync();
                 }
                 catch (WebException exception)
                 {
-                    webResponse = (HttpWebResponse)exception.Response;
+                    webResponse = (HttpWebResponse) exception.Response;
                     if (webResponse == null)
                     {
                         Logger.NoResponse(request);
@@ -90,7 +90,7 @@ namespace ServiceLib
                     }
                 }
 
-                response.StatusCode = (int)webResponse.StatusCode;
+                response.StatusCode = (int) webResponse.StatusCode;
                 CopyHeadersToResponse(response, webResponse);
                 var memoryStream = new MemoryStream();
                 var copyBuffer = new byte[32 * 1024];
@@ -119,10 +119,11 @@ namespace ServiceLib
 
         private static DateTime ParseDateHeader(string headerValue)
         {
-            return DateTime.ParseExact(headerValue,
-                    "ddd, dd MMM yyyy HH:mm:ss 'UTC'",
-                    CultureInfo.InvariantCulture.DateTimeFormat,
-                    DateTimeStyles.AssumeUniversal);
+            return DateTime.ParseExact(
+                headerValue,
+                "ddd, dd MMM yyyy HH:mm:ss 'UTC'",
+                CultureInfo.InvariantCulture.DateTimeFormat,
+                DateTimeStyles.AssumeUniversal);
         }
 
         private static void CopyHeadersToRequest(HttpClientRequest request, HttpWebRequest webRequest)

@@ -39,7 +39,7 @@ namespace ServiceLib
 
         public void Register<T>()
         {
-            Register(typeof(T), CreateTypeName(typeof(T)));
+            Register(typeof (T), CreateTypeName(typeof (T)));
         }
 
         private static string CreateTypeName(Type type)

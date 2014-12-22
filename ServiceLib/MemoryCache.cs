@@ -1,15 +1,15 @@
-﻿using log4net;
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using log4net;
 
 namespace ServiceLib
 {
     public delegate Task<MemoryCacheItem<T>> MemoryCacheLoadDelegate<T>(IMemoryCacheLoad<T> load);
+
     public delegate Task<int> MemoryCacheSaveDelegate<T>(IMemoryCacheSave<T> save);
 
     public interface IMemoryCache<T>
@@ -30,39 +30,48 @@ namespace ServiceLib
             return new MemoryCacheItem<T>(version, value);
         }
 
-        public static MemoryCacheItem<TOut> Transform<TIn, TOut>(this MemoryCacheItem<TIn> input, Func<TIn, TOut> tranformer)
+        [Obsolete]
+        public static MemoryCacheItem<TOut> Transform<TIn, TOut>(
+            this MemoryCacheItem<TIn> input, Func<TIn, TOut> tranformer)
         {
             return new MemoryCacheItem<TOut>(input.Version, tranformer(input.Value));
         }
 
-        public static Task<MemoryCacheItem<TOut>> Transform<TIn, TOut>(this Task<MemoryCacheItem<TIn>> inputTask, Func<TIn, TOut> tranformer)
+        [Obsolete]
+        public static Task<MemoryCacheItem<TOut>> Transform<TIn, TOut>(
+            this Task<MemoryCacheItem<TIn>> inputTask, Func<TIn, TOut> tranformer)
         {
-            return inputTask.ContinueWith(task =>
-            {
-                var result = task.Result;
-                if (result != null)
-                    return new MemoryCacheItem<TOut>(result.Version, tranformer(result.Value));
-                else
-                    return null;
-            });
+            return inputTask.ContinueWith(
+                task =>
+                {
+                    var result = task.Result;
+                    if (result != null)
+                        return new MemoryCacheItem<TOut>(result.Version, tranformer(result.Value));
+                    else
+                        return null;
+                });
         }
 
-        public static Task<MemoryCacheItem<TOut>> ToMemoryCacheItem<TOut>(this Task<DocumentStoreFoundDocument> inputTask, Func<string, TOut> deserializer)
+        [Obsolete]
+        public static Task<MemoryCacheItem<TOut>> ToMemoryCacheItem<TOut>(
+            this Task<DocumentStoreFoundDocument> inputTask, Func<string, TOut> deserializer)
         {
-            return inputTask.ContinueWith<MemoryCacheItem<TOut>>(task =>
-            {
-                var result = task.Result;
-                if (result == null)
-                    return new MemoryCacheItem<TOut>(0, default(TOut));
-                else if (!result.HasNewerContent)
-                    return null;
-                else if (string.IsNullOrEmpty(result.Contents))
-                    return new MemoryCacheItem<TOut>(result.Version, default(TOut));
-                else
-                    return new MemoryCacheItem<TOut>(result.Version, deserializer(result.Contents));
-            });
+            return inputTask.ContinueWith(
+                task =>
+                {
+                    var result = task.Result;
+                    if (result == null)
+                        return new MemoryCacheItem<TOut>(0, default(TOut));
+                    else if (!result.HasNewerContent)
+                        return null;
+                    else if (string.IsNullOrEmpty(result.Contents))
+                        return new MemoryCacheItem<TOut>(result.Version, default(TOut));
+                    else
+                        return new MemoryCacheItem<TOut>(result.Version, deserializer(result.Contents));
+                });
         }
 
+        [Obsolete]
         public static Task<T> ExtractValue<T>(this Task<MemoryCacheItem<T>> inputTask)
         {
             return inputTask.ContinueWith(task => task.Result == null ? default(T) : task.Result.Value);
@@ -108,7 +117,7 @@ namespace ServiceLib
         private int _evicting;
         private int _maxCacheSize, _cleanedCacheSize, _minScore, _minCacheSize;
 
-        private static readonly ILog Logger = LogManager.GetLogger("ServiceLib.MemoryCache<" + typeof(T).Name + ">");
+        private static readonly ILog Logger = LogManager.GetLogger("ServiceLib.MemoryCache<" + typeof (T).Name + ">");
 
         public MemoryCache(ITime timeService)
         {
@@ -130,7 +139,8 @@ namespace ServiceLib
             return this;
         }
 
-        public MemoryCache<T> SetupScoring(int accessIncrement = 1 << 24, int roundLimit = 1 << 30, int agingShift = 4, int minScore = 1 << 8)
+        public MemoryCache<T> SetupScoring(
+            int accessIncrement = 1 << 24, int roundLimit = 1 << 30, int agingShift = 4, int minScore = 1 << 8)
         {
             _accessIncrement = accessIncrement;
             _agingShift = agingShift;
@@ -173,7 +183,7 @@ namespace ServiceLib
                 EvictionInternal(currentTime, _cleanedCacheSize);
             else if (_nextEvictTime <= currentTime)
                 EvictionInternal(currentTime, _maxCacheSize);
-            if (startLoading)
+            if (startLoading && onLoading != null)
             {
                 onLoading(item).ContinueWith(item.LoadingFinished);
             }
@@ -220,7 +230,7 @@ namespace ServiceLib
                 int shift = 0;
                 if (currentTime >= _nextEvictTime)
                 {
-                    var rounds = (int)((currentTime - _lastEvictTime) / _ticksPerRound);
+                    var rounds = (int) ((currentTime - _lastEvictTime) / _ticksPerRound);
                     shift = Math.Min(64, rounds * _agingShift);
                     _lastEvictTime = currentTime;
                     _nextEvictTime = currentTime + _ticksPerRound;
@@ -236,7 +246,8 @@ namespace ServiceLib
                 }
                 if (_contents.Count > maxCount)
                 {
-                    var keysToRemove = _contents.Values.OrderByDescending(c => c.Score).Skip(maxCount).Select(c => c.Key).ToList();
+                    var keysToRemove =
+                        _contents.Values.OrderByDescending(c => c.Score).Skip(maxCount).Select(c => c.Key).ToList();
                     foreach (var key in keysToRemove)
                     {
                         _contents.TryRemove(key, out removed);
@@ -262,7 +273,7 @@ namespace ServiceLib
             private long _loadingValidity, _loadingExpiration;
             private T _value;
             private int _roundScore, _totalScore;
-            private List<TaskCompletionSource<MemoryCacheItem<T>>> _loadingWaiters;
+            private readonly List<TaskCompletionSource<MemoryCacheItem<T>>> _loadingWaiters;
 
             public InternalItem(MemoryCache<T> parent, string key)
             {
@@ -274,14 +285,45 @@ namespace ServiceLib
                 _loadingWaiters = new List<TaskCompletionSource<MemoryCacheItem<T>>>();
             }
 
-            public int Score { get { return _totalScore; } }
-            public string Key { get { return _key; } }
-            public int OldVersion { get { return _version; } }
-            public T OldValue { get { return _value; } }
-            public bool OldValueAvailable { get { return _version != -1; } }
-            public bool Dirty { get { return _dirty; } }
-            public int Version { get { return _version; } }
-            public T Value { get { return _value; } }
+            public int Score
+            {
+                get { return _totalScore; }
+            }
+
+            public string Key
+            {
+                get { return _key; }
+            }
+
+            public int OldVersion
+            {
+                get { return _version; }
+            }
+
+            public T OldValue
+            {
+                get { return _value; }
+            }
+
+            public bool OldValueAvailable
+            {
+                get { return _version != -1; }
+            }
+
+            public bool Dirty
+            {
+                get { return _dirty; }
+            }
+
+            public int Version
+            {
+                get { return _version; }
+            }
+
+            public T Value
+            {
+                get { return _value; }
+            }
 
             public void Expires(int validity, int expiration)
             {
@@ -331,7 +373,8 @@ namespace ServiceLib
                             result = MemoryCacheItem.Create(0, default(T));
                         }
                     }
-                    Logger.DebugFormat("Loading of {0} finished, sending result at version {1} to {2} waiters",
+                    Logger.DebugFormat(
+                        "Loading of {0} finished, sending result at version {1} to {2} waiters",
                         _key, _version, waiters.Count);
                     foreach (var waiter in waiters)
                         waiter.TrySetResult(result);
@@ -371,7 +414,8 @@ namespace ServiceLib
                         _version = taskSave.Result;
                         result = MemoryCacheItem.Create(_version, _value);
                     }
-                    Logger.DebugFormat("Saving of {0} finished, sending version {1} to {2} waiters",
+                    Logger.DebugFormat(
+                        "Saving of {0} finished, sending version {1} to {2} waiters",
                         _key, _version, waiters.Count);
                     foreach (var waiter in waiters)
                         waiter.TrySetResult(result);

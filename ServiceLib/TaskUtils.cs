@@ -1,7 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -9,18 +7,19 @@ namespace ServiceLib
 {
     public class TaskUtils
     {
+        private static readonly Task _completedNullTask = Task.FromResult<object>(null);
+
         public static Task CompletedTask()
         {
-            return TaskUtils.FromResult<object>(null);
+            return _completedNullTask;
         }
 
         public static Task<T> FromResult<T>(T result)
         {
-            var tcs = new TaskCompletionSource<T>();
-            tcs.SetResult(result);
-            return tcs.Task;
+            return Task.FromResult(result);
         }
 
+        [Obsolete]
         public static Task<T> FromError<T>(Exception exception)
         {
             var tcs = new TaskCompletionSource<T>();
@@ -33,16 +32,19 @@ namespace ServiceLib
             return tcs.Task;
         }
 
+        [Obsolete]
         public static TaskContinuationBuilder<T> FromEnumerable<T>(IEnumerable<Task> tasks)
         {
             return new TaskContinuationBuilder<T>(tasks, true);
         }
 
+        [Obsolete]
         public static TaskContinuationBuilder<object> FromEnumerable(IEnumerable<Task> tasks)
         {
             return new TaskContinuationBuilder<object>(tasks, false);
         }
 
+        [Obsolete]
         public static Task<T> CancelledTask<T>()
         {
             var tcs = new TaskCompletionSource<T>();
@@ -50,211 +52,77 @@ namespace ServiceLib
             return tcs.Task;
         }
 
-        public static Task<T> Retry<T>(Func<Task<T>> attempt, ITime time, CancellationToken cancel = default(CancellationToken), int retries = -1)
+        public static async Task<T> Retry<T>(Func<Task<T>> attempt, ITime time, CancellationToken cancel = default(CancellationToken), int retries = -1)
         {
-            return new RetryContext<T>(attempt, time, cancel, retries).RunAttempt();
-        }
-
-        private class RetryContext<T>
-        {
-            private Func<Task<T>> _attempt;
-            private CancellationToken _cancel;
-            private int _retriesLeft, _retryAttempt;
-            private ITime _time;
-
-            public RetryContext(Func<Task<T>> attempt, ITime time, CancellationToken cancel, int retriesLeft)
+            var retryAttempt = 0;
+            var retriesLeft = retries;
+            while (true)
             {
-                _attempt = attempt;
-                _cancel = cancel;
-                _retriesLeft = retriesLeft;
-                _time = time;
-            }
-
-            public Task<T> RunAttempt()
-            {
-                Task<T> taskAttempt;
+                cancel.ThrowIfCancellationRequested();
                 try
                 {
-                    taskAttempt = _attempt();
+                    return await attempt();
                 }
-                catch (Exception exception)
+                catch (TransientErrorException)
                 {
-                    return TaskUtils.FromError<T>(exception);
+                    if (retriesLeft == 0)
+                        throw;
                 }
-                return taskAttempt.ContinueWith<Task<T>>(Finish).Unwrap();
-            }
-
-            private Task<T> Finish(Task<T> taskAttempt)
-            {
-                bool isTransientException = taskAttempt.Exception != null && taskAttempt.Exception.InnerException is TransientErrorException;
-                if (!isTransientException)
-                    return taskAttempt;
-                else if (_cancel.IsCancellationRequested)
-                    return TaskUtils.CancelledTask<T>();
-                else if (_retriesLeft != -1 && _retriesLeft == 0)
-                    return taskAttempt;
-                else
-                    return RunNextAttempt();
-            }
-
-            private Task<T> RunNextAttempt()
-            {
-                if (_retriesLeft > 0)
-                    _retriesLeft--;
-                _retryAttempt++;
-                if (_retryAttempt <= 1)
-                    return RunAttempt();
-                else
-                    return _time.Delay(AttemptDelay(_retryAttempt), _cancel).ContinueWith<Task<T>>(RunNextAttempt).Unwrap();
-            }
-
-            private Task<T> RunNextAttempt(Task delayTask)
-            {
-                if (delayTask.IsCanceled)
-                    return TaskUtils.CancelledTask<T>();
-                else
-                    return RunAttempt();
-            }
-
-            private static int AttemptDelay(int attempt)
-            {
-                switch (attempt)
-                {
-                    case 1:
-                        return 0;
-                    case 2:
-                        return 50;
-                    case 3:
-                        return 200;
-                    case 4:
-                        return 500;
-                    case 5:
-                        return 2000;
-                    default:
-                        return 5000;
-                }
+                if (retriesLeft > 0)
+                    retriesLeft--;
+                retryAttempt++;
+                if (retryAttempt > 1)
+                    await time.Delay(RetryAttemptDelay(retryAttempt), cancel);
             }
         }
 
-        public static Task Retry(Func<Task> attempt, ITime time, CancellationToken cancel = default(CancellationToken), int retries = -1)
+        public static async Task Retry(Func<Task> attempt, ITime time, CancellationToken cancel = default(CancellationToken), int retries = -1)
         {
-            return new RetryContext(attempt, time, cancel, retries).RunAttempt();
-        }
-
-        private class RetryContext
-        {
-            private Func<Task> _attempt;
-            private CancellationToken _cancel;
-            private int _retriesLeft, _retryAttempt;
-            private ITime _time;
-
-            public RetryContext(Func<Task> attempt, ITime time, CancellationToken cancel, int retriesLeft)
+            var retryAttempt = 0;
+            var retriesLeft = retries;
+            while (true)
             {
-                _attempt = attempt;
-                _time = time;
-                _cancel = cancel;
-                _retriesLeft = retriesLeft;
-                _retryAttempt = 0;
-            }
-
-            public Task RunAttempt()
-            {
-                Task taskAttempt;
+                cancel.ThrowIfCancellationRequested();
                 try
                 {
-                    taskAttempt = _attempt();
+                    await attempt();
+                    return;
                 }
-                catch (Exception exception)
+                catch (TransientErrorException)
                 {
-                    return TaskUtils.FromError<object>(exception);
+                    if (retriesLeft == 0)
+                        throw;
                 }
-                return taskAttempt.ContinueWith<Task>(Finish).Unwrap();
-            }
-
-            private Task Finish(Task taskAttempt)
-            {
-                bool isTransientException = taskAttempt.Exception != null && taskAttempt.Exception.InnerException is TransientErrorException;
-                if (!isTransientException)
-                    return taskAttempt;
-                else if (_cancel.IsCancellationRequested)
-                    return TaskUtils.CancelledTask<object>();
-                else if (_retriesLeft != -1 && _retriesLeft == 0)
-                    return taskAttempt;
-                else
-                    return RunNextAttempt();
-            }
-
-            private Task RunNextAttempt()
-            {
-                if (_retriesLeft > 0)
-                    _retriesLeft--;
-                _retryAttempt++;
-                if (_retryAttempt <= 1)
-                    return RunAttempt();
-                else
-                    return _time.Delay(AttemptDelay(_retryAttempt), _cancel).ContinueWith<Task>(RunNextAttempt).Unwrap();
-            }
-
-            private Task RunNextAttempt(Task delayTask)
-            {
-                if (delayTask.IsCanceled)
-                    return delayTask;
-                else
-                    return RunAttempt();
-            }
-
-            private static int AttemptDelay(int attempt)
-            {
-                switch (attempt)
-                {
-                    case 1:
-                        return 0;
-                    case 2:
-                        return 50;
-                    case 3:
-                        return 200;
-                    case 4:
-                        return 500;
-                    case 5:
-                        return 2000;
-                    default:
-                        return 5000;
-                }
+                if (retriesLeft > 0)
+                    retriesLeft--;
+                retryAttempt++;
+                if (retryAttempt > 1)
+                    await time.Delay(RetryAttemptDelay(retryAttempt), cancel);
             }
         }
 
-        private class DelayContext
+        private static int RetryAttemptDelay(int attempt)
         {
-            private TaskCompletionSource<object> _tcs;
-            private Timer _timer;
-            private CancellationTokenRegistration _cancelHandler;
-            
-            public DelayContext(int milliseconds, CancellationToken cancel)
+            switch (attempt)
             {
-                _tcs = new TaskCompletionSource<object>();
-                _timer = new Timer(OnTimer, null, milliseconds, Timeout.Infinite);
-                _cancelHandler = cancel.Register(OnCancel);
-            }
-
-            public Task Task { get { return _tcs.Task; } }
-
-            private void OnTimer(object state)
-            {
-                _timer.Dispose();
-                _cancelHandler.Dispose();
-                _tcs.TrySetResult(null);
-            }
-
-            private void OnCancel()
-            {
-                _timer.Dispose();
-                _tcs.TrySetCanceled();
+                case 1:
+                    return 0;
+                case 2:
+                    return 50;
+                case 3:
+                    return 200;
+                case 4:
+                    return 500;
+                case 5:
+                    return 2000;
+                default:
+                    return 5000;
             }
         }
 
         public static Task Delay(int milliseconds, CancellationToken cancel)
         {
-            return new DelayContext(milliseconds, cancel).Task;
+            return Task.Delay(milliseconds, cancel);
         }
     }
 
@@ -372,9 +240,9 @@ namespace ServiceLib
 
     public class AutoResetEventAsync
     {
-        private object _lock;
+        private readonly object _lock;
         private bool _isSet;
-        private Queue<TaskCompletionSource<object>> _waiters;
+        private readonly Queue<TaskCompletionSource<object>> _waiters;
 
         public AutoResetEventAsync()
         {
@@ -417,10 +285,10 @@ namespace ServiceLib
 
     public class CircuitBreaker
     {
-        private object _lock;
+        private readonly object _lock;
         private int _failures, _failureLimit, _retryTime;
         private DateTime _nextAttempt;
-        private ITime _time;
+        private readonly ITime _time;
         private CircuitBreakerState _state;
         private enum CircuitBreakerState
         {

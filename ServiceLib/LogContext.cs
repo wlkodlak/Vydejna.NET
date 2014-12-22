@@ -34,7 +34,10 @@ namespace ServiceLib
             _properties = new Dictionary<string, LogContextMessageProperty>();
         }
 
-        public TraceEventType Level { get { return _level; } }
+        public TraceEventType Level
+        {
+            get { return _level; }
+        }
 
         public string SummaryFormat { get; set; }
 
@@ -118,16 +121,18 @@ namespace ServiceLib
         public string FixedText { get; private set; }
         public object PropertyValue { get; private set; }
 
-        private LogContextSummaryElement() { }
+        private LogContextSummaryElement()
+        {
+        }
 
         public static LogContextSummaryElement CreateFixed(string text)
         {
-            return new LogContextSummaryElement { FixedText = text };
+            return new LogContextSummaryElement {FixedText = text};
         }
 
         public static LogContextSummaryElement CreateVariable(string property)
         {
-            return new LogContextSummaryElement { PropertyName = property };
+            return new LogContextSummaryElement {PropertyName = property};
         }
 
         public LogContextSummaryElement LoadValueFrom(ILogContextMessage message)
@@ -321,7 +326,8 @@ namespace ServiceLib
         private void EmitFixedBlock()
         {
             _emitted = true;
-            _current = LogContextSummaryElement.CreateFixed(new string(_format, _blockStart, _currentPosition - _blockStart));
+            _current =
+                LogContextSummaryElement.CreateFixed(new string(_format, _blockStart, _currentPosition - _blockStart));
         }
 
         private void EmitFixedChar(string text)
@@ -336,7 +342,9 @@ namespace ServiceLib
         private void EmitVariableBlock()
         {
             _emitted = true;
-            _current = LogContextSummaryElement.CreateVariable(new string(_format, _blockStart, _currentPosition - _blockStart));
+            _current =
+                LogContextSummaryElement.CreateVariable(
+                    new string(_format, _blockStart, _currentPosition - _blockStart));
         }
 
         public LogContextSummaryElement Current

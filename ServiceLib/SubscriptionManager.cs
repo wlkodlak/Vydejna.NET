@@ -12,22 +12,26 @@ namespace ServiceLib
         IEnumerable<Type> GetHandledTypes();
         ICollection<ISubscription> FindHandlers(Type type);
     }
+
     public interface ICommandSubscriptionManager
     {
         void Register<T>(IProcessCommand<T> handler);
         IEnumerable<Type> GetHandledTypes();
         ICommandSubscription FindHandler(Type type);
     }
+
     public interface ISubscribeToCommandManager
     {
         void Subscribe(ICommandSubscriptionManager mgr);
     }
+
     public interface IEventSubscriptionManager
     {
         void Register<T>(IProcessEvent<T> handler);
         IEnumerable<Type> GetHandledTypes();
         IEventSubscription FindHandler(Type type);
     }
+
     public interface ISubscribeToEventManager
     {
         void Subscribe(IEventSubscriptionManager mgr);
@@ -35,13 +39,13 @@ namespace ServiceLib
 
     public class SubscriptionManager : ISubscriptionManager
     {
-        private ReaderWriterLockSlim _lock;
-        private Dictionary<Type, ICollection<ISubscription>> _handlers;
-        private ICollection<ISubscription> _empty;
+        private readonly ReaderWriterLockSlim _lock;
+        private readonly Dictionary<Type, ICollection<ISubscription>> _handlers;
+        private readonly ICollection<ISubscription> _empty;
 
         private class Subscription<T> : ISubscription
         {
-            private IHandle<T> _handler;
+            private readonly IHandle<T> _handler;
 
             public Subscription(IHandle<T> handler)
             {
@@ -50,7 +54,7 @@ namespace ServiceLib
 
             public void Handle(object message)
             {
-                _handler.Handle((T)message);
+                _handler.Handle((T) message);
             }
         }
 
@@ -66,7 +70,7 @@ namespace ServiceLib
             _lock.EnterWriteLock();
             try
             {
-                var type = typeof(T);
+                var type = typeof (T);
                 var list = FindHandlersInternal(type);
                 var copy = list.ToList();
                 copy.Add(new Subscription<T>(handler));
@@ -116,12 +120,12 @@ namespace ServiceLib
 
     public class CommandSubscriptionManager : ICommandSubscriptionManager
     {
-        private ReaderWriterLockSlim _lock;
-        private Dictionary<Type, ICommandSubscription> _handlers;
+        private readonly ReaderWriterLockSlim _lock;
+        private readonly Dictionary<Type, ICommandSubscription> _handlers;
 
         private class Subscription<T> : ICommandSubscription
         {
-            private IProcessCommand<T> _handler;
+            private readonly IProcessCommand<T> _handler;
 
             public Subscription(IProcessCommand<T> handler)
             {
@@ -130,7 +134,7 @@ namespace ServiceLib
 
             public Task<CommandResult> Handle(object command)
             {
-                return _handler.Handle((T)command);
+                return _handler.Handle((T) command);
             }
         }
 
@@ -145,7 +149,7 @@ namespace ServiceLib
             _lock.EnterWriteLock();
             try
             {
-                var type = typeof(T);
+                var type = typeof (T);
                 if (_handlers.ContainsKey(type))
                     throw new InvalidOperationException(string.Format("Type {0} is already registered", type.Name));
                 _handlers.Add(type, new Subscription<T>(handler));
@@ -187,12 +191,12 @@ namespace ServiceLib
 
     public class EventSubscriptionManager : IEventSubscriptionManager
     {
-        private ReaderWriterLockSlim _lock;
-        private Dictionary<Type, IEventSubscription> _handlers;
+        private readonly ReaderWriterLockSlim _lock;
+        private readonly Dictionary<Type, IEventSubscription> _handlers;
 
         private class Subscription<T> : IEventSubscription
         {
-            private IProcessEvent<T> _handler;
+            private readonly IProcessEvent<T> _handler;
 
             public Subscription(IProcessEvent<T> handler)
             {
@@ -201,7 +205,7 @@ namespace ServiceLib
 
             public Task Handle(object evnt)
             {
-                return _handler.Handle((T)evnt);
+                return _handler.Handle((T) evnt);
             }
         }
 
@@ -216,7 +220,7 @@ namespace ServiceLib
             _lock.EnterWriteLock();
             try
             {
-                var type = typeof(T);
+                var type = typeof (T);
                 if (_handlers.ContainsKey(type))
                     throw new InvalidOperationException(string.Format("Type {0} is already registered", type.Name));
                 _handlers.Add(type, new Subscription<T>(handler));

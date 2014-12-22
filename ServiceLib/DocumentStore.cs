@@ -12,18 +12,26 @@ namespace ServiceLib
         Task DeleteAll();
         Task<DocumentStoreFoundDocument> GetDocument(string name);
         Task<DocumentStoreFoundDocument> GetNewerDocument(string name, int knownVersion);
-        Task<bool> SaveDocument(string name, string value, DocumentStoreVersion expectedVersion, IList<DocumentIndexing> indexes);
+
+        Task<bool> SaveDocument(
+            string name, string value, DocumentStoreVersion expectedVersion, IList<DocumentIndexing> indexes);
+
         Task<IList<string>> FindDocumentKeys(string indexName, string minValue, string maxValue);
-        Task<DocumentStoreFoundDocuments> FindDocuments(string indexName, string minValue, string maxValue, int skip, int maxCount, bool ascending);
+
+        Task<DocumentStoreFoundDocuments> FindDocuments(
+            string indexName, string minValue, string maxValue, int skip, int maxCount, bool ascending);
     }
+
     public interface IDocumentStore
     {
         IDocumentFolder GetFolder(string name);
     }
+
     public class DocumentStoreFoundDocuments : List<DocumentStoreFoundDocument>
     {
         public int TotalFound { get; set; }
     }
+
     public class DocumentStoreFoundDocument
     {
         public string Name { get; private set; }
@@ -39,24 +47,44 @@ namespace ServiceLib
             Contents = contents;
         }
     }
+
     public class DocumentStoreVersion
     {
         private readonly int _version;
         private static readonly DocumentStoreVersion _any = new DocumentStoreVersion(-1);
         private static readonly DocumentStoreVersion _new = new DocumentStoreVersion(0);
-        private DocumentStoreVersion(int version) { _version = version; }
-        public static DocumentStoreVersion Any { get { return _any; } }
-        public static DocumentStoreVersion New { get { return _new; } }
-        public static DocumentStoreVersion At(int version) { return new DocumentStoreVersion(version); }
+
+        private DocumentStoreVersion(int version)
+        {
+            _version = version;
+        }
+
+        public static DocumentStoreVersion Any
+        {
+            get { return _any; }
+        }
+
+        public static DocumentStoreVersion New
+        {
+            get { return _new; }
+        }
+
+        public static DocumentStoreVersion At(int version)
+        {
+            return new DocumentStoreVersion(version);
+        }
+
         public override int GetHashCode()
         {
             return _version;
         }
+
         public override bool Equals(object obj)
         {
             var oth = obj as DocumentStoreVersion;
             return oth != null && _version == oth._version;
         }
+
         public override string ToString()
         {
             if (_version < 0)
@@ -66,6 +94,7 @@ namespace ServiceLib
             else
                 return string.Format("Version {0}", _version);
         }
+
         public bool VerifyVersion(int actualVersion)
         {
             if (_version < 0)
@@ -73,7 +102,11 @@ namespace ServiceLib
             else
                 return _version == actualVersion;
         }
-        public bool AllowNew { get { return _version <= 0; } }
+
+        public bool AllowNew
+        {
+            get { return _version <= 0; }
+        }
     }
 
     public class DocumentIndexing
@@ -90,7 +123,7 @@ namespace ServiceLib
         public DocumentIndexing(string indexName, string value)
         {
             IndexName = indexName;
-            Values = new[] { value };
+            Values = new[] {value};
         }
     }
 
@@ -178,15 +211,18 @@ namespace ServiceLib
 
         public void DocumentNotFound(string folderName, string documentName)
         {
-            var msg = new LogContextMessage(TraceEventType.Information, 2, "Document {FolderName}/{DocumentName} not found");
+            var msg = new LogContextMessage(
+                TraceEventType.Information, 2, "Document {FolderName}/{DocumentName} not found");
             msg.SetProperty("FolderName", false, folderName);
             msg.SetProperty("DocumentName", false, documentName);
             msg.Log(this);
         }
 
-        public void DocumentRetrieved(string folderName, string documentName, int documentVersion, string documentContents)
+        public void DocumentRetrieved(
+            string folderName, string documentName, int documentVersion, string documentContents)
         {
-            var msg = new LogContextMessage(TraceEventType.Information, 3, "Document {FolderName}/{DocumentName} retrieved");
+            var msg = new LogContextMessage(
+                TraceEventType.Information, 3, "Document {FolderName}/{DocumentName} retrieved");
             msg.SetProperty("FolderName", false, folderName);
             msg.SetProperty("DocumentName", false, documentName);
             msg.SetProperty("DocumentVersion", false, documentVersion);
@@ -196,7 +232,8 @@ namespace ServiceLib
 
         public void DocumentUpToDate(string folderName, string documentName, int documentVersion)
         {
-            var msg = new LogContextMessage(TraceEventType.Information, 4, "Document {FolderName}/{DocumentName} is still up to date");
+            var msg = new LogContextMessage(
+                TraceEventType.Information, 4, "Document {FolderName}/{DocumentName} is still up to date");
             msg.SetProperty("FolderName", false, folderName);
             msg.SetProperty("DocumentName", false, documentName);
             msg.SetProperty("DocumentVersion", false, documentVersion);
@@ -213,7 +250,8 @@ namespace ServiceLib
             msg.Log(this);
         }
 
-        public void DocumentConflicted(string folderName, string documentName, DocumentStoreVersion expectedVersion, int actualVersion)
+        public void DocumentConflicted(
+            string folderName, string documentName, DocumentStoreVersion expectedVersion, int actualVersion)
         {
             var msg = new LogContextMessage(TraceEventType.Information, 9, "Document {FolderName}/{DocumentName} saved");
             msg.SetProperty("FolderName", false, folderName);
@@ -232,9 +270,12 @@ namespace ServiceLib
             msg.Log(this);
         }
 
-        public void FoundDocumentKeys(string folderName, string indexName, string minValue, string maxValue, ICollection<string> foundKeys)
+        public void FoundDocumentKeys(
+            string folderName, string indexName, string minValue, string maxValue, ICollection<string> foundKeys)
         {
-            var msg = new LogContextMessage(TraceEventType.Information, 7, "Search in {FolderName}/{IndexName} for range from {MinValue} to {MaxValue} produced {FoundCount} keys");
+            var msg = new LogContextMessage(
+                TraceEventType.Information, 7,
+                "Search in {FolderName}/{IndexName} for range from {MinValue} to {MaxValue} produced {FoundCount} keys");
             msg.SetProperty("FolderName", false, folderName);
             msg.SetProperty("IndexName", false, indexName);
             msg.SetProperty("MinValue", false, minValue);
@@ -244,9 +285,13 @@ namespace ServiceLib
             msg.Log(this);
         }
 
-        public void FoundDocuments(string folderName, string indexName, string minValue, string maxValue, int skip, int maxCount, bool ascending, DocumentStoreFoundDocuments result)
+        public void FoundDocuments(
+            string folderName, string indexName, string minValue, string maxValue, int skip, int maxCount,
+            bool ascending, DocumentStoreFoundDocuments result)
         {
-            var msg = new LogContextMessage(TraceEventType.Information, 8, "Search in {FolderName}/{IndexName} for range from {MinValue} to {MaxValue} produced {FoundCount} documents");
+            var msg = new LogContextMessage(
+                TraceEventType.Information, 8,
+                "Search in {FolderName}/{IndexName} for range from {MinValue} to {MaxValue} produced {FoundCount} documents");
             msg.SetProperty("FolderName", false, folderName);
             msg.SetProperty("IndexName", false, indexName);
             msg.SetProperty("MinValue", false, minValue);
@@ -279,13 +324,15 @@ namespace ServiceLib
         {
             if (storageParts == null || storageParts.Count == 0)
             {
-                var msg = new LogContextMessage(TraceEventType.Information, 101, "Storage for documents (partition {Partition}) already exists");
+                var msg = new LogContextMessage(
+                    TraceEventType.Information, 101, "Storage for documents (partition {Partition}) already exists");
                 msg.SetProperty("Partition", false, partition);
                 msg.Log(this);
             }
             else
             {
-                var msg = new LogContextMessage(TraceEventType.Information, 102, "Created storage for documents (partition {Partition})");
+                var msg = new LogContextMessage(
+                    TraceEventType.Information, 102, "Created storage for documents (partition {Partition})");
                 msg.SetProperty("Partition", false, partition);
                 msg.SetProperty("Parts", false, string.Join(", ", storageParts));
                 msg.Log(this);
@@ -294,7 +341,9 @@ namespace ServiceLib
 
         public void SaveDocumentWillRetry(string folderName, string documentName, Exception exception)
         {
-            var msg = new LogContextMessage(TraceEventType.Warning, 103, "When saving document {FolderName}/{DocumentName}, attempt failed and will be retried.");
+            var msg = new LogContextMessage(
+                TraceEventType.Warning, 103,
+                "When saving document {FolderName}/{DocumentName}, attempt failed and will be retried.");
             msg.SetProperty("FolderName", false, folderName);
             msg.SetProperty("DocumentName", false, documentName);
             msg.SetProperty("Exception", true, exception);
@@ -303,7 +352,9 @@ namespace ServiceLib
 
         public void UpdateIndexWillRetry(string folderName, string documentName, Exception exception)
         {
-            var msg = new LogContextMessage(TraceEventType.Warning, 104, "When saving document {FolderName}/{DocumentName}, attempt to update indexes failed and will be retried.");
+            var msg = new LogContextMessage(
+                TraceEventType.Warning, 104,
+                "When saving document {FolderName}/{DocumentName}, attempt to update indexes failed and will be retried.");
             msg.SetProperty("FolderName", false, folderName);
             msg.SetProperty("DocumentName", false, documentName);
             msg.SetProperty("Exception", true, exception);

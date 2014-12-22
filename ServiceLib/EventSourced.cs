@@ -16,12 +16,22 @@ namespace ServiceLib
     public class AggregateIdGuid : IAggregateId
     {
         public Guid Guid { get; private set; }
-        public AggregateIdGuid(Guid id) { Guid = id; }
-        public AggregateIdGuid(string id) { Guid = new Guid(id); }
+
+        public AggregateIdGuid(Guid id)
+        {
+            Guid = id;
+        }
+
+        public AggregateIdGuid(string id)
+        {
+            Guid = new Guid(id);
+        }
+
         public override int GetHashCode()
         {
             return Guid.GetHashCode();
         }
+
         public override bool Equals(object obj)
         {
             var aggregateIdGuid = obj as AggregateIdGuid;
@@ -120,7 +130,7 @@ namespace ServiceLib
                 if (parameters.Length != 1)
                     continue;
                 var parameterType = parameters[0].ParameterType;
-                var parameterExpr = Expression.Parameter(typeof(object));
+                var parameterExpr = Expression.Parameter(typeof (object));
                 _eventMapping[parameterType] = Expression.Lambda<Action<object>>(
                     Expression.Call(Expression.Constant(this), method, Expression.Convert(parameterExpr, parameterType)),
                     parameterExpr
@@ -202,7 +212,7 @@ namespace ServiceLib
         where T : class, IEventSourcedAggregate
     {
         private static readonly EventSourcedRepositoryTraceSource Logger =
-            new EventSourcedRepositoryTraceSource("ServiceLib.EventSourcedRepository." + typeof(T).FullName);
+            new EventSourcedRepositoryTraceSource("ServiceLib.EventSourcedRepository." + typeof (T).FullName);
 
         private readonly IEventStore _store;
         private readonly string _prefix;
@@ -218,7 +228,10 @@ namespace ServiceLib
 
         protected abstract T CreateAggregate();
 
-        protected string Prefix { get { return _prefix; } }
+        protected string Prefix
+        {
+            get { return _prefix; }
+        }
 
         protected virtual string StreamNameForId(IAggregateId id)
         {
@@ -295,8 +308,8 @@ namespace ServiceLib
                 }
                 var expectedVersion =
                     aggregate.OriginalVersion == 0
-                    ? EventStoreVersion.New
-                    : EventStoreVersion.At(aggregate.OriginalVersion);
+                        ? EventStoreVersion.New
+                        : EventStoreVersion.At(aggregate.OriginalVersion);
                 var streamName = StreamNameForId(aggregate.Id);
                 var addedToStream = await _store.AddToStream(streamName, serialized, expectedVersion);
                 if (!addedToStream)
@@ -352,7 +365,9 @@ namespace ServiceLib
 
         public void AggregateLoaded(IAggregateId aggregateId, int streamVersion, int snapshotVersion)
         {
-            var summary = snapshotVersion >= 0 ? "Aggregate {AggregateId} loaded from snapshot" : "Aggregate {AggregateId} loaded";
+            var summary = snapshotVersion >= 0
+                ? "Aggregate {AggregateId} loaded from snapshot"
+                : "Aggregate {AggregateId} loaded";
             var msg = new LogContextMessage(TraceEventType.Verbose, 1, summary);
             msg.SetProperty("AggregateId", false, aggregateId);
             msg.SetProperty("StreamVersion", false, streamVersion);
@@ -370,7 +385,8 @@ namespace ServiceLib
 
         public void AggregateSaveConflicted(IAggregateId aggregateId, EventStoreVersion expectedVersion)
         {
-            var msg = new LogContextMessage(TraceEventType.Verbose, 8, "Aggregate {AggregateId} save encountered optimistic concurrency");
+            var msg = new LogContextMessage(
+                TraceEventType.Verbose, 8, "Aggregate {AggregateId} save encountered optimistic concurrency");
             msg.SetProperty("AggregateId", false, aggregateId);
             msg.SetProperty("ExpectedVersion", false, expectedVersion);
             msg.Log(this);
@@ -378,7 +394,8 @@ namespace ServiceLib
 
         public void AggregateSaved(IAggregateId aggregateId, int aggregateVersion)
         {
-            var msg = new LogContextMessage(TraceEventType.Verbose, 8, "Aggregate {AggregateId} saved at version {Version}");
+            var msg = new LogContextMessage(
+                TraceEventType.Verbose, 8, "Aggregate {AggregateId} saved at version {Version}");
             msg.SetProperty("AggregateId", false, aggregateId);
             msg.SetProperty("Version", false, aggregateVersion);
             msg.Log(this);
@@ -386,7 +403,8 @@ namespace ServiceLib
 
         public void SnapshotCreated(IAggregateId aggregateId, int aggregateVersion)
         {
-            var msg = new LogContextMessage(TraceEventType.Verbose, 8, "Snapshot for aggregate {AggregateId} created at version {Version}");
+            var msg = new LogContextMessage(
+                TraceEventType.Verbose, 8, "Snapshot for aggregate {AggregateId} created at version {Version}");
             msg.SetProperty("AggregateId", false, aggregateId);
             msg.SetProperty("Version", false, aggregateVersion);
             msg.Log(this);
@@ -447,12 +465,25 @@ namespace ServiceLib
     [Serializable]
     public class ValidationException : Exception
     {
-        public ValidationException() { }
-        public ValidationException(string message) : base(message) { }
-        public ValidationException(string message, Exception inner) : base(message, inner) { }
+        public ValidationException()
+        {
+        }
+
+        public ValidationException(string message)
+            : base(message)
+        {
+        }
+
+        public ValidationException(string message, Exception inner)
+            : base(message, inner)
+        {
+        }
+
         protected ValidationException(
-          System.Runtime.Serialization.SerializationInfo info,
-          System.Runtime.Serialization.StreamingContext context)
-            : base(info, context) { }
+            System.Runtime.Serialization.SerializationInfo info,
+            System.Runtime.Serialization.StreamingContext context)
+            : base(info, context)
+        {
+        }
     }
 }

@@ -21,6 +21,7 @@ namespace ServiceLib
             public string Name;
             public readonly List<RouteConfiguration> Routes;
             public readonly List<RoutePath> SubPaths;
+
             public RoutePath(string name, bool hasContents)
             {
                 Name = name;
@@ -31,6 +32,7 @@ namespace ServiceLib
                 }
             }
         }
+
         private class RoutePathComparer : IComparer<RoutePath>
         {
             public int Compare(RoutePath x, RoutePath y)
@@ -47,6 +49,7 @@ namespace ServiceLib
             public ParametrizedUrl Url;
             public IHttpRouteHandler Handler;
         }
+
         private readonly RoutePath _paths;
         private readonly List<RouteConfiguration> _routes;
         private readonly RoutePathComparer _pathComparer;
@@ -86,7 +89,8 @@ namespace ServiceLib
                 return folder.Routes;
         }
 
-        private static HttpUsedRoute FindRouteFromCandidates(ParametrizedUrlParts urlParts, IEnumerable<RouteConfiguration> candidates)
+        private static HttpUsedRoute FindRouteFromCandidates(
+            ParametrizedUrlParts urlParts, IEnumerable<RouteConfiguration> candidates)
         {
             HttpUsedRoute bestRoute = null;
             int bestScore = 0;
@@ -109,7 +113,7 @@ namespace ServiceLib
             _lock.EnterWriteLock();
             try
             {
-                var route = new RouteConfiguration { Handler = handler, Url = new ParametrizedUrl(pattern) };
+                var route = new RouteConfiguration {Handler = handler, Url = new ParametrizedUrl(pattern)};
                 _routes.Add(route);
                 AddPrefix(route.Url.Prefix, route);
                 if (overridePrefix != null)
@@ -169,9 +173,20 @@ namespace ServiceLib
         private readonly List<RequestParameter> _parameters;
         private readonly IHttpRouteHandler _handler;
 
-        public ParametrizedUrl UrlTemplate { get { return _template; } }
-        public IList<RequestParameter> RouteParameters { get { return _parameters; } }
-        public IHttpRouteHandler Handler { get { return _handler; } }
+        public ParametrizedUrl UrlTemplate
+        {
+            get { return _template; }
+        }
+
+        public IList<RequestParameter> RouteParameters
+        {
+            get { return _parameters; }
+        }
+
+        public IHttpRouteHandler Handler
+        {
+            get { return _handler; }
+        }
 
         public HttpUsedRoute(ParametrizedUrl template, IHttpRouteHandler handler)
         {
@@ -185,6 +200,7 @@ namespace ServiceLib
             _parameters.Add(parameter);
             return this;
         }
+
         public HttpUsedRoute AddParameter(IEnumerable<RequestParameter> parameters)
         {
             _parameters.AddRange(parameters);

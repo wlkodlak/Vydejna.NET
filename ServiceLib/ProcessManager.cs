@@ -1,7 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 
 namespace ServiceLib
@@ -53,32 +51,49 @@ namespace ServiceLib
             public string ElectionsId { get; set; }
             public bool ForfitCandidature { get; set; }
         }
+
         public class ElectionsCandidate : GenericMessage
         {
             public string ElectionsId { get; set; }
         }
+
         public class ElectionsLeader : GenericMessage
         {
             public string ElectionsId { get; set; }
         }
 
-        public class Heartbeat : GenericMessage { }
-        public class HeartStopped : GenericMessage { }
+        public class Heartbeat : GenericMessage
+        {
+        }
+
+        public class HeartStopped : GenericMessage
+        {
+        }
 
         public class ProcessMessage : GenericMessage
         {
             public string AssignedNode { get; set; }
             public string ProcessName { get; set; }
         }
-        public class ProcessStart : ProcessMessage { }
-        public class ProcessStop : ProcessMessage { }
+
+        public class ProcessStart : ProcessMessage
+        {
+        }
+
+        public class ProcessStop : ProcessMessage
+        {
+        }
+
         public class ProcessChange : GenericMessage
         {
             public string ProcessName { get; set; }
             public ProcessState NewState { get; set; }
         }
 
-        public class ConnectionRestored { }
+        public class ConnectionRestored
+        {
+        }
+
         public class ProcessRequest
         {
             public string ProcessName { get; set; }
@@ -89,6 +104,7 @@ namespace ServiceLib
         {
             public string ProcessName, ProcessStatus, AssignedNode;
         }
+
         public class InfoGlobal
         {
             public string NodeName, LeaderName;
@@ -99,6 +115,12 @@ namespace ServiceLib
 
     public enum GlobalProcessState
     {
-        Offline, Starting, Online, Stopping, ToBeStarted, ToBeStopped, Unsupported
+        Offline,
+        Starting,
+        Online,
+        Stopping,
+        ToBeStarted,
+        ToBeStopped,
+        Unsupported
     }
 }

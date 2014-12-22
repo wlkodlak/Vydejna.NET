@@ -1,10 +1,8 @@
-﻿using log4net;
-using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using log4net;
 
 namespace ServiceLib
 {
@@ -17,7 +15,7 @@ namespace ServiceLib
         private readonly ITime _time;
         private readonly Dictionary<string, ProcessInfo> _processes;
         private IBus _localBus;
-        private ManualResetEventSlim _waitForStop;
+        private readonly ManualResetEventSlim _waitForStop;
         private CancellationTokenSource _cancelSource;
         private CancellationToken _cancelToken;
         private IProcessWorker _mainWorker;
@@ -186,7 +184,7 @@ namespace ServiceLib
                     if (_isShutingDown || !process.RequestedState)
                         return;
                     process.Worker.Start();
-                });
+                }, _cancelToken);
             }
         }
 

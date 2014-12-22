@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Text;
 using System.Threading;
 
@@ -8,11 +7,11 @@ namespace ServiceLib
 {
     public class ProcessManagerPublisher : IPublisher, IDisposable
     {
-        private DatabasePostgres _db;
-        private CancellationTokenSource _cancel;
-        private IBus _bus;
-        private Dictionary<Type, Action<object>> _publishers;
-        private string _notificationName;
+        private readonly DatabasePostgres _db;
+        private readonly CancellationTokenSource _cancel;
+        private readonly IBus _bus;
+        private readonly Dictionary<Type, Action<object>> _publishers;
+        private readonly string _notificationName;
 
         public ProcessManagerPublisher(DatabasePostgres db, IBus relayBus, string notificationName = "processmanager")
         {
@@ -106,7 +105,7 @@ namespace ServiceLib
                     break;
                 case "ProcessChange":
                     ProcessState newProcessState;
-                    if (parts.Length == 4 && Enum.TryParse<ProcessState>(parts[3], out newProcessState))
+                    if (parts.Length == 4 && Enum.TryParse(parts[3], out newProcessState))
                     {
                         _bus.Publish(new ProcessManagerMessages.ProcessChange
                         {

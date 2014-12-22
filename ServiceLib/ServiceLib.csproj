@@ -102,7 +102,6 @@
     <Compile Include="RestServerParameters.cs" />
     <Compile Include="SubscriptionManager.cs" />
     <Compile Include="TaskUtils.cs" />
-    <Compile Include="ThreadedTaskScheduler.cs" />
     <Compile Include="Time.cs" />
   </ItemGroup>
   <ItemGroup>

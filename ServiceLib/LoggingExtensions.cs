@@ -98,6 +98,7 @@ namespace ServiceLib
         {
             return log.Logger.IsEnabledFor(_traceLevel);
         }
+
         public static void Trace(this ILog log, string message)
         {
             var logger = log.Logger;
@@ -105,6 +106,7 @@ namespace ServiceLib
                 return;
             logger.Log(_declaringType, _traceLevel, message, null);
         }
+
         public static void Trace(this ILog log, string message, Exception exception)
         {
             var logger = log.Logger;
@@ -112,12 +114,15 @@ namespace ServiceLib
                 return;
             logger.Log(_declaringType, _traceLevel, message, exception);
         }
+
         public static void TraceFormat(this ILog log, string format, params object[] parameters)
         {
             var logger = log.Logger;
             if (!logger.IsEnabledFor(_traceLevel))
                 return;
-            logger.Log(_declaringType, _traceLevel, new SystemStringFormat(CultureInfo.InvariantCulture, format, parameters), null);
+            logger.Log(
+                _declaringType, _traceLevel, new SystemStringFormat(CultureInfo.InvariantCulture, format, parameters),
+                null);
         }
 
         public static void TraceSql(this ILog log, NpgsqlCommand dbCommand)
@@ -169,7 +174,7 @@ namespace ServiceLib
         }
 
         private static readonly Level _traceLevel = Level.Trace;
-        private static readonly Type _declaringType = typeof(LogExtensions);
+        private static readonly Type _declaringType = typeof (LogExtensions);
     }
 
     public class LogContextTraceSqlMessage : ILogContextMessage
@@ -236,10 +241,10 @@ namespace ServiceLib
         public IEnumerator<LogContextMessageProperty> GetEnumerator()
         {
             var list = new List<LogContextMessageProperty>();
-            list.Add(new LogContextMessageProperty { Name = "CommandText", IsLong = false, Value = _commandText });
+            list.Add(new LogContextMessageProperty {Name = "CommandText", IsLong = false, Value = _commandText});
             foreach (var parameter in _parameters)
             {
-                list.Add(new LogContextMessageProperty { Name = parameter.Key, IsLong = false, Value = parameter.Value });
+                list.Add(new LogContextMessageProperty {Name = parameter.Key, IsLong = false, Value = parameter.Value});
             }
             return list.GetEnumerator();
         }

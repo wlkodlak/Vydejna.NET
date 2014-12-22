@@ -41,6 +41,7 @@ namespace ServiceLib
     {
         private static readonly EventStreamingDeserializedTraceSource Logger
             = new EventStreamingDeserializedTraceSource("ServiceLib.EventStreamingDeserialized");
+
         private readonly IEventStreaming _streaming;
         private readonly IEventSourcedSerializer _serializer;
         private IEventStreamer _streamer;
@@ -148,7 +149,8 @@ namespace ServiceLib
 
         public void SkippedEvent(string processName, EventStoreEvent nextEvent)
         {
-            var msg = new LogContextMessage(TraceEventType.Verbose, 3, "Skipping event {Token} of type {EventType} for process {ProcessName}");
+            var msg = new LogContextMessage(
+                TraceEventType.Verbose, 3, "Skipping event {Token} of type {EventType} for process {ProcessName}");
             msg.SetProperty("ProcessName", false, processName);
             msg.SetProperty("Token", false, nextEvent.Token);
             msg.SetProperty("EventType", false, nextEvent.Type);
@@ -157,7 +159,8 @@ namespace ServiceLib
 
         public void ReturnedEvent(string processName, EventStoreEvent rawEvent, object deserialized)
         {
-            var msg = new LogContextMessage(TraceEventType.Verbose, 3, "Returning event {Token} of type {EventType} for process {ProcessName}");
+            var msg = new LogContextMessage(
+                TraceEventType.Verbose, 3, "Returning event {Token} of type {EventType} for process {ProcessName}");
             msg.SetProperty("ProcessName", false, processName);
             msg.SetProperty("Token", false, rawEvent.Token);
             msg.SetProperty("EventType", false, rawEvent.Type);
@@ -166,7 +169,9 @@ namespace ServiceLib
 
         public void ReturnedError(string processName, EventStoreEvent rawEvent, Exception exception)
         {
-            var msg = new LogContextMessage(TraceEventType.Verbose, 3, "Failed to deserialize event {Token} of type {EventType} for process {ProcessName}");
+            var msg = new LogContextMessage(
+                TraceEventType.Verbose, 3,
+                "Failed to deserialize event {Token} of type {EventType} for process {ProcessName}");
             msg.SetProperty("ProcessName", false, processName);
             msg.SetProperty("Token", false, rawEvent.Token);
             msg.SetProperty("EventType", false, rawEvent.Type);

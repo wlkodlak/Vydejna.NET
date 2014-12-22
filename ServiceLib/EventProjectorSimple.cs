@@ -12,27 +12,58 @@ namespace ServiceLib
     {
         void Register<T>(IProcessEvent<T> handler);
     }
+
     public interface IEventProjection
         : IProcessEvent<ProjectorMessages.Reset>
-        , IProcessEvent<ProjectorMessages.UpgradeFrom>
+            , IProcessEvent<ProjectorMessages.UpgradeFrom>
     {
         string GetVersion();
         EventProjectionUpgradeMode UpgradeMode(string storedVersion);
     }
-    public enum EventProjectionUpgradeMode { NotNeeded, Rebuild, Upgrade }
+
+    public enum EventProjectionUpgradeMode
+    {
+        NotNeeded,
+        Rebuild,
+        Upgrade
+    }
+
     public static class ProjectorMessages
     {
-        public class ConcurrencyException : Exception { }
-        public class RebuildFinished { }
+        public class ConcurrencyException : Exception
+        {
+        }
+
+        public class RebuildFinished
+        {
+        }
+
         public class UpgradeFrom
         {
             private readonly string _version;
-            public string Version { get { return _version; } }
-            public UpgradeFrom(string version) { _version = version; }
+
+            public string Version
+            {
+                get { return _version; }
+            }
+
+            public UpgradeFrom(string version)
+            {
+                _version = version;
+            }
         }
-        public class Reset { }
-        public class Flush { }
-        public class Resume { }
+
+        public class Reset
+        {
+        }
+
+        public class Flush
+        {
+        }
+
+        public class Resume
+        {
+        }
     }
 
     public class EventProjectorSimple : IEventProjector, IProcessWorker
@@ -58,11 +89,11 @@ namespace ServiceLib
         private bool _exceptionAlreadyLogged;
 
         public EventProjectorSimple(
-            IEventProjection projection, 
-            IMetadataInstance metadata, 
-            IEventStreamingDeserialized streaming, 
+            IEventProjection projection,
+            IMetadataInstance metadata,
+            IEventStreamingDeserialized streaming,
             IEventSubscriptionManager subscriptions,
-            ITime time, 
+            ITime time,
             IEventProcessTrackTarget tracker)
         {
             _lock = new object();
@@ -110,15 +141,21 @@ namespace ServiceLib
             {
                 if (_processState == state)
                     return;
-                if (_processState == ProcessState.Inactive && (state == ProcessState.Pausing || state == ProcessState.Stopping))
+                if (_processState == ProcessState.Inactive &&
+                    (state == ProcessState.Pausing || state == ProcessState.Stopping))
                     return;
                 _processState = state;
                 handler = _onStateChanged;
             }
             if (handler != null)
             {
-                try { handler(state); }
-                catch { }
+                try
+                {
+                    handler(state);
+                }
+                catch
+                {
+                }
             }
         }
 
@@ -129,7 +166,10 @@ namespace ServiceLib
             _cancelStop = new CancellationTokenSource();
             _cancelStopToken = _cancelStop.Token;
             SetProcessState(ProcessState.Starting);
-            TaskUtils.FromEnumerable(ProjectorCore()).UseScheduler(_scheduler).GetTask().ContinueWith(Finish, _scheduler);
+            TaskUtils.FromEnumerable(ProjectorCore())
+                .UseScheduler(_scheduler)
+                .GetTask()
+                .ContinueWith(Finish, _scheduler);
         }
 
         private void Finish(Task task)
@@ -202,19 +242,25 @@ namespace ServiceLib
                 SetProcessState(ProcessState.Running);
 
                 var firstIteration = true;
-                var lastToken = (EventStoreToken)null;
+                var lastToken = (EventStoreToken) null;
                 var handledTypes = _subscriptions.GetHandledTypes();
-                Logger.TraceFormat("{0}: Projection will handle types: {1}", _logName, string.Join(", ", handledTypes.Select(t => t.Name)));
+                Logger.TraceFormat(
+                    "{0}: Projection will handle types: {1}", _logName,
+                    string.Join(", ", handledTypes.Select(t => t.Name)));
 
                 if (rebuildMode == EventProjectionUpgradeMode.Upgrade)
                 {
-                    var taskUpgrade = TaskUtils.Retry(() => _projectionInfo.Handle(new ProjectorMessages.UpgradeFrom(savedVersion)), _time, _cancelStopToken);
+                    var taskUpgrade =
+                        TaskUtils.Retry(
+                            () => _projectionInfo.Handle(new ProjectorMessages.UpgradeFrom(savedVersion)), _time,
+                            _cancelStopToken);
                     yield return taskUpgrade;
                     taskUpgrade.Wait();
                     Logger.TraceFormat("{0}: Upgrade handler finished.", _logName);
 
                     var newVersion = _projectionInfo.GetVersion();
-                    var taskSetVersion = TaskUtils.Retry(() => _metadata.SetVersion(newVersion), _time, _cancelStopToken);
+                    var taskSetVersion = TaskUtils.Retry(
+                        () => _metadata.SetVersion(newVersion), _time, _cancelStopToken);
                     yield return taskSetVersion;
                     taskSetVersion.Wait();
                     Logger.TraceFormat("{0}: Saved version {1}.", _logName, newVersion);
@@ -222,32 +268,37 @@ namespace ServiceLib
                     rebuildMode = EventProjectionUpgradeMode.NotNeeded;
                     _streaming.Setup(token, handledTypes, _metadata.ProcessName);
 
-                    Logger.InfoFormat("{0}: Upgraded from version {1} to version {2}. Process will continue from token {3}. Initialization took {4} ms.", 
+                    Logger.InfoFormat(
+                        "{0}: Upgraded from version {1} to version {2}. Process will continue from token {3}. Initialization took {4} ms.",
                         _logName, savedVersion, newVersion, token, _stopwatch.ElapsedMilliseconds);
                     _stopwatch.Restart();
                 }
                 else if (rebuildMode == EventProjectionUpgradeMode.Rebuild)
                 {
-                    var taskReset = TaskUtils.Retry(() => _projectionInfo.Handle(new ProjectorMessages.Reset()), _time, _cancelStopToken);
+                    var taskReset = TaskUtils.Retry(
+                        () => _projectionInfo.Handle(new ProjectorMessages.Reset()), _time, _cancelStopToken);
                     yield return taskReset;
                     taskReset.Wait();
                     Logger.TraceFormat("{0}: Reset handler finished.", _logName);
 
-                    var taskSetToken = TaskUtils.Retry(() => _metadata.SetToken(EventStoreToken.Initial), _time, _cancelStopToken);
+                    var taskSetToken = TaskUtils.Retry(
+                        () => _metadata.SetToken(EventStoreToken.Initial), _time, _cancelStopToken);
                     yield return taskSetToken;
                     taskSetToken.Wait();
                     token = EventStoreToken.Initial;
                     Logger.TraceFormat("{0}: Saved initial token.", _logName);
 
                     var newVersion = _projectionInfo.GetVersion();
-                    var taskSetVersion = TaskUtils.Retry(() => _metadata.SetVersion(newVersion), _time, _cancelStopToken);
+                    var taskSetVersion = TaskUtils.Retry(
+                        () => _metadata.SetVersion(newVersion), _time, _cancelStopToken);
                     yield return taskSetVersion;
                     taskSetVersion.Wait();
                     Logger.TraceFormat("{0}: Saved version {1}.", _logName, newVersion);
 
                     _streaming.Setup(token, handledTypes, _metadata.ProcessName);
 
-                    Logger.InfoFormat("{0}: Starting rebuild at version {1} (original version {2}). Initialization took {3} ms.",
+                    Logger.InfoFormat(
+                        "{0}: Starting rebuild at version {1} (original version {2}). Initialization took {3} ms.",
                         _logName, newVersion, savedVersion ?? "none", _stopwatch.ElapsedMilliseconds);
                     _stopwatch.Restart();
 
@@ -258,7 +309,8 @@ namespace ServiceLib
                 {
                     _streaming.Setup(token, handledTypes, _metadata.ProcessName);
 
-                    Logger.InfoFormat("{0}: Resuming normal processing at version {1}. Processing will continue from token {2}. Initialization took {3} ms.",
+                    Logger.InfoFormat(
+                        "{0}: Resuming normal processing at version {1}. Processing will continue from token {2}. Initialization took {3} ms.",
                         _logName, savedVersion, token, _stopwatch.ElapsedMilliseconds);
                     _stopwatch.Restart();
                 }
@@ -267,16 +319,19 @@ namespace ServiceLib
                 while (!_cancelPauseToken.IsCancellationRequested)
                 {
                     _stopwatch.Restart();
-                    var nowait = firstIteration || lastToken != null || rebuildMode == EventProjectionUpgradeMode.Rebuild;
+                    var nowait = firstIteration || lastToken != null ||
+                                 rebuildMode == EventProjectionUpgradeMode.Rebuild;
                     firstIteration = false;
                     var taskNextEvent = TaskUtils.Retry(() => _streaming.GetNextEvent(nowait), _time, _cancelPauseToken);
                     yield return taskNextEvent;
                     var nextEvent = taskNextEvent.Result;
 
-                    var tokenToSave = (EventStoreToken)null;
+                    var tokenToSave = (EventStoreToken) null;
                     if (nextEvent == null)
                     {
-                        Logger.TraceFormat("{0}: No events are available (attempt took {1} ms).", _logName, _stopwatch.ElapsedMilliseconds);
+                        Logger.TraceFormat(
+                            "{0}: No events are available (attempt took {1} ms).", _logName,
+                            _stopwatch.ElapsedMilliseconds);
                         _stopwatch.Restart();
                         if (rebuildMode == EventProjectionUpgradeMode.Rebuild)
                         {
@@ -286,7 +341,8 @@ namespace ServiceLib
                             rebuildMode = EventProjectionUpgradeMode.NotNeeded;
                             needsFlush = true;
                             rebuildStopwatch.Stop();
-                            Logger.InfoFormat("{0}: Rebuild finished ({1} events in {2} ms).", 
+                            Logger.InfoFormat(
+                                "{0}: Rebuild finished ({1} events in {2} ms).",
                                 _logName, _processedEventsCount, rebuildStopwatch.ElapsedMilliseconds);
                             rebuildStopwatch = null;
                         }
@@ -303,7 +359,8 @@ namespace ServiceLib
                     }
                     else if (nextEvent.Event != null)
                     {
-                        Logger.TraceFormat("{0}: Received event {1} (token {2}) in {3} ms.", 
+                        Logger.TraceFormat(
+                            "{0}: Received event {1} (token {2}) in {3} ms.",
                             _logName, nextEvent.Event.GetType().Name, nextEvent.Token, _stopwatch.ElapsedMilliseconds);
                         _stopwatch.Restart();
 
@@ -335,7 +392,9 @@ namespace ServiceLib
                             yield return taskSaveToken;
                             if (taskSaveToken.Exception == null)
                             {
-                                Logger.TraceFormat("{0}: Saved token {1} in {2} ms", _logName, tokenToSave, _stopwatch.ElapsedMilliseconds);
+                                Logger.TraceFormat(
+                                    "{0}: Saved token {1} in {2} ms", _logName, tokenToSave,
+                                    _stopwatch.ElapsedMilliseconds);
                                 break;
                             }
                         }
@@ -414,7 +473,8 @@ namespace ServiceLib
                         _parent._processedEventsCount++;
                         _parent._tracker.ReportProgress(_token);
                     }
-                    Logger.InfoFormat("{0}: Event {1} (token {2}) processed in {3} ms.", 
+                    Logger.InfoFormat(
+                        "{0}: Event {1} (token {2}) processed in {3} ms.",
                         _parent._logName, _typeName, _token, _stopwatch.ElapsedMilliseconds);
                     return task;
                 }
@@ -426,7 +486,8 @@ namespace ServiceLib
                 else if (!_parent._useDeadLetters)
                 {
                     _stopwatch.Stop();
-                    Logger.ErrorFormat("{0}: Error when processing event {1} (token {2}). {3}",
+                    Logger.ErrorFormat(
+                        "{0}: Error when processing event {1} (token {2}). {3}",
                         _parent._logName, _typeName, _token, task.Exception.InnerException);
                     _parent._exceptionAlreadyLogged = true;
                     return task;
@@ -439,7 +500,8 @@ namespace ServiceLib
                         _parent._processedEventsCount++;
                         _parent._tracker.ReportProgress(_token);
                     }
-                    Logger.ErrorFormat("{0}: Error when processing event {1} (token {2}), putting to dead-letter. {3}",
+                    Logger.ErrorFormat(
+                        "{0}: Error when processing event {1} (token {2}), putting to dead-letter. {3}",
                         _parent._logName, _typeName, _token, task.Exception.InnerException);
                     return MarkAsDeadLetter();
                 }

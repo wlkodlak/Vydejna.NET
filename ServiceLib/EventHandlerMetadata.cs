@@ -139,9 +139,10 @@ namespace ServiceLib
             _expectedVersion = expectedVersion;
             _dataToSave = dataToSave;
         }
+
         protected MetadataInstanceConcurrencyException(
-          SerializationInfo info,
-          StreamingContext context)
+            SerializationInfo info,
+            StreamingContext context)
             : base(info, context)
         {
             _documentName = info.GetString("DocumentName");
@@ -190,7 +191,8 @@ namespace ServiceLib
 
         public void TokenSavingFailedDueToConcurrency(string documentName, int documentVersion, EventStoreToken token)
         {
-            var msg = new LogContextMessage(TraceEventType.Error, 3, "Token {Token} could not be saved due to concurrency");
+            var msg = new LogContextMessage(
+                TraceEventType.Error, 3, "Token {Token} could not be saved due to concurrency");
             msg.SetProperty("Token", false, token);
             msg.SetProperty("DocumentName", false, documentName);
             msg.SetProperty("DocumentVersion", false, documentVersion);
@@ -215,7 +217,8 @@ namespace ServiceLib
 
         public void VersionSavingFailedDueToConcurrency(string documentName, int documentVersion, string version)
         {
-            var msg = new LogContextMessage(TraceEventType.Error, 8, "Version {Version} could not be saved due to concurrency");
+            var msg = new LogContextMessage(
+                TraceEventType.Error, 8, "Version {Version} could not be saved due to concurrency");
             msg.SetProperty("Version", false, version);
             msg.SetProperty("DocumentName", false, documentName);
             msg.SetProperty("DocumentVersion", false, documentVersion);

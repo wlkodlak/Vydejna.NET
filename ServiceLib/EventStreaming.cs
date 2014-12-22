@@ -10,6 +10,7 @@ namespace ServiceLib
     {
         IEventStreamer GetStreamer(EventStoreToken token, string processName);
     }
+
     public interface IEventStreamer : IDisposable
     {
         Task<EventStoreEvent> GetNextEvent(bool nowait);
@@ -66,7 +67,9 @@ namespace ServiceLib
 
         private class EventsStream : IEventStreamer
         {
-            private static readonly EventStreamingTraceSource Logger = new EventStreamingTraceSource("ServiceLib.EventStreaming");
+            private static readonly EventStreamingTraceSource Logger =
+                new EventStreamingTraceSource("ServiceLib.EventStreaming");
+
             private readonly object _lock;
             private readonly IEventStoreWaitable _store;
             private readonly INetworkBus _messaging;
@@ -84,7 +87,9 @@ namespace ServiceLib
             private Task<Message> _taskReceiveMessage;
             private Task<IEventStoreCollection> _taskWaitForEvents;
 
-            public EventsStream(IEventStoreWaitable store, INetworkBus messaging, int batchSize, EventStoreToken token, string processName)
+            public EventsStream(
+                IEventStoreWaitable store, INetworkBus messaging, int batchSize, EventStoreToken token,
+                string processName)
             {
                 _lock = new object();
                 _store = store;
@@ -224,7 +229,7 @@ namespace ServiceLib
 
             private async Task<EventStoreEvent> TryToReceiveMessageWithoutWaiting()
             {
-                if (_taskReceiveMessage != null) 
+                if (_taskReceiveMessage != null)
                     return null;
                 var message = await _messaging.Receive(_inputMessagingQueue, true, _cancelToken);
                 var readyEvent = ProcessReceivedMessage(message);
@@ -233,7 +238,7 @@ namespace ServiceLib
 
             private async Task<EventStoreEvent> TryToGetAllEventsWithoutWaiting()
             {
-                if (_taskWaitForEvents != null) 
+                if (_taskWaitForEvents != null)
                     return null;
                 var newEvents = await _store.GetAllEvents(_token, _batchSize, false);
                 var readyEvent = ProcessReceivedEvents(newEvents);
@@ -368,7 +373,8 @@ namespace ServiceLib
 
         public void MarkedPreviousMessageAsProcessed(string processName, Message message)
         {
-            var msg = new LogContextMessage(TraceEventType.Verbose, 11, "Message {MessageId} marked as processed in process {ProcessName}");
+            var msg = new LogContextMessage(
+                TraceEventType.Verbose, 11, "Message {MessageId} marked as processed in process {ProcessName}");
             msg.SetProperty("ProcessName", false, processName);
             msg.SetProperty("MessageId", false, message);
             msg.Log(this);
@@ -376,16 +382,20 @@ namespace ServiceLib
 
         public void CouldNotMarkPreviousMessageAsProcessed(string processName, Message message, Exception exception)
         {
-            var msg = new LogContextMessage(TraceEventType.Verbose, 12, "Message {MessageId} could not be marked as processed in process {ProcessName}");
+            var msg = new LogContextMessage(
+                TraceEventType.Verbose, 12,
+                "Message {MessageId} could not be marked as processed in process {ProcessName}");
             msg.SetProperty("ProcessName", false, processName);
             msg.SetProperty("MessageId", false, message);
             msg.SetProperty("Exception", true, exception);
             msg.Log(this);
         }
 
-        public void ReceivedEvents(string processName, EventStoreToken token, int batchSize, IEventStoreCollection newEvents)
+        public void ReceivedEvents(
+            string processName, EventStoreToken token, int batchSize, IEventStoreCollection newEvents)
         {
-            var msg = new LogContextMessage(TraceEventType.Verbose, 1, "Received {EventsCount} events from token {Token} for process {ProcessName}");
+            var msg = new LogContextMessage(
+                TraceEventType.Verbose, 1, "Received {EventsCount} events from token {Token} for process {ProcessName}");
             msg.SetProperty("ProcessName", false, processName);
             msg.SetProperty("Token", false, token);
             msg.SetProperty("BatchSize", false, batchSize);
@@ -395,7 +405,9 @@ namespace ServiceLib
 
         public void ReturnedMessage(string processName, Message message, EventStoreEvent receivedEvent)
         {
-            var msg = new LogContextMessage(TraceEventType.Verbose, 5, "Returning event {EventType} based on message {MessageId} for process {ProcessName}");
+            var msg = new LogContextMessage(
+                TraceEventType.Verbose, 5,
+                "Returning event {EventType} based on message {MessageId} for process {ProcessName}");
             msg.SetProperty("ProcessName", false, processName);
             msg.SetProperty("EventType", false, receivedEvent.Type);
             msg.SetProperty("MessageId", false, message.MessageId);
@@ -404,7 +416,8 @@ namespace ServiceLib
 
         public void ReturnedEvent(string processName, EventStoreEvent receivedEvent)
         {
-            var msg = new LogContextMessage(TraceEventType.Verbose, 6, "Returning event {EventType} with token {Token} for process {ProcessName}");
+            var msg = new LogContextMessage(
+                TraceEventType.Verbose, 6, "Returning event {EventType} with token {Token} for process {ProcessName}");
             msg.SetProperty("ProcessName", false, processName);
             msg.SetProperty("EventType", false, receivedEvent.Type);
             msg.SetProperty("Token", false, receivedEvent.Token);
@@ -413,7 +426,8 @@ namespace ServiceLib
 
         public void NoEventsAvailableForNowait(string processName)
         {
-            var msg = new LogContextMessage(TraceEventType.Verbose, 7, "No events available immediatelly for {ProcessName}");
+            var msg = new LogContextMessage(
+                TraceEventType.Verbose, 7, "No events available immediatelly for {ProcessName}");
             msg.SetProperty("ProcessName", false, processName);
             msg.Log(this);
         }
@@ -427,13 +441,15 @@ namespace ServiceLib
 
         public void StartedWaitingForEvents(string processName, EventStoreToken token, int batchSize)
         {
-            var msg = new LogContextMessage(TraceEventType.Verbose, 16, "Started waiting for events for {ProcessName} with token {Token}");
+            var msg = new LogContextMessage(
+                TraceEventType.Verbose, 16, "Started waiting for events for {ProcessName} with token {Token}");
             msg.SetProperty("ProcessName", false, processName);
             msg.SetProperty("Token", false, token);
             msg.Log(this);
         }
 
-        public void ReceivingMessageFailed(string processName, MessageDestination inputMessagingQueue, Exception exception)
+        public void ReceivingMessageFailed(
+            string processName, MessageDestination inputMessagingQueue, Exception exception)
         {
             var msg = new LogContextMessage(TraceEventType.Verbose, 20, "Receiving messages for {ProcessName} failed");
             msg.SetProperty("ProcessName", false, processName);

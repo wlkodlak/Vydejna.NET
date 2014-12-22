@@ -8,7 +8,7 @@ namespace ServiceLib
         {
             unchecked
             {
-                var type = typeof(T);
+                var type = typeof (T);
                 int hash = 48972847;
                 foreach (var property in type.GetProperties())
                 {
@@ -27,11 +27,11 @@ namespace ServiceLib
                 return ReferenceEquals(b, null);
             else if (ReferenceEquals(b, null))
                 return false;
-            else if (a.GetType() != typeof(T) || b.GetType() != typeof(T))
+            else if (a.GetType() != typeof (T) || b.GetType() != typeof (T))
                 return false;
             else
             {
-                foreach (var property in typeof(T).GetProperties())
+                foreach (var property in typeof (T).GetProperties())
                 {
                     var valA = property.GetValue(a, null);
                     var valB = property.GetValue(b, null);
@@ -47,9 +47,9 @@ namespace ServiceLib
             if (ReferenceEquals(obj, null))
                 return "null";
             var sb = new StringBuilder();
-            sb.Append(typeof(T).Name).Append(" { ");
+            sb.Append(typeof (T).Name).Append(" { ");
             bool first = true;
-            foreach (var property in typeof(T).GetProperties())
+            foreach (var property in typeof (T).GetProperties())
             {
                 var value = property.GetValue(obj, null);
                 if (first)

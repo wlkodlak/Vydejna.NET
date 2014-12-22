@@ -1,5 +1,4 @@
-﻿using log4net;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -7,21 +6,19 @@ using System.Linq;
 using System.Runtime.Serialization;
 using System.Text;
 using System.Threading.Tasks;
-using System.Text.RegularExpressions;
 
 namespace ServiceLib
 {
     public abstract class RestClient
     {
-        private IHttpClient _client;
-        private ParametrizedUrl _url;
-        private List<RequestParameter> _parameters;
+        private readonly IHttpClient _client;
+        private readonly ParametrizedUrl _url;
+        private readonly List<RequestParameter> _parameters;
         private byte[] _payload;
         private string _method;
-        private static readonly ILog Logger = LogManager.GetLogger("ServiceLib.RestClient");
         private HttpClientRequest _currentRequest;
-        private Stopwatch _stopwatch;
-        private IRestClientLog _externalLog;
+        private readonly Stopwatch _stopwatch;
+        private readonly IRestClientLog _externalLog;
 
         protected RestClient(string url, IHttpClient client, IRestClientLog log)
         {
@@ -30,7 +27,7 @@ namespace ServiceLib
             _parameters = new List<RequestParameter>();
             _payload = new byte[0];
             _stopwatch = new Stopwatch();
-            _externalLog = log ?? new InternalLog();
+            _externalLog = log ?? new InternalLog("ServiceLib.RestClient");
         }
 
         public RestClient AddParameter(string name, string value)
@@ -38,16 +35,19 @@ namespace ServiceLib
             _parameters.Add(new RequestParameter(RequestParameterType.QueryString, name, value));
             return this;
         }
+
         public RestClient AddPath(string name, string value)
         {
             _parameters.Add(new RequestParameter(RequestParameterType.Path, name, value));
             return this;
         }
+
         public RestClient AddHeader(string name, string value)
         {
             _parameters.Add(new RequestParameter(RequestParameterType.Header, name, value));
             return this;
         }
+
         public RestClient UsingMethod(string method)
         {
             _method = method;
@@ -83,7 +83,8 @@ namespace ServiceLib
                 throw new TaskCanceledException(responseTask);
             if (responseTask.Exception != null)
             {
-                _externalLog.LogRestCall(_currentRequest, null, responseTask.Exception.InnerException, _stopwatch.ElapsedMilliseconds);
+                _externalLog.LogRestCall(
+                    _currentRequest, null, responseTask.Exception.InnerException, _stopwatch.ElapsedMilliseconds);
                 throw responseTask.Exception;
             }
             else
@@ -96,7 +97,10 @@ namespace ServiceLib
 
         public abstract RestClient SetPayload<T>(T data);
         protected abstract RestClientResult CreateResult(HttpClientResponse response);
-        protected virtual void PreExecute(HttpClientRequest request) { }
+
+        protected virtual void PreExecute(HttpClientRequest request)
+        {
+        }
 
         private string DetectMethod()
         {
@@ -108,69 +112,46 @@ namespace ServiceLib
                 return "POST";
         }
 
-        private class InternalLog : IRestClientLog
+        private class InternalLog : TraceSource, IRestClientLog
         {
-            public void LogRestCall(HttpClientRequest request, HttpClientResponse response, Exception error, long milliseconds)
+            public InternalLog(string name)
+                : base(name)
             {
-                if (!Logger.IsDebugEnabled)
-                    return;
-                try
-                {
-                    var traceEnabled = Logger.IsTraceEnabled();
-                    var sb = new StringBuilder();
-                    sb.Append(request.Method).Append(" ").Append(request.Url);
-                    sb.Append(", finished in ").Append(milliseconds).Append(" ms");
-                    if (traceEnabled && request.Headers.Count > 0)
-                    {
-                        sb.Append(", request headers: ");
-                        var firstHeader = true;
-                        foreach (var header in request.Headers)
-                        {
-                            if (firstHeader)
-                                firstHeader = false;
-                            else
-                                sb.Append(", ");
-                            sb.Append(header.Name).Append(": ").Append(header.Value);
-                        }
-                    }
-                    if (request.Body != null && request.Body.Length > 0)
-                    {
-                        var bodyChars = Encoding.UTF8.GetChars(request.Body);
-                        var charsCount = bodyChars.Length;
-                        if (!traceEnabled && charsCount > 2048)
-                            charsCount = 2048;
-                        sb.Append(", postdata: ").Append(bodyChars, 0, charsCount);
-                    }
-                    if (response == null)
-                    {
-                        if (response.StatusCode != 200)
-                            sb.Append(", response status: ").Append(response.StatusCode);
-                        if (traceEnabled && response.Headers.Count > 0)
-                        {
-                            sb.Append(", response headers: ");
-                            var firstHeader = true;
-                            foreach (var header in response.Headers)
-                            {
-                                if (firstHeader)
-                                    firstHeader = false;
-                                else
-                                    sb.Append(", ");
-                                sb.Append(header.Name).Append(": ").Append(header.Value);
-                            }
-                        }
-                        if (response.Body != null && response.Body.Length > 0)
-                        {
-                            var bodyChars = Encoding.UTF8.GetChars(response.Body);
-                            var charsCount = bodyChars.Length;
-                            if (!traceEnabled && charsCount > 2048)
-                                charsCount = 2048;
-                            sb.Append(", response contents: ").Append(bodyChars, 0, charsCount);
-                        }
-                    }
+            }
 
-                    Logger.Debug(sb);
+            public void LogRestCall(
+                HttpClientRequest request, HttpClientResponse response, Exception error, long milliseconds)
+            {
+                var msg = new LogContextMessage(TraceEventType.Verbose, 1, "Called service {Url}");
+                msg.SetProperty("Url", false, request.Url);
+                msg.SetProperty("Method", false, request.Method);
+                msg.SetProperty("RequestHeaders", true, BuildHeaders(request.Headers));
+                msg.SetProperty("RequestBody", true, request.Body);
+                if (response != null)
+                {
+                    msg.SetProperty("StatusCode", false, response.StatusCode);
+                    msg.SetProperty("ResponseHeaders", true, BuildHeaders(response.Headers));
+                    msg.SetProperty("ResponseBody", true, response.Body);
                 }
-                catch { }
+                if (error != null)
+                {
+                    msg.SetProperty("Exception", true, error);
+                }
+                msg.SetProperty("Duration", false, milliseconds);
+                msg.Log(this);
+            }
+
+            private static StringBuilder BuildHeaders(List<HttpClientHeader> headers)
+            {
+                var stringBuilder = new StringBuilder();
+                for (var index = 0; index < headers.Count; index++)
+                {
+                    var header = headers[index];
+                    if (index != 0)
+                        stringBuilder.AppendLine();
+                    stringBuilder.Append(header.Name).Append(": ").Append(header.Value);
+                }
+                return stringBuilder;
             }
         }
     }
@@ -187,15 +168,28 @@ namespace ServiceLib
             _rawData = response.Body;
             _headers = new RestClientHeaders(response.Headers);
         }
-        public int StatusCode { get { return _statusCode; } }
-        public RestClientHeaders Headers { get { return _headers; } }
-        protected byte[] RawData { get { return _rawData; } }
+
+        public int StatusCode
+        {
+            get { return _statusCode; }
+        }
+
+        public RestClientHeaders Headers
+        {
+            get { return _headers; }
+        }
+
+        protected byte[] RawData
+        {
+            get { return _rawData; }
+        }
+
         public abstract T GetPayload<T>();
     }
 
     public class RestClientHeaders
     {
-        private ILookup<string, HttpClientHeader> _headers;
+        private readonly ILookup<string, HttpClientHeader> _headers;
 
         public RestClientHeaders(IEnumerable<HttpClientHeader> headers)
         {
@@ -227,27 +221,31 @@ namespace ServiceLib
         public RequestParameterType Type { get; private set; }
         public string Name { get; private set; }
         public string Value { get; private set; }
+
         public RequestParameter(RequestParameterType type, string name, string value)
         {
-            this.Type = type;
-            this.Name = name;
-            this.Value = value;
+            Type = type;
+            Name = name;
+            Value = value;
         }
+
         public override string ToString()
         {
             return string.Format("{0} {1}: {2}", Type, Name, Value);
         }
+
         public override int GetHashCode()
         {
             return Name.GetHashCode();
         }
+
         public override bool Equals(object obj)
         {
             var oth = obj as RequestParameter;
             return oth != null
-                && Type == oth.Type
-                && string.Equals(Name, oth.Name, StringComparison.Ordinal)
-                && string.Equals(Value, oth.Value, StringComparison.Ordinal);
+                   && Type == oth.Type
+                   && string.Equals(Name, oth.Name, StringComparison.Ordinal)
+                   && string.Equals(Value, oth.Value, StringComparison.Ordinal);
         }
     }
 
@@ -285,8 +283,8 @@ namespace ServiceLib
         public override T GetPayload<T>()
         {
             var stringData = Encoding.UTF8.GetString(RawData);
-            if (typeof(T) == typeof(string))
-                return (T)(object)stringData;
+            if (typeof (T) == typeof (string))
+                return (T) (object) stringData;
             return JsonSerializer.DeserializeFromString<T>(stringData);
         }
     }
@@ -300,7 +298,7 @@ namespace ServiceLib
 
         public override RestClient SetPayload<T>(T data)
         {
-            var serializer = new DataContractSerializer(typeof(T));
+            var serializer = new DataContractSerializer(typeof (T));
             using (var stream = new MemoryStream())
             {
                 serializer.WriteObject(stream, data);
@@ -324,9 +322,9 @@ namespace ServiceLib
 
         public override T GetPayload<T>()
         {
-            var serializer = new DataContractSerializer(typeof(T));
+            var serializer = new DataContractSerializer(typeof (T));
             using (var stream = new MemoryStream(RawData))
-                return (T)serializer.ReadObject(stream);
+                return (T) serializer.ReadObject(stream);
         }
     }
 }

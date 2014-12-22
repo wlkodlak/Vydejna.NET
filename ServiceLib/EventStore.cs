@@ -322,7 +322,8 @@ namespace ServiceLib
             msg.Log(this);
         }
 
-        public void ReadFromStreamComplete(string stream, int minVersion, int maxCount, int streamVersion, List<EventStoreEvent> list)
+        public void ReadFromStreamComplete(
+            string stream, int minVersion, int maxCount, int streamVersion, List<EventStoreEvent> list)
         {
             var msg = new LogContextMessage(
                 TraceEventType.Verbose, 5, "{EventsCount} events read from stream {StreamName}");
@@ -355,8 +356,11 @@ namespace ServiceLib
         public void LoadSnapshotFinished(string stream, EventStoreSnapshot snapshot)
         {
             var snapshotExists = snapshot != null;
-            var msg = new LogContextMessage(TraceEventType.Verbose, 21,
-                snapshotExists ? "Loaded snapshot for stream {StreamName}" : "No snapshot loaded for stream {StreamName}");
+            var msg = new LogContextMessage(
+                TraceEventType.Verbose, 21,
+                snapshotExists
+                    ? "Loaded snapshot for stream {StreamName}"
+                    : "No snapshot loaded for stream {StreamName}");
             msg.SetProperty("StreamName", false, stream);
             msg.SetProperty("SnapshotExists", false, snapshotExists);
             msg.Log(this);
@@ -367,7 +371,7 @@ namespace ServiceLib
             var msg = new LogContextMessage(TraceEventType.Verbose, 22, "Saved snapshot for stream {StreamName}");
             msg.SetProperty("StreamName", false, stream);
             msg.Log(this);
-        }    
+        }
     }
 
     public class EventStoreInMemoryTraceSource : EventStoreTraceSource
@@ -414,9 +418,12 @@ namespace ServiceLib
             msg.Log(this);
         }
 
-        public void WaitForEventsComplete(EventStoreToken token, int skip, int maxCount, int taskId, List<EventStoreEvent> readyEvents, EventStoreToken nextToken)
+        public void WaitForEventsComplete(
+            EventStoreToken token, int skip, int maxCount, int taskId, List<EventStoreEvent> readyEvents,
+            EventStoreToken nextToken)
         {
-            var msg = new LogContextMessage(TraceEventType.Verbose, 12, "Finished WaitForEvents from token {Token}, returning {EventsCount} events");
+            var msg = new LogContextMessage(
+                TraceEventType.Verbose, 12, "Finished WaitForEvents from token {Token}, returning {EventsCount} events");
             msg.SetProperty("Token", false, token);
             msg.SetProperty("Skip", false, skip);
             msg.SetProperty("MaxCount", false, maxCount);
@@ -451,7 +458,8 @@ namespace ServiceLib
 
         public void StreamCreationConflicted(string stream)
         {
-            var msg = new LogContextMessage(TraceEventType.Verbose, 42, "Stream {StreamName} already existed when trying to create it");
+            var msg = new LogContextMessage(
+                TraceEventType.Verbose, 42, "Stream {StreamName} already existed when trying to create it");
             msg.SetProperty("StreamName", false, stream);
             msg.Log(this);
         }
@@ -476,7 +484,9 @@ namespace ServiceLib
 
         public void SnapshotFound(string streamName, bool snapshotExists)
         {
-            var summary = snapshotExists ? "Snapshot for stream {StreamName} found" : "Snapshot for stream {StreamName} not found";
+            var summary = snapshotExists
+                ? "Snapshot for stream {StreamName} found"
+                : "Snapshot for stream {StreamName} not found";
             var msg = new LogContextMessage(TraceEventType.Verbose, 51, summary);
             msg.SetProperty("StreamName", false, streamName);
             msg.SetProperty("Found", false, snapshotExists);
@@ -499,7 +509,8 @@ namespace ServiceLib
 
         public void SnapshotInsertConflicted(EventStoreSnapshot snapshot)
         {
-            var msg = new LogContextMessage(TraceEventType.Verbose, 54, "Snapshot for stream {StreamName} was already present when inserting");
+            var msg = new LogContextMessage(
+                TraceEventType.Verbose, 54, "Snapshot for stream {StreamName} was already present when inserting");
             msg.SetProperty("StreamName", false, snapshot.StreamName);
             msg.Log(this);
         }
@@ -512,10 +523,11 @@ namespace ServiceLib
             msg.Log(this);
         }
 
-        public void GetAllEventsComplete(EventStoreToken token, long eventId, int maxCount, IList<EventStoreEvent> events, EventStoreToken nextToken)
+        public void GetAllEventsComplete(
+            EventStoreToken token, long eventId, int maxCount, IList<EventStoreEvent> events, EventStoreToken nextToken)
         {
             var msg = new LogContextMessage(
-                TraceEventType.Verbose, 81, 
+                TraceEventType.Verbose, 81,
                 "GetAllEvents from token {Token} returned {EventsCount} events");
             msg.SetProperty("Token", false, token);
             msg.SetProperty("EventId", false, eventId);
@@ -525,7 +537,8 @@ namespace ServiceLib
             msg.Log(this);
         }
 
-        public void WaitForEventsComplete(EventStoreToken token, long eventId, int maxCount, IList<EventStoreEvent> events, EventStoreToken nextToken)
+        public void WaitForEventsComplete(
+            EventStoreToken token, long eventId, int maxCount, IList<EventStoreEvent> events, EventStoreToken nextToken)
         {
             var msg = new LogContextMessage(
                 TraceEventType.Verbose, 82,
@@ -572,7 +585,9 @@ namespace ServiceLib
             msg.Log(this);
         }
 
-        public void WaitForEventsCheckedForData(EventStoreToken token, long eventId, int maxCount, IList<EventStoreEvent> events, EventStoreToken nextToken, int taskId)
+        public void WaitForEventsCheckedForData(
+            EventStoreToken token, long eventId, int maxCount, IList<EventStoreEvent> events, EventStoreToken nextToken,
+            int taskId)
         {
             var msg = new LogContextMessage(
                 TraceEventType.Verbose, 85,

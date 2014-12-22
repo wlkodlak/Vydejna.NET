@@ -14,6 +14,7 @@ namespace ServiceLib
             public readonly object Lock;
             public string Value;
             public int Version;
+
             public Document(int version, string value)
             {
                 Lock = new object();
@@ -37,9 +38,14 @@ namespace ServiceLib
         private class DocumentFolder : IDocumentFolder
         {
             private readonly string _folderName;
-            private readonly ConcurrentDictionary<string, Document> _documents = new ConcurrentDictionary<string, Document>();
+
+            private readonly ConcurrentDictionary<string, Document> _documents =
+                new ConcurrentDictionary<string, Document>();
+
             private readonly ConcurrentDictionary<string, Index> _indexes = new ConcurrentDictionary<string, Index>();
-            private static readonly DocumentStoreInMemoryTraceSource Logger = new DocumentStoreInMemoryTraceSource("ServiceLib.DocumentStore");
+
+            private static readonly DocumentStoreInMemoryTraceSource Logger =
+                new DocumentStoreInMemoryTraceSource("ServiceLib.DocumentStore");
 
             public DocumentFolder(string folderName)
             {
@@ -131,7 +137,8 @@ namespace ServiceLib
                 return tcs.Task;
             }
 
-            public Task<bool> SaveDocument(string name, string value, DocumentStoreVersion expectedVersion, IList<DocumentIndexing> indexes)
+            public Task<bool> SaveDocument(
+                string name, string value, DocumentStoreVersion expectedVersion, IList<DocumentIndexing> indexes)
             {
                 try
                 {
@@ -250,7 +257,8 @@ namespace ServiceLib
                 return TaskUtils.FromResult<IList<string>>(foundKeys.ToList());
             }
 
-            public Task<DocumentStoreFoundDocuments> FindDocuments(string indexName, string minValue, string maxValue, int skip, int maxCount, bool ascending)
+            public Task<DocumentStoreFoundDocuments> FindDocuments(
+                string indexName, string minValue, string maxValue, int skip, int maxCount, bool ascending)
             {
                 try
                 {
@@ -258,9 +266,12 @@ namespace ServiceLib
                     var result = new DocumentStoreFoundDocuments();
                     if (_indexes.TryGetValue(indexName, out index))
                     {
-                        var byValueOrdered = ascending ? index.ByValue.OrderBy(t => t.Key) : index.ByValue.OrderByDescending(t => t.Key);
+                        var byValueOrdered = ascending
+                            ? index.ByValue.OrderBy(t => t.Key)
+                            : index.ByValue.OrderByDescending(t => t.Key);
                         FillFromIndex(minValue, maxValue, skip, maxCount, byValueOrdered, result);
-                        Logger.FoundDocuments(_folderName, indexName, minValue, maxValue, skip, maxCount, ascending, result);
+                        Logger.FoundDocuments(
+                            _folderName, indexName, minValue, maxValue, skip, maxCount, ascending, result);
                     }
                     return TaskUtils.FromResult(result);
                 }
@@ -272,7 +283,7 @@ namespace ServiceLib
 
             private void FillFromIndex(
                 string minValue, string maxValue, int skip, int maxCount,
-                IEnumerable<KeyValuePair<string, HashSet<string>>> byValueOrdered, 
+                IEnumerable<KeyValuePair<string, HashSet<string>>> byValueOrdered,
                 DocumentStoreFoundDocuments result)
             {
                 var allKeys = new HashSet<string>();
@@ -297,7 +308,8 @@ namespace ServiceLib
                         Document document;
                         if (_documents.TryGetValue(documentName, out document))
                         {
-                            result.Add(new DocumentStoreFoundDocument(documentName, document.Version, true, document.Value));
+                            result.Add(
+                                new DocumentStoreFoundDocument(documentName, document.Version, true, document.Value));
                         }
                     }
                 }
@@ -326,7 +338,5 @@ namespace ServiceLib
                     return folder;
             }
         }
-
     }
-
 }

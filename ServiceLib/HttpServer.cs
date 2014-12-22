@@ -33,11 +33,13 @@ namespace ServiceLib
             _dispatcher = dispatcher;
             _workerCount = Environment.ProcessorCount * 2;
         }
+
         public HttpServer SetupWorkerCount(int totalCount)
         {
             _workerCount = totalCount;
             return this;
         }
+
         public void Start()
         {
             SetProcessState(ProcessState.Starting);
@@ -146,7 +148,6 @@ namespace ServiceLib
         public HttpServerTraceSource(string name)
             : base(name)
         {
-
         }
 
         public void ServerStarting(List<string> prefixes)
@@ -175,7 +176,7 @@ namespace ServiceLib
             var msg = new LogContextMessage(TraceEventType.Verbose, 4, "Request to {Url} crashed");
             msg.SetProperty("Url", false, url);
             msg.SetProperty("Exception", false, exception);
-            msg.Log(this);      
+            msg.Log(this);
         }
 
         public void NoRouteFound(string url)
@@ -245,7 +246,7 @@ namespace ServiceLib
         }
 
         public IHttpServerRawHeaders InputHeaders { get; private set; }
-        
+
         public IHttpServerRawHeaders OutputHeaders { get; private set; }
     }
 

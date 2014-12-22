@@ -71,15 +71,16 @@ namespace ServiceLib
 
             public void Handle(AsyncRpcMessage<T, object> message)
             {
-                _handler.Handle(message.Query).ContinueWith(task =>
-                {
-                    if (task.Exception != null)
-                        message.Response.TrySetException(task.Exception.InnerExceptions);
-                    else if (task.IsCanceled)
-                        message.Response.TrySetCanceled();
-                    else
-                        message.Response.TrySetResult(null);
-                });
+                _handler.Handle(message.Query).ContinueWith(
+                    task =>
+                    {
+                        if (task.Exception != null)
+                            message.Response.TrySetException(task.Exception.InnerExceptions);
+                        else if (task.IsCanceled)
+                            message.Response.TrySetCanceled();
+                        else
+                            message.Response.TrySetResult(null);
+                    });
             }
         }
 
@@ -99,15 +100,16 @@ namespace ServiceLib
 
             public void Handle(AsyncRpcMessage<T, CommandResult> message)
             {
-                _handler.Handle(message.Query).ContinueWith(task =>
-                {
-                    if (task.Exception != null)
-                        message.Response.TrySetException(task.Exception.InnerExceptions);
-                    else if (task.IsCanceled)
-                        message.Response.TrySetCanceled();
-                    else
-                        message.Response.TrySetResult(task.Result);
-                });
+                _handler.Handle(message.Query).ContinueWith(
+                    task =>
+                    {
+                        if (task.Exception != null)
+                            message.Response.TrySetException(task.Exception.InnerExceptions);
+                        else if (task.IsCanceled)
+                            message.Response.TrySetCanceled();
+                        else
+                            message.Response.TrySetResult(task.Result);
+                    });
             }
         }
 
@@ -127,15 +129,16 @@ namespace ServiceLib
 
             public void Handle(AsyncRpcMessage<TQuery, TAnswer> message)
             {
-                _handler.Handle(message.Query).ContinueWith(task =>
-                {
-                    if (task.Exception != null)
-                        message.Response.TrySetException(task.Exception.InnerExceptions);
-                    else if (task.IsCanceled)
-                        message.Response.TrySetCanceled();
-                    else
-                        message.Response.TrySetResult(task.Result);
-                });
+                _handler.Handle(message.Query).ContinueWith(
+                    task =>
+                    {
+                        if (task.Exception != null)
+                            message.Response.TrySetException(task.Exception.InnerExceptions);
+                        else if (task.IsCanceled)
+                            message.Response.TrySetCanceled();
+                        else
+                            message.Response.TrySetResult(task.Result);
+                    });
             }
         }
 
@@ -159,9 +162,17 @@ namespace ServiceLib
 
     public static class SystemEvents
     {
-        public class SystemInit { }
-        public class SystemStarted { }
-        public class SystemShutdown { }
+        public class SystemInit
+        {
+        }
+
+        public class SystemStarted
+        {
+        }
+
+        public class SystemShutdown
+        {
+        }
     }
 
     public abstract class AbstractBus : IBus
@@ -177,7 +188,10 @@ namespace ServiceLib
 
         public void Publish<T>(T message)
         {
-            var messagesToQueue = _subscriptions.FindHandlers(message.GetType()).Select(s => new QueuedMessage(s, message, OnError)).ToList();
+            var messagesToQueue =
+                _subscriptions.FindHandlers(message.GetType())
+                    .Select(s => new QueuedMessage(s, message, OnError))
+                    .ToList();
             PublishCore(messagesToQueue);
         }
 
@@ -206,8 +220,15 @@ namespace ServiceLib
                 _onError = onError;
             }
 
-            public object Message { get { return _message; } }
-            public ISubscription Subscription { get { return _handler; } }
+            public object Message
+            {
+                get { return _message; }
+            }
+
+            public ISubscription Subscription
+            {
+                get { return _handler; }
+            }
 
             public void Process()
             {
@@ -375,6 +396,5 @@ namespace ServiceLib
             _scheduler = scheduler;
             State = ProcessState.Inactive;
         }
-
     }
 }

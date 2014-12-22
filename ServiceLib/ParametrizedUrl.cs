@@ -1,19 +1,19 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
 
 namespace ServiceLib
 {
     public class ParametrizedUrl
     {
-        private string _originalUrl;
-        private string _urlBase;
-        private List<IPart> _parts;
-        private string _queryString;
-        private ParametrizedUrlParts _prefix;
+        private readonly string _originalUrl;
+        private readonly string _urlBase;
+        private readonly List<IPart> _parts;
+        private readonly string _queryString;
+        private readonly ParametrizedUrlParts _prefix;
 
         private interface IPart
         {
@@ -26,7 +26,7 @@ namespace ServiceLib
 
         private class FixedPart : IPart
         {
-            private string _value;
+            private readonly string _value;
 
             public FixedPart(string value)
             {
@@ -67,7 +67,7 @@ namespace ServiceLib
 
         private class VariablePart : IPart
         {
-            private string _name;
+            private readonly string _name;
 
             public VariablePart(string name)
             {
@@ -105,23 +105,23 @@ namespace ServiceLib
 
         private class CompositePart : IPart
         {
-            private List<IPart> subParts;
-            private Regex _regex;
+            private readonly List<IPart> _subParts;
+            private readonly Regex _regex;
 
             public CompositePart(List<IPart> subParts)
             {
-                this.subParts = subParts;
+                _subParts = subParts;
                 var pattern = new StringBuilder();
                 pattern.Append("^");
                 foreach (var part in subParts)
                     part.BuildRegex(pattern);
                 pattern.Append("$");
-                this._regex = new Regex(pattern.ToString(), RegexOptions.Compiled);
+                _regex = new Regex(pattern.ToString(), RegexOptions.Compiled);
             }
 
             public void CompleteUrl(StringBuilder builder, ILookup<string, string> pathParameters)
             {
-                foreach (var part in subParts)
+                foreach (var part in _subParts)
                     part.CompleteUrl(builder, pathParameters);
             }
 
@@ -134,7 +134,7 @@ namespace ServiceLib
                 {
                     result.UpdateScore(2);
                     int groupIndex = 1;
-                    foreach (var part in subParts)
+                    foreach (var part in _subParts)
                     {
                         if (part.HasRegexGroup)
                         {
@@ -161,7 +161,8 @@ namespace ServiceLib
             }
         }
 
-        private static Regex RegexWholeUrl = new Regex(@"^(([a-z]+://)?([^/]+)?/)(([^/]+)/)*([^?]*)(\?.*)?$", RegexOptions.Compiled);
+        private static readonly Regex RegexWholeUrl = new Regex(
+            @"^(([a-z]+://)?([^/]+)?/)(([^/]+)/)*([^?]*)(\?.*)?$", RegexOptions.Compiled);
 
         public ParametrizedUrl(string url)
         {
@@ -195,7 +196,7 @@ namespace ServiceLib
             get { return _prefix; }
         }
 
-        private static Regex RegexCreatePart = new Regex(@"^(({[^}]+})|([^{]+))*$", RegexOptions.Compiled);
+        private static readonly Regex RegexCreatePart = new Regex(@"^(({[^}]+})|([^{]+))*$", RegexOptions.Compiled);
 
         private IPart CreatePart(string partString)
         {
@@ -217,7 +218,7 @@ namespace ServiceLib
                 return new CompositePart(subParts);
         }
 
-        public string CompleteUrl(IEnumerable<RequestParameter> parameters)
+        public string CompleteUrl(IList<RequestParameter> parameters)
         {
             var builder = new StringBuilder();
             builder.Append(_urlBase);
@@ -244,7 +245,7 @@ namespace ServiceLib
 
         private void BuildQueryString(IEnumerable<RequestParameter> parameters, StringBuilder builder)
         {
-            bool first = string.IsNullOrEmpty(_queryString);
+            var first = string.IsNullOrEmpty(_queryString);
             builder.Append(_queryString);
             foreach (var parameter in parameters)
             {
@@ -262,14 +263,14 @@ namespace ServiceLib
         public ParametrizedUrlMatch Match(ParametrizedUrlParts url)
         {
             var result = new ParametrizedUrlMatch();
-            int cnt = Math.Max(url.Count, _parts.Count);
-            for (int i = 0; i < cnt && result.Success; i++)
+            var count = Math.Max(url.Count, _parts.Count);
+            for (int i = 0; i < count && result.Success; i++)
             {
                 if (i < _parts.Count)
                     _parts[i].Match(i < url.Count ? url[i] : string.Empty, result, true);
                 else if (!string.IsNullOrEmpty(url[i]))
                     result.Fail();
-                else if (i != (cnt - 1))
+                else if (i != (count - 1))
                     result.Fail();
             }
             return result;
@@ -288,7 +289,7 @@ namespace ServiceLib
             {
                 if (string.IsNullOrEmpty(parameter))
                     continue;
-                var parts = parameter.Split(new[] { '=' }, 2);
+                var parts = parameter.Split(new[] {'='}, 2);
                 var name = parts[0];
                 var value = parts.Length == 1 ? name : UnescapeUri(parts[1]);
                 if (!string.IsNullOrEmpty(name))
@@ -305,16 +306,27 @@ namespace ServiceLib
     public class ParametrizedUrlMatch : IEnumerable<RequestParameter>
     {
         private int _score;
-        private List<RequestParameter> _parameters;
+        private readonly List<RequestParameter> _parameters;
 
         public ParametrizedUrlMatch()
         {
             _parameters = new List<RequestParameter>();
         }
 
-        public bool Success { get { return _score >= 0; } }
-        public int Score { get { return _score; } }
-        public int Count { get { return _parameters.Count; } }
+        public bool Success
+        {
+            get { return _score >= 0; }
+        }
+
+        public int Score
+        {
+            get { return _score; }
+        }
+
+        public int Count
+        {
+            get { return _parameters.Count; }
+        }
 
         public void AddParameter(string name, string value)
         {
@@ -322,16 +334,19 @@ namespace ServiceLib
                 return;
             _parameters.Add(new RequestParameter(RequestParameterType.Path, name, value));
         }
+
         public void UpdateScore(int value)
         {
             if (_score < 0)
                 return;
             _score = GetScoreUpdate(_score, value);
         }
+
         public static int GetScoreUpdate(int score, int value)
         {
             return score * 10 + value;
         }
+
         public ParametrizedUrlMatch Fail()
         {
             _parameters.Clear();
@@ -344,7 +359,7 @@ namespace ServiceLib
             return _parameters.GetEnumerator();
         }
 
-        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator()
+        IEnumerator IEnumerable.GetEnumerator()
         {
             return GetEnumerator();
         }
@@ -352,17 +367,27 @@ namespace ServiceLib
 
     public class ParametrizedUrlParts : IComparable<ParametrizedUrlParts>
     {
-        private IList<string> _elements;
+        private readonly IList<string> _elements;
+
         public ParametrizedUrlParts(params string[] elements)
         {
             _elements = elements;
         }
+
         public ParametrizedUrlParts(IList<string> elements)
         {
             _elements = elements;
         }
-        public int Count { get { return _elements.Count; } }
-        public string this[int index] { get { return _elements[index]; } }
+
+        public int Count
+        {
+            get { return _elements.Count; }
+        }
+
+        public string this[int index]
+        {
+            get { return _elements[index]; }
+        }
 
         public int CompareTo(ParametrizedUrlParts other)
         {

@@ -5,7 +5,7 @@ namespace ServiceLib
 {
     public class HttpServerDispatcher : IHttpServerDispatcher
     {
-        private readonly static HttpServerTraceSource Logger = new HttpServerTraceSource("ServiceLib.HttpServer");
+        private static readonly HttpServerTraceSource Logger = new HttpServerTraceSource("ServiceLib.HttpServer");
         private readonly IHttpRouter _router;
 
         public HttpServerDispatcher(IHttpRouter router)

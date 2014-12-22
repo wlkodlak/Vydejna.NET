@@ -512,7 +512,8 @@ namespace ServiceLib
             public readonly string MinValue;
             public readonly string MaxValue;
 
-            public FindDocumentKeysParameters(string partition,string folderName,string indexName,string minValue,string maxValue)
+            public FindDocumentKeysParameters(
+                string partition, string folderName, string indexName, string minValue, string maxValue)
             {
                 Partition = partition;
                 FolderName = folderName;
@@ -570,7 +571,7 @@ namespace ServiceLib
             public readonly int Skip;
             public readonly int MaxCount;
             public readonly bool Ascending;
-            
+
             public bool NeedsSeparateTotalCount;
 
             public FindDocumentsParameters(

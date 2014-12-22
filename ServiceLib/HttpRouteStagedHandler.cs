@@ -14,10 +14,12 @@ namespace ServiceLib
         private readonly IList<IHttpSerializer> _serializers;
         private readonly IHttpProcessor _processor;
         private int _requestId;
-        private static readonly HttpRouteStagedHandlerTraceSource Logger 
+
+        private static readonly HttpRouteStagedHandlerTraceSource Logger
             = new HttpRouteStagedHandlerTraceSource("ServiceLib.HttpRouteStagedHandler");
 
-        public HttpRouteStagedHandler(ISerializerPicker picker, IList<IHttpSerializer> serializers, IHttpProcessor processor)
+        public HttpRouteStagedHandler(
+            ISerializerPicker picker, IList<IHttpSerializer> serializers, IHttpProcessor processor)
         {
             _picker = picker;
             _serializers = serializers;
@@ -114,7 +116,8 @@ namespace ServiceLib
             msg.Log(this);
         }
 
-        public void SendingResponseFailed(int requestId, IHttpServerRawContext raw, HttpServerStagedContext staged, Exception exception)
+        public void SendingResponseFailed(
+            int requestId, IHttpServerRawContext raw, HttpServerStagedContext staged, Exception exception)
         {
             var msg = new LogContextMessage(TraceEventType.Verbose, 1, "Failed to send response to {Url}");
             msg.SetProperty("Url", false, raw.Url);

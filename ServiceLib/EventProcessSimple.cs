@@ -73,13 +73,14 @@ namespace ServiceLib
             _cancelStop = new CancellationTokenSource();
             SetProcessState(ProcessState.Starting);
             TaskUtils.FromEnumerable(ProcessCore()).UseScheduler(_scheduler).GetTask()
-                .ContinueWith(t =>
-                {
-                    if (t.Exception == null || t.IsCanceled)
-                        SetProcessState(ProcessState.Inactive);
-                    else
-                        SetProcessState(ProcessState.Faulted);
-                }, _scheduler);
+                .ContinueWith(
+                    t =>
+                    {
+                        if (t.Exception == null || t.IsCanceled)
+                            SetProcessState(ProcessState.Inactive);
+                        else
+                            SetProcessState(ProcessState.Faulted);
+                    }, _scheduler);
         }
 
         public void Pause()
@@ -120,7 +121,8 @@ namespace ServiceLib
             {
                 if (_processState == newState)
                     return;
-                if (_processState == ProcessState.Inactive && (newState == ProcessState.Pausing || newState == ProcessState.Stopping))
+                if (_processState == ProcessState.Inactive &&
+                    (newState == ProcessState.Pausing || newState == ProcessState.Stopping))
                     return;
                 _processState = newState;
                 handler = _onProcessStateChanged;
@@ -150,7 +152,8 @@ namespace ServiceLib
                 _streaming.Setup(token, handledTypes, _metadata.ProcessName);
                 if (Logger.IsDebugEnabled)
                 {
-                    Logger.TraceFormat("{0}: Process will use these event types: {1}",
+                    Logger.TraceFormat(
+                        "{0}: Process will use these event types: {1}",
                         _logName, string.Join(", ", handledTypes.Select(t => t.Name)));
                 }
 
@@ -158,24 +161,26 @@ namespace ServiceLib
                 _stopwatch.Restart();
 
                 var firstIteration = true;
-                var lastToken = (EventStoreToken)null;
+                var lastToken = (EventStoreToken) null;
 
                 while (!_cancelPause.IsCancellationRequested)
                 {
                     var nowait = firstIteration || lastToken != null;
                     firstIteration = false;
-                    var taskNextEvent = TaskUtils.Retry(() => _streaming.GetNextEvent(nowait), _time, _cancelPause.Token);
+                    var taskNextEvent = TaskUtils.Retry(
+                        () => _streaming.GetNextEvent(nowait), _time, _cancelPause.Token);
                     yield return taskNextEvent;
                     if (_cancelPause.IsCancellationRequested)
                         break;
                     var nextEvent = taskNextEvent.Result;
 
-                    var tokenToSave = (EventStoreToken)null;
+                    var tokenToSave = (EventStoreToken) null;
                     if (nextEvent == null)
                     {
                         tokenToSave = lastToken;
                         lastToken = null;
-                        Logger.TraceFormat("{0}: No events to process (attempt to get an event took {1} ms)",
+                        Logger.TraceFormat(
+                            "{0}: No events to process (attempt to get an event took {1} ms)",
                             _logName, _stopwatch.ElapsedMilliseconds);
                         _stopwatch.Restart();
                     }
@@ -184,11 +189,13 @@ namespace ServiceLib
                         lastToken = nextEvent.Token;
                         var eventType = nextEvent.Event.GetType();
                         var handler = _subscriptions.FindHandler(eventType);
-                        Logger.TraceFormat("{0}: Received event of type {1}, token {2} (getting the event took {3} ms)",
+                        Logger.TraceFormat(
+                            "{0}: Received event of type {1}, token {2} (getting the event took {3} ms)",
                             _logName, eventType.Name, nextEvent.Token, _stopwatch.ElapsedMilliseconds);
                         _stopwatch.Restart();
 
-                        var taskHandler = TaskUtils.Retry(() => handler.Handle(nextEvent.Event), _time, _cancelStop.Token, 3);
+                        var taskHandler = TaskUtils.Retry(
+                            () => handler.Handle(nextEvent.Event), _time, _cancelStop.Token, 3);
                         yield return taskHandler;
                         tokenToSave = lastToken;
                         if (taskHandler.Exception != null && !taskHandler.IsCanceled)
@@ -202,8 +209,10 @@ namespace ServiceLib
                                 yield return taskDead;
                                 if (taskDead.Exception == null)
                                 {
-                                    Logger.ErrorFormat("{0}: Event {1} (token {2}) failed in {3} ms, marked as dead-letter in {4} ms. {5}",
-                                        _logName, eventType.Name, nextEvent.Token, processingTime, _stopwatch.ElapsedMilliseconds, taskHandler.Exception.InnerException);
+                                    Logger.ErrorFormat(
+                                        "{0}: Event {1} (token {2}) failed in {3} ms, marked as dead-letter in {4} ms. {5}",
+                                        _logName, eventType.Name, nextEvent.Token, processingTime,
+                                        _stopwatch.ElapsedMilliseconds, taskHandler.Exception.InnerException);
                                     _stopwatch.Restart();
                                     break;
                                 }
@@ -212,8 +221,9 @@ namespace ServiceLib
                         else
                         {
                             _tracker.ReportProgress(nextEvent.Token);
-                            Logger.InfoFormat("{0}: Event {1} (token {2}) processed in {3} ms",
-                               _logName, eventType.Name, nextEvent.Token, _stopwatch.ElapsedMilliseconds);
+                            Logger.InfoFormat(
+                                "{0}: Event {1} (token {2}) processed in {3} ms",
+                                _logName, eventType.Name, nextEvent.Token, _stopwatch.ElapsedMilliseconds);
                             _stopwatch.Restart();
                         }
                     }
@@ -226,13 +236,14 @@ namespace ServiceLib
                             yield return taskSaveToken;
                             if (taskSaveToken.Exception == null)
                             {
-                                Logger.TraceFormat("{0}: Saved token {1} ({2} ms)", _logName, tokenToSave, _stopwatch.ElapsedMilliseconds);
+                                Logger.TraceFormat(
+                                    "{0}: Saved token {1} ({2} ms)", _logName, tokenToSave,
+                                    _stopwatch.ElapsedMilliseconds);
                                 _stopwatch.Restart();
                                 break;
                             }
                         }
                     }
-
                 }
             }
             finally
@@ -246,15 +257,20 @@ namespace ServiceLib
 
     public static class ProjectorUtils
     {
-        public static Task<int> Save(IDocumentFolder folder, string documentName, int expectedVersion, string newContents, IList<DocumentIndexing> indexes)
+        public static Task<int> Save(
+            IDocumentFolder folder, string documentName, int expectedVersion, string newContents,
+            IList<DocumentIndexing> indexes)
         {
-            return folder.SaveDocument(documentName, newContents, DocumentStoreVersion.At(expectedVersion), indexes).ContinueWith(task =>
-                {
-                    if (task.Result)
-                        return expectedVersion + 1;
-                    else
-                        throw new ProjectorMessages.ConcurrencyException();
-                });
+            return
+                folder.SaveDocument(documentName, newContents, DocumentStoreVersion.At(expectedVersion), indexes)
+                    .ContinueWith(
+                        task =>
+                        {
+                            if (task.Result)
+                                return expectedVersion + 1;
+                            else
+                                throw new ProjectorMessages.ConcurrencyException();
+                        });
         }
     }
 }

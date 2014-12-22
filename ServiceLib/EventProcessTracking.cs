@@ -13,22 +13,26 @@ namespace ServiceLib
         void AddEvent(EventStoreToken token);
         void CommitToTracker();
     }
+
     public interface IEventProcessTrackItem
     {
         string TrackingId { get; }
         Task<bool> WaitForFinish(int timeoutMilliseconds);
     }
+
     public interface IEventProcessTrackTarget
     {
         string HandlerName { get; }
         void ReportProgress(EventStoreToken token);
     }
+
     public interface IEventProcessTrackCoordinator
     {
         IEventProcessTrackSource CreateTracker();
         IEventProcessTrackItem FindTracker(string trackingId);
         IEventProcessTrackTarget RegisterHandler(string handlerName);
     }
+
     public class EventProcessTracking : IProcessWorker, IEventProcessTrackCoordinator
     {
         private readonly object _lock;
@@ -77,7 +81,10 @@ namespace ServiceLib
                 _lastToken = EventStoreToken.Initial;
             }
 
-            string IEventProcessTrackSource.TrackingId { get { return _trackingId; } }
+            string IEventProcessTrackSource.TrackingId
+            {
+                get { return _trackingId; }
+            }
 
             public void AddEvent(EventStoreToken token)
             {
@@ -104,6 +111,7 @@ namespace ServiceLib
                 }
             }
         }
+
         private class TrackItem : IEventProcessTrackItem
         {
             private readonly EventProcessTracking _parent;
@@ -121,7 +129,10 @@ namespace ServiceLib
                 UnfinishedHandlersSet = parent._fullMask;
             }
 
-            string IEventProcessTrackItem.TrackingId { get { return _trackingId; } }
+            string IEventProcessTrackItem.TrackingId
+            {
+                get { return _trackingId; }
+            }
 
             public Task<bool> WaitForFinish(int timeoutMilliseconds)
             {
@@ -150,6 +161,7 @@ namespace ServiceLib
                 }
             }
         }
+
         private class TrackTarget : IEventProcessTrackTarget
         {
             private readonly EventProcessTracking _parent;
@@ -165,7 +177,10 @@ namespace ServiceLib
                 LastToken = EventStoreToken.Initial;
             }
 
-            string IEventProcessTrackTarget.HandlerName { get { return _handlerName; } }
+            string IEventProcessTrackTarget.HandlerName
+            {
+                get { return _handlerName; }
+            }
 
             public void ReportProgress(EventStoreToken token)
             {
@@ -186,6 +201,7 @@ namespace ServiceLib
                 }
             }
         }
+
         private class TrackWaiter
         {
             public readonly TaskCompletionSource<bool> Task;
@@ -254,7 +270,8 @@ namespace ServiceLib
         {
             _cancelSource = new CancellationTokenSource();
             _cancel = _cancelSource.Token;
-            _time.Delay(1000, _cancel).ContinueWith(ProcessTimeouts, CancellationToken.None, TaskContinuationOptions.None, _scheduler);
+            _time.Delay(1000, _cancel)
+                .ContinueWith(ProcessTimeouts, CancellationToken.None, TaskContinuationOptions.None, _scheduler);
             SetProcessState(ProcessState.Running);
         }
 
@@ -321,7 +338,9 @@ namespace ServiceLib
     public class EventProcessTrackService
     {
         private readonly IEventProcessTrackCoordinator _coordinator;
-        private readonly static EventProcessTrackingTraceSource Logger = new EventProcessTrackingTraceSource("ServiceLib.EventProcessTracking");
+
+        private static readonly EventProcessTrackingTraceSource Logger =
+            new EventProcessTrackingTraceSource("ServiceLib.EventProcessTracking");
 
         public EventProcessTrackService(IEventProcessTrackCoordinator coordinator)
         {
@@ -345,24 +364,27 @@ namespace ServiceLib
             var timeout = ctx.Parameter("timeout").AsInteger().Default(10000).Get();
             var finished = await _coordinator.FindTracker(trackingId).WaitForFinish(timeout);
 
-            ctx.StatusCode = finished ? (int)HttpStatusCode.OK : (int)HttpStatusCode.Accepted;
+            ctx.StatusCode = finished ? (int) HttpStatusCode.OK : (int) HttpStatusCode.Accepted;
             Logger.TrackingReport(trackingId, timeout, finished);
         }
     }
 
     public class EventProcessTrackingTraceSource : TraceSource
     {
-        public EventProcessTrackingTraceSource(string name) : base(name) { }
+        public EventProcessTrackingTraceSource(string name)
+            : base(name)
+        {
+        }
 
         public void TrackingReport(string trackingId, int timeout, bool finished)
         {
-            var msg = new LogContextMessage(TraceEventType.Information, 1, 
+            var msg = new LogContextMessage(
+                TraceEventType.Information, 1,
                 "Tracking request with id {TrackingId} reported " + (finished ? "" : "un") + "finished command");
             msg.SetProperty("TrackingId", false, trackingId);
             msg.SetProperty("Timeout", false, timeout);
             msg.SetProperty("Finished", false, finished);
             msg.Log(this);
         }
-
     }
 }

@@ -18,7 +18,10 @@ namespace ServiceLib
         private readonly ITime _time;
         private readonly CircuitBreaker _breaker;
         private readonly string _logName;
-        private static readonly DatabasePostgresTraceSource Logger = new DatabasePostgresTraceSource("ServiceLib.DatabasePostgres");
+
+        private static readonly DatabasePostgresTraceSource Logger =
+            new DatabasePostgresTraceSource("ServiceLib.DatabasePostgres");
+
         private int _concurrentWorkers;
         private TaskScheduler _scheduler;
 
@@ -28,7 +31,9 @@ namespace ServiceLib
         {
             _connectionString = connectionString;
             var connectionElements = new NpgsqlConnectionStringBuilder(connectionString);
-            _logName = string.Concat(connectionElements.UserName, "@", connectionElements.Host, ":", connectionElements.Port, "/", connectionElements.Database);
+            _logName = string.Concat(
+                connectionElements.UserName, "@", connectionElements.Host, ":", connectionElements.Port, "/",
+                connectionElements.Database);
             _time = time;
             _breaker = new CircuitBreaker(time).StartHalfOpen();
             _concurrentWorkers = 0;
@@ -65,7 +70,7 @@ namespace ServiceLib
 
         private void ExecuteWorkerVoid(object param)
         {
-            var parameters = (Tuple<Action<NpgsqlConnection, object>, object>)param;
+            var parameters = (Tuple<Action<NpgsqlConnection, object>, object>) param;
             using (var conn = new NpgsqlConnection())
             {
                 try
@@ -84,7 +89,7 @@ namespace ServiceLib
 
         private T ExecuteWorkerFunc<T>(object param)
         {
-            var parameters = (Tuple<Func<NpgsqlConnection, object, T>, object>)param;
+            var parameters = (Tuple<Func<NpgsqlConnection, object, T>, object>) param;
             using (var conn = new NpgsqlConnection())
             {
                 try
@@ -153,7 +158,8 @@ namespace ServiceLib
         {
             if (cancel.IsCancellationRequested)
                 return;
-            var listener = new Listener(_notifications, Interlocked.Increment(ref _listenerKey), listenName, onNotify, cancel);
+            var listener = new Listener(
+                _notifications, Interlocked.Increment(ref _listenerKey), listenName, onNotify, cancel);
             _notifications.AddListener(listener);
             listener.RegisterCancelling();
         }
@@ -195,7 +201,9 @@ namespace ServiceLib
             private CancellationToken _cancel;
             private readonly TaskFactory _taskFactory;
 
-            public Listener(NotificationWatcher notifications, int key, string listenName, Action<string> onNotify, CancellationToken cancel)
+            public Listener(
+                NotificationWatcher notifications, int key, string listenName, Action<string> onNotify,
+                CancellationToken cancel)
             {
                 _notifications = notifications;
                 _onNotify = onNotify;
@@ -296,12 +304,12 @@ namespace ServiceLib
             {
                 lock (_lock)
                 {
-                    var add = !_listeners.Any(l => l.Name == listener.Name);
+                    var add = _listeners.All(l => l.Name != listener.Name);
                     _listeners.Add(listener);
                     if (add)
                     {
                         Logger.AddingListener(listener.Name);
-                        _changes.Add(new ListeningChange { Add = true, Name = listener.Name });
+                        _changes.Add(new ListeningChange {Add = true, Name = listener.Name});
                         Monitor.Pulse(_lock);
                     }
                 }
@@ -312,10 +320,10 @@ namespace ServiceLib
                 lock (_lock)
                 {
                     _listeners.Remove(listener);
-                    if (!_listeners.Any(l => l.Name == listener.Name))
+                    if (_listeners.All(l => l.Name != listener.Name))
                     {
                         Logger.RemovingListener(listener.Name);
-                        _changes.Add(new ListeningChange { Add = true, Name = listener.Name });
+                        _changes.Add(new ListeningChange {Add = true, Name = listener.Name});
                         Monitor.Pulse(_lock);
                     }
                 }
@@ -326,14 +334,15 @@ namespace ServiceLib
                 lock (_lock)
                 {
                     Logger.ScheduleNotify(name, payload);
-                    _notifications.Add(new Notification { Name = name, Payload = payload });
+                    _notifications.Add(new Notification {Name = name, Payload = payload});
                     Monitor.Pulse(_lock);
                 }
             }
 
             public void Start()
             {
-                _task = Task.Factory.StartNew(NotificationCore, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+                _task = Task.Factory.StartNew(
+                    NotificationCore, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
             }
 
             public void Stop()
@@ -403,7 +412,7 @@ namespace ServiceLib
                 catch (IOException ex)
                 {
                     Logger.OpeningNotificationConnectionFailed(_parent._logName, ex);
-                    var attemptLength = (int)(_parent._time.GetUtcTime() - attemptStart).TotalMilliseconds;
+                    var attemptLength = (int) (_parent._time.GetUtcTime() - attemptStart).TotalMilliseconds;
                     var timeout = Math.Max(0, (attemptNumber == 0 ? 0 : 20000) - attemptLength);
                     if (timeout > 0)
                         cancel.WaitHandle.WaitOne(timeout);
@@ -501,8 +510,8 @@ namespace ServiceLib
     public class DatabasePostgresTraceSource : TraceSource
     {
         public DatabasePostgresTraceSource(string name)
-            : base(name) 
-        { 
+            : base(name)
+        {
         }
 
         public void OpeningConnection(string connectionSetup, int workerCount)
@@ -581,7 +590,8 @@ namespace ServiceLib
 
         public void OpeningNotificationConnectionFailed(string connectionSetup, Exception exception)
         {
-            var msg = new LogContextMessage(TraceEventType.Information, 207, "Opening connection for notifications failed");
+            var msg = new LogContextMessage(
+                TraceEventType.Information, 207, "Opening connection for notifications failed");
             msg.SetProperty("ConnectionSetup", false, connectionSetup);
             msg.SetProperty("Exception", true, exception);
             msg.Log(this);
@@ -589,7 +599,8 @@ namespace ServiceLib
 
         public void SendInitialListen(string listenCommands)
         {
-            var msg = new LogContextMessage(TraceEventType.Verbose, 208, "Sending initial LISTEN commands after restoring connection");
+            var msg = new LogContextMessage(
+                TraceEventType.Verbose, 208, "Sending initial LISTEN commands after restoring connection");
             msg.SetProperty("Commands", true, listenCommands);
             msg.Log(this);
         }

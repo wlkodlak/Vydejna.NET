@@ -27,7 +27,8 @@ namespace ServiceLib
             var storedEvent = new EventStoreEvent();
             _serializer.Serialize(evnt, storedEvent);
             var fullStreamName = string.Concat(_streamPrefix, streamName);
-            var addedToStream = await _eventStore.AddToStream(fullStreamName, new[] { storedEvent }, EventStoreVersion.Any);
+            var addedToStream =
+                await _eventStore.AddToStream(fullStreamName, new[] {storedEvent}, EventStoreVersion.Any);
             if (addedToStream)
             {
                 tracker.AddEvent(storedEvent.Token);
@@ -43,7 +44,9 @@ namespace ServiceLib
         private readonly List<object> _events;
         private readonly IEventProcessTrackCoordinator _tracking;
 
-        public ExternalEventServiceExecution(IExternalEventRepository repository, ExternalEventServiceExecutionTraceSource logger, IEventProcessTrackCoordinator tracking, string streamName)
+        public ExternalEventServiceExecution(
+            IExternalEventRepository repository, ExternalEventServiceExecutionTraceSource logger,
+            IEventProcessTrackCoordinator tracking, string streamName)
         {
             _repository = repository;
             _logger = logger;

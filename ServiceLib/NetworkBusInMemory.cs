@@ -1,22 +1,26 @@
-﻿using log4net;
-using System;
+﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Collections.Concurrent;
 
 namespace ServiceLib
 {
     public class NetworkBusInMemory : INetworkBus
     {
         private int _collectingIsSetup;
-        private ConcurrentDictionary<MessageDestination, DestinationContents> _destinations;
-        private ITime _timeService;
-        private int _collectInterval, _collectTimeout;
-        private CancellationTokenSource _cancel;
-        private static readonly ILog Logger = LogManager.GetLogger("ServiceLib.NetworkBus");
+        private readonly ConcurrentDictionary<MessageDestination, DestinationContents> _destinations;
+        private readonly ITime _timeService;
+        private readonly int _collectInterval;
+        private readonly int _collectTimeout;
+        private readonly CancellationTokenSource _cancel;
+        private readonly CancellationToken _cancelToken;
+        private Task _taskCollect;
+
+        private static readonly NetworkBusInMemoryTraceSource Logger
+            = new NetworkBusInMemoryTraceSource("ServiceLib.NetworkBus");
 
         public NetworkBusInMemory(ITime timeService)
         {
@@ -25,38 +29,38 @@ namespace ServiceLib
             _collectInterval = 60;
             _collectTimeout = 600;
             _cancel = new CancellationTokenSource();
+            _cancelToken = _cancel.Token;
         }
 
         private void StartCollecting()
         {
             if (Interlocked.Exchange(ref _collectingIsSetup, 1) == 0)
             {
-                _timeService.Delay(1000 * _collectInterval, _cancel.Token)
-                    .ContinueWith(DoCollect, _cancel.Token);
+                _taskCollect = DoCollect();
             }
         }
 
-        private void DoCollect(Task task)
+        private async Task DoCollect()
         {
-            if (task.Exception != null || task.IsCanceled)
-                return;
-            using (new LogMethod(Logger, "DoCollect"))
+            while (!_cancelToken.IsCancellationRequested)
             {
-                DateTime removedDateTime;
-                Message removedMessage;
-                var limit = _timeService.GetUtcTime().AddSeconds(-_collectTimeout);
-                foreach (var destination in _destinations.Values)
+                await _timeService.Delay(1000 * _collectInterval, _cancelToken);
+                using (new LogMethod(Logger, "DoCollect"))
                 {
-                    var old = destination.DeliveredOn.Where(p => p.Value <= limit).Select(p => p.Key).ToList();
-                    foreach (var oldKey in old)
+                    var limit = _timeService.GetUtcTime().AddSeconds(-_collectTimeout);
+                    foreach (var destination in _destinations.Values)
                     {
-                        destination.DeliveredOn.TryRemove(oldKey, out removedDateTime);
-                        if (destination.InProgress.TryRemove(oldKey, out removedMessage))
-                            destination.Incoming.Enqueue(removedMessage);
+                        var old = destination.DeliveredOn.Where(p => p.Value <= limit).Select(p => p.Key).ToList();
+                        foreach (var oldKey in old)
+                        {
+                            DateTime removedDateTime;
+                            destination.DeliveredOn.TryRemove(oldKey, out removedDateTime);
+                            Message removedMessage;
+                            if (destination.InProgress.TryRemove(oldKey, out removedMessage))
+                                destination.Incoming.Enqueue(removedMessage);
+                        }
                     }
                 }
-                _timeService.Delay(1000 * _collectInterval, _cancel.Token)
-                    .ContinueWith(DoCollect, _cancel.Token);
             }
         }
 
@@ -64,12 +68,18 @@ namespace ServiceLib
         {
             Interlocked.Exchange(ref _collectingIsSetup, 1);
             _cancel.Cancel();
+            try
+            {
+                _taskCollect.Wait(1000);
+            }
+            catch (AggregateException)
+            {
+            }
             _cancel.Dispose();
         }
 
         private class DestinationContents
         {
-            public readonly NetworkBusInMemory Parent;
             public readonly MessageDestination Destination;
             public ConcurrentQueue<Message> Incoming;
             public ConcurrentDictionary<string, Message> InProgress;
@@ -77,9 +87,8 @@ namespace ServiceLib
             public readonly ConcurrentDictionary<string, bool> Subscriptions;
             public readonly ConcurrentBag<Waiter> Waiters;
 
-            public DestinationContents(NetworkBusInMemory parent, MessageDestination destination)
+            public DestinationContents(MessageDestination destination)
             {
-                Parent = parent;
                 Destination = destination;
                 Incoming = new ConcurrentQueue<Message>();
                 InProgress = new ConcurrentDictionary<string, Message>();
@@ -91,14 +100,11 @@ namespace ServiceLib
 
         private class Waiter
         {
-            public DestinationContents Contents;
             public CancellationToken Cancel;
-            public TaskCompletionSource<Message> Task;
-            public CancellationTokenRegistration CancelRegistration;
+            public readonly TaskCompletionSource<Message> Task;
 
-            public Waiter(DestinationContents contents, CancellationToken cancel)
+            public Waiter(CancellationToken cancel)
             {
-                Contents = contents;
                 Cancel = cancel;
                 Task = new TaskCompletionSource<Message>();
             }
@@ -118,40 +124,46 @@ namespace ServiceLib
                     if (contents.Waiters.IsEmpty || contents.Incoming.IsEmpty)
                         return;
                     Waiter waiter;
-                    Message message = null;
-
                     while (contents.Waiters.TryTake(out waiter))
                     {
                         if (waiter.Cancel.IsCancellationRequested)
                         {
                             toBeCancelled.Add(waiter.Task);
                         }
-                        else if (!contents.Incoming.TryDequeue(out message))
-                        {
-                            contents.Waiters.Add(waiter);
-                            break;
-                        }
                         else
                         {
-                            toBeReceived.Add(Tuple.Create(waiter.Task, message));
+                            Message message;
+                            if (!contents.Incoming.TryDequeue(out message))
+                            {
+                                contents.Waiters.Add(waiter);
+                                break;
+                            }
+                            else
+                            {
+                                toBeReceived.Add(Tuple.Create(waiter.Task, message));
+                            }
                         }
                     }
                 }
                 if (toBeCancelled.Count > 0)
                 {
-                    Logger.DebugFormat("{0}: Cancelling {1} receives", processName, toBeCancelled.Count);
                     foreach (var waiter in toBeCancelled)
                     {
+                        Logger.WaiterCancelled(processName, waiter.Task.Id);
                         waiter.TrySetCanceled();
                     }
                 }
                 foreach (var pair in toBeReceived)
                 {
-                    Logger.DebugFormat("{0}: Returning message {1}", processName, pair.Item2.MessageId);
                     if (!pair.Item1.TrySetResult(pair.Item2))
                     {
+                        Logger.MessageNotDeliveredToCurrentWaiter(processName, pair.Item2, pair.Item1.Task.Id);
                         contents.Incoming.Enqueue(pair.Item2);
                         needsAnotherTry = true;
+                    }
+                    else
+                    {
+                        Logger.MessageDelivered(processName, pair.Item2, pair.Item1.Task.Id);
                     }
                 }
                 if (needsAnotherTry)
@@ -164,7 +176,7 @@ namespace ServiceLib
 
         private void WaiterCancelled(object param)
         {
-            var waiter = param as Waiter;
+            var waiter = (Waiter) param;
             waiter.Task.TrySetResult(null);
         }
 
@@ -179,12 +191,12 @@ namespace ServiceLib
             }
             else if (destination == MessageDestination.Subscribers)
             {
-                Logger.DebugFormat("Broadcasting message {0}", message.MessageId);
                 foreach (var target in _destinations.Values)
                 {
                     if (target.Subscriptions.GetOrAdd(message.Type, false))
                     {
                         target.Incoming.Enqueue(message);
+                        Logger.MessageBroadcasted(message, target.Destination);
                         Notify(target);
                     }
                 }
@@ -193,88 +205,86 @@ namespace ServiceLib
             {
                 DestinationContents contents;
                 if (!_destinations.TryGetValue(destination, out contents))
-                    contents = _destinations.GetOrAdd(destination, new DestinationContents(this, destination));
-                Logger.DebugFormat("Sending message {0} to {1}", message.MessageId, destination.ProcessName);
+                    contents = _destinations.GetOrAdd(destination, new DestinationContents(destination));
                 contents.Incoming.Enqueue(message);
+                Logger.MessageSent(message, destination);
                 Notify(contents);
             }
             return TaskUtils.CompletedTask();
         }
 
-        public Task<Message> Receive(MessageDestination destination, bool nowait, CancellationToken cancel)
+        public async Task<Message> Receive(MessageDestination destination, bool nowait, CancellationToken cancel)
         {
-            if (cancel.IsCancellationRequested)
-                return TaskUtils.CancelledTask<Message>();
+            cancel.ThrowIfCancellationRequested();
             StartCollecting();
-            DestinationContents contents;
             Message message;
-            if (!_destinations.TryGetValue(destination, out contents))
-                contents = _destinations.GetOrAdd(destination, new DestinationContents(this, destination));
+            var contents = GetDestinationContents(destination);
             if (contents.Incoming.TryDequeue(out message))
             {
                 contents.InProgress[message.MessageId] = message;
                 contents.DeliveredOn[message.MessageId] = _timeService.GetUtcTime();
-                Logger.DebugFormat("{0}: Returning message {1} (type {2})", 
-                    destination.ProcessName, message.MessageId, message.Type);
-                return TaskUtils.FromResult(message);
+                Logger.MessageReceived(destination, message);
+                return message;
             }
             else if (nowait)
             {
-                Logger.DebugFormat("{0}: Returning null", destination.ProcessName);
-                return TaskUtils.FromResult<Message>(null);
+                Logger.NoMessageAvailable(destination);
+                return null;
             }
             else
             {
-                var waiter = new Waiter(contents, cancel);
+                var waiter = new Waiter(cancel);
                 if (cancel.CanBeCanceled)
                 {
-                    waiter.CancelRegistration = cancel.Register(WaiterCancelled, waiter);
+                    cancel.Register(WaiterCancelled, waiter);
                 }
+                Logger.StartedWaitingForMessage(destination, waiter.Task.Task.Id);
                 contents.Waiters.Add(waiter);
                 Notify(contents);
-                return waiter.Task.Task;
+                message = await waiter.Task.Task;
+                Logger.MessageReceived(destination, message);
+                return message;
             }
+        }
+
+        private DestinationContents GetDestinationContents(MessageDestination destination)
+        {
+            DestinationContents contents;
+            if (!_destinations.TryGetValue(destination, out contents))
+                contents = _destinations.GetOrAdd(destination, new DestinationContents(destination));
+            return contents;
         }
 
         public Task Subscribe(string type, MessageDestination destination, bool unsubscribe)
         {
-            DestinationContents contents;
-            if (!_destinations.TryGetValue(destination, out contents))
-                contents = _destinations.GetOrAdd(destination, new DestinationContents(this, destination));
-            Logger.DebugFormat(
-                unsubscribe ? "{0}: Unsubscribing from {1}" : "{0}: Subscribing to {1}", 
-                destination.ProcessName, type);
+            var contents = GetDestinationContents(destination);
             contents.Subscriptions[type] = !unsubscribe;
+            Logger.Subscribed(unsubscribe, destination, type);
             return TaskUtils.CompletedTask();
         }
 
         public Task MarkProcessed(Message message, MessageDestination newDestination)
         {
-            DestinationContents contents;
-            if (!_destinations.TryGetValue(message.Destination, out contents))
-                contents = _destinations.GetOrAdd(message.Destination, new DestinationContents(this, message.Destination));
+            var contents = GetDestinationContents(message.Destination);
             Message removed;
             contents.InProgress.TryRemove(message.MessageId, out removed);
             if (newDestination == MessageDestination.DeadLetters)
             {
-                if (!_destinations.TryGetValue(newDestination, out contents))
-                    contents = _destinations.GetOrAdd(newDestination, new DestinationContents(this, newDestination));
-                Logger.DebugFormat("{0}: Marked message {1} as dead letter", message.Destination.ProcessName, message.MessageId);
+                contents = GetDestinationContents(newDestination);
                 contents.Incoming.Enqueue(removed);
+                Logger.MarkedAsDeadLetter(message.Destination, message);
             }
             else if (newDestination == MessageDestination.Processed)
             {
-                Logger.DebugFormat("{0}: Marked message {1} as processed", message.Destination.ProcessName, message.MessageId);
+                Logger.MarkedAsProcessed(message.Destination, message);
             }
             return TaskUtils.CompletedTask();
         }
 
         public Task DeleteAll(MessageDestination destination)
         {
-            DestinationContents contents;
-            if (!_destinations.TryGetValue(destination, out contents))
-                contents = _destinations.GetOrAdd(destination, new DestinationContents(this, destination));
-            Logger.DebugFormat("{0}: Deleted all messages", destination.ProcessName);
+            var contents = GetDestinationContents(destination);
+            Logger.DeletedAllMessages(destination.ProcessName);
             contents.InProgress = new ConcurrentDictionary<string, Message>();
             contents.Incoming = new ConcurrentQueue<Message>();
             return TaskUtils.CompletedTask();
@@ -282,18 +292,128 @@ namespace ServiceLib
 
         public List<Message> GetContents(MessageDestination destination)
         {
-            DestinationContents contents;
-            if (!_destinations.TryGetValue(destination, out contents))
-                contents = _destinations.GetOrAdd(destination, new DestinationContents(this, destination));
+            var contents = GetDestinationContents(destination);
             return contents.Incoming.ToList();
         }
 
         public List<Message> GetContentsInProgress(MessageDestination destination)
         {
-            DestinationContents contents;
-            if (!_destinations.TryGetValue(destination, out contents))
-                contents = _destinations.GetOrAdd(destination, new DestinationContents(this, destination));
+            var contents = GetDestinationContents(destination);
             return contents.InProgress.Values.ToList();
+        }
+    }
+
+    public class NetworkBusInMemoryTraceSource : TraceSource
+    {
+        public NetworkBusInMemoryTraceSource(string name)
+            : base(name)
+        {
+        }
+
+        public void WaiterCancelled(string processName, int taskId)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 27, "Waiter {TaskId} cancelled");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("TaskId", false, taskId);
+            msg.Log(this);
+        }
+
+        public void MessageDelivered(string processName, Message message, int taskId)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 25, "Message was delivered to waiter");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("MessageId", false, message.MessageId);
+            msg.SetProperty("TaskId", false, taskId);
+            msg.Log(this);
+        }
+
+        public void MessageNotDeliveredToCurrentWaiter(string processName, Message messageId, int taskId)
+        {
+            var msg = new LogContextMessage(
+                TraceEventType.Verbose, 26, "Attempt to deliver message failed, will be retried");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("MessageId", false, messageId);
+            msg.SetProperty("TaskId", false, taskId);
+            msg.Log(this);
+        }
+
+        public void DeletedAllMessages(string processName)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 30, "Deleted all messages");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.Log(this);
+        }
+
+        public void MessageBroadcasted(Message message, MessageDestination destination)
+        {
+            var msg = new LogContextMessage(
+                TraceEventType.Verbose, 21, "Message {MessageId} sent to {Destination} using broadcast");
+            msg.SetProperty("MessageId", false, message.MessageId);
+            msg.SetProperty("Type", false, message.Type);
+            msg.SetProperty("Destination", false, destination.ProcessName);
+            msg.Log(this);
+        }
+
+        public void MessageSent(Message message, MessageDestination destination)
+        {
+            var msg = new LogContextMessage(
+                TraceEventType.Verbose, 22, "Message {MessageId} sent to {Destination} directly");
+            msg.SetProperty("MessageId", false, message.MessageId);
+            msg.SetProperty("Type", false, message.Type);
+            msg.SetProperty("Destination", false, destination.ProcessName);
+            msg.Log(this);
+        }
+
+        public void MessageReceived(MessageDestination destination, Message message)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 11, "Message {MessageId} received");
+            msg.SetProperty("MessageId", false, message.MessageId);
+            msg.SetProperty("Type", false, message.Type);
+            msg.SetProperty("Destination", false, destination.ProcessName);
+            msg.Log(this);
+        }
+
+        public void NoMessageAvailable(MessageDestination destination)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 12, "No messages in queue");
+            msg.SetProperty("Destination", false, destination.ProcessName);
+            msg.Log(this);
+        }
+
+        public void StartedWaitingForMessage(MessageDestination destination, int taskId)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 13, "Started waiting for message");
+            msg.SetProperty("ProcessName", false, destination.ProcessName);
+            msg.SetProperty("TaskId", false, taskId);
+            msg.Log(this);
+        }
+
+        public void Subscribed(bool unsubscribe, MessageDestination destination, string type)
+        {
+            var summary = unsubscribe
+                ? "Process {ProcessName} unsubscribed from {Type}"
+                : "Process {ProcessName} subscribed to {Type}";
+            var msg = new LogContextMessage(TraceEventType.Verbose, 16, summary);
+            msg.SetProperty("Action", false, unsubscribe ? "Unsubscribed" : "Subscribed");
+            msg.SetProperty("Type", false, type);
+            msg.SetProperty("ProcessName", false, destination.ProcessName);
+            msg.Log(this);
+        }
+
+        public void MarkedAsDeadLetter(MessageDestination originalDestination, Message message)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 17, "Message {MessageId} marked as dead letter");
+            msg.SetProperty("MessageId", false, message.MessageId);
+            msg.SetProperty("OriginalDestination", false, originalDestination.ProcessName);
+            msg.Log(this);
+        }
+
+        public void MarkedAsProcessed(MessageDestination originalDestination, Message message)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 18, "Message {MessageId} marked as processed");
+            msg.SetProperty("MessageId", false, message.MessageId);
+            msg.SetProperty("OriginalDestination", false, originalDestination.ProcessName);
+            msg.Log(this);
         }
     }
 }

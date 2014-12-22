@@ -13,7 +13,9 @@ namespace ServiceLib
         private readonly Dictionary<string, int> _versions;
         private readonly Dictionary<string, EventStoreSnapshot> _snapshots;
         private readonly List<Waiter> _waiters;
-        private static readonly EventStoreInMemoryTraceSource Logger = new EventStoreInMemoryTraceSource("ServiceLib.EventStore");
+
+        private static readonly EventStoreInMemoryTraceSource Logger =
+            new EventStoreInMemoryTraceSource("ServiceLib.EventStore");
 
         public EventStoreInMemory()
         {
@@ -29,7 +31,8 @@ namespace ServiceLib
             return new EventStoreToken(eventIndex.ToString());
         }
 
-        public Task<bool> AddToStream(string stream, IEnumerable<EventStoreEvent> events, EventStoreVersion expectedVersion)
+        public Task<bool> AddToStream(
+            string stream, IEnumerable<EventStoreEvent> events, EventStoreVersion expectedVersion)
         {
             if (events == null) throw new ArgumentNullException("events");
             if (expectedVersion == null) throw new ArgumentNullException("expectedVersion");
@@ -97,7 +100,10 @@ namespace ServiceLib
                     _lock.EnterReadLock();
                     int streamVersion;
                     _versions.TryGetValue(stream, out streamVersion);
-                    var list = _events.Where(e => e.StreamName == stream && e.StreamVersion >= minVersion).Take(maxCount).ToList();
+                    var list =
+                        _events.Where(e => e.StreamName == stream && e.StreamVersion >= minVersion)
+                            .Take(maxCount)
+                            .ToList();
                     result = new EventStoreStream(list, streamVersion, 0);
                     Logger.ReadFromStreamComplete(stream, minVersion, maxCount, streamVersion, list);
                 }
@@ -145,7 +151,8 @@ namespace ServiceLib
             return TaskUtils.CompletedTask();
         }
 
-        public Task<IEventStoreCollection> WaitForEvents(EventStoreToken token, int maxCount, bool loadBody, CancellationToken cancel)
+        public Task<IEventStoreCollection> WaitForEvents(
+            EventStoreToken token, int maxCount, bool loadBody, CancellationToken cancel)
         {
             try
             {
@@ -226,7 +233,10 @@ namespace ServiceLib
             private readonly List<EventStoreEvent> _readyEvents;
             private EventStoreToken _nextToken;
 
-            public Task<IEventStoreCollection> Task { get { return _task.Task; } }
+            public Task<IEventStoreCollection> Task
+            {
+                get { return _task.Task; }
+            }
 
             public Waiter(EventStoreInMemory parent, EventStoreToken token, int maxCount, CancellationToken cancel)
             {

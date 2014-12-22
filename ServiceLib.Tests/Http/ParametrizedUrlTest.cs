@@ -1,8 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace ServiceLib.Tests.Http
@@ -15,7 +13,7 @@ namespace ServiceLib.Tests.Http
         {
             var url = new ParametrizedUrl("http://rest.wilczak.net/web/articles/5847-restclient");
             Assert.AreEqual("http://rest.wilczak.net/web/articles/5847-restclient",
-                url.CompleteUrl(Enumerable.Empty<RequestParameter>()));
+                url.CompleteUrl(new RequestParameter[0]));
         }
 
         [TestMethod]
@@ -67,7 +65,7 @@ namespace ServiceLib.Tests.Http
         {
             var url = new ParametrizedUrl("http://rest.wilczak.net/web/articles/");
             Assert.AreEqual("http://rest.wilczak.net/web/articles/",
-                url.CompleteUrl(Enumerable.Empty<RequestParameter>()));
+                url.CompleteUrl(new RequestParameter[0]));
         }
     }
 

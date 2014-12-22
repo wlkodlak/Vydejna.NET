@@ -87,7 +87,8 @@ namespace ServiceLib
             else if (int.TryParse(_singleValue, out parsedValue))
                 return HttpTypedProcessedParameter<int>.CreateParsed(_type, _name, parsedValue);
             else
-                throw new ArgumentOutOfRangeException(_name, _singleValue, string.Format("Parameter {0} is in wrong format: {1}", _name, _singleValue));
+                throw new ArgumentOutOfRangeException(
+                    _name, _singleValue, string.Format("Parameter {0} is in wrong format: {1}", _name, _singleValue));
         }
 
         public IHttpTypedProcessedParameter<string> AsString()
@@ -109,14 +110,15 @@ namespace ServiceLib
             }
             catch (Exception)
             {
-                throw new ArgumentOutOfRangeException(_name, _singleValue, string.Format("Parameter {0} is in wrong format: {1}", _name, _singleValue));
+                throw new ArgumentOutOfRangeException(
+                    _name, _singleValue, string.Format("Parameter {0} is in wrong format: {1}", _name, _singleValue));
             }
         }
 
         public IList<string> GetRawValues()
         {
             if (_values == null)
-                _values = (_singleValue == null)? new string[0] :  new[] { _singleValue };
+                _values = (_singleValue == null) ? new string[0] : new[] {_singleValue};
             return _values;
         }
 
@@ -155,7 +157,8 @@ namespace ServiceLib
             };
         }
 
-        public static IHttpTypedProcessedParameter<T> CreateParsed(RequestParameterType type, string name, T parsedValue)
+        public static IHttpTypedProcessedParameter<T> CreateParsed(
+            RequestParameterType type, string name, T parsedValue)
         {
             return new HttpTypedProcessedParameter<T>(type, name)
             {

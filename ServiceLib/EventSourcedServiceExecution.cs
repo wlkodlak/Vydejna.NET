@@ -80,7 +80,7 @@ namespace ServiceLib
             _stopwatch.Start();
 
             var validationResult = Validate();
-            if (validationResult != null) 
+            if (validationResult != null)
                 return validationResult;
 
             try
@@ -161,7 +161,8 @@ namespace ServiceLib
 
         private CommandResult ReturnSuccess()
         {
-            _logger.CommandFinished(_aggregateId, _command, _newEvents, _stopwatch.ElapsedMilliseconds, _tracker.TrackingId);
+            _logger.CommandFinished(
+                _aggregateId, _command, _newEvents, _stopwatch.ElapsedMilliseconds, _tracker.TrackingId);
             return CommandResult.Success(_tracker.TrackingId);
         }
 
@@ -197,9 +198,12 @@ namespace ServiceLib
             msg.Log(this);
         }
 
-        public void CommandFinished(IAggregateId aggregateId, object command, IList<object> newEvents, long elapsedMilliseconds, string trackingId)
+        public void CommandFinished(
+            IAggregateId aggregateId, object command, IList<object> newEvents, long elapsedMilliseconds,
+            string trackingId)
         {
-            var msg = new LogContextMessage(TraceEventType.Information, 1, "Command {CommandType} finished without producing new aggregate");
+            var msg = new LogContextMessage(
+                TraceEventType.Information, 1, "Command {CommandType} finished without producing new aggregate");
             msg.SetProperty("CommandType", false, command.GetType().Name);
             msg.SetProperty("AggregateId", false, aggregateId);
             msg.SetProperty("ProcessingTime", false, elapsedMilliseconds);
@@ -211,7 +215,8 @@ namespace ServiceLib
 
         public void NothingNeededSaving(IAggregateId aggregateId, object command, long elapsedMilliseconds)
         {
-            var msg = new LogContextMessage(TraceEventType.Information, 8, "Command {CommandType} finished without producing new aggregate");
+            var msg = new LogContextMessage(
+                TraceEventType.Information, 8, "Command {CommandType} finished without producing new aggregate");
             msg.SetProperty("CommandType", false, command.GetType().Name);
             msg.SetProperty("ProcessingTime", false, elapsedMilliseconds);
             IncludeCommandInMessage(msg, command);
@@ -220,14 +225,17 @@ namespace ServiceLib
 
         public void ConcurrencyFailed(IAggregateId aggregateId, object command, long elapsedMilliseconds)
         {
-            var msg = new LogContextMessage(TraceEventType.Information, 12, "Command {CommandType} was not completed because of repeated concurrency failures");
+            var msg = new LogContextMessage(
+                TraceEventType.Information, 12,
+                "Command {CommandType} was not completed because of repeated concurrency failures");
             msg.SetProperty("CommandType", false, command.GetType().Name);
             msg.SetProperty("ProcessingTime", false, elapsedMilliseconds);
             IncludeCommandInMessage(msg, command);
             msg.Log(this);
         }
 
-        public void DomainErrorOccurred(IAggregateId aggregateId, object command, long elapsedMilliseconds, DomainErrorException error)
+        public void DomainErrorOccurred(
+            IAggregateId aggregateId, object command, long elapsedMilliseconds, DomainErrorException error)
         {
             var msg = new LogContextMessage(TraceEventType.Information, 20, "Command {CommandType} failed - {Message}");
             msg.SetProperty("CommandType", false, command.GetType().Name);

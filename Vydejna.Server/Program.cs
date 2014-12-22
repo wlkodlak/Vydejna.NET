@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Configuration;
 using System.Threading;
+using System.Threading.Tasks;
 using Vydejna.Contracts;
 using Vydejna.Domain;
 using Vydejna.Domain.CislovaneNaradi;
@@ -42,9 +43,8 @@ namespace Vydejna.Server
         private EventSourcedJsonSerializer _eventSerializer;
         private List<IDisposable> _disposables;
         private bool _running;
-        private Dictionary<string, CommandInfo> _consoleCommands;
+        private readonly Dictionary<string, CommandInfo> _consoleCommands;
         private QueuedBus _mainBus;
-        private ThreadedTaskScheduler _scheduler;
         private EventProcessTracking _trackingCoordinator;
 
         public Program()
@@ -57,8 +57,8 @@ namespace Vydejna.Server
         {
             public string Name { get; private set; }
             public string Help { get; private set; }
-            private int _parameters;
-            private Action<string[]> _handler;
+            private readonly int _parameters;
+            private readonly Action<string[]> _handler;
 
             public CommandInfo(string name, string help, int parameters, Action<string[]> handler)
             {
@@ -67,11 +67,13 @@ namespace Vydejna.Server
                 _parameters = parameters;
                 _handler = handler;
             }
+
             protected CommandInfo(string name, string help)
             {
                 Name = name;
                 Help = help;
             }
+
             public virtual void Execute(string[] commandLine)
             {
                 if (_handler == null)
@@ -84,7 +86,7 @@ namespace Vydejna.Server
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine("Command failed: {0}", ex.ToString());
+                        Console.WriteLine("Command failed: {0}", ex);
                     }
                 }
                 else
@@ -94,12 +96,14 @@ namespace Vydejna.Server
 
         private class CommandInfoList : CommandInfo
         {
-            private Program _parent;
+            private readonly Program _parent;
+
             public CommandInfoList(Program parent)
                 : base("list", "List processes")
             {
                 _parent = parent;
             }
+
             public override void Execute(string[] commandLine)
             {
                 if (commandLine.Length != 2)
@@ -116,7 +120,8 @@ namespace Vydejna.Server
                     var processes = _parent._processes.GetLeaderProcesses();
                     Console.WriteLine("{0,-25} {1,-15} {2,-36}", "Process name", "Status", "Assigned node");
                     foreach (var process in processes)
-                        Console.WriteLine("{0,-25} {1,-15} {2,-36}", process.ProcessName, process.ProcessStatus, process.AssignedNode);
+                        Console.WriteLine(
+                            "{0,-25} {1,-15} {2,-36}", process.ProcessName, process.ProcessStatus, process.AssignedNode);
                 }
                 else if (commandLine[1] == "global")
                 {
@@ -134,19 +139,18 @@ namespace Vydejna.Server
         private void Initialize()
         {
             _postgresConnectionString = ConfigurationManager.AppSettings.Get("database");
-            _multiNode = ConfigurationManager.AppSettings.Get("multinode"); ;
-            _nodeId = ConfigurationManager.AppSettings.Get("node"); ;
+            _multiNode = ConfigurationManager.AppSettings.Get("multinode");
+            _nodeId = ConfigurationManager.AppSettings.Get("node");
             if (string.IsNullOrEmpty(_nodeId))
                 _nodeId = Guid.NewGuid().ToString();
-            _httpPrefixes = new[] { ConfigurationManager.AppSettings.Get("prefix") };
+            _httpPrefixes = new[] {ConfigurationManager.AppSettings.Get("prefix")};
 
             _time = new RealTime();
             _disposables = new List<IDisposable>();
-            _scheduler = new ThreadedTaskScheduler();
 
             _mainBus = new QueuedBus(new SubscriptionManager(), "MainBus");
             var postgres = new DatabasePostgres(_postgresConnectionString, _time);
-            postgres.UseScheduler(_scheduler);
+            postgres.UseScheduler(TaskScheduler.Default);
             _disposables.Add(postgres);
 
             if (_multiNode == "false")
@@ -165,9 +169,13 @@ namespace Vydejna.Server
             var httpAppBase = _httpPrefixes[0];
             var httpRouter = new HttpRouter();
             _router = new HttpRouterCommon(httpRouter);
-            _router.WithSerializer(new HttpSerializerJson()).WithSerializer(new HttpSerializerXml()).WithPicker(new HttpSerializerPicker());
-            _processes.RegisterLocal("HttpServer", new HttpServer(_httpPrefixes, new HttpServerDispatcher(httpRouter)).SetupWorkerCount(1));
-            new DomainRestInterface(_mainBus, EventProcessTrackService.GetTrackingUrlBase(httpAppBase)).Register(_router);
+            _router.WithSerializer(new HttpSerializerJson())
+                .WithSerializer(new HttpSerializerXml())
+                .WithPicker(new HttpSerializerPicker());
+            _processes.RegisterLocal(
+                "HttpServer", new HttpServer(_httpPrefixes, new HttpServerDispatcher(httpRouter)).SetupWorkerCount(1));
+            new DomainRestInterface(_mainBus, EventProcessTrackService.GetTrackingUrlBase(httpAppBase)).Register(
+                _router);
             new ProjectionsRestInterface(_mainBus).Register(_router);
             new EventProcessTrackService(_trackingCoordinator).Register(_router);
             _router.Commit();
@@ -197,44 +205,102 @@ namespace Vydejna.Server
             _typeMapper.Register(new SeznamNaradiTypeMapping());
             _eventSerializer = new EventSourcedJsonSerializer(_typeMapper);
 
-            new DefinovaneNaradiService(new DefinovaneNaradiRepository(_eventStore, "definovane", _eventSerializer), _trackingCoordinator).Subscribe(_mainBus);
-            new CislovaneNaradiService(new CislovaneNaradiRepository(_eventStore, "cislovane", _eventSerializer), _time, _trackingCoordinator).Subscribe(_mainBus);
-            new NecislovaneNaradiService(new NecislovaneNaradiRepository(_eventStore, "necislovane", _eventSerializer), _time, _trackingCoordinator).Subscribe(_mainBus);
-            new ExterniCiselnikyService(new ExternalEventRepository(_eventStore, "externi-", _eventSerializer), _trackingCoordinator).Subscribe(_mainBus);
-            new UnikatnostNaradiService(new UnikatnostNaradiRepository(_eventStore, "unikatnost", _eventSerializer), _trackingCoordinator).Subscribe(_mainBus);
+            new DefinovaneNaradiService(
+                new DefinovaneNaradiRepository(_eventStore, "definovane", _eventSerializer), _trackingCoordinator)
+                .Subscribe(_mainBus);
+            new CislovaneNaradiService(
+                new CislovaneNaradiRepository(_eventStore, "cislovane", _eventSerializer), _time, _trackingCoordinator)
+                .Subscribe(_mainBus);
+            new NecislovaneNaradiService(
+                new NecislovaneNaradiRepository(_eventStore, "necislovane", _eventSerializer), _time,
+                _trackingCoordinator).Subscribe(_mainBus);
+            new ExterniCiselnikyService(
+                new ExternalEventRepository(_eventStore, "externi-", _eventSerializer), _trackingCoordinator).Subscribe(
+                    _mainBus);
+            new UnikatnostNaradiService(
+                new UnikatnostNaradiRepository(_eventStore, "unikatnost", _eventSerializer), _trackingCoordinator)
+                .Subscribe(_mainBus);
 
-            new DetailNaradiReader(new DetailNaradiRepository(documentStore.GetFolder("detailnaradi")), _time).Subscribe(_mainBus);
+            new DetailNaradiReader(new DetailNaradiRepository(documentStore.GetFolder("detailnaradi")), _time).Subscribe
+                (_mainBus);
             new HistorieNaradiReader(new HistorieNaradiRepositoryOperace(postgres)).Subscribe(_mainBus);
-            new IndexObjednavekReader(new IndexObjednavekRepository(documentStore.GetFolder("indexobjednavek")),  _time).Subscribe(_mainBus);
-            new NaradiNaObjednavceReader(new NaradiNaObjednavceRepository(documentStore.GetFolder("naradiobjednavky")),  _time).Subscribe(_mainBus);
-            new NaradiNaPracovistiReader(new NaradiNaPracovistiRepository(documentStore.GetFolder("naradipracoviste")),  _time).Subscribe(_mainBus);
-            new NaradiNaVydejneReader(new NaradiNaVydejneRepository(documentStore.GetFolder("naradyvydejny")),  _time).Subscribe(_mainBus);
-            new PrehledAktivnihoNaradiReader(new PrehledAktivnihoNaradiRepository(documentStore.GetFolder("prehlednaradi")),  _time).Subscribe(_mainBus);
-            new PrehledCislovanehoNaradiReader(new PrehledCislovanehoNaradiRepository(documentStore.GetFolder("prehledcislovanych")),  _time).Subscribe(_mainBus);
-            new PrehledObjednavekReader(new PrehledObjednavekRepository(documentStore.GetFolder("prehledobjednavek")),  _time).Subscribe(_mainBus);
-            new SeznamDodavateluReader(new SeznamDodavateluRepository(documentStore.GetFolder("seznamdodavatelu")),  _time).Subscribe(_mainBus);
-            new SeznamNaradiReader(new SeznamNaradiRepository(documentStore.GetFolder("seznamnaradi")),  _time).Subscribe(_mainBus);
-            new SeznamPracovistReader(new SeznamPracovistRepository(documentStore.GetFolder("seznampracovist")),  _time).Subscribe(_mainBus);
-            new SeznamVadReader(new SeznamVadRepository(documentStore.GetFolder("seznamvad")),  _time).Subscribe(_mainBus);
+            new IndexObjednavekReader(new IndexObjednavekRepository(documentStore.GetFolder("indexobjednavek")), _time)
+                .Subscribe(_mainBus);
+            new NaradiNaObjednavceReader(
+                new NaradiNaObjednavceRepository(documentStore.GetFolder("naradiobjednavky")), _time).Subscribe(
+                    _mainBus);
+            new NaradiNaPracovistiReader(
+                new NaradiNaPracovistiRepository(documentStore.GetFolder("naradipracoviste")), _time).Subscribe(
+                    _mainBus);
+            new NaradiNaVydejneReader(new NaradiNaVydejneRepository(documentStore.GetFolder("naradyvydejny")), _time)
+                .Subscribe(_mainBus);
+            new PrehledAktivnihoNaradiReader(
+                new PrehledAktivnihoNaradiRepository(documentStore.GetFolder("prehlednaradi")), _time).Subscribe(
+                    _mainBus);
+            new PrehledCislovanehoNaradiReader(
+                new PrehledCislovanehoNaradiRepository(documentStore.GetFolder("prehledcislovanych")), _time).Subscribe(
+                    _mainBus);
+            new PrehledObjednavekReader(
+                new PrehledObjednavekRepository(documentStore.GetFolder("prehledobjednavek")), _time).Subscribe(
+                    _mainBus);
+            new SeznamDodavateluReader(
+                new SeznamDodavateluRepository(documentStore.GetFolder("seznamdodavatelu")), _time).Subscribe(_mainBus);
+            new SeznamNaradiReader(new SeznamNaradiRepository(documentStore.GetFolder("seznamnaradi")), _time).Subscribe
+                (_mainBus);
+            new SeznamPracovistReader(new SeznamPracovistRepository(documentStore.GetFolder("seznampracovist")), _time)
+                .Subscribe(_mainBus);
+            new SeznamVadReader(new SeznamVadRepository(documentStore.GetFolder("seznamvad")), _time).Subscribe(
+                _mainBus);
 
             BuildEventProcessor(new ProcesDefiniceNaradi(_mainBus), "ProcesDefiniceNaradi");
 
-            BuildProjection(new DetailNaradiProjection(new DetailNaradiRepository(documentStore.GetFolder("detailnaradi")),  _time), "DetailNaradi");
-            BuildProjection(new HistorieNaradiProjection(
-                new HistorieNaradiRepositoryOperace(postgres), 
-                new HistorieNaradiRepositoryPomocne(documentStore.GetFolder("historienaradi")), _time), 
+            BuildProjection(
+                new DetailNaradiProjection(new DetailNaradiRepository(documentStore.GetFolder("detailnaradi")), _time),
+                "DetailNaradi");
+            BuildProjection(
+                new HistorieNaradiProjection(
+                    new HistorieNaradiRepositoryOperace(postgres),
+                    new HistorieNaradiRepositoryPomocne(documentStore.GetFolder("historienaradi")), _time),
                 "HistorieNaradi");
-            BuildProjection(new IndexObjednavekProjection(new IndexObjednavekRepository(documentStore.GetFolder("indexobjednavek")), _time), "IndexObjednavek");
-            BuildProjection(new NaradiNaObjednavceProjection(new NaradiNaObjednavceRepository(documentStore.GetFolder("naradiobjednavky")), _time), "NaradiNaObjednavce");
-            BuildProjection(new NaradiNaPracovistiProjection(new NaradiNaPracovistiRepository(documentStore.GetFolder("naradipracoviste")), _time), "NaradiNaPracovisti");
-            BuildProjection(new NaradiNaVydejneProjection(new NaradiNaVydejneRepository(documentStore.GetFolder("naradyvydejny")), _time), "NaradiNaVydejne");
-            BuildProjection(new PrehledAktivnihoNaradiProjection(new PrehledAktivnihoNaradiRepository(documentStore.GetFolder("prehlednaradi")), _time), "PrehledAktivnihoNaradi");
-            BuildProjection(new PrehledCislovanehoNaradiProjection(new PrehledCislovanehoNaradiRepository(documentStore.GetFolder("prehledcislovanych")), _time), "PrehledCislovanehoNaradi");
-            BuildProjection(new PrehledObjednavekProjection(new PrehledObjednavekRepository(documentStore.GetFolder("prehledobjednavek")), _time), "PrehledObjednavek");
-            BuildProjection(new SeznamDodavateluProjection(new SeznamDodavateluRepository(documentStore.GetFolder("seznamdodavatelu")), _time), "SeznamDodavatelu");
-            BuildProjection(new SeznamNaradiProjection(new SeznamNaradiRepository(documentStore.GetFolder("seznamnaradi")), _time), "SeznamNaradi");
-            BuildProjection(new SeznamPracovistProjection(new SeznamPracovistRepository(documentStore.GetFolder("seznampracovist")), _time), "SeznamPracovist");
-            BuildProjection(new SeznamVadProjection(new SeznamVadRepository(documentStore.GetFolder("seznamvad")), _time), "SeznamVad");
+            BuildProjection(
+                new IndexObjednavekProjection(
+                    new IndexObjednavekRepository(documentStore.GetFolder("indexobjednavek")), _time), "IndexObjednavek");
+            BuildProjection(
+                new NaradiNaObjednavceProjection(
+                    new NaradiNaObjednavceRepository(documentStore.GetFolder("naradiobjednavky")), _time),
+                "NaradiNaObjednavce");
+            BuildProjection(
+                new NaradiNaPracovistiProjection(
+                    new NaradiNaPracovistiRepository(documentStore.GetFolder("naradipracoviste")), _time),
+                "NaradiNaPracovisti");
+            BuildProjection(
+                new NaradiNaVydejneProjection(
+                    new NaradiNaVydejneRepository(documentStore.GetFolder("naradyvydejny")), _time), "NaradiNaVydejne");
+            BuildProjection(
+                new PrehledAktivnihoNaradiProjection(
+                    new PrehledAktivnihoNaradiRepository(documentStore.GetFolder("prehlednaradi")), _time),
+                "PrehledAktivnihoNaradi");
+            BuildProjection(
+                new PrehledCislovanehoNaradiProjection(
+                    new PrehledCislovanehoNaradiRepository(documentStore.GetFolder("prehledcislovanych")), _time),
+                "PrehledCislovanehoNaradi");
+            BuildProjection(
+                new PrehledObjednavekProjection(
+                    new PrehledObjednavekRepository(documentStore.GetFolder("prehledobjednavek")), _time),
+                "PrehledObjednavek");
+            BuildProjection(
+                new SeznamDodavateluProjection(
+                    new SeznamDodavateluRepository(documentStore.GetFolder("seznamdodavatelu")), _time),
+                "SeznamDodavatelu");
+            BuildProjection(
+                new SeznamNaradiProjection(new SeznamNaradiRepository(documentStore.GetFolder("seznamnaradi")), _time),
+                "SeznamNaradi");
+            BuildProjection(
+                new SeznamPracovistProjection(
+                    new SeznamPracovistRepository(documentStore.GetFolder("seznampracovist")), _time), "SeznamPracovist");
+            BuildProjection(
+                new SeznamVadProjection(new SeznamVadRepository(documentStore.GetFolder("seznamvad")), _time),
+                "SeznamVad");
         }
 
         private void BuildEventProcessor<T>(T processor, string processorName)
@@ -244,7 +310,7 @@ namespace Vydejna.Server
             processor.Subscribe(subscriptions);
             var process = new EventProcessSimple(
                 _metadataManager.GetConsumer(processorName),
-                new EventStreamingDeserialized(_eventStreaming, _eventSerializer), 
+                new EventStreamingDeserialized(_eventStreaming, _eventSerializer),
                 subscriptions, _time,
                 _trackingCoordinator.RegisterHandler(processorName));
             _processes.RegisterGlobal(processorName, process, 0, 0);
@@ -256,10 +322,10 @@ namespace Vydejna.Server
             var subscriptions = new EventSubscriptionManager();
             projection.Subscribe(subscriptions);
             var projector = new EventProjectorSimple(
-                projection, 
+                projection,
                 _metadataManager.GetConsumer(projectionName),
-                new EventStreamingDeserialized(_eventStreaming, _eventSerializer), 
-                subscriptions, 
+                new EventStreamingDeserialized(_eventStreaming, _eventSerializer),
+                subscriptions,
                 _time,
                 _trackingCoordinator.RegisterHandler(projectionName));
             _processes.RegisterGlobal(projectionName, projector, 0, 0);
@@ -285,15 +351,22 @@ namespace Vydejna.Server
         {
             _consoleCommands["list"] = new CommandInfoList(this);
             _consoleCommands["exit"] = new CommandInfo("exit", "Stop whole server process", 0, cmd => _running = false);
-            _consoleCommands["start"] = new CommandInfo("start", "Start process", 1,
-                cmd => _mainBus.Publish(new ProcessManagerMessages.ProcessRequest { ProcessName = cmd[1], ShouldBeOnline = true }));
-            _consoleCommands["stop"] = new CommandInfo("stop", "Stop process", 1,
-                cmd => _mainBus.Publish(new ProcessManagerMessages.ProcessRequest { ProcessName = cmd[1], ShouldBeOnline = false }));
-            _consoleCommands["help"] = new CommandInfo("help", "Show this help", 0, cmd =>
-            {
-                foreach (var command in _consoleCommands.Values)
-                    Console.WriteLine("{0}: {1}", command.Name, command.Help);
-            });
+            _consoleCommands["start"] = new CommandInfo(
+                "start", "Start process", 1,
+                cmd =>
+                    _mainBus.Publish(
+                        new ProcessManagerMessages.ProcessRequest {ProcessName = cmd[1], ShouldBeOnline = true}));
+            _consoleCommands["stop"] = new CommandInfo(
+                "stop", "Stop process", 1,
+                cmd =>
+                    _mainBus.Publish(
+                        new ProcessManagerMessages.ProcessRequest {ProcessName = cmd[1], ShouldBeOnline = false}));
+            _consoleCommands["help"] = new CommandInfo(
+                "help", "Show this help", 0, cmd =>
+                {
+                    foreach (var command in _consoleCommands.Values)
+                        Console.WriteLine("{0}: {1}", command.Name, command.Help);
+                });
         }
 
         private void ExecuteCommand(string[] commandLine)
@@ -317,7 +390,12 @@ namespace Vydejna.Server
             program.RegisterCommands();
             program.Start();
             var consoleThread = Thread.CurrentThread;
-            Console.CancelKeyPress += (s, e) => { e.Cancel = true; program._running = false; consoleThread.Interrupt(); };
+            Console.CancelKeyPress += (s, e) =>
+            {
+                e.Cancel = true;
+                program._running = false;
+                consoleThread.Interrupt();
+            };
             while (program._running)
             {
                 try
@@ -326,7 +404,7 @@ namespace Vydejna.Server
                     var commandLine = Console.ReadLine();
                     if (string.IsNullOrEmpty(commandLine))
                         continue;
-                    var parsedCommand = commandLine.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                    var parsedCommand = commandLine.Split(new[] {' '}, StringSplitOptions.RemoveEmptyEntries);
                     program.ExecuteCommand(parsedCommand);
                 }
                 catch (ThreadInterruptedException)
