@@ -237,7 +237,7 @@ namespace Vydejna.Projections.PrehledObjednavekReadModel
 
         public Task<int> UlozitObjednavku(int verze, PrehledObjednavekDataObjednavky data)
         {
-            return ProjectorUtils.Save(_folder, 
+            return EventProjectorUtils.Save(_folder, 
                 PrehledObjednavekProjection.DokumentObjednavky(data.KodDodavatele, data.Objednavka),
                 verze, JsonSerializer.SerializeToString(data), IndexyObjednavky(data));
         }
@@ -278,7 +278,7 @@ namespace Vydejna.Projections.PrehledObjednavekReadModel
 
         public Task<int> UlozitDodavatele(int verze, PrehledObjednavekDataSeznamDodavatelu data)
         {
-            return ProjectorUtils.Save(_folder, "dodavatele", verze, JsonSerializer.SerializeToString(data), null);
+            return EventProjectorUtils.Save(_folder, "dodavatele", verze, JsonSerializer.SerializeToString(data), null);
         }
 
         public Task<MemoryCacheItem<int>> NacistVerziSeznamu()
@@ -288,7 +288,7 @@ namespace Vydejna.Projections.PrehledObjednavekReadModel
 
         public Task<int> UlozitVerziSeznamu(int verzeDokumentu, int verzeSeznamu)
         {
-            return ProjectorUtils.Save(_folder, "verzeSeznamu", verzeDokumentu, verzeSeznamu.ToString(), null);
+            return EventProjectorUtils.Save(_folder, "verzeSeznamu", verzeDokumentu, verzeSeznamu.ToString(), null);
         }
 
         private int DeserializovatVerziSeznamu(string raw)

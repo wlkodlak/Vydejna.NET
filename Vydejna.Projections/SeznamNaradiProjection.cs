@@ -156,7 +156,7 @@ namespace Vydejna.Projections.SeznamNaradiReadModel
 
         public Task<int> UlozitNaradi(int verze, TypNaradiDto data)
         {
-            return ProjectorUtils.Save(_folder, data.Id.ToString("N"), verze, JsonSerializer.SerializeToString(data),
+            return EventProjectorUtils.Save(_folder, data.Id.ToString("N"), verze, JsonSerializer.SerializeToString(data),
                 new[] { new DocumentIndexing("vykresRozmer", string.Concat(data.Vykres, " ", data.Rozmer)) });
         }
 
@@ -174,7 +174,7 @@ namespace Vydejna.Projections.SeznamNaradiReadModel
 
         public Task<int> UlozitTagSeznamu(int verze, int hodnota)
         {
-            return ProjectorUtils.Save(_folder, "tag", verze, hodnota.ToString(), null);
+            return EventProjectorUtils.Save(_folder, "tag", verze, hodnota.ToString(), null);
         }
     }
 

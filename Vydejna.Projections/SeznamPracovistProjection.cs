@@ -110,7 +110,7 @@ namespace Vydejna.Projections.SeznamPracovistReadModel
 
         public Task<int> UlozitPracoviste(int verze, InformaceOPracovisti data, bool zobrazitVSeznamu)
         {
-            return ProjectorUtils.Save(_folder, data.Kod, verze, JsonSerializer.SerializeToString(data),
+            return EventProjectorUtils.Save(_folder, data.Kod, verze, JsonSerializer.SerializeToString(data),
                 zobrazitVSeznamu ? new[] { new DocumentIndexing("kodPracoviste", data.Kod) } : null);
         }
 

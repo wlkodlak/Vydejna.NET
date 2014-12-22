@@ -120,7 +120,7 @@ namespace Vydejna.Projections.SeznamVadReadModel
 
         public Task<int> UlozitVady(int verze, SeznamVadData data)
         {
-            return ProjectorUtils.Save(_folder, "vady", verze, JsonSerializer.SerializeToString(data), null);
+            return EventProjectorUtils.Save(_folder, "vady", verze, JsonSerializer.SerializeToString(data), null);
         }
     }
 

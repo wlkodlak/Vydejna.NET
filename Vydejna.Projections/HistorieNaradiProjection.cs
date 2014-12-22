@@ -671,7 +671,7 @@ namespace Vydejna.Projections.HistorieNaradiReadModel
 
         public Task<int> UlozitNaradi(int verze, InformaceONaradi naradi)
         {
-            return ProjectorUtils.Save(
+            return EventProjectorUtils.Save(
                 _folder, DokumentNaradi(naradi.NaradiId), verze, 
                 JsonSerializer.SerializeToString(naradi), null);
         }
@@ -684,7 +684,7 @@ namespace Vydejna.Projections.HistorieNaradiReadModel
 
         public Task<int> UlozitDodavatele(int verze, HistorieNaradiDataDodavatele dodavatele)
         {
-            return ProjectorUtils.Save(
+            return EventProjectorUtils.Save(
                 _folder, "dodavatele", verze, 
                 JsonSerializer.SerializeToString(dodavatele), null);
         }
@@ -702,7 +702,7 @@ namespace Vydejna.Projections.HistorieNaradiReadModel
 
         public Task<int> UlozitPracoviste(int verze, InformaceOPracovisti pracoviste)
         {
-            return ProjectorUtils.Save(
+            return EventProjectorUtils.Save(
                 _folder, DokumentPracoviste(pracoviste.Kod), verze,
                 JsonSerializer.SerializeToString(pracoviste), null);
         }
@@ -715,7 +715,7 @@ namespace Vydejna.Projections.HistorieNaradiReadModel
 
         public Task<int> UlozitVady(int verze, HistorieNaradiDataVady vady)
         {
-            return ProjectorUtils.Save(
+            return EventProjectorUtils.Save(
                 _folder, "vady", verze,
                 JsonSerializer.SerializeToString(vady), null);
         }

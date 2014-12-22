@@ -922,7 +922,7 @@ namespace Vydejna.Projections.DetailNaradiReadModel
 
         public Task<int> UlozitDetail(Guid naradiId, int verze, DetailNaradiDataDetail data)
         {
-            return ProjectorUtils.Save(_folder, string.Concat("detail-", naradiId.ToString("N")), verze, JsonSerializer.SerializeToString(data), IndexyDetailu(data));
+            return EventProjectorUtils.Save(_folder, string.Concat("detail-", naradiId.ToString("N")), verze, JsonSerializer.SerializeToString(data), IndexyDetailu(data));
         }
 
         private IList<DocumentIndexing> IndexyDetailu(DetailNaradiDataDetail data)
@@ -958,7 +958,7 @@ namespace Vydejna.Projections.DetailNaradiReadModel
 
         public Task<int> UlozitDodavatele(int verze, DetailNaradiDataDodavatele ciselnik)
         {
-            return ProjectorUtils.Save(_folder, "dodavatele", verze, JsonSerializer.SerializeToString(ciselnik), null);
+            return EventProjectorUtils.Save(_folder, "dodavatele", verze, JsonSerializer.SerializeToString(ciselnik), null);
         }
 
         public Task<MemoryCacheItem<DetailNaradiDataVady>> NacistVady()
@@ -968,7 +968,7 @@ namespace Vydejna.Projections.DetailNaradiReadModel
 
         public Task<int> UlozitVadu(int verze, DetailNaradiDataVady ciselnik)
         {
-            return ProjectorUtils.Save(_folder, "vady", verze, JsonSerializer.SerializeToString(ciselnik), null);
+            return EventProjectorUtils.Save(_folder, "vady", verze, JsonSerializer.SerializeToString(ciselnik), null);
         }
 
         public Task<IList<Guid>> NajitDetailyPodleVady(string kodVady)
@@ -988,7 +988,7 @@ namespace Vydejna.Projections.DetailNaradiReadModel
 
         public Task<int> UlozitPracoviste(string kodPracoviste, int verze, DefinovanoPracovisteEvent pracoviste)
         {
-            return ProjectorUtils.Save(_folder, "pracoviste-" + kodPracoviste, verze, JsonSerializer.SerializeToString(pracoviste), null);
+            return EventProjectorUtils.Save(_folder, "pracoviste-" + kodPracoviste, verze, JsonSerializer.SerializeToString(pracoviste), null);
         }
     }
 

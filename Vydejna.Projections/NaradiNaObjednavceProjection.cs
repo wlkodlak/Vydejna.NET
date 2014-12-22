@@ -284,7 +284,7 @@ namespace Vydejna.Projections.NaradiNaObjednavceReadModel
 
         public Task<int> UlozitDodavatele(int verze, NaradiNaObjednavceDataDodavatele dodavatele)
         {
-            return ProjectorUtils.Save(_folder, "dodavatele", verze, JsonSerializer.SerializeToString(dodavatele), null);
+            return EventProjectorUtils.Save(_folder, "dodavatele", verze, JsonSerializer.SerializeToString(dodavatele), null);
         }
 
         public static string DokumentObjednavky(string kodDodavatele, string cisloObjednavky)
@@ -299,7 +299,7 @@ namespace Vydejna.Projections.NaradiNaObjednavceReadModel
 
         public Task<int> UlozitObjednavku(int verze, NaradiNaObjednavceDataObjednavky objednavka)
         {
-            return ProjectorUtils.Save(_folder, DokumentObjednavky(objednavka.Dodavatel.Kod, objednavka.Objednavka), verze, JsonSerializer.SerializeToString(objednavka), null);
+            return EventProjectorUtils.Save(_folder, DokumentObjednavky(objednavka.Dodavatel.Kod, objednavka.Objednavka), verze, JsonSerializer.SerializeToString(objednavka), null);
         }
 
         public static string DokumentNaradi(Guid naradiId)
@@ -314,7 +314,7 @@ namespace Vydejna.Projections.NaradiNaObjednavceReadModel
 
         public Task<int> UlozitNaradi(int verze, InformaceONaradi naradi)
         {
-            return ProjectorUtils.Save(_folder, DokumentNaradi(naradi.NaradiId), verze, JsonSerializer.SerializeToString(naradi), null);
+            return EventProjectorUtils.Save(_folder, DokumentNaradi(naradi.NaradiId), verze, JsonSerializer.SerializeToString(naradi), null);
         }
 
         public Task Reset()

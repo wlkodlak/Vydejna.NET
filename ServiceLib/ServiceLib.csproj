@@ -97,6 +97,7 @@
     <Compile Include="ProcessManagerCluster.cs" />
     <Compile Include="ProcessManagerLocal.cs" />
     <Compile Include="ProcessManagerPublisher.cs" />
+    <Compile Include="EventProjectorUtils.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="RestClient.cs" />
     <Compile Include="RestServerParameters.cs" />

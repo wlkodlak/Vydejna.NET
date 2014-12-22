@@ -197,7 +197,7 @@ namespace Vydejna.Projections.PrehledCislovanehoNaradiReadModel
 
         public Task<int> UlozitNaradi(int verze, InformaceONaradi data)
         {
-            return ProjectorUtils.Save(_folder,
+            return EventProjectorUtils.Save(_folder,
                 PrehledCislovanehoNaradiProjection.DokumentNaradi(data.NaradiId),
                 verze, JsonSerializer.SerializeToString(data), null);
         }
@@ -215,7 +215,7 @@ namespace Vydejna.Projections.PrehledCislovanehoNaradiReadModel
 
         public Task<int> UlozitCislovane(int verze, CislovaneNaradiVPrehledu data, bool zobrazitVPrehledu)
         {
-            return ProjectorUtils.Save(_folder,
+            return EventProjectorUtils.Save(_folder,
                 PrehledCislovanehoNaradiProjection.DokumentCislovane(data.NaradiId, data.CisloNaradi),
                 verze, JsonSerializer.SerializeToString(data),
                 zobrazitVPrehledu ? new[] { new DocumentIndexing("cisloNaradi", data.CisloNaradi.ToString("00000000")) } : null);

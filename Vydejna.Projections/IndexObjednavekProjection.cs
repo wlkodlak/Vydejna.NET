@@ -227,7 +227,7 @@ namespace Vydejna.Projections.IndexObjednavekReadModel
 
         public Task<int> UlozitDodavatele(int verze, IndexObjednavekDodavatele data)
         {
-            return ProjectorUtils.Save(_folder, "dodavatele", verze, JsonSerializer.SerializeToString(data), null);
+            return EventProjectorUtils.Save(_folder, "dodavatele", verze, JsonSerializer.SerializeToString(data), null);
         }
 
         public Task<MemoryCacheItem<IndexObjednavekDataObjednavek>> NacistObjednavku(string cisloObjednavky, int znamaVerze)
@@ -237,7 +237,7 @@ namespace Vydejna.Projections.IndexObjednavekReadModel
 
         public Task<int> UlozitObjednavku(int verze, IndexObjednavekDataObjednavek data)
         {
-            return ProjectorUtils.Save(_folder, NazevDokumentuObjednavky(data.CisloObjednavky), verze, JsonSerializer.SerializeToString(data), null);
+            return EventProjectorUtils.Save(_folder, NazevDokumentuObjednavky(data.CisloObjednavky), verze, JsonSerializer.SerializeToString(data), null);
         }
 
         public Task<MemoryCacheItem<IndexObjednavekDataDodacichListu>> NacistDodaciList(string cisloDodacihoListu, int znamaVerze)
@@ -247,7 +247,7 @@ namespace Vydejna.Projections.IndexObjednavekReadModel
 
         public Task<int> UlozitDodaciList(int verze, IndexObjednavekDataDodacichListu data)
         {
-            return ProjectorUtils.Save(_folder, NazevDokumentuDodacihoListu(data.CisloDodacihoListu), verze, JsonSerializer.SerializeToString(data), null);
+            return EventProjectorUtils.Save(_folder, NazevDokumentuDodacihoListu(data.CisloDodacihoListu), verze, JsonSerializer.SerializeToString(data), null);
         }
 
         private static string NazevDokumentuObjednavky(string cislo)

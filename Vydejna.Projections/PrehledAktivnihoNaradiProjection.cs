@@ -318,7 +318,7 @@ namespace Vydejna.Projections.PrehledAktivnihoNaradiReadModel
 
         public Task<int> UlozitNaradi(int verze, PrehledAktivnihoNaradiDataNaradi data, bool zarazenoDoSeznamu)
         {
-            return ProjectorUtils.Save(_folder, data.NaradiId.ToString("N"), verze, JsonSerializer.SerializeToString(data),
+            return EventProjectorUtils.Save(_folder, data.NaradiId.ToString("N"), verze, JsonSerializer.SerializeToString(data),
                 zarazenoDoSeznamu ? new[] { new DocumentIndexing("vykresRozmer", string.Concat(data.Vykres, " ", data.Rozmer)) } : null);
         }
 

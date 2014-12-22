@@ -132,7 +132,7 @@ namespace Vydejna.Projections.SeznamDodavateluReadModel
 
         public Task<int> UlozitDodavatele(int verze, SeznamDodavateluData data)
         {
-            return ProjectorUtils.Save(_folder, "dodavatele", verze, JsonSerializer.SerializeToString(data), null);
+            return EventProjectorUtils.Save(_folder, "dodavatele", verze, JsonSerializer.SerializeToString(data), null);
         }
     }
 

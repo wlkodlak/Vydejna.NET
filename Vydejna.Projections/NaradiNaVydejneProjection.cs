@@ -258,7 +258,7 @@ namespace Vydejna.Projections.NaradiNaVydejneReadModel
 
         public Task<int> UlozitUmistene(int verze, NaradiNaVydejne data, bool smazat)
         {
-            return ProjectorUtils.Save(_folder, NaradiNaVydejneProjection.DokumentNaradiNaVydejne(data.NaradiId, data.StavNaradi), verze,
+            return EventProjectorUtils.Save(_folder, NaradiNaVydejneProjection.DokumentNaradiNaVydejne(data.NaradiId, data.StavNaradi), verze,
                 smazat ? null : JsonSerializer.SerializeToString(data),
                 smazat ? null : new[] { 
                     new DocumentIndexing("naradiId", data.NaradiId.ToString()),
@@ -273,7 +273,7 @@ namespace Vydejna.Projections.NaradiNaVydejneReadModel
 
         public Task<int> UlozitDefinici(int verze, InformaceONaradi data)
         {
-            return ProjectorUtils.Save(_folder, NaradiNaVydejneProjection.DokumentDefiniceNaradi(data.NaradiId), verze,
+            return EventProjectorUtils.Save(_folder, NaradiNaVydejneProjection.DokumentDefiniceNaradi(data.NaradiId), verze,
                 JsonSerializer.SerializeToString(data), null);
         }
 

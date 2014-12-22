@@ -254,7 +254,7 @@ namespace Vydejna.Projections.NaradiNaPracovistiReadModel
 
         public Task<int> UlozitPracoviste(int verze, NaradiNaPracovistiDataPracoviste data)
         {
-            return ProjectorUtils.Save(_folder, "pracoviste-" + data.Pracoviste.Kod, verze, JsonSerializer.SerializeToString(data), null);
+            return EventProjectorUtils.Save(_folder, "pracoviste-" + data.Pracoviste.Kod, verze, JsonSerializer.SerializeToString(data), null);
         }
 
         public Task<MemoryCacheItem<InformaceONaradi>> NacistNaradi(Guid naradiId)
@@ -264,7 +264,7 @@ namespace Vydejna.Projections.NaradiNaPracovistiReadModel
 
         public Task<int> UlozitNaradi(int verze, InformaceONaradi data)
         {
-            return ProjectorUtils.Save(_folder, DokumentNaradi(data.NaradiId), verze, JsonSerializer.SerializeToString(data), null);
+            return EventProjectorUtils.Save(_folder, DokumentNaradi(data.NaradiId), verze, JsonSerializer.SerializeToString(data), null);
         }
 
         private static string DokumentNaradi(Guid naradiId)

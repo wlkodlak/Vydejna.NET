@@ -1,29 +1,32 @@
-﻿using log4net;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace ServiceLib
 {
+    [SuppressMessage("ReSharper", "PossibleMultipleEnumeration")]
     public class EventProcessSimple
         : IProcessWorker
     {
+        private readonly EventProcessSimpleTraceSource _logger;
         private readonly IMetadataInstance _metadata;
         private readonly IEventStreamingDeserialized _streaming;
         private readonly IEventSubscriptionManager _subscriptions;
         private readonly IEventProcessTrackTarget _tracker;
         private readonly object _lock;
         private readonly Stopwatch _stopwatch;
-        private readonly string _logName;
+        private readonly string _processName;
         private CancellationTokenSource _cancelPause, _cancelStop;
+        private CancellationToken _cancelPauseToken, _cancelStopToken;
         private ProcessState _processState;
         private Action<ProcessState> _onProcessStateChanged;
-        private TaskScheduler _scheduler;
         private readonly ITime _time;
-        private static readonly ILog Logger = LogManager.GetLogger("ServiceLib.EventProcessSimple");
+        private Task _processTask;
+        private TaskScheduler _scheduler;
 
         public EventProcessSimple(
             IMetadataInstance metadata, IEventStreamingDeserialized streaming,
@@ -35,9 +38,10 @@ namespace ServiceLib
             _subscriptions = subscriptions;
             _processState = ProcessState.Uninitialized;
             _time = time;
-            _logName = _metadata.ProcessName;
+            _processName = _metadata.ProcessName;
             _stopwatch = new Stopwatch();
             _lock = new object();
+            _logger = new EventProcessSimpleTraceSource("ServiceLib.EventProcessSimple." + _processName);
         }
 
         public EventProcessSimple Register<T>(IProcessEvent<T> handler)
@@ -70,17 +74,11 @@ namespace ServiceLib
         public void Start()
         {
             _cancelPause = new CancellationTokenSource();
+            _cancelPauseToken = _cancelPause.Token;
             _cancelStop = new CancellationTokenSource();
+            _cancelStopToken = _cancelStop.Token;
             SetProcessState(ProcessState.Starting);
-            TaskUtils.FromEnumerable(ProcessCore()).UseScheduler(_scheduler).GetTask()
-                .ContinueWith(
-                    t =>
-                    {
-                        if (t.Exception == null || t.IsCanceled)
-                            SetProcessState(ProcessState.Inactive);
-                        else
-                            SetProcessState(ProcessState.Faulted);
-                    }, _scheduler);
+            new Task(() => _processTask = ProcessCore()).RunSynchronously(_scheduler);
         }
 
         public void Pause()
@@ -99,6 +97,7 @@ namespace ServiceLib
             if (_cancelStop != null)
                 _cancelStop.Cancel();
             _streaming.Close();
+            _processTask.Wait(1000);
         }
 
         public void Dispose()
@@ -111,6 +110,7 @@ namespace ServiceLib
                 _cancelPause.Dispose();
             if (_cancelStop != null)
                 _cancelStop.Dispose();
+            _processTask.Wait(1000);
             SetProcessState(ProcessState.Inactive);
         }
 
@@ -132,145 +132,265 @@ namespace ServiceLib
                 if (handler != null)
                     handler(newState);
             }
-            catch
+            catch (Exception exception)
             {
+                _logger.SetProcessStateCallbackFailed(_processName, exception);
             }
         }
 
-        private IEnumerable<Task> ProcessCore()
+        private EventStoreToken _lastToken;
+
+        private async Task ProcessCore()
         {
             try
             {
-                _stopwatch.Start();
-                var taskGetToken = TaskUtils.Retry(() => _metadata.GetToken(), _time, _cancelPause.Token);
-                yield return taskGetToken;
-                var token = taskGetToken.Result;
-                Logger.DebugFormat("{0}: Starting processing at token {1}", _logName, token);
-
-                SetProcessState(ProcessState.Running);
-                var handledTypes = _subscriptions.GetHandledTypes();
-                _streaming.Setup(token, handledTypes, _metadata.ProcessName);
-                if (Logger.IsDebugEnabled)
-                {
-                    Logger.TraceFormat(
-                        "{0}: Process will use these event types: {1}",
-                        _logName, string.Join(", ", handledTypes.Select(t => t.Name)));
-                }
-
-                Logger.TraceFormat("{0}: Initialization took {1} ms", _logName, _stopwatch.ElapsedMilliseconds);
-                _stopwatch.Restart();
+                await Initialize();
 
                 var firstIteration = true;
-                var lastToken = (EventStoreToken) null;
+                _lastToken = null;
 
-                while (!_cancelPause.IsCancellationRequested)
+                while (!_cancelPauseToken.IsCancellationRequested)
                 {
-                    var nowait = firstIteration || lastToken != null;
+                    var nowait = firstIteration || _lastToken != null;
                     firstIteration = false;
-                    var taskNextEvent = TaskUtils.Retry(
-                        () => _streaming.GetNextEvent(nowait), _time, _cancelPause.Token);
-                    yield return taskNextEvent;
-                    if (_cancelPause.IsCancellationRequested)
-                        break;
-                    var nextEvent = taskNextEvent.Result;
-
-                    var tokenToSave = (EventStoreToken) null;
-                    if (nextEvent == null)
-                    {
-                        tokenToSave = lastToken;
-                        lastToken = null;
-                        Logger.TraceFormat(
-                            "{0}: No events to process (attempt to get an event took {1} ms)",
-                            _logName, _stopwatch.ElapsedMilliseconds);
-                        _stopwatch.Restart();
-                    }
-                    else if (nextEvent.Event != null)
-                    {
-                        lastToken = nextEvent.Token;
-                        var eventType = nextEvent.Event.GetType();
-                        var handler = _subscriptions.FindHandler(eventType);
-                        Logger.TraceFormat(
-                            "{0}: Received event of type {1}, token {2} (getting the event took {3} ms)",
-                            _logName, eventType.Name, nextEvent.Token, _stopwatch.ElapsedMilliseconds);
-                        _stopwatch.Restart();
-
-                        var taskHandler = TaskUtils.Retry(
-                            () => handler.Handle(nextEvent.Event), _time, _cancelStop.Token, 3);
-                        yield return taskHandler;
-                        tokenToSave = lastToken;
-                        if (taskHandler.Exception != null && !taskHandler.IsCanceled)
-                        {
-                            while (true)
-                            {
-                                _cancelStop.Token.ThrowIfCancellationRequested();
-                                var processingTime = _stopwatch.ElapsedMilliseconds;
-                                _stopwatch.Restart();
-                                var taskDead = _streaming.MarkAsDeadLetter();
-                                yield return taskDead;
-                                if (taskDead.Exception == null)
-                                {
-                                    Logger.ErrorFormat(
-                                        "{0}: Event {1} (token {2}) failed in {3} ms, marked as dead-letter in {4} ms. {5}",
-                                        _logName, eventType.Name, nextEvent.Token, processingTime,
-                                        _stopwatch.ElapsedMilliseconds, taskHandler.Exception.InnerException);
-                                    _stopwatch.Restart();
-                                    break;
-                                }
-                            }
-                        }
-                        else
-                        {
-                            _tracker.ReportProgress(nextEvent.Token);
-                            Logger.InfoFormat(
-                                "{0}: Event {1} (token {2}) processed in {3} ms",
-                                _logName, eventType.Name, nextEvent.Token, _stopwatch.ElapsedMilliseconds);
-                            _stopwatch.Restart();
-                        }
-                    }
-
-                    if (tokenToSave != null)
-                    {
-                        while (!_cancelStop.IsCancellationRequested)
-                        {
-                            var taskSaveToken = _metadata.SetToken(tokenToSave);
-                            yield return taskSaveToken;
-                            if (taskSaveToken.Exception == null)
-                            {
-                                Logger.TraceFormat(
-                                    "{0}: Saved token {1} ({2} ms)", _logName, tokenToSave,
-                                    _stopwatch.ElapsedMilliseconds);
-                                _stopwatch.Restart();
-                                break;
-                            }
-                        }
-                    }
+                    var nextEvent = await TaskUtils.Retry(() => _streaming.GetNextEvent(nowait), _time, _cancelPauseToken);
+                    var tokenToSave = await ProcessEvent(nextEvent);
+                    await SaveToken(tokenToSave);
                 }
             }
             finally
             {
                 _stopwatch.Stop();
                 _streaming.Close();
-                Logger.DebugFormat("Processing ended");
+                _logger.ProcessingEnded(_processName);
+            }
+        }
+
+        private async Task Initialize()
+        {
+            _stopwatch.Start();
+            var token = await TaskUtils.Retry(() => _metadata.GetToken(), _time, _cancelPauseToken);
+            _logger.ReceivedInitialToken(_processName, token);
+
+            SetProcessState(ProcessState.Running);
+            var handledTypes = _subscriptions.GetHandledTypes();
+            _streaming.Setup(token, handledTypes, _metadata.ProcessName);
+            _logger.HandledTypesSetup(_processName, handledTypes);
+
+            _logger.InitializationFinished(_processName, _stopwatch.ElapsedMilliseconds);
+            _stopwatch.Restart();
+        }
+
+        private async Task<EventStoreToken> ProcessEvent(EventStreamingDeserializedEvent nextEvent)
+        {
+            var tokenToSave = (EventStoreToken) null;
+            if (nextEvent == null)
+            {
+                tokenToSave = _lastToken;
+                _lastToken = null;
+                _logger.NoEventsAvailable(_processName, _stopwatch.ElapsedMilliseconds);
+                _stopwatch.Restart();
+            }
+            else if (nextEvent.Event != null)
+            {
+                _lastToken = nextEvent.Token;
+                var eventType = nextEvent.Event.GetType();
+                var handler = _subscriptions.FindHandler(eventType);
+                _logger.ReceivedEvent(_processName, eventType, nextEvent, _stopwatch.ElapsedMilliseconds);
+                _stopwatch.Restart();
+
+                var eventHandlerError = await TryHandleEvent(handler, nextEvent, eventType);
+                tokenToSave = _lastToken;
+                if (eventHandlerError != null)
+                {
+                    _stopwatch.Restart();
+                    await MarkAsDeadLetter(nextEvent);
+                }
+            }
+            return tokenToSave;
+        }
+
+        private async Task<Exception> TryHandleEvent(IEventSubscription handler, EventStreamingDeserializedEvent nextEvent, Type eventType)
+        {
+            Exception eventHandlerError;
+            try
+            {
+                await TaskUtils.Retry(() => handler.Handle(nextEvent.Event), _time, _cancelStopToken, 3);
+
+                _tracker.ReportProgress(nextEvent.Token);
+                _logger.EventProcessed(_processName, eventType, nextEvent, _stopwatch.ElapsedMilliseconds);
+                _stopwatch.Restart();
+                eventHandlerError = null;
+            }
+            catch (Exception exception)
+            {
+                _logger.EventHandlerFailed(
+                    _processName, eventType, nextEvent, _stopwatch.ElapsedMilliseconds, exception);
+                eventHandlerError = exception;
+            }
+            return eventHandlerError;
+        }
+
+        private async Task MarkAsDeadLetter(EventStreamingDeserializedEvent nextEvent)
+        {
+            while (true)
+            {
+                _cancelStopToken.ThrowIfCancellationRequested();
+                try
+                {
+                    await _streaming.MarkAsDeadLetter();
+                    _logger.EventMarkedAsDeadLetter(_processName, nextEvent, _stopwatch.ElapsedMilliseconds);
+                    _stopwatch.Restart();
+                    break;
+                }
+                catch (Exception exception)
+                {
+                    _logger.MarkingAsDeadLetterFailed(_processName, nextEvent, exception);
+                }
+            }
+        }
+
+        private async Task SaveToken(EventStoreToken tokenToSave)
+        {
+            if (tokenToSave != null)
+            {
+                while (!_cancelStop.IsCancellationRequested)
+                {
+                    try
+                    {
+                        await _metadata.SetToken(tokenToSave);
+                        _logger.UpdatedTokenInMetadata(_processName, tokenToSave, _stopwatch.ElapsedMilliseconds);
+                        _stopwatch.Restart();
+                        break;
+                    }
+                    catch (Exception exception)
+                    {
+                        _logger.UpdatingTokenInMetadataFailed(_processName, tokenToSave, exception);
+                    }
+                }
             }
         }
     }
 
-    public static class ProjectorUtils
+    public class EventProcessSimpleTraceSource : TraceSource
     {
-        public static Task<int> Save(
-            IDocumentFolder folder, string documentName, int expectedVersion, string newContents,
-            IList<DocumentIndexing> indexes)
+        public EventProcessSimpleTraceSource(string name)
+            : base(name)
         {
-            return
-                folder.SaveDocument(documentName, newContents, DocumentStoreVersion.At(expectedVersion), indexes)
-                    .ContinueWith(
-                        task =>
-                        {
-                            if (task.Result)
-                                return expectedVersion + 1;
-                            else
-                                throw new ProjectorMessages.ConcurrencyException();
-                        });
+        }
+
+        public void ReceivedInitialToken(string processName, EventStoreToken token)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 1, "Process will start at token {Token}");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("Token", false, token);
+            msg.Log(this);
+        }
+
+        public void HandledTypesSetup(string processName, IEnumerable<Type> handledTypes)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 2, "Process registered handled types");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("HandledTypes", false, string.Join(", ", handledTypes.Select(x => x.Name)));
+            msg.Log(this);
+        }
+
+        public void InitializationFinished(string processName, long elapsedMilliseconds)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 9, "Initialization finished");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("Duration", false, elapsedMilliseconds);
+            msg.Log(this);
+        }
+
+        public void NoEventsAvailable(string processName, long elapsedMilliseconds)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 20, "No more events available at the moment");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("Duration", false, elapsedMilliseconds);
+            msg.Log(this);
+        }
+
+        public void SetProcessStateCallbackFailed(string processName, Exception exception)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 90, "No more events available at the moment");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("Exception", true, exception);
+            msg.Log(this);
+        }
+
+        public void ReceivedEvent(string processName, Type eventType, EventStreamingDeserializedEvent nextEvent, long elapsedMilliseconds)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 21, "Received event {EventType}");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("EventType", false, eventType.Name);
+            msg.SetProperty("Token", false, nextEvent.Token);
+            msg.SetProperty("Duration", false, elapsedMilliseconds);
+            msg.Log(this);
+        }
+
+        public void EventProcessed(string processName, Type eventType, EventStreamingDeserializedEvent nextEvent, long elapsedMilliseconds)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 22, "Event {EventType} processed");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("EventType", false, eventType.Name);
+            msg.SetProperty("Token", false, nextEvent.Token);
+            msg.SetProperty("Duration", false, elapsedMilliseconds);
+            msg.Log(this);
+        }
+
+        public void EventHandlerFailed(string processName, Type eventType, EventStreamingDeserializedEvent nextEvent, long elapsedMilliseconds, Exception exception)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 24, "Event handler for {EventType} failed");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("EventType", false, eventType);
+            msg.SetProperty("Token", false, nextEvent.Token);
+            msg.SetProperty("Duration", false, elapsedMilliseconds);
+            msg.SetProperty("Exception", true, exception);
+            msg.Log(this);
+        }
+
+        public void EventMarkedAsDeadLetter(string processName, EventStreamingDeserializedEvent nextEvent, long elapsedMilliseconds)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 30, "Event {Token} marked as dead letter");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("Token", false, nextEvent.Token);
+            msg.SetProperty("Duration", false, elapsedMilliseconds);
+            msg.Log(this);
+        }
+
+        public void MarkingAsDeadLetterFailed(string processName, EventStreamingDeserializedEvent nextEvent, Exception exception)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 32, "Event {Token} could not be marked as dead letter");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("Token", false, nextEvent.Token);
+            msg.SetProperty("Exception", true, exception);
+            msg.Log(this);
+        }
+
+        public void UpdatedTokenInMetadata(string processName, EventStoreToken tokenToSave, long elapsedMilliseconds)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 42, "Token {Token} was saved");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("Token", false, tokenToSave);
+            msg.SetProperty("Duration", false, elapsedMilliseconds);
+            msg.Log(this);
+        }
+
+        public void UpdatingTokenInMetadataFailed(string processName, EventStoreToken tokenToSave, Exception exception)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 42, "Token {Token} could not be saved");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("Token", false, tokenToSave);
+            msg.SetProperty("Exception", true, exception);
+            msg.Log(this);
+        }
+
+        public void ProcessingEnded(string processName)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 50, "Processing ended");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.Log(this);
         }
     }
 }
