@@ -144,25 +144,38 @@ namespace ServiceLib
         {
             try
             {
-                await Initialize();
-
-                var firstIteration = true;
-                _lastToken = null;
-
-                while (!_cancelPauseToken.IsCancellationRequested)
+                try
                 {
-                    var nowait = firstIteration || _lastToken != null;
-                    firstIteration = false;
-                    var nextEvent = await TaskUtils.Retry(() => _streaming.GetNextEvent(nowait), _time, _cancelPauseToken);
-                    var tokenToSave = await ProcessEvent(nextEvent);
-                    await SaveToken(tokenToSave);
+                    await Initialize();
+
+                    var firstIteration = true;
+                    _lastToken = null;
+
+                    while (!_cancelPauseToken.IsCancellationRequested)
+                    {
+                        var nowait = firstIteration || _lastToken != null;
+                        firstIteration = false;
+                        var nextEvent =
+                            await TaskUtils.Retry(() => _streaming.GetNextEvent(nowait), _time, _cancelPauseToken);
+                        var tokenToSave = await ProcessEvent(nextEvent);
+                        await SaveToken(tokenToSave);
+                    }
                 }
+                finally
+                {
+                    _stopwatch.Stop();
+                    _streaming.Close();
+                    _logger.ProcessingEnded(_processName);
+                }
+                SetProcessState(ProcessState.Inactive);
             }
-            finally
+            catch (OperationCanceledException)
             {
-                _stopwatch.Stop();
-                _streaming.Close();
-                _logger.ProcessingEnded(_processName);
+                SetProcessState(ProcessState.Inactive);
+            }
+            catch
+            {
+                SetProcessState(ProcessState.Faulted);
             }
         }
 

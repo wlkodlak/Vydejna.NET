@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using log4net;
 
 namespace ServiceLib
 {
@@ -32,6 +31,14 @@ namespace ServiceLib
     {
         public class ConcurrencyException : Exception
         {
+        }
+
+        public class HandlerFailedException : Exception
+        {
+            public HandlerFailedException(Exception inner)
+                : base("Handler crashed", inner)
+            {
+            }
         }
 
         public class RebuildFinished
@@ -75,9 +82,9 @@ namespace ServiceLib
         private readonly IEventProjection _projectionInfo;
         private readonly IEventProcessTrackTarget _tracker;
         private readonly ITime _time;
-        private readonly string _logName;
+        private readonly string _processName;
         private readonly Stopwatch _stopwatch;
-        private static readonly ILog Logger = LogManager.GetLogger("ServiceLib.EventProjectorSimple");
+        private readonly EventProjectorSimpleTraceSource _logger;
         private ProcessState _processState;
         private Action<ProcessState> _onStateChanged;
         private CancellationTokenSource _cancelPause, _cancelStop;
@@ -86,7 +93,12 @@ namespace ServiceLib
         private CancellationToken _cancelStopToken;
         private TaskScheduler _scheduler;
         private int _processedEventsCount;
-        private bool _exceptionAlreadyLogged;
+        private Task _processTask;
+        private EventProjectionUpgradeMode _rebuildMode;
+        private Stopwatch _rebuildStopwatch;
+        private bool _needsFlush;
+        private EventStoreToken _lastToken;
+        private bool _firstIteration;
 
         public EventProjectorSimple(
             IEventProjection projection,
@@ -103,8 +115,9 @@ namespace ServiceLib
             _subscriptions = subscriptions;
             _time = time;
             _tracker = tracker;
-            _logName = _metadata.ProcessName;
+            _processName = _metadata.ProcessName;
             _stopwatch = new Stopwatch();
+            _logger = new EventProjectorSimpleTraceSource("ServiceLib.EventProjectorSimple." + _processName);
         }
 
         public void Register<T>(IProcessEvent<T> handler)
@@ -153,8 +166,9 @@ namespace ServiceLib
                 {
                     handler(state);
                 }
-                catch
+                catch (Exception exception)
                 {
+                    _logger.SetProcessStateHandlerFailed(_processName, exception);
                 }
             }
         }
@@ -166,26 +180,7 @@ namespace ServiceLib
             _cancelStop = new CancellationTokenSource();
             _cancelStopToken = _cancelStop.Token;
             SetProcessState(ProcessState.Starting);
-            TaskUtils.FromEnumerable(ProjectorCore())
-                .UseScheduler(_scheduler)
-                .GetTask()
-                .ContinueWith(Finish, _scheduler);
-        }
-
-        private void Finish(Task task)
-        {
-            ProcessState newState;
-            if (task.Exception == null || task.IsCanceled)
-                newState = ProcessState.Inactive;
-            else if (task.Exception.InnerException is ProjectorMessages.ConcurrencyException)
-                newState = ProcessState.Conflicted;
-            else
-            {
-                newState = ProcessState.Faulted;
-                if (!_exceptionAlreadyLogged)
-                    Logger.ErrorFormat("{0}: Processing failed. {1}", _logName, task.Exception.InnerException);
-            }
-            SetProcessState(newState);
+            new Task(() => _processTask = ProjectorCore()).RunSynchronously(_scheduler);
         }
 
         public void Pause()
@@ -204,6 +199,7 @@ namespace ServiceLib
             if (_cancelStop != null)
                 _cancelStop.Cancel();
             _streaming.Close();
+            _processTask.Wait(1000);
         }
 
         public void Dispose()
@@ -216,314 +212,566 @@ namespace ServiceLib
                 _cancelPause.Dispose();
             if (_cancelStop != null)
                 _cancelStop.Dispose();
+            _processTask.Wait(1000);
             _processState = ProcessState.Uninitialized;
         }
 
-        private IEnumerable<Task> ProjectorCore()
+        private async Task ProjectorCore()
         {
-            Stopwatch rebuildStopwatch = null;
             try
             {
-                _stopwatch.Start();
+                await InitializeProjection();
 
-                var taskGetToken = TaskUtils.Retry(() => _metadata.GetToken(), _time, _cancelPauseToken);
-                yield return taskGetToken;
-                var token = taskGetToken.Result;
-                Logger.TraceFormat("{0}: Loaded token {1}.", _logName, token);
-
-                var taskGetVersion = TaskUtils.Retry(() => _metadata.GetVersion(), _time, _cancelPauseToken);
-                yield return taskGetVersion;
-                var savedVersion = taskGetVersion.Result;
-                Logger.TraceFormat("{0}: Loaded version {1}.", _logName, savedVersion);
-
-                var rebuildMode = _projectionInfo.UpgradeMode(savedVersion);
-                Logger.TraceFormat("{0}: Upgrade mode {1}.", _logName, rebuildMode);
-
-                SetProcessState(ProcessState.Running);
-
-                var firstIteration = true;
-                var lastToken = (EventStoreToken) null;
-                var handledTypes = _subscriptions.GetHandledTypes();
-                Logger.TraceFormat(
-                    "{0}: Projection will handle types: {1}", _logName,
-                    string.Join(", ", handledTypes.Select(t => t.Name)));
-
-                if (rebuildMode == EventProjectionUpgradeMode.Upgrade)
-                {
-                    var taskUpgrade =
-                        TaskUtils.Retry(
-                            () => _projectionInfo.Handle(new ProjectorMessages.UpgradeFrom(savedVersion)), _time,
-                            _cancelStopToken);
-                    yield return taskUpgrade;
-                    taskUpgrade.Wait();
-                    Logger.TraceFormat("{0}: Upgrade handler finished.", _logName);
-
-                    var newVersion = _projectionInfo.GetVersion();
-                    var taskSetVersion = TaskUtils.Retry(
-                        () => _metadata.SetVersion(newVersion), _time, _cancelStopToken);
-                    yield return taskSetVersion;
-                    taskSetVersion.Wait();
-                    Logger.TraceFormat("{0}: Saved version {1}.", _logName, newVersion);
-
-                    rebuildMode = EventProjectionUpgradeMode.NotNeeded;
-                    _streaming.Setup(token, handledTypes, _metadata.ProcessName);
-
-                    Logger.InfoFormat(
-                        "{0}: Upgraded from version {1} to version {2}. Process will continue from token {3}. Initialization took {4} ms.",
-                        _logName, savedVersion, newVersion, token, _stopwatch.ElapsedMilliseconds);
-                    _stopwatch.Restart();
-                }
-                else if (rebuildMode == EventProjectionUpgradeMode.Rebuild)
-                {
-                    var taskReset = TaskUtils.Retry(
-                        () => _projectionInfo.Handle(new ProjectorMessages.Reset()), _time, _cancelStopToken);
-                    yield return taskReset;
-                    taskReset.Wait();
-                    Logger.TraceFormat("{0}: Reset handler finished.", _logName);
-
-                    var taskSetToken = TaskUtils.Retry(
-                        () => _metadata.SetToken(EventStoreToken.Initial), _time, _cancelStopToken);
-                    yield return taskSetToken;
-                    taskSetToken.Wait();
-                    token = EventStoreToken.Initial;
-                    Logger.TraceFormat("{0}: Saved initial token.", _logName);
-
-                    var newVersion = _projectionInfo.GetVersion();
-                    var taskSetVersion = TaskUtils.Retry(
-                        () => _metadata.SetVersion(newVersion), _time, _cancelStopToken);
-                    yield return taskSetVersion;
-                    taskSetVersion.Wait();
-                    Logger.TraceFormat("{0}: Saved version {1}.", _logName, newVersion);
-
-                    _streaming.Setup(token, handledTypes, _metadata.ProcessName);
-
-                    Logger.InfoFormat(
-                        "{0}: Starting rebuild at version {1} (original version {2}). Initialization took {3} ms.",
-                        _logName, newVersion, savedVersion ?? "none", _stopwatch.ElapsedMilliseconds);
-                    _stopwatch.Restart();
-
-                    rebuildStopwatch = new Stopwatch();
-                    rebuildStopwatch.Start();
-                }
-                else
-                {
-                    _streaming.Setup(token, handledTypes, _metadata.ProcessName);
-
-                    Logger.InfoFormat(
-                        "{0}: Resuming normal processing at version {1}. Processing will continue from token {2}. Initialization took {3} ms.",
-                        _logName, savedVersion, token, _stopwatch.ElapsedMilliseconds);
-                    _stopwatch.Restart();
-                }
-                var needsFlush = false;
-
+                _firstIteration = true;
+                _needsFlush = false;
+                _lastToken = null;
                 while (!_cancelPauseToken.IsCancellationRequested)
                 {
                     _stopwatch.Restart();
-                    var nowait = firstIteration || lastToken != null ||
-                                 rebuildMode == EventProjectionUpgradeMode.Rebuild;
-                    firstIteration = false;
-                    var taskNextEvent = TaskUtils.Retry(() => _streaming.GetNextEvent(nowait), _time, _cancelPauseToken);
-                    yield return taskNextEvent;
-                    var nextEvent = taskNextEvent.Result;
+                    var nextEvent = await GetNextEvent();
 
-                    var tokenToSave = (EventStoreToken) null;
                     if (nextEvent == null)
                     {
-                        Logger.TraceFormat(
-                            "{0}: No events are available (attempt took {1} ms).", _logName,
-                            _stopwatch.ElapsedMilliseconds);
+                        _logger.NoEventsAvailable(_processName, _stopwatch.ElapsedMilliseconds);
                         _stopwatch.Restart();
-                        if (rebuildMode == EventProjectionUpgradeMode.Rebuild)
-                        {
-                            var taskHandler = CallHandler(new ProjectorMessages.RebuildFinished(), null);
-                            yield return taskHandler;
-                            taskHandler.Wait();
-                            rebuildMode = EventProjectionUpgradeMode.NotNeeded;
-                            needsFlush = true;
-                            rebuildStopwatch.Stop();
-                            Logger.InfoFormat(
-                                "{0}: Rebuild finished ({1} events in {2} ms).",
-                                _logName, _processedEventsCount, rebuildStopwatch.ElapsedMilliseconds);
-                            rebuildStopwatch = null;
-                        }
-                        if (needsFlush)
-                        {
-                            var taskHandler = CallHandler(new ProjectorMessages.Flush(), null);
-                            yield return taskHandler;
-                            taskHandler.Wait();
-                            needsFlush = false;
-                            Logger.TraceFormat("{0}: Flushed.", _logName);
-                        }
-                        tokenToSave = lastToken;
-                        lastToken = null;
+                        if (_rebuildMode == EventProjectionUpgradeMode.Rebuild)
+                            await EndRebuildMode();
+                        if (_needsFlush)
+                            await Flush();
+                        await SaveToken(_lastToken);
+                        _lastToken = null;
                     }
                     else if (nextEvent.Event != null)
                     {
-                        Logger.TraceFormat(
-                            "{0}: Received event {1} (token {2}) in {3} ms.",
-                            _logName, nextEvent.Event.GetType().Name, nextEvent.Token, _stopwatch.ElapsedMilliseconds);
+                        _logger.EventReceived(
+                            _processName, nextEvent.Event.GetType().Name,
+                            nextEvent.Token, _stopwatch.ElapsedMilliseconds);
                         _stopwatch.Restart();
 
-                        lastToken = nextEvent.Token;
-                        {
-                            var taskHandler = CallHandler(nextEvent.Event, lastToken);
-                            yield return taskHandler;
-                            taskHandler.Wait();
-                            needsFlush = true;
-                        }
+                        _lastToken = nextEvent.Token;
+                        var succeeded = await CallHandler(nextEvent.Event, _lastToken);
+                        _logger.EventHandlerFinished(_processName, nextEvent.Event, nextEvent.Token, succeeded);
+                        _needsFlush = true;
 
                         if (_cancelPause.IsCancellationRequested)
                         {
-                            var taskHandler = CallHandler(new ProjectorMessages.Flush(), null);
-                            yield return taskHandler;
-                            taskHandler.Wait();
-                            needsFlush = false;
-                            tokenToSave = lastToken;
-                            Logger.TraceFormat("{0}: Flushed (because of cancellation).", _logName);
-                        }
-                    }
-
-                    if (tokenToSave != null)
-                    {
-                        _stopwatch.Restart();
-                        while (!_cancelStopToken.IsCancellationRequested)
-                        {
-                            var taskSaveToken = _metadata.SetToken(tokenToSave);
-                            yield return taskSaveToken;
-                            if (taskSaveToken.Exception == null)
-                            {
-                                Logger.TraceFormat(
-                                    "{0}: Saved token {1} in {2} ms", _logName, tokenToSave,
-                                    _stopwatch.ElapsedMilliseconds);
-                                break;
-                            }
+                            await Flush();
+                            await SaveToken(_lastToken);
                         }
                     }
                 }
+                _logger.ProjectionStoppedNormally(_processName);
+                SetProcessState(ProcessState.Inactive);
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.ProjectionStoppedNormally(_processName);
+                SetProcessState(ProcessState.Inactive);
+            }
+            catch (ProjectorMessages.ConcurrencyException)
+            {
+                _logger.ProjectionStoppedBecauseOfConcurrencyConflict(_processName);
+                SetProcessState(ProcessState.Conflicted);
+            }
+            catch (ProjectorMessages.HandlerFailedException)
+            {
+                _logger.ProjectionStoppedBecauseHandlerCrash(_processName);
+                SetProcessState(ProcessState.Faulted);
+            }
+            catch (Exception exception)
+            {
+                _logger.ProjectionCrashed(_processName, exception);
+                SetProcessState(ProcessState.Faulted);
             }
             finally
             {
                 _streaming.Close();
-                if (rebuildStopwatch != null)
+                if (_rebuildStopwatch != null)
                 {
-                    rebuildStopwatch.Stop();
+                    _rebuildStopwatch.Stop();
                 }
             }
         }
 
-        private Task CallHandler(object message, EventStoreToken token)
+        private async Task InitializeProjection()
         {
-            return new CallHandlerContext(this, message, token).Execute();
+            _stopwatch.Start();
+
+            var token = await TaskUtils.Retry(() => _metadata.GetToken(), _time, _cancelPauseToken);
+            _logger.ReceivedToken(_processName, token);
+            var savedVersion = await TaskUtils.Retry(() => _metadata.GetVersion(), _time, _cancelPauseToken);
+            _logger.ReceivedCurrentVersion(_processName, savedVersion);
+            _rebuildMode = _projectionInfo.UpgradeMode(savedVersion);
+            _logger.DeterminedRebuildMode(_processName, _rebuildMode, savedVersion, _projectionInfo.GetVersion());
+
+            SetProcessState(ProcessState.Running);
+
+            if (_rebuildMode == EventProjectionUpgradeMode.Upgrade)
+            {
+                await InitializeUpgrade(savedVersion, token);
+            }
+            else if (_rebuildMode == EventProjectionUpgradeMode.Rebuild)
+            {
+                await InitializeRebuild(savedVersion);
+            }
+            else
+            {
+                InitializeResume(token, savedVersion);
+            }
         }
 
-        private class CallHandlerContext
+        private async Task InitializeUpgrade(string savedVersion, EventStoreToken token)
         {
-            private readonly EventProjectorSimple _parent;
-            private readonly object _message;
-            private readonly Stopwatch _stopwatch;
-            private readonly EventStoreToken _token;
-            private IEventSubscription _handler;
-            private string _typeName;
+            await TaskUtils.Retry(
+                () => _projectionInfo.Handle(new ProjectorMessages.UpgradeFrom(savedVersion)),
+                _time, _cancelStopToken);
+            _logger.UpgradeHandlerFinished(_processName);
 
-            public CallHandlerContext(EventProjectorSimple parent, object message, EventStoreToken token)
-            {
-                _parent = parent;
-                _message = message;
-                _token = token;
-                _stopwatch = new Stopwatch();
-            }
+            var newVersion = _projectionInfo.GetVersion();
+            await TaskUtils.Retry(() => _metadata.SetVersion(newVersion), _time, _cancelStopToken);
+            _logger.SavedVersion(_processName, newVersion);
 
-            public Task Execute()
-            {
-                var type = _message.GetType();
-                _typeName = type.Name;
-                _handler = _parent._subscriptions.FindHandler(type);
-                if (_handler == null)
-                {
-                    Logger.TraceFormat("{0}: Handler for {1} not found, skipping.", _parent._logName, _typeName);
-                    return TaskUtils.CompletedTask();
-                }
-                else
-                {
-                    _stopwatch.Start();
-                    return CallHandler();
-                }
-            }
+            _rebuildMode = EventProjectionUpgradeMode.NotNeeded;
+            var handledTypes = _subscriptions.GetHandledTypes().ToList();
+            _streaming.Setup(token, handledTypes, _metadata.ProcessName);
+            _logger.HandledTypesSetup(_processName, handledTypes);
 
-            private Task CallHandler()
-            {
-                if (_parent._cancelStopToken.IsCancellationRequested)
-                    return TaskUtils.CancelledTask<object>();
-                else
-                    return _handler.Handle(_message).ContinueWith<Task>(HandlerFinished).Unwrap();
-            }
+            _logger.UpgradeFinished(_processName, savedVersion, newVersion, token, _stopwatch.ElapsedMilliseconds);
+            _stopwatch.Restart();
+        }
 
-            private Task HandlerFinished(Task task)
+        private async Task InitializeRebuild(string savedVersion)
+        {
+            await TaskUtils.Retry(() => _projectionInfo.Handle(new ProjectorMessages.Reset()), _time, _cancelStopToken);
+            _logger.ResetHandlerFinished(_processName);
+
+            await TaskUtils.Retry(() => _metadata.SetToken(EventStoreToken.Initial), _time, _cancelStopToken);
+            var token = EventStoreToken.Initial;
+            _logger.SavedToken(_processName, token);
+
+            var newVersion = _projectionInfo.GetVersion();
+            await TaskUtils.Retry(() => _metadata.SetVersion(newVersion), _time, _cancelStopToken);
+            _logger.SavedVersion(_processName, newVersion);
+
+            var handledTypes = _subscriptions.GetHandledTypes().ToList();
+            _streaming.Setup(token, handledTypes, _metadata.ProcessName);
+            _logger.HandledTypesSetup(_processName, handledTypes);
+
+            _logger.RebuildStarted(_processName, savedVersion, newVersion, token, _stopwatch.ElapsedMilliseconds);
+            _stopwatch.Restart();
+
+            _rebuildStopwatch = new Stopwatch();
+            _rebuildStopwatch.Start();
+        }
+
+        private void InitializeResume(EventStoreToken token, string savedVersion)
+        {
+            var handledTypes = _subscriptions.GetHandledTypes().ToList();
+            _streaming.Setup(token, handledTypes, _metadata.ProcessName);
+            _logger.HandledTypesSetup(_processName, handledTypes);
+
+            _logger.ResumedNormally(_processName, savedVersion, token, _stopwatch.ElapsedMilliseconds);
+            _stopwatch.Restart();
+        }
+
+        private async Task<EventStreamingDeserializedEvent> GetNextEvent()
+        {
+            _cancelPauseToken.ThrowIfCancellationRequested();
+            var nowait = _firstIteration || _lastToken != null ||
+                         _rebuildMode == EventProjectionUpgradeMode.Rebuild;
+            _firstIteration = false;
+            var nextEvent = await TaskUtils.Retry(() => _streaming.GetNextEvent(nowait), _time, _cancelPauseToken);
+            return nextEvent;
+        }
+
+        private async Task EndRebuildMode()
+        {
+            await CallHandler(new ProjectorMessages.RebuildFinished(), null);
+            _rebuildMode = EventProjectionUpgradeMode.NotNeeded;
+            _needsFlush = true;
+            Debug.Assert(_rebuildStopwatch != null, "rebuildStopwatch != null");
+            _rebuildStopwatch.Stop();
+            _logger.RebuildFinished(_processName, _processedEventsCount, _rebuildStopwatch.ElapsedMilliseconds);
+            _rebuildStopwatch = null;
+        }
+
+        private async Task Flush()
+        {
+            await CallHandler(new ProjectorMessages.Flush(), null);
+            _needsFlush = false;
+            _logger.Flushed(_processName);
+        }
+
+        private async Task SaveToken(EventStoreToken tokenToSave)
+        {
+            if (tokenToSave != null)
             {
-                if (task.IsCanceled)
+                _stopwatch.Restart();
+                while (true)
                 {
-                    _stopwatch.Stop();
-                    return task;
-                }
-                else if (task.Exception == null)
-                {
-                    _stopwatch.Stop();
-                    if (_token != null)
+                    try
                     {
-                        _parent._processedEventsCount++;
-                        _parent._tracker.ReportProgress(_token);
+                        _cancelStopToken.ThrowIfCancellationRequested();
+                        await _metadata.SetToken(tokenToSave);
+                        _logger.TokenSaved(_processName, tokenToSave, _stopwatch.ElapsedMilliseconds);
+                        return;
                     }
-                    Logger.InfoFormat(
-                        "{0}: Event {1} (token {2}) processed in {3} ms.",
-                        _parent._logName, _typeName, _token, _stopwatch.ElapsedMilliseconds);
-                    return task;
-                }
-                else if (task.Exception.InnerException is TransientErrorException)
-                {
-                    Logger.TraceFormat("{0}: Transient error occurred, retrying.", _parent._logName);
-                    return CallHandler();
-                }
-                else if (!_parent._useDeadLetters)
-                {
-                    _stopwatch.Stop();
-                    Logger.ErrorFormat(
-                        "{0}: Error when processing event {1} (token {2}). {3}",
-                        _parent._logName, _typeName, _token, task.Exception.InnerException);
-                    _parent._exceptionAlreadyLogged = true;
-                    return task;
-                }
-                else
-                {
-                    _stopwatch.Stop();
-                    if (_token != null)
+                    catch (TransientErrorException exception)
                     {
-                        _parent._processedEventsCount++;
-                        _parent._tracker.ReportProgress(_token);
+                        _logger.TokenSavingFailed(_processName, tokenToSave, exception);
                     }
-                    Logger.ErrorFormat(
-                        "{0}: Error when processing event {1} (token {2}), putting to dead-letter. {3}",
-                        _parent._logName, _typeName, _token, task.Exception.InnerException);
-                    return MarkAsDeadLetter();
                 }
             }
+        }
 
-            private Task MarkAsDeadLetter()
+        private async Task<bool> CallHandler(object message, EventStoreToken token)
+        {
+            var handler = _subscriptions.FindHandler(message.GetType());
+            if (handler == null)
             {
-                if (_parent._cancelStopToken.IsCancellationRequested)
-                    return TaskUtils.CancelledTask<object>();
-                else
-                    return _parent._streaming.MarkAsDeadLetter().ContinueWith<Task>(DeadLetterFinished).Unwrap();
+                _logger.NoHandlerFound(_processName, message.GetType());
+                return false;
             }
+            var handlerSucceeded = await CallHandler(message, token, handler);
+            _processedEventsCount++;
+            _tracker.ReportProgress(token);
+            if (!handlerSucceeded)
+                await MarkAsDeadLetter(token);
+            return handlerSucceeded;
+        }
 
-            private Task DeadLetterFinished(Task task)
+        private async Task<bool> CallHandler(object message, EventStoreToken token, IEventSubscription handler)
+        {
+            var stopwatch = new Stopwatch();
+            stopwatch.Start();
+            while (true)
             {
-                if (task.IsCanceled || task.Exception == null)
-                    return task;
-                else if (task.Exception.InnerException is TransientErrorException)
-                    return MarkAsDeadLetter();
-                else
-                    return task;
+                try
+                {
+                    _cancelStopToken.ThrowIfCancellationRequested();
+                    await handler.Handle(message);
+                    _logger.HandlerFinished(_processName, message.GetType(), token, _stopwatch.ElapsedMilliseconds);
+                    return true;
+                }
+                catch (TransientErrorException exception)
+                {
+                    _logger.TransientErrorWhileCallingHandler(_processName, message.GetType(), token, exception);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    _logger.HandlerFailed(_processName, message.GetType(), token, exception);
+                    if (_useDeadLetters)
+                        return false;
+                    else
+                        throw new ProjectorMessages.HandlerFailedException(exception);
+                }
+                finally
+                {
+                    stopwatch.Stop();
+                }
             }
+        }
+
+        private async Task MarkAsDeadLetter(EventStoreToken token)
+        {
+            while (true)
+            {
+                try
+                {
+                    _cancelStopToken.ThrowIfCancellationRequested();
+                    await _streaming.MarkAsDeadLetter();
+                    _logger.MarkedAsDeadLetter(_processName, token);
+                    return;
+                }
+                catch (TransientErrorException exception)
+                {
+                    _logger.MarkingAsDeadLetterFailed(_processName, token, exception);
+                }
+            }
+        }
+    }
+
+    public class EventProjectorSimpleTraceSource : TraceSource
+    {
+        public EventProjectorSimpleTraceSource(string name)
+            : base(name)
+        {
+        }
+
+        public void ReceivedToken(string processName, EventStoreToken token)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 1, "{ProcessName} starts at token {Token}");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("Token", false, token);
+            msg.Log(this);
+        }
+
+        public void ReceivedCurrentVersion(string processName, string savedVersion)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 2, "{ProcessName} is currently at version {Version}");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("Version", false, savedVersion);
+            msg.Log(this);
+        }
+
+        public void DeterminedRebuildMode(string processName, EventProjectionUpgradeMode rebuildMode, string originalVersion, string newVersion)
+        {
+            string summary;
+            if (rebuildMode == EventProjectionUpgradeMode.NotNeeded)
+                summary = "{ProcessName} will resume normally";
+            else if (rebuildMode == EventProjectionUpgradeMode.Rebuild)
+                summary = "{ProcessName} will be rebuilt";
+            else
+                summary = "{ProcessName} will be upgraded";
+            
+            var msg = new LogContextMessage(TraceEventType.Information, 3, summary);
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("RebuildMode", false, rebuildMode);
+            msg.SetProperty("OriginalVersion", false, originalVersion);
+            msg.SetProperty("NewVersion", false, newVersion);
+            msg.Log(this);
+        }
+
+        public void UpgradeHandlerFinished(string processName)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 6, "Upgrade handler for {ProcessName} finished");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.Log(this);
+        }
+
+        public void UpgradeFinished(string processName, string originalVersion, string newVersion, EventStoreToken token, long elapsedMilliseconds)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 7, "{ProcessName} was upgraded to {NewVersion}");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("OriginalVersion", false, originalVersion);
+            msg.SetProperty("NewVersion", false, newVersion);
+            msg.SetProperty("Token", false, token);
+            msg.SetProperty("Duration", false, elapsedMilliseconds);
+            msg.Log(this);
+        }
+
+        public void ResetHandlerFinished(string processName)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 11, "Reset handler for {ProcessName} finished");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.Log(this);
+        }
+
+        public void RebuildStarted(string processName, string originalVersion, string newVersion, EventStoreToken token, long elapsedMilliseconds)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 12, "{ProcessName} starts it rebuild at version {NewVersion}");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("OriginalVersion", false, originalVersion);
+            msg.SetProperty("NewVersion", false, newVersion);
+            msg.SetProperty("Token", false, token);
+            msg.SetProperty("Duration", false, elapsedMilliseconds);
+            msg.Log(this);
+        }
+
+        public void ResumedNormally(string processName, string version, EventStoreToken token, long elapsedMilliseconds)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 16, "{ProcessName} resumes");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("Version", false, version);
+            msg.SetProperty("Token", false, token);
+            msg.SetProperty("Duration", false, elapsedMilliseconds);
+            msg.Log(this);
+        }
+        
+        public void SavedVersion(string processName, string newVersion)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 21, "Saved version {Version} for {ProcessName}");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("Version", false, newVersion);
+            msg.Log(this);
+        }
+
+        public void SavedToken(string processName, EventStoreToken token)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 23, "Saved token {Token} for {ProcessName}");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("Token", false, token);
+            msg.Log(this);
+        }
+
+        public void HandledTypesSetup(string processName, IList<Type> handledTypes)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 25, "{ProcessName} will handle {TypesCount} types");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("TypesCount", false, handledTypes.Count);
+            msg.Log(this);
+        }
+
+        public void NoEventsAvailable(string processName, long elapsedMilliseconds)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 31, "No new events available for {ProcessName}");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("Duration", false, elapsedMilliseconds);
+            msg.Log(this);
+        }
+
+        public void EventReceived(string processName, string typeName, EventStoreToken token, long elapsedMilliseconds)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 32, "Got event {Type} for {ProcessName}");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("Token", false, token);
+            msg.SetProperty("Type", false, typeName);
+            msg.SetProperty("Duration", false, elapsedMilliseconds);
+            msg.Log(this);
+        }
+
+        public void RebuildFinished(string processName, int processedEventsCount, long elapsedMilliseconds)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 14, "Rebuild of {ProcessName} finished");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("EventsCount", false, processedEventsCount);
+            msg.SetProperty("Duration", false, elapsedMilliseconds);
+            msg.Log(this);
+        }
+
+        public void Flushed(string processName)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 27, "Flushed {ProcessName}");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.Log(this);
+        }
+
+        public void TokenSaved(string processName, EventStoreToken token, long elapsedMilliseconds)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 23, "Saved token {Token} for {ProcessName}");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("Token", false, token);
+            msg.SetProperty("Duration", false, elapsedMilliseconds);
+            msg.Log(this);
+        }
+
+        public void TokenSavingFailed(string processName, EventStoreToken token, TransientErrorException exception)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 24, "There is a temporary problem with saving token {Token} for {ProcessName}");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("Token", false, token);
+            msg.SetProperty("Exception", true, exception);
+            msg.Log(this);
+        }
+
+        public void NoHandlerFound(string processName, Type type)
+        {
+            var msg = new LogContextMessage(
+                TraceEventType.Verbose, 35, 
+                "No event handler found for type {Type} at projection {ProcessName}");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("Type", false, type.Name);
+            msg.Log(this);
+        }
+
+        public void HandlerFinished(string processName, Type type, EventStoreToken token, long elapsedMilliseconds)
+        {
+            var msg = new LogContextMessage(
+                TraceEventType.Verbose, 36,
+                "Handler {Type} at projection {ProcessName} finished");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("Type", false, type.Name);
+            msg.SetProperty("Token", false, token);
+            msg.SetProperty("Duration", false, elapsedMilliseconds);
+            msg.Log(this);
+        }
+
+        public void TransientErrorWhileCallingHandler(string processName, Type type, EventStoreToken token, TransientErrorException exception)
+        {
+            var msg = new LogContextMessage(
+                TraceEventType.Verbose, 37,
+                "Handler {Type} at projection {ProcessName} encountered temporary problem");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("Type", false, type.Name);
+            msg.SetProperty("Token", false, token);
+            msg.SetProperty("Exception", true, exception);
+            msg.Log(this);
+        }
+
+        public void HandlerFailed(string processName, Type type, EventStoreToken token, Exception exception)
+        {
+            var msg = new LogContextMessage(
+                TraceEventType.Verbose, 38,
+                "Handler {Type} at projection {ProcessName} failed");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("Type", false, type.Name);
+            msg.SetProperty("Token", false, token);
+            msg.SetProperty("Exception", true, exception);
+            msg.Log(this);
+        }
+
+        public void MarkedAsDeadLetter(string processName, EventStoreToken token)
+        {
+            var msg = new LogContextMessage(
+                TraceEventType.Verbose, 40, 
+                "Event {Token} marked as dead-letter in {ProcessName}");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("Token", false, token);
+            msg.Log(this);
+        }
+
+        public void MarkingAsDeadLetterFailed(string processName, EventStoreToken token, TransientErrorException exception)
+        {
+            var msg = new LogContextMessage(
+                   TraceEventType.Verbose, 41,
+                   "There is a temporay problem with marking event {Token} as dead-letter in {ProcessName}");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("Token", false, token);
+            msg.SetProperty("Exception", true, exception);
+            msg.Log(this);
+        }
+
+        public void EventHandlerFinished(string processName, object eventData, EventStoreToken token, bool succeeded)
+        {
+            var msg = new LogContextMessage(
+                TraceEventType.Verbose, 34, 
+                "Event {Token} of type {Type} processed in {ProcessName}");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("Type", false, eventData.GetType().Name);
+            msg.SetProperty("Token", false, token);
+            msg.SetProperty("Succeeded", false, succeeded);
+            msg.Log(this);
+        }
+
+        public void ProjectionStoppedNormally(string processName)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 91, "{ProcessName} stopped normally");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.Log(this);
+        }
+
+        public void ProjectionStoppedBecauseOfConcurrencyConflict(string processName)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 92, "{ProcessName} stopped because of concurrency conflict");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.Log(this);
+        }
+
+        public void ProjectionStoppedBecauseHandlerCrash(string processName)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 93, "{ProcessName} stopped because a handler crashed");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.Log(this);
+        }
+
+        public void ProjectionCrashed(string processName, Exception exception)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 94, "{ProcessName} crashed");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("Exception", true, exception);
+            msg.Log(this);
+        }
+
+        public void SetProcessStateHandlerFailed(string processName, Exception exception)
+        {
+            var msg = new LogContextMessage(TraceEventType.Verbose, 98, "Handler of SetProcessState crashed");
+            msg.SetProperty("ProcessName", false, processName);
+            msg.SetProperty("Exception", true, exception);
+            msg.Log(this);
         }
     }
 }
