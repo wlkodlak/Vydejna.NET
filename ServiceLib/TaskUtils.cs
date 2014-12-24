@@ -19,16 +19,24 @@ namespace ServiceLib
             return Task.FromResult(result);
         }
 
-        [Obsolete]
         public static Task<T> FromError<T>(Exception exception)
         {
             var tcs = new TaskCompletionSource<T>();
-            if (exception is TaskCanceledException)
-                tcs.SetCanceled();
-            else if (exception is AggregateException)
-                tcs.SetException((exception as AggregateException).InnerExceptions);
+            var aggregateException = exception as AggregateException;
+            if (aggregateException != null)
+            {
+                if (aggregateException.InnerExceptions.Count == 1 && aggregateException.InnerException is TaskCanceledException)
+                    tcs.SetCanceled();
+                else
+                    tcs.SetException(aggregateException.InnerExceptions);
+            }
             else
-                tcs.SetException(exception);
+            {
+                if (exception is TaskCanceledException)
+                    tcs.SetCanceled();
+                else
+                    tcs.SetException(exception);
+            }
             return tcs.Task;
         }
 
@@ -44,7 +52,6 @@ namespace ServiceLib
             return new TaskContinuationBuilder<object>(tasks, false);
         }
 
-        [Obsolete]
         public static Task<T> CancelledTask<T>()
         {
             var tcs = new TaskCompletionSource<T>();
